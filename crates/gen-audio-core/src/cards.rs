@@ -15,6 +15,7 @@ pub const CARD_KINDS: &[&str] = &[
     "BenchmarkCompare",
     "ConnectorStatus",
     "LibraryClip",
+    "VoiceProfile",
 ];
 
 pub const CONNECTOR_IDS: &[&str] = &[
@@ -199,8 +200,72 @@ fn validate_body(id: &str, kind: &str, body: &Value) -> Result<(), String> {
             } else if obj.get("wavUrl").is_some() {
                 return Err(format!("card {id} must not set wavUrl unless synthesizedSpeech is true"));
             }
+            optional_string(obj.get("semanticName"), "semanticName", 1, 80)?;
+            optional_string(obj.get("faceName"), "faceName", 1, 80)?;
+            optional_string(obj.get("sidecarUrl"), "sidecarUrl", 1, 260)?;
+            optional_string(obj.get("cubeJsonUrl"), "cubeJsonUrl", 1, 260)?;
         }
+        "VoiceProfile" => validate_voice_profile(id, obj)?,
         _ => return Err(format!("unhandled kind {kind}")),
+    }
+    Ok(())
+}
+
+fn validate_voice_profile(id: &str, obj: &serde_json::Map<String, Value>) -> Result<(), String> {
+    let agent_name = expect_string(obj.get("agentName"), "agentName", 1, 40)?;
+    let persona_id = expect_string(obj.get("personaId"), "personaId", 1, 40)?;
+    let person = crate::catalog::persona(&persona_id)
+        .ok_or_else(|| format!("card {id} personaId {persona_id} is not a persona"))?;
+    if person.name != agent_name {
+        return Err(format!("card {id} agentName must match persona {persona_id}"));
+    }
+    let voice_id = expect_string(obj.get("voiceModel"), "voiceModel", 1, 40)?;
+    if crate::catalog::voice_model(&voice_id).is_none() {
+        return Err(format!(
+            "card {id} voiceModel {voice_id} is not a TTS model. Pack ids such as af_heart belong in refs."
+        ));
+    }
+    expect_string(obj.get("tone"), "tone", 1, 80)?;
+    expect_string(obj.get("purpose"), "purpose", 1, 160)?;
+    expect_string(obj.get("domain"), "domain", 1, 160)?;
+    expect_string(obj.get("accent"), "accent", 1, 80)?;
+    expect_string(obj.get("traits"), "traits", 12, 400)?;
+    let refs = obj
+        .get("refs")
+        .and_then(Value::as_array)
+        .ok_or("refs must be an array")?;
+    if refs.is_empty() || refs.len() > 8 {
+        return Err(format!("card {id} refs must contain 1 to 8 strings"));
+    }
+    for reference in refs {
+        expect_string(Some(reference), "refs", 1, 80)?;
+    }
+    expect_const(obj.get("spectrogram2d"), "browser-profile-map", "spectrogram2d")?;
+    let spatial = expect_string(obj.get("spectrogram3d"), "spectrogram3d", 1, 40)?;
+    if !matches!(spatial.as_str(), "none" | "library-cube-hook" | "fixture-cube") {
+        return Err(format!("card {id} spectrogram3d is not a known hook"));
+    }
+    expect_const(obj.get("notPodcast"), true, "notPodcast")?;
+    let disclaimer = expect_string(obj.get("disclaimer"), "disclaimer", 12, 400)?;
+    if !disclaimer.to_ascii_lowercase().contains("not") {
+        return Err(format!("card {id} disclaimer must say the profile is not a podcast render"));
+    }
+    match spatial.as_str() {
+        "library-cube-hook" => {
+            expect_string(obj.get("cubeJsonUrl"), "cubeJsonUrl", 1, 260)?;
+        }
+        _ => {
+            if obj.get("cubeJsonUrl").is_some() {
+                return Err(format!("card {id} cubeJsonUrl is only set for a library-cube-hook"));
+            }
+        }
+    }
+    Ok(())
+}
+
+fn optional_string(value: Option<&Value>, field: &str, min: usize, max: usize) -> Result<(), String> {
+    if value.is_some() {
+        expect_string(value, field, min, max)?;
     }
     Ok(())
 }
@@ -248,6 +313,21 @@ mod tests {
         let raw = include_str!("../../../schemas/examples/viewport.example.json");
         let document: Value = serde_json::from_str(raw).unwrap();
         validate_viewport(&document).unwrap();
+    }
+
+    #[test]
+    fn voice_profile_rejects_a_pack_id_as_the_voice_model() {
+        let mut document: Value =
+            serde_json::from_str(include_str!("../../../schemas/examples/viewport.example.json")).unwrap();
+        let card = document["cards"]
+            .as_array_mut()
+            .unwrap()
+            .iter_mut()
+            .find(|card| card["kind"] == "VoiceProfile")
+            .unwrap();
+        card["body"]["voiceModel"] = Value::String("af_heart".into());
+        let err = validate_viewport(&document).unwrap_err();
+        assert!(err.contains("af_heart") || err.contains("TTS"), "{err}");
     }
 
     #[test]

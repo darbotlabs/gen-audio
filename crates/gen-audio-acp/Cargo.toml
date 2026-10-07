@@ -16,3 +16,4 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 gen-audio-connectors = { workspace = true }
 gen-audio-core = { workspace = true }
+gen-audio-mcp = { path = "../gen-audio-mcp" }

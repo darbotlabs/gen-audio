@@ -1220,6 +1220,7 @@ version = "0.1.0"
 dependencies = [
  "gen-audio-connectors",
  "gen-audio-core",
+ "gen-audio-mcp",
  "serde",
  "serde_json",
 ]

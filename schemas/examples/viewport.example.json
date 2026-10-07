@@ -248,6 +248,87 @@
       }
     },
     {
+      "id": "profile-anton",
+      "kind": "VoiceProfile",
+      "title": "Anton",
+      "body": {
+        "agentName": "Anton",
+        "personaId": "anton",
+        "voiceModel": "kokoro_onnx",
+        "tone": "measured",
+        "purpose": "Host a Gen-Audio briefing",
+        "domain": "Desktop app and SDK layout",
+        "accent": "General American",
+        "traits": "Low-mid pitch, even pace, short pauses. Not a connector model.",
+        "refs": ["persona:anton"],
+        "spectrogram2d": "browser-profile-map",
+        "spectrogram3d": "none",
+        "notPodcast": true,
+        "disclaimer": "Browser profile map for persona Anton. Not a podcast render."
+      }
+    },
+    {
+      "id": "profile-alice",
+      "kind": "VoiceProfile",
+      "title": "Alice",
+      "body": {
+        "agentName": "Alice",
+        "personaId": "alice",
+        "voiceModel": "kokoro_onnx",
+        "tone": "warm",
+        "purpose": "Walk through a labeled example",
+        "domain": "SDK onboarding",
+        "accent": "General American",
+        "traits": "Persona Alice is the agent name. Kokoro pack id af_heart is a reference on this profile, not the Voice selector.",
+        "refs": ["kokoro-pack:af_heart", "persona:alice"],
+        "spectrogram2d": "browser-profile-map",
+        "spectrogram3d": "library-cube-hook",
+        "cubeJsonUrl": "/library/library_kokoro_onnx_cube3d.json",
+        "notPodcast": true,
+        "disclaimer": "Browser profile map for persona Alice on kokoro-onnx. The cube is the library clip, not a recording of this persona. Not a podcast render."
+      }
+    },
+    {
+      "id": "profile-khortana",
+      "kind": "VoiceProfile",
+      "title": "Khortana",
+      "body": {
+        "agentName": "Khortana",
+        "personaId": "khortana",
+        "voiceModel": "kokoro_onnx",
+        "tone": "bright",
+        "purpose": "Offer a contrasting take",
+        "domain": "Product critique",
+        "accent": "General American",
+        "traits": "Higher placement and a quicker glide. Not a TTS model id.",
+        "refs": ["persona:khortana"],
+        "spectrogram2d": "browser-profile-map",
+        "spectrogram3d": "none",
+        "notPodcast": true,
+        "disclaimer": "Browser profile map for persona Khortana. Not a podcast render."
+      }
+    },
+    {
+      "id": "profile-rocky",
+      "kind": "VoiceProfile",
+      "title": "Rocky",
+      "body": {
+        "agentName": "Rocky",
+        "personaId": "rocky",
+        "voiceModel": "kokoro_onnx",
+        "tone": "gravel",
+        "purpose": "Short reactions between turns",
+        "domain": "Studio banter",
+        "accent": "General American",
+        "traits": "Low pitch and a narrow band. Not a TTS model id.",
+        "refs": ["persona:rocky"],
+        "spectrogram2d": "browser-profile-map",
+        "spectrogram3d": "none",
+        "notPodcast": true,
+        "disclaimer": "Browser profile map for persona Rocky. Not a podcast render."
+      }
+    },
+    {
       "id": "lib-kokoro-onnx",
       "kind": "LibraryClip",
       "title": "kokoro-onnx",
@@ -261,10 +342,8 @@
         "summary": "Real 6.2 min Gen-Audio briefing @ 24 kHz. 18 turns, 816 words. Not a fixture.",
         "cubePngUrl": "/library/library_kokoro_onnx_cube3d.png",
         "cubeJsonUrl": "/library/library_kokoro_onnx_cube3d.json",
-        "inv_hdr": 0.09737,
-        "semanticName": "kokoro-onnx gen-audio clip",
-        "faceName": "kokoro_onnx",
-        "title": "kokoro-onnx"
+        "sidecarUrl": "/library/library_kokoro_onnx.synth.json",
+        "inv_hdr": 0.09737
       },
       "adaptive": {
         "type": "AdaptiveCard",
@@ -272,7 +351,7 @@
         "body": [
           {
             "type": "TextBlock",
-            "text": "Real synth: kokoro-onnx · 374.8s · cube attached",
+            "text": "Real synth: kokoro-onnx \u00b7 374.8s \u00b7 cube attached",
             "wrap": true
           },
           {
@@ -306,10 +385,7 @@
         "wavUrl": "/library/library_kokoro.wav",
         "duration_s": 375.625,
         "sample_rate": 24000,
-        "summary": "Real dayour/kokoro torch synth — 375.6s Gen-Audio briefing. Not a fixture.",
-        "semanticName": "dayour/kokoro gen-audio clip",
-        "faceName": "kokoro_dayour",
-        "title": "dayour/kokoro"
+        "summary": "Real dayour/kokoro torch synth \u2014 375.6s Gen-Audio briefing. Not a fixture."
       },
       "adaptive": {
         "type": "AdaptiveCard",
@@ -317,7 +393,7 @@
         "body": [
           {
             "type": "TextBlock",
-            "text": "Real synth: dayour/kokoro · 375.6s",
+            "text": "Real synth: dayour/kokoro \u00b7 375.6s",
             "wrap": true
           }
         ]
@@ -326,13 +402,12 @@
     {
       "id": "lib-misaki-kokoro",
       "kind": "LibraryClip",
-      "title": "misaki→kokoro",
+      "title": "misaki\u2192kokoro",
       "body": {
         "engineId": "misaki_kokoro",
         "status": "running",
         "synthesizedSpeech": false,
-        "summary": "Misaki→Kokoro synthesizing now. No fake WAV until complete.",
-        "title": "misaki→kokoro"
+        "summary": "Misaki\u2192Kokoro synthesizing now. No fake WAV until complete."
       }
     },
     {
@@ -343,8 +418,7 @@
         "engineId": "magpie",
         "status": "unavailable",
         "synthesizedSpeech": false,
-        "summary": "GGUF weights exist on box; magpie-tts.cpp not built. No fake audio.",
-        "title": "Magpie"
+        "summary": "GGUF weights exist on box; magpie-tts.cpp not built. No fake audio."
       }
     },
     {
@@ -355,8 +429,7 @@
         "engineId": "vibevoice",
         "status": "unavailable",
         "synthesizedSpeech": false,
-        "summary": "1.5B safetensors present but no verified runnable synth harness this pass.",
-        "title": "VibeVoice"
+        "summary": "1.5B safetensors present but no verified runnable synth harness this pass."
       }
     },
     {
@@ -367,98 +440,7 @@
         "engineId": "pocket_tts",
         "status": "unavailable",
         "synthesizedSpeech": false,
-        "summary": "pocket_tts not installed. Prior wrong-topic teaser not reused.",
-        "title": "Pocket TTS"
-      }
-    },
-    {
-      "id": "vp-anton-kokoro",
-      "kind": "VoiceProfile",
-      "title": "Anton · kokoro-onnx",
-      "body": {
-        "agentname": "Anton",
-        "personaId": "anton",
-        "ttsModel": "kokoro-onnx",
-        "tone": "precise",
-        "purpose": "orchestration",
-        "domain": "systems",
-        "accent": "neutral-US",
-        "traits": [
-          "direct",
-          "technical"
-        ],
-        "refs": [
-          "persona:anton",
-          "tts:kokoro_onnx"
-        ],
-        "cubeJsonUrl": "/library/library_kokoro_onnx_cube3d.json"
-      }
-    },
-    {
-      "id": "vp-alice-kokoro",
-      "kind": "VoiceProfile",
-      "title": "Alice · kokoro-onnx",
-      "body": {
-        "agentname": "Alice",
-        "personaId": "alice",
-        "ttsModel": "kokoro-onnx",
-        "tone": "warm",
-        "purpose": "narration",
-        "domain": "general",
-        "accent": "neutral-US",
-        "traits": [
-          "clear",
-          "friendly"
-        ],
-        "refs": [
-          "persona:alice",
-          "tts:kokoro_onnx",
-          "note:Alice-persona-not-af_heart"
-        ]
-      }
-    },
-    {
-      "id": "vp-khortana-misaki",
-      "kind": "VoiceProfile",
-      "title": "Khortana · misaki→kokoro",
-      "body": {
-        "agentname": "Khortana",
-        "personaId": "khortana",
-        "ttsModel": "misaki→kokoro",
-        "tone": "calm",
-        "purpose": "guidance",
-        "domain": "ops",
-        "accent": "neutral",
-        "traits": [
-          "steady",
-          "strategic"
-        ],
-        "refs": [
-          "persona:khortana",
-          "tts:misaki_kokoro"
-        ]
-      }
-    },
-    {
-      "id": "vp-rocky-dayour",
-      "kind": "VoiceProfile",
-      "title": "Rocky · dayour/kokoro",
-      "body": {
-        "agentname": "Rocky",
-        "personaId": "rocky",
-        "ttsModel": "dayour/kokoro",
-        "tone": "bold",
-        "purpose": "drive",
-        "domain": "execution",
-        "accent": "US-urban",
-        "traits": [
-          "energetic",
-          "blunt"
-        ],
-        "refs": [
-          "persona:rocky",
-          "tts:kokoro_dayour"
-        ]
+        "summary": "pocket_tts not installed. Prior wrong-topic teaser not reused."
       }
     }
   ]

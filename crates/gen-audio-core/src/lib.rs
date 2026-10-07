@@ -5,6 +5,7 @@
 pub mod benchmark;
 pub mod bridge;
 pub mod cards;
+pub mod catalog;
 pub mod engines;
 pub mod fixture;
 pub mod paths;

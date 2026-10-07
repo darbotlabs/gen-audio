@@ -1,3 +1,6 @@
+import { profileForPersona } from "./profiles";
+import { renderTransport } from "./playback";
+import { drawSpectrogram } from "./signal";
 import type { ViewportCard, ViewportDocument } from "./validate";
 
 const EMPTY_COPY =
@@ -9,28 +12,56 @@ export type SlideSchema = {
   blurb: string;
   columns: number;
   cardIds: string[];
+  layer: string;
 };
 
-/** Three full-viewport slides with distinct card schemas (PPT-style snap). */
+/** Snap slides. Layers group voice models, clips, and an honest empty video pane. */
 export const SLIDE_SCHEMAS: SlideSchema[] = [
+  {
+    id: "models",
+    title: "Voice models",
+    blurb: "TTS and G2P models. Magpie, VibeVoice, and Pocket stay unavailable.",
+    columns: 3,
+    layer: "models",
+    cardIds: ["engine-kokoro", "engine-vibevoice", "engine-magpie", "engine-pocket"],
+  },
+  {
+    id: "profiles",
+    title: "Voice profiles",
+    blurb: "Agent personas. Flip a tile for tone, purpose, domain, accent, traits, and refs.",
+    columns: 3,
+    layer: "models",
+    cardIds: ["profile-anton", "profile-alice", "profile-khortana", "profile-rocky"],
+  },
   {
     id: "studio",
     title: "Studio",
-    blurb: "Engines + profile spectrogram preview (not product speech)",
+    blurb: "Browser spectrogram of the side-pane personas and voice model — not product speech",
     columns: 3,
+    layer: "models",
+    cardIds: ["spec-fixture"],
+  },
+  {
+    id: "library",
+    title: "Audio clips",
+    blurb: "One livetile per clip — real WAVs play when the file loads; unavailable stays honest",
+    columns: 3,
+    layer: "clips",
     cardIds: [
-      "engine-kokoro",
-      "engine-vibevoice",
-      "engine-magpie",
-      "engine-pocket",
-      "spec-fixture",
+      "lib-kokoro-onnx",
+      "lib-kokoro",
+      "lib-misaki-kokoro",
+      "lib-magpie",
+      "lib-vibevoice",
+      "lib-pocket",
     ],
   },
   {
     id: "connectors",
     title: "Connectors",
-    blurb: "Live connector probe rows (mock mode is labeled, not hidden)",
+    blurb: "LLM connectors live here, not on the Agent control",
     columns: 3,
+    layer: "connectors",
     cardIds: [
       "conn-acp",
       "conn-harness",
@@ -45,33 +76,8 @@ export const SLIDE_SCHEMAS: SlideSchema[] = [
     title: "Pipeline / Ready",
     blurb: "MCP + serve health + compare notes — readiness, not a completed render",
     columns: 3,
+    layer: "pipeline",
     cardIds: ["conn-mcp", "serve-node", "serve-gateway", "bench-ref", "cube-fixture", "cast-sample"],
-  },
-  {
-    id: "library-models",
-    title: "Library · Voice models",
-    blurb: "Layer: TTS voice-model profiles (flip for full schema). Not podcast claims.",
-    columns: 3,
-    cardIds: [
-      "vp-anton-kokoro",
-      "vp-alice-kokoro",
-      "vp-khortana-misaki",
-      "vp-rocky-dayour",
-    ],
-  },
-  {
-    id: "library-clips",
-    title: "Library · Audio clips",
-    blurb: "Layer: real WAV livetiles — play/pause/scrub; unavailable stays honest",
-    columns: 3,
-    cardIds: [
-      "lib-kokoro-onnx",
-      "lib-kokoro",
-      "lib-misaki-kokoro",
-      "lib-magpie",
-      "lib-vibevoice",
-      "lib-pocket",
-    ],
   },
 ];
 
@@ -113,6 +119,7 @@ export function renderBoard(board: HTMLElement, empty: HTMLElement, document: Vi
         title: "More",
         blurb: "Additional cards from the viewport document",
         columns: document.columns ?? 3,
+        layer: "more",
         cardIds: leftovers.map((c) => c.id),
       },
       cards: leftovers,
@@ -124,6 +131,7 @@ export function renderBoard(board: HTMLElement, empty: HTMLElement, document: Vi
     const section = window.document.createElement("section");
     section.className = "slide";
     section.dataset.slide = slide.schema.id;
+    section.dataset.layer = slide.schema.layer;
     section.dataset.slideIndex = String(slideIndex);
     section.style.setProperty("--cols", String(slide.schema.columns));
     section.setAttribute("aria-label", `Slide ${slideIndex + 1}: ${slide.schema.title}`);
@@ -147,10 +155,17 @@ export function renderBoard(board: HTMLElement, empty: HTMLElement, document: Vi
       if (card.kind === "LibraryClip") {
         article.classList.add("library-tile");
         if (card.body.synthesizedSpeech === true) article.dataset.hasWav = "1";
+        article.dataset.wavUrl = typeof card.body.wavUrl === "string" ? card.body.wavUrl : "";
+        article.dataset.cubeJson = typeof card.body.cubeJsonUrl === "string" ? card.body.cubeJsonUrl : "";
+        article.dataset.sidecarUrl = typeof card.body.sidecarUrl === "string" ? card.body.sidecarUrl : "";
+        article.dataset.faceName = card.title;
+        article.dataset.semanticName = typeof card.body.semanticName === "string" ? card.body.semanticName : "";
       }
       if (card.kind === "VoiceProfile") {
-        article.classList.add("voice-profile-tile");
+        article.classList.add("profile-tile");
         article.dataset.personaId = String(card.body.personaId ?? "");
+        article.dataset.voiceModel = String(card.body.voiceModel ?? "");
+        article.dataset.cubeJson = typeof card.body.cubeJsonUrl === "string" ? card.body.cubeJsonUrl : "";
       }
       if (card.kind === "EngineStatus") {
         article.classList.add("engine-source");
@@ -168,7 +183,7 @@ export function renderBoard(board: HTMLElement, empty: HTMLElement, document: Vi
       article.addEventListener("keydown", (event) => {
         if (event.key !== "Enter" && event.key !== " ") return;
         const target = event.target as HTMLElement | null;
-        if (target && target.closest("button") && !target.classList.contains("flip-toggle")) return;
+        if (target && target.closest("button, input, audio, select, textarea") && !target.classList.contains("flip-toggle")) return;
         event.preventDefault();
         toggleFlip(article);
       });
@@ -179,8 +194,10 @@ export function renderBoard(board: HTMLElement, empty: HTMLElement, document: Vi
     board.append(section);
   });
 
-  buildSlideDots(slides.length);
-  syncSlideChrome(0, slides.length);
+  const extra = appendUtilitySlides(board, slides.length);
+  const total = slides.length + extra;
+  buildSlideDots(total);
+  syncSlideChrome(0, total);
   startLiveCycle(board);
   board.scrollTop = 0;
 }
@@ -208,7 +225,7 @@ function frontFace(card: ViewportCard): HTMLElement {
     const article = flip.closest(".card");
     if (article instanceof HTMLElement) toggleFlip(article);
   });
-  face.append(row, title, bodyFor(card.kind, card.body), flip);
+  face.append(row, title, bodyFor(card, card.kind, card.body), flip);
   return face;
 }
 
@@ -242,12 +259,12 @@ function backFace(card: ViewportCard): HTMLElement {
   face.className = "face back";
   const kind = window.document.createElement("div");
   kind.className = "kind";
-  kind.textContent = card.kind === "VoiceProfile" ? "Voice profile schema" : "Adaptive card";
+  kind.textContent = "Adaptive card";
   const title = window.document.createElement("h2");
   title.textContent = card.title;
-  face.append(kind, title);
   if (card.kind === "VoiceProfile") face.append(voiceProfileBack(card));
   else face.append(adaptiveFace(card));
+  if (card.kind === "LibraryClip") face.append(renameBlock(card));
   const flip = button("Show front");
   flip.className = "flip-toggle";
   flip.addEventListener("click", (event) => {
@@ -257,49 +274,6 @@ function backFace(card: ViewportCard): HTMLElement {
   });
   face.append(flip);
   return face;
-}
-
-function voiceProfileBack(card: ViewportCard): HTMLElement {
-  const wrap = window.document.createElement("div");
-  wrap.className = "adaptive-body voice-profile-back";
-  const body = card.body;
-  const facts: Array<[string, string]> = [
-    ["agentname", String(body.agentname ?? "")],
-    ["tone", String(body.tone ?? "")],
-    ["purpose", String(body.purpose ?? "")],
-    ["domain", String(body.domain ?? "")],
-    ["accent", String(body.accent ?? "")],
-    ["traits", Array.isArray(body.traits) ? body.traits.map(String).join(", ") : ""],
-    ["refs", Array.isArray(body.refs) ? body.refs.map(String).join(" · ") : ""],
-    ["ttsModel", String(body.ttsModel ?? "")],
-    ["personaId", String(body.personaId ?? "")],
-  ];
-  const list = window.document.createElement("ul");
-  list.className = "vp-facts";
-  for (const [k, v] of facts) {
-    const item = window.document.createElement("li");
-    item.textContent = k + ": " + v;
-    list.append(item);
-  }
-  wrap.append(list);
-  wrap.append(paragraph("2D spectrogram hook"));
-  wrap.append(canvas("vp-back-2d"));
-  wrap.append(paragraph("3D spectrogram hook (cube layers)"));
-  const hook = window.document.createElement("div");
-  hook.className = "vp-3d-hook";
-  hook.dataset.cubeJsonUrl = body.cubeJsonUrl ? String(body.cubeJsonUrl) : "";
-  hook.textContent = body.cubeJsonUrl
-    ? "Bound: " + String(body.cubeJsonUrl)
-    : "3D hook ready — bind from Library clip JSON";
-  wrap.append(hook);
-  return wrap;
-}
-
-function formatClock(seconds: number): string {
-  if (!Number.isFinite(seconds) || seconds < 0) return "0:00";
-  const m = Math.floor(seconds / 60);
-  const s = Math.floor(seconds % 60);
-  return m + ":" + String(s).padStart(2, "0");
 }
 
 function toggleFlip(article: HTMLElement): void {
@@ -342,7 +316,7 @@ function stopLiveCycle(board: HTMLElement): void {
   liveTimers.delete(board);
 }
 
-function bodyFor(kind: string, body: Record<string, unknown>): HTMLElement {
+function bodyFor(card: ViewportCard, kind: string, body: Record<string, unknown>): HTMLElement {
   const wrap = window.document.createElement("div");
   if (kind === "EngineStatus") {
     wrap.append(pill(String(body.status), body.status !== "implemented"));
@@ -362,21 +336,13 @@ function bodyFor(kind: string, body: Record<string, unknown>): HTMLElement {
     play.dataset.action = "play-profile";
     wrap.append(before, after, play);
   } else if (kind === "Cube3D") {
-    const bound = body.datasetBound === "library" || body.source === "library-clip";
-    wrap.append(pill(bound ? "library-bound" : "fixture theater", !bound));
+    wrap.append(pill("fixture theater", true));
     wrap.append(paragraph(String(body.disclaimer ?? "")));
-    const note = paragraph(bound
-      ? "Interactive cube bound to library clip JSON — layers signal/tonality/confidence/quality."
-      : "Drag to rotate. Select a real Library clip + Bind cube to replace fixture source.");
-    note.classList.add("cube-bind-note");
-    wrap.append(note);
-    const cube = canvas("cube");
-    cube.classList.add("cube-interactive");
-    if (body.cubeJsonUrl) cube.dataset.cubeJsonUrl = String(body.cubeJsonUrl);
-    wrap.append(cube);
+    wrap.append(paragraph("Visual toy only. Not a render pipeline output."));
+    wrap.append(canvas("cube"));
   } else if (kind === "PodcastCast") {
     wrap.append(pill("sample script", true));
-    wrap.append(paragraph("Sample script only. Voices are kokoro-onnx ids — synthesizedSpeech is false here."));
+    wrap.append(paragraph("Sample script only. Speaker names are personas. af_heart and am_michael are Kokoro pack ids, not the Voice selector. synthesizedSpeech is false here."));
     const list = window.document.createElement("ul");
     const speakers = Array.isArray(body.speakers) ? body.speakers : [];
     for (const speaker of speakers) {
@@ -422,37 +388,19 @@ function bodyFor(kind: string, body: Record<string, unknown>): HTMLElement {
     const speech = body.synthesizedSpeech === true;
     const status = String(body.status ?? "unavailable");
     wrap.append(pill(speech ? "real synth" : status, !speech));
-    wrap.append(paragraph(String(body.summary ?? "")));
+    const semantic = window.document.createElement("p");
+    semantic.className = "summary semantic-name";
+    semantic.textContent = typeof body.semanticName === "string" && body.semanticName ? body.semanticName : String(body.summary ?? "");
+    wrap.append(semantic);
     if (speech) {
-      const dur = typeof body.duration_s === "number" ? body.duration_s.toFixed(1) : "?";
+      const dur = typeof body.duration_s === "number" ? body.duration_s : undefined;
       const sr = String(body.sample_rate ?? "?");
-      wrap.append(paragraph(dur + "s · " + sr + " Hz"));
-      const audio = window.document.createElement("audio");
-      audio.className = "library-audio";
-      audio.controls = true;
-      audio.preload = "metadata";
-      audio.src = String(body.wavUrl ?? "");
-      audio.dataset.wavUrl = String(body.wavUrl ?? "");
-      audio.dataset.cubeJsonUrl = body.cubeJsonUrl ? String(body.cubeJsonUrl) : "";
-      audio.dataset.cubePngUrl = body.cubePngUrl ? String(body.cubePngUrl) : "";
-      audio.setAttribute("aria-label", "Play pause scrub library clip");
-      wrap.append(audio);
-      const time = window.document.createElement("p");
-      time.className = "audio-time summary";
-      time.dataset.audioTime = "1";
-      time.textContent = "0:00 / " + formatClock(typeof body.duration_s === "number" ? body.duration_s : 0);
-      wrap.append(time);
-      const bind = button("Bind cube");
-      bind.className = "bind-cube";
-      bind.dataset.action = "bind-cube";
-      bind.dataset.cubeJsonUrl = body.cubeJsonUrl ? String(body.cubeJsonUrl) : "";
-      bind.dataset.cubePngUrl = body.cubePngUrl ? String(body.cubePngUrl) : "";
-      bind.dataset.clipId = String(body.engineId ?? "");
-      wrap.append(bind);
+      wrap.append(paragraph((dur ? dur.toFixed(1) : "?") + "s · " + sr + " Hz"));
+      wrap.append(renderTransport(card.id, typeof body.wavUrl === "string" ? body.wavUrl : undefined, dur));
       if (body.cubePngUrl) {
         const img = window.document.createElement("img");
         img.className = "cube-thumb";
-        img.alt = "Inverse-HDR cube layers signal/tonality/confidence/quality";
+        img.alt = "Inverse-HDR cube layers";
         img.src = String(body.cubePngUrl);
         img.loading = "lazy";
         wrap.append(img);
@@ -461,35 +409,13 @@ function bodyFor(kind: string, body: Record<string, unknown>): HTMLElement {
         wrap.append(paragraph("inv-HDR " + body.inv_hdr.toFixed(3) + " · layers signal/tonality/confidence/quality"));
       }
     } else {
-      wrap.append(paragraph("No WAV — honest empty tile (" + status + ")."));
-      if (body.reason) wrap.append(paragraph(String(body.reason)));
+      wrap.append(paragraph("No WAV — honest empty tile."));
+      wrap.append(renderTransport(card.id, undefined));
     }
-    // Harvest / rename semantic + face
-    const harvest = window.document.createElement("div");
-    harvest.className = "harvest-fields";
-    const sem = window.document.createElement("input");
-    sem.type = "text";
-    sem.className = "harvest-input";
-    sem.placeholder = "Semantic name";
-    sem.value = String(body.semanticName ?? body.title ?? "");
-    sem.setAttribute("aria-label", "Semantic clip name");
-    const face = window.document.createElement("input");
-    face.type = "text";
-    face.className = "harvest-input";
-    face.placeholder = "Face name";
-    face.value = String(body.faceName ?? "");
-    face.setAttribute("aria-label", "Face-level clip name");
-    harvest.append(sem, face);
-    wrap.append(harvest);
   } else if (kind === "VoiceProfile") {
-    wrap.append(pill("adaptive profile", false));
-    wrap.append(paragraph("Agent " + String(body.agentname ?? "") + " · Voice " + String(body.ttsModel ?? "")));
-    wrap.append(paragraph("Tone " + String(body.tone ?? "") + " · " + String(body.purpose ?? "") + " · " + String(body.domain ?? "")));
-    const flipHint = paragraph("Flip for full schema + 2D/3D spectrogram hooks.");
-    wrap.append(flipHint);
-    const spec2d = canvas("vp-spec-2d");
-    spec2d.classList.add("vp-spec");
-    wrap.append(spec2d);
+    wrap.append(pill(String(body.voiceModel ?? "voice"), false));
+    wrap.append(paragraph(String(body.tone ?? "")));
+    wrap.append(paragraph(String(body.purpose ?? "")));
   } else if (kind === "ConnectorStatus") {
     wrap.append(pill(String(body.mode), body.mode === "mock" || body.mode === "token_present"));
     wrap.append(paragraph(String(body.detail ?? "")));
@@ -572,10 +498,148 @@ function fallbackBack(kind: string, body: Record<string, unknown>): string {
     }
     return String(body.engineId ?? "engine") + ": " + String(body.status ?? "unavailable") + " — no fake audio.";
   }
-  if (kind === "VoiceProfile") {
-    return "Agent " + String(body.agentname ?? "") + " / Voice " + String(body.ttsModel ?? "") + " schema flipside.";
-  }
   return String(body.disclaimer ?? "Fixture face. Not a podcast render.");
+}
+
+function voiceProfileBack(card: ViewportCard): HTMLElement {
+  const wrap = window.document.createElement("div");
+  wrap.className = "profile-back";
+  const body = card.body;
+  const rows: Array<[string, string]> = [
+    ["Agent", String(body.agentName ?? "")],
+    ["Voice model", String(body.voiceModel ?? "")],
+    ["Tone", String(body.tone ?? "")],
+    ["Purpose", String(body.purpose ?? "")],
+    ["Domain", String(body.domain ?? "")],
+    ["Accent", String(body.accent ?? "")],
+    ["Traits", String(body.traits ?? "")],
+    ["Refs", Array.isArray(body.refs) ? body.refs.map((item) => String(item)).join(", ") : ""],
+    ["2D spectrogram", String(body.spectrogram2d ?? "")],
+    ["3D spectrogram", String(body.spectrogram3d ?? "none")],
+  ];
+  const list = window.document.createElement("dl");
+  list.className = "profile-schema";
+  for (const [label, value] of rows) {
+    const term = window.document.createElement("dt");
+    term.textContent = label;
+    const detail = window.document.createElement("dd");
+    detail.textContent = value;
+    list.append(term, detail);
+  }
+  wrap.append(list);
+  wrap.append(paragraph(String(body.disclaimer ?? "")));
+  const canvas = window.document.createElement("canvas");
+  canvas.dataset.canvas = "profile-spec";
+  canvas.dataset.personaId = String(body.personaId ?? "");
+  canvas.dataset.voiceModel = String(body.voiceModel ?? "");
+  wrap.append(canvas);
+  const open = button(body.spectrogram3d === "library-cube-hook" ? "Open 3D cube" : "No library cube");
+  open.dataset.action = "open-cube";
+  open.dataset.cubeJson = typeof body.cubeJsonUrl === "string" ? body.cubeJsonUrl : "";
+  open.disabled = body.spectrogram3d !== "library-cube-hook";
+  wrap.append(open);
+  return wrap;
+}
+
+export function paintProfileCanvases(): void {
+  document.querySelectorAll<HTMLCanvasElement>('[data-canvas="profile-spec"]').forEach((canvas) => {
+    const preview = profileForPersona(canvas.dataset.personaId || "alice", canvas.dataset.voiceModel || "kokoro_onnx");
+    drawSpectrogram(canvas, preview.before, preview.beforeTitle);
+  });
+}
+
+function renameBlock(card: ViewportCard): HTMLElement {
+  const wrap = window.document.createElement("div");
+  wrap.className = "rename-block";
+  const note = window.document.createElement("p");
+  note.className = "summary harvest-note";
+  note.textContent = "Names harvest from the filename and sidecar when one loads. Rename changes labels in this window only.";
+  const semantic = window.document.createElement("input");
+  semantic.type = "text";
+  semantic.dataset.field = "semantic";
+  semantic.maxLength = 80;
+  semantic.placeholder = "Semantic name";
+  semantic.setAttribute("aria-label", `Semantic name for ${card.id}`);
+  semantic.value = typeof card.body.semanticName === "string" ? card.body.semanticName : "";
+  const face = window.document.createElement("input");
+  face.type = "text";
+  face.dataset.field = "face";
+  face.maxLength = 80;
+  face.placeholder = "Face / display name";
+  face.setAttribute("aria-label", `Face name for ${card.id}`);
+  face.value = typeof card.body.faceName === "string" ? card.body.faceName : card.title;
+  const apply = button("Apply names");
+  apply.dataset.action = "rename-clip";
+  apply.dataset.clipId = card.id;
+  wrap.append(note, semantic, face, apply);
+  return wrap;
+}
+
+function appendUtilitySlides(board: HTMLElement, startIndex: number): number {
+  const video = window.document.createElement("section");
+  video.className = "slide";
+  video.dataset.slide = "video";
+  video.dataset.layer = "video";
+  video.dataset.slideIndex = String(startIndex);
+  video.setAttribute("aria-label", "Video layer");
+  const videoBanner = window.document.createElement("div");
+  videoBanner.className = "slide-banner";
+  const videoTitle = window.document.createElement("h3");
+  videoTitle.textContent = "Video";
+  const videoCopy = window.document.createElement("p");
+  videoCopy.textContent = "No video clips in this library. This layer is reserved. Nothing here is a podcast.";
+  videoBanner.append(videoTitle, videoCopy);
+  video.append(videoBanner);
+  board.append(video);
+
+  const spatial = window.document.createElement("section");
+  spatial.className = "slide spatial-slide";
+  spatial.dataset.slide = "spatial";
+  spatial.dataset.layer = "cube";
+  spatial.dataset.slideIndex = String(startIndex + 1);
+  spatial.setAttribute("aria-label", "Interactive cube");
+  const banner = window.document.createElement("div");
+  banner.className = "slide-banner";
+  const heading = window.document.createElement("h3");
+  heading.textContent = "Spatial cube";
+  const blurb = window.document.createElement("p");
+  blurb.textContent = "signal / tonality / confidence / quality from a library cube JSON. Drag, zoom, scrub.";
+  banner.append(heading, blurb);
+  const caption = window.document.createElement("p");
+  caption.id = "cube-caption";
+  caption.className = "summary";
+  caption.textContent = "Select a library clip that has cube JSON. kokoro-onnx has one. Magpie, VibeVoice, and Pocket do not.";
+  const canvas = window.document.createElement("canvas");
+  canvas.id = "cube-viewport";
+  canvas.dataset.canvas = "cube-viewport";
+  const controls = window.document.createElement("div");
+  controls.className = "cube-controls";
+  for (const layer of ["signal", "tonality", "confidence", "quality"]) {
+    const label = window.document.createElement("label");
+    const box = window.document.createElement("input");
+    box.type = "checkbox";
+    box.checked = true;
+    box.dataset.cubeLayer = layer;
+    label.append(box, document.createTextNode(layer));
+    controls.append(label);
+  }
+  const scrub = window.document.createElement("input");
+  scrub.type = "range";
+  scrub.id = "cube-scrub";
+  scrub.min = "0";
+  scrub.max = "1000";
+  scrub.value = "1000";
+  scrub.setAttribute("aria-label", "Cube time span");
+  spatial.append(banner, caption, canvas, controls, scrub);
+  board.append(spatial);
+  return 2;
+}
+
+export function goToSlideId(board: HTMLElement, id: string): boolean {
+  const index = slides(board).findIndex((slide) => slide.dataset.slide === id);
+  if (index < 0) return false;
+  goToSlide(board, index);
+  return true;
 }
 
 export function cards(board: HTMLElement): HTMLElement[] {
@@ -612,7 +676,10 @@ export function goToSlide(board: HTMLElement, index: number): void {
   const list = slides(board);
   if (list.length === 0) return;
   const next = Math.min(list.length - 1, Math.max(0, index));
-  list[next].scrollIntoView({ block: "start", behavior: "smooth" });
+  const slide = list[next];
+  const delta = slide.getBoundingClientRect().top - board.getBoundingClientRect().top;
+  board.style.scrollBehavior = "auto";
+  board.scrollTop += delta;
   const slideCards = Array.from(list[next].querySelectorAll<HTMLElement>(".card"));
   cards(board).forEach((item) => {
     item.tabIndex = -1;
@@ -678,6 +745,11 @@ export function syncSlideChrome(index: number, total: number): void {
   const host = window.document.querySelector<HTMLElement>("#slide-dots");
   host?.querySelectorAll<HTMLButtonElement>(".slide-dot").forEach((dot, i) => {
     dot.setAttribute("aria-selected", i === index ? "true" : "false");
+  });
+  const board = window.document.querySelector<HTMLElement>("#board");
+  const layer = board ? slides(board)[index]?.dataset.layer : undefined;
+  window.document.querySelectorAll<HTMLButtonElement>("#layer-switch [data-layer]").forEach((button) => {
+    button.setAttribute("aria-selected", button.dataset.layer === layer ? "true" : "false");
   });
 }
 

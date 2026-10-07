@@ -73,16 +73,21 @@ fn accept_loop(listener: TcpListener) {
         .local_addr()
         .map(|socket| !socket.ip().is_loopback())
         .unwrap_or(true);
-    let shared = Server::boot();
+    let shared = std::sync::Arc::new(Server::boot());
     for stream in listener.incoming() {
         let Ok(stream) = stream else { continue };
         if remote {
-            let isolated = Server::isolated();
-            let dir = isolated.scratch.dir.clone();
-            let _ = handle_connection(&isolated, stream);
-            let _ = std::fs::remove_dir_all(dir);
+            std::thread::spawn(move || {
+                let isolated = Server::isolated();
+                let dir = isolated.scratch.dir.clone();
+                let _ = handle_connection(&isolated, stream);
+                let _ = std::fs::remove_dir_all(dir);
+            });
         } else {
-            let _ = handle_connection(&shared, stream);
+            let shared = std::sync::Arc::clone(&shared);
+            std::thread::spawn(move || {
+                let _ = handle_connection(&shared, stream);
+            });
         }
     }
 }
@@ -112,9 +117,31 @@ pub fn handle_connection(server: &Server, mut stream: TcpStream) -> std::io::Res
     let mut parts = request.split_whitespace();
     let method = parts.next().unwrap_or("");
     let path = parts.next().unwrap_or("");
+    if method == "OPTIONS" {
+        return write_response(&mut stream, 204, b"");
+    }
     if method == "GET" && path == "/health" {
         let body = br#"{"status":"ok","service":"gen-audio-mcp","role":"mcp","stateless":true,"genaidAudioProbed":false}"#;
         return write_response(&mut stream, 200, body);
+    }
+    if method == "GET" && path == "/ready" {
+        let body = br#"{"ready":true,"service":"gen-audio-mcp","role":"mcp","stateless":true,"speech":false,"modelsLoaded":false,"note":"Listener is up. This is not genaid-audio /ready and not a loaded TTS model."}"#;
+        return write_response(&mut stream, 200, body);
+    }
+    if method == "GET" && (path == "/control/stream" || path.starts_with("/control/stream?")) {
+        return write_control_stream(&mut stream, path);
+    }
+    if method == "GET" && (path == "/control" || path.starts_with("/control?")) {
+        let after = query_u64(path, "after").unwrap_or(0);
+        let (cursor, events) = crate::control::since(after);
+        let body = serde_json::to_vec(&serde_json::json!({
+            "stateless": true,
+            "speech": false,
+            "cursor": cursor,
+            "events": events
+        }))
+        .unwrap_or_else(|_| b"{}".to_vec());
+        return write_response(&mut stream, 200, &body);
     }
     if method != "POST" || path != "/mcp" {
         return write_response(&mut stream, 404, br#"{"error":"not found"}"#);
@@ -211,22 +238,73 @@ fn content_length(head: &str) -> Option<usize> {
     })
 }
 
+fn query_u64(path: &str, key: &str) -> Option<u64> {
+    let query = path.split_once('?')?.1;
+    for pair in query.split('&') {
+        let (name, value) = pair.split_once('=')?;
+        if name == key {
+            return value.parse().ok();
+        }
+    }
+    None
+}
+
+fn write_control_stream(stream: &mut TcpStream, path: &str) -> std::io::Result<()> {
+    let wait_ms = query_u64(path, "wait").unwrap_or(0).min(2_000);
+    let after = query_u64(path, "after").unwrap_or(0);
+    let started = std::time::Instant::now();
+    let mut sent = after;
+    let cors = cors_headers(stream);
+    let header = format!(
+        "HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nCache-Control: no-cache\r\nConnection: close\r\nX-Gen-Audio-Stateless: 1\r\n{cors}\r\n"
+    );
+    stream.write_all(header.as_bytes())?;
+    loop {
+        let (_cursor, events) = crate::control::since(sent);
+        for event in events {
+            let seq = event.get("seq").and_then(|value| value.as_u64()).unwrap_or(sent);
+            sent = sent.max(seq);
+            let data = serde_json::to_string(&event).unwrap_or_else(|_| "{}".into());
+            stream.write_all(format!("id: {seq}\nevent: control\ndata: {data}\n\n").as_bytes())?;
+        }
+        if wait_ms == 0 || started.elapsed() >= std::time::Duration::from_millis(wait_ms) {
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(50));
+    }
+    stream.write_all(b"event: end\ndata: {\"stateless\":true,\"speech\":false}\n\n")?;
+    Ok(())
+}
+
+fn cors_headers(stream: &TcpStream) -> String {
+    let loopback = stream.local_addr().map(|addr| addr.ip().is_loopback()).unwrap_or(false);
+    if loopback {
+        "Access-Control-Allow-Origin: *\r\nAccess-Control-Allow-Methods: GET, POST, OPTIONS\r\nAccess-Control-Allow-Headers: content-type\r\n".into()
+    } else {
+        String::new()
+    }
+}
+
 fn write_response(stream: &mut TcpStream, status: u16, body: &[u8]) -> std::io::Result<()> {
     let reason = match status {
         200 => "OK",
         202 => "Accepted",
+        204 => "No Content",
         400 => "Bad Request",
         404 => "Not Found",
         411 => "Length Required",
         413 => "Payload Too Large",
         _ => "Error",
     };
+    let cors = cors_headers(stream);
     let header = format!(
-        "HTTP/1.1 {status} {reason}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\nX-Gen-Audio-Stateless: 1\r\n\r\n",
+        "HTTP/1.1 {status} {reason}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\nX-Gen-Audio-Stateless: 1\r\n{cors}\r\n",
         body.len()
     );
     stream.write_all(header.as_bytes())?;
-    stream.write_all(body)?;
+    if status != 204 {
+        stream.write_all(body)?;
+    }
     Ok(())
 }
 
@@ -253,6 +331,41 @@ mod tests {
         assert!(text.contains("gen-audio-mcp"));
         assert!(!text.to_ascii_lowercase().contains("mcp-session-id"));
         assert!(text.contains("X-Gen-Audio-Stateless"));
+    }
+
+    #[test]
+    fn ready_is_listener_readiness_and_stream_is_stateless() {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let addr = listener.local_addr().unwrap();
+        std::thread::spawn(move || {
+            let (stream, _) = listener.accept().unwrap();
+            handle_connection(&Server::boot(), stream).unwrap();
+        });
+        let mut stream = TcpStream::connect(addr).unwrap();
+        stream
+            .write_all(b"GET /ready HTTP/1.1\r\nHost: 127.0.0.1\r\nConnection: close\r\n\r\n")
+            .unwrap();
+        let mut text = String::new();
+        stream.read_to_string(&mut text).unwrap();
+        assert!(text.contains("\"ready\":true"), "{text}");
+        assert!(text.contains("\"speech\":false"), "{text}");
+        assert!(!text.to_ascii_lowercase().contains("mcp-session-id"));
+
+        let seq = crate::control::publish("navigate", &serde_json::json!({"slide": "library", "marker": "ready-stream"}));
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let addr = listener.local_addr().unwrap();
+        std::thread::spawn(move || {
+            let (stream, _) = listener.accept().unwrap();
+            handle_connection(&Server::boot(), stream).unwrap();
+        });
+        let mut stream = TcpStream::connect(addr).unwrap();
+        let req = format!("GET /control/stream?after={}&wait=0 HTTP/1.1\r\nHost: 127.0.0.1\r\nConnection: close\r\n\r\n", seq.saturating_sub(1));
+        stream.write_all(req.as_bytes()).unwrap();
+        let mut text = String::new();
+        stream.read_to_string(&mut text).unwrap();
+        assert!(text.contains("text/event-stream"), "{text}");
+        assert!(text.contains("ready-stream"), "{text}");
+        assert!(!text.to_ascii_lowercase().contains("mcp-session-id"));
     }
 
     #[test]

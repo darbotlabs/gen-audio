@@ -71,6 +71,15 @@ pub fn smoke() -> Result<String, String> {
         "connector_health",
         "fixture_tone",
         "list_connectors",
+        "ui_navigate",
+        "ui_select_tile",
+        "ui_playback",
+        "ui_set_sidepane",
+        "ui_generate",
+        "library_list",
+        "library_rename",
+        "voice_profile_get",
+        "voice_profile_list",
     ] {
         if !names.contains(&required) {
             return Err(format!("missing tool {required}"));
@@ -134,7 +143,7 @@ fn initialize_result(params: &Value) -> Result<Value, (i32, String)> {
         "protocolVersion": requested,
         "capabilities": {"tools": {"listChanged": false}},
         "serverInfo": {"name": "gen-audio", "version": "0.1.0"},
-        "instructions": "Stateless Gen-Audio MCP. initialize stores no session. tools/call arguments must name files inside the process work directory. This server does not invent podcast audio. serve_health is healthy only when probed is true and the body service is genaid-audio."
+        "instructions": "Stateless Gen-Audio MCP. initialize stores no session. UI tools queue a loopback command and do not write speech. Agent ids are personas (anton, alice, khortana, rocky, and the rest of the catalog), not connector ids. Voice ids are TTS models (kokoro_onnx, kokoro_dayour, misaki, vibevoice, magpie, pocket_tts). af_heart is a Kokoro pack ref, not a Voice id. GET /health is liveness. GET /ready means this listener is up, not that a model is loaded. GET /control/stream is a short stateless SSE snapshot."
     }))
 }
 
@@ -151,6 +160,15 @@ fn tool_defs() -> Vec<Value> {
         tool("fixture_tone", "Write a labeled sine WAV. Not speech and not a podcast."),
         tool("benchmark_reference", "Return 2026-10-06 compare figures. measuredHere is false."),
         tool("harness_plan", "Parse the sample script and return a harness-style plan. Does not synthesize."),
+        tool("ui_navigate", "Queue a viewport slide change for the local Gen-Audio window. Does not render audio."),
+        tool("ui_select_tile", "Queue selection of a card id. Loads a 3D cube only when that tile has cube JSON."),
+        tool("ui_playback", "Queue play, pause, or seek for a library tile. Does not open the WAV in this process."),
+        tool("ui_set_sidepane", "Queue Agent personas (max 8) and a Voice TTS model. Connector ids are rejected."),
+        tool("ui_generate", "Record a generation request. synthesizedSpeech is false. Does not call synth."),
+        tool("library_list", "List the library catalog. Does not open WAV bytes. Unavailable clips stay unavailable."),
+        tool("library_rename", "Queue a semantic name and/or face name. Does not rewrite the WAV."),
+        tool("voice_profile_get", "Return one persona profile: tone, purpose, domain, accent, traits, refs. Not audio."),
+        tool("voice_profile_list", "List personas and TTS voice models. LLM ids are connectors, not agents."),
     ]
 }
 
@@ -162,6 +180,15 @@ fn tool(name: &str, description: &str) -> Value {
         "spectrogram" => (json!({"before": {"type": "string"}, "after": {"type": "string"}}), json!(["before"])),
         "serve_health" => (json!({"host": {"type": "string"}, "port": {"type": "integer"}, "probe": {"type": "boolean"}}), json!([])),
         "connector_health" => (json!({"id": {"type": "string"}}), json!([])),
+        "ui_navigate" => (json!({"slide": {"type": "string"}, "tileId": {"type": "string"}}), json!(["slide"])),
+        "ui_select_tile" => (json!({"tileId": {"type": "string"}}), json!(["tileId"])),
+        "ui_playback" => (json!({"tileId": {"type": "string"}, "action": {"type": "string"}, "seconds": {"type": "number"}}), json!(["tileId", "action"])),
+        "ui_set_sidepane" | "ui_generate" => (
+            json!({"agents": {"type": "array"}, "voice": {"type": "string"}, "durationMin": {"type": "integer"}, "promptNote": {"type": "string"}}),
+            json!(["agents", "voice"]),
+        ),
+        "library_rename" => (json!({"clipId": {"type": "string"}, "semanticName": {"type": "string"}, "faceName": {"type": "string"}}), json!(["clipId"])),
+        "voice_profile_get" => (json!({"personaId": {"type": "string"}, "agentName": {"type": "string"}}), json!(["personaId"])),
         _ => (json!({}), json!([])),
     };
     json!({
@@ -195,6 +222,15 @@ pub fn call_tool(server: &Server, params: &Value) -> Result<Value, (i32, String)
         "fixture_tone" => fixture(server)?,
         "benchmark_reference" => json!({"measuredHere": false, "sourceNote": SOURCE_NOTE, "rows": reference_rows()}),
         "harness_plan" => harness_plan(server)?,
+        "ui_navigate" => control::ui_navigate(&args)?,
+        "ui_select_tile" => control::ui_select_tile(&args)?,
+        "ui_playback" => control::ui_playback(&args)?,
+        "ui_set_sidepane" => control::ui_set_sidepane(&args)?,
+        "ui_generate" => control::ui_generate(&args)?,
+        "library_list" => control::library_list(),
+        "library_rename" => control::library_rename(&args)?,
+        "voice_profile_get" => control::voice_profile_get(&args)?,
+        "voice_profile_list" => control::voice_profile_list(),
         _ => return Err((-32602, format!("unknown tool {name}"))),
     };
     Ok(json!({
@@ -211,7 +247,13 @@ fn known_arguments(name: &str, args: &Value) -> Result<(), (i32, String)> {
         "cube_revision" => &["input", "output", "maxSteps"],
         "serve_health" => &["host", "port", "probe"],
         "connector_health" => &["id"],
-        "list_connectors" | "list_engines" | "fixture_tone" | "benchmark_reference" | "harness_plan" => &[],
+        "list_connectors" | "list_engines" | "fixture_tone" | "benchmark_reference" | "harness_plan" | "library_list" | "voice_profile_list" => &[],
+        "ui_navigate" => &["slide", "tileId"],
+        "ui_select_tile" => &["tileId"],
+        "ui_playback" => &["tileId", "action", "seconds"],
+        "ui_set_sidepane" | "ui_generate" => &["agents", "voice", "durationMin", "promptNote"],
+        "library_rename" => &["clipId", "semanticName", "faceName"],
+        "voice_profile_get" => &["personaId", "agentName"],
         _ => &[],
     };
     let obj = args
@@ -410,6 +452,7 @@ pub fn stdio_loop(server: &Server) {
     }
 }
 
+pub mod control;
 pub mod http;
 
 #[cfg(test)]
@@ -506,6 +549,47 @@ mod tests {
         let listed = engines["result"]["content"][0]["text"].as_str().unwrap();
         assert!(listed.contains("\"liveSynth\":false"), "{listed}");
         assert!(listed.contains("\"weightsBundled\":false") || listed.contains("\"weights_bundled\":false"), "{listed}");
+        let _ = std::fs::remove_dir_all(&server.scratch.dir);
+    }
+
+    #[test]
+    fn sidepane_rejects_connector_ids_and_kokoro_pack_ids() {
+        let server = Server::boot();
+        let rejected_agent = handle(
+            &server,
+            json!({"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"ui_set_sidepane","arguments":{"agents":["copilot"],"voice":"kokoro_onnx"}}}),
+        )
+        .unwrap()
+        .unwrap();
+        let agent_msg = rejected_agent["error"]["message"].as_str().unwrap_or("");
+        assert!(agent_msg.contains("connector") || agent_msg.contains("persona"), "{agent_msg}");
+        let rejected_voice = handle(
+            &server,
+            json!({"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"ui_set_sidepane","arguments":{"agents":["alice"],"voice":"af_heart"}}}),
+        )
+        .unwrap()
+        .unwrap();
+        let voice_msg = rejected_voice["error"]["message"].as_str().unwrap_or("");
+        assert!(voice_msg.contains("af_heart"), "{voice_msg}");
+        let ok = handle(
+            &server,
+            json!({"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"ui_set_sidepane","arguments":{"agents":["alice","rocky"],"voice":"kokoro_onnx"}}}),
+        )
+        .unwrap()
+        .unwrap();
+        let text = ok["result"]["content"][0]["text"].as_str().unwrap();
+        assert!(text.contains("\"synthesizedSpeech\":false"), "{text}");
+        assert!(text.contains("alice"), "{text}");
+        let profile = handle(
+            &server,
+            json!({"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"voice_profile_get","arguments":{"personaId":"alice"}}}),
+        )
+        .unwrap()
+        .unwrap();
+        let profile_text = profile["result"]["content"][0]["text"].as_str().unwrap();
+        assert!(profile_text.contains("af_heart"), "{profile_text}");
+        assert!(profile_text.contains("\"notPodcast\":true"), "{profile_text}");
+        assert!(profile_text.contains("kokoro_onnx"), "{profile_text}");
         let _ = std::fs::remove_dir_all(&server.scratch.dir);
     }
 }

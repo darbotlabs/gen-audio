@@ -30,7 +30,11 @@ npm run build
 npm run dev   # browser preview on :1420, or `cargo tauri dev` inside src-tauri
 ```
 
-The board sits inside a viewport border beside a blue setup pane. Drag a green engine card into the upper half of that pane to load the voice model. The lower half selects agent, voice, duration, and perspective participants, and the bottom of the pane takes files or a pasted prompt. Those controls, and a dropped engine, redraw the spectrogram panel's before and after preview for that voice profile. Each card is a live tile: the front is the board face, the back is the Adaptive Card text when one is attached, and Enter or Flip turns it. Arrow keys move between cards. Home and End jump. "Empty viewport" shows the empty state inside the same border. "Run Python improve on fixture" calls the Python SDK from the Tauri shell and does nothing useful in a plain browser.
+The board sits inside a viewport border beside a blue setup pane. Drag a green engine card into the upper half of that pane to load the voice model. **Agent** is a voice persona (Anton, Alice, Khortana, Rocky, and the rest of the catalog, up to 8 on a track). **Voice** is the TTS or G2P model (kokoro-onnx, dayour/kokoro, misaki, and the unavailable slots). Copilot, Claude, GPT, and Gemini stay on the Connectors slide. `af_heart` is a Kokoro pack id referenced by persona Alice, not a Voice option. The `+` next to Agent adds another persona. Duration and a pasted prompt sit under that. Those controls redraw the spectrogram panel for that profile. The map is not speech.
+
+Viewport layers jump to voice models, audio clips, an empty video layer, and the spatial cube. Library tiles with a real `wavUrl` expose play, pause, and a scrubber. If the WAV is not in this build the transport says the file is missing and does not invent audio. Magpie, VibeVoice, and Pocket stay unavailable. Flip a voice-profile tile for tone, purpose, domain, accent, traits, refs, a 2D browser map, and a 3D hook when a library cube JSON exists. Rename on a clip changes the semantic name and the face name in the window only.
+
+Each card is a live tile: the front stays compact, and Enter or Flip turns it. Arrow keys move between cards. Home and End jump. "Clear viewport" shows the empty state inside the same border. "Run Python improve on fixture" calls the Python SDK from the Tauri shell and does nothing useful in a plain browser.
 
 The card contract is `schemas/card-viewport.schema.json`. The example board is `schemas/examples/viewport.example.json`.
 
@@ -43,7 +47,9 @@ cargo run -p gen-audio-acp -- --smoke
 cargo run -p gen-audio-harness -- --fixture
 ```
 
-MCP is stateless: `initialize` stores no session, HTTP does not set `Mcp-Session-Id`, and the listener refuses non-loopback binds unless `GEN_AUDIO_MCP_HTTP_ALLOW_REMOTE=1`. ACP is session-scoped because that protocol requires `sessionId`. The harness prints JSONL. It skips synthesis instead of inventing speech. `--fixture` writes a labeled sine WAV. `--improve` runs the Python publish chain on that fixture when the checkout is available.
+MCP is stateless: `initialize` stores no session, HTTP does not set `Mcp-Session-Id`, and the listener refuses non-loopback binds unless `GEN_AUDIO_MCP_HTTP_ALLOW_REMOTE=1`. `GET /health` is liveness. `GET /ready` means this MCP listener is up (`speech` is false, models are not loaded). It is not genaid-audio `/ready`. `GET /control` and `GET /control/stream` expose a short loopback command ring (SSE, no session id) for the desktop window. UI tools (`ui_navigate`, `ui_select_tile`, `ui_playback`, `ui_set_sidepane`, `ui_generate`, `library_list`, `library_rename`, `voice_profile_get`, `voice_profile_list`) queue that ring or return catalog data. They do not write speech. `ui_generate` does not call `synth`. `synth` still refuses when the Kokoro model env vars are unset.
+
+ACP is session-scoped because that protocol requires `sessionId`. A prompt such as `profile alice` or `agent alice rocky voice kokoro_onnx` calls those MCP tools and emits `tool_call` updates. The exact prompts `health` and `status` still return connector health. The harness prints JSONL. It skips synthesis instead of inventing speech. `--fixture` writes a labeled sine WAV. `--improve` runs the Python publish chain on that fixture when the checkout is available.
 
 Connector environment variables, mock behavior, and the live flag are in [docs/CONNECTORS.md](docs/CONNECTORS.md).
 
@@ -64,7 +70,7 @@ The installable package is still `gen_audio` (`pip install -e .`). It turns a tw
 | VibeVoice, Magpie, Pocket TTS, dayour Kokoro | Names on the compare list only. No adapter and no weights |
 | misaki | Grapheme-to-phoneme library used by Kokoro. Not a waveform engine, and this repo does not call it |
 | Node HTTP process | Not started by import. URL helpers plus `python -m gen_audio.node_http` |
-| Tauri desktop card viewport | Implemented. The spectrogram panel follows the side-pane voice profile. The cube view uses a fixture tone |
+| Tauri desktop card viewport | Implemented. Agent is a persona and Voice is a TTS model. Library tiles play a WAV when the file loads. The spectrogram panel follows that profile. The pipeline cube card stays a fixture; the spatial slide draws library cube JSON when a clip has one |
 | Stateless MCP (`gen-audio-mcp`) | Implemented (stdio and loopback HTTP) |
 | ACP agent (`gen-audio-acp`) | Implemented handshake and `session/prompt` |
 | Harness traces (`gen-audio-harness`) | Implemented. Synth is skipped without weights |

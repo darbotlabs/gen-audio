@@ -140,14 +140,14 @@ Do not point the artifact directory at a folder you then commit. Generated audio
 
 The browser checker in `apps/desktop/src/validate.ts` enforces the same honesty rules as `gen_audio_core::cards`: fixture visuals, `sampleScript: true`, unprobed versus probed serve rows, connector ids, and benchmark notes that say the figures were not remeasured. A rejected document replaces the board with that error. An empty card list keeps the empty-state sentence. Cards are validated again in `gen_audio_core::cards` before a document is treated as renderable. `SpectrogramPanel` and `Cube3D` must set `source` to `fixture-tone` and `notPodcast` to true. `BenchmarkCompare.measuredHere` must be false. Figures in the example board are copied from the 2026-10-06 compare notes (`gen_audio_core::benchmark`) and are not recomputed here. Inverse-HDR is not a publish ranking: those notes preferred the wider VibeVoice final even when Kokoro's inv-HDR rose more.
 
-The in-window spectrogram is a browser DFT of the side-pane voice profile: agent, voice, duration, perspective names, and the engine dropped into the load slot. The caption says that map is not the Python `specgram` and not a podcast. The cube stays a WebGL sketch of the sine fixture. The Python chain remains the publish path.
+The in-window spectrogram is a browser DFT of the side-pane voice profile: persona ids (up to 8), the Voice TTS model, duration, and the engine dropped into the load slot. Connector ids are not personas. The caption says that map is not the Python `specgram` and not a podcast. The pipeline cube card stays a WebGL sketch of the sine fixture. The spatial slide draws `points_preview` from a library cube JSON (signal, tonality, confidence, quality) when a clip has one. The Python chain remains the publish path.
 
 ## Connectors
 
 | Surface | Crate / binary | Session | Live behavior |
 | --- | --- | --- | --- |
-| MCP | `gen-audio-mcp` | None. `initialize` stores nothing. HTTP sets `X-Gen-Audio-Stateless` and never `Mcp-Session-Id`. | Tools call the Python CLIs or write a fixture tone. |
-| ACP | `gen-audio-acp` | In-memory `sessionId`, required by ACP, dropped on `session/cancel`. | `session/prompt` returns connector health or a refusal to synthesize. It does not call vendor APIs. |
+| MCP | `gen-audio-mcp` | None. `initialize` stores nothing. HTTP sets `X-Gen-Audio-Stateless` and never `Mcp-Session-Id`. `GET /ready` is listener readiness (`speech: false`). `GET /control/stream` is a short SSE snapshot of the process-local command ring, not a client session. | Tools call the Python CLIs, write a fixture tone, or queue a UI command. UI tools do not invent speech. |
+| ACP | `gen-audio-acp` | In-memory `sessionId`, required by ACP, dropped on `session/cancel`. | `health` / `status` return connector health. Other prompts call MCP voice-profile and UI tools and emit `tool_call` updates. It does not call vendor APIs and it does not invent speech. |
 | Harness | `gen-audio-harness` | None. JSONL trace on stdout. | Skips synth. Optional fixture and Python improve. |
 | Copilot | `gen-audio-connectors` | None | GitHub Models `POST /inference/chat/completions`, or `COPILOT_STUDIO_ENDPOINT` if you set one. Not the in-IDE Copilot SDK. |
 | Claude | same | None | Anthropic Messages API. `claude -p` only when `GEN_AUDIO_CLAUDE_CODE_CLI=1`. |

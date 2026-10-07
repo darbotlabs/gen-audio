@@ -1,25 +1,16 @@
-const files: File[] = [];
+import { MAX_AGENTS, PERSONAS, VOICE_MODELS, personaById, voiceById } from "./catalog";
 
-const MAX_AGENTS = 8;
+const files: File[] = [];
 
 export interface StudioSelection {
   engineId: string;
   engineTitle: string;
-  agent: string;
   agents: string[];
   voice: string;
   durationMin: number;
-  perspectives: string[];
 }
 
-const PERSONA_LABELS: Record<string, string> = {
-  anton: "Anton",
-  alice: "Alice",
-  khortana: "Khortana",
-  rocky: "Rocky",
-  sensei: "Sensei",
-  optimus: "Optimus",
-};
+let emitFn: () => void = () => {};
 
 export function bindStudio(
   board: HTMLElement,
@@ -29,69 +20,35 @@ export function bindStudio(
   const drop = required("#model-drop");
   const loaded = required("#loaded-model");
   const loadedId = required("#loaded-model-id");
-  const perspectives = required("#perspectives");
-  const agentSlots = required("#agent-slots");
-  const agentCount = required("#agent-count");
   const prompt = requiredTextarea("#prompt");
   const fileInput = requiredInput("#source-files");
   const fileList = required("#file-list");
+  const voice = requiredSelect("#voice");
+  voice.replaceChildren();
+  for (const model of VOICE_MODELS) {
+    const option = document.createElement("option");
+    option.value = model.id;
+    option.textContent = model.label;
+    voice.append(option);
+  }
+  voice.value = "kokoro_onnx";
+  renderAgents(["alice"]);
+
   const ghost = document.createElement("div");
   ghost.className = "drag-ghost";
   ghost.hidden = true;
   document.body.append(ghost);
 
-  const extraAgents: string[] = [];
-
-  addPerspective(perspectives, "");
-  required("#add-perspective").addEventListener("click", () => {
-    addPerspective(perspectives, "");
-    emit();
-  });
   required("#add-agent").addEventListener("click", () => {
-    const primary = selectValue("#agent");
-    const total = 1 + extraAgents.length;
-    if (total >= MAX_AGENTS) {
-      status.textContent = `Max ${MAX_AGENTS} agents per track.`;
-      return;
-    }
-    const pool = Object.keys(PERSONA_LABELS).filter((id) => id !== primary && !extraAgents.includes(id));
-    const next = pool[0] ?? primary;
-    extraAgents.push(next);
-    renderAgentSlots();
+    const current = readAgents();
+    if (current.length >= MAX_AGENTS) return;
+    const next = PERSONAS.find((persona) => !current.includes(persona.id));
+    if (!next) return;
+    renderAgents([...current, next.id]);
     emit();
   });
-  for (const selector of ["#agent", "#voice", "#duration"]) {
-    required(selector).addEventListener("change", () => {
-      if (selector === "#agent") {
-        // Keep extras from duplicating primary
-        const primary = selectValue("#agent");
-        for (let i = extraAgents.length - 1; i >= 0; i -= 1) {
-          if (extraAgents[i] === primary) extraAgents.splice(i, 1);
-        }
-        renderAgentSlots();
-      }
-      emit();
-    });
-  }
-  perspectives.addEventListener("input", emit);
-  agentSlots.addEventListener("change", (event) => {
-    const target = event.target as HTMLSelectElement | null;
-    if (!target || !target.dataset.agentIndex) return;
-    const index = Number(target.dataset.agentIndex);
-    if (!Number.isInteger(index) || index < 0 || index >= extraAgents.length) return;
-    extraAgents[index] = target.value;
-    emit();
-  });
-  agentSlots.addEventListener("click", (event) => {
-    const target = event.target as HTMLElement | null;
-    const btn = target?.closest<HTMLButtonElement>("[data-remove-agent]");
-    if (!btn) return;
-    const index = Number(btn.dataset.removeAgent);
-    if (!Number.isInteger(index)) return;
-    extraAgents.splice(index, 1);
-    renderAgentSlots();
-    emit();
-  });
+  voice.addEventListener("change", emit);
+  required("#duration").addEventListener("change", emit);
 
   fileInput.addEventListener("change", () => {
     if (fileInput.files) addFiles(fileInput.files, fileList);
@@ -105,15 +62,7 @@ export function bindStudio(
     }
   });
   required("#generate-podcast").addEventListener("click", () => {
-    const model = loaded.dataset.engineTitle || "none";
-    const names = files.map((file) => file.name).join(", ") || "no files";
-    const people = participantNames(perspectives).join(", ") || "none";
-    const agents = collectAgents().map((id) => PERSONA_LABELS[id] ?? id).join(", ");
-    const voice = selectValue("#voice");
-    status.textContent =
-      `Podcast request: Agent personas [${agents}], Voice TTS ${voice}, model ${model}, ` +
-      `duration ${selectValue("#duration")} min, perspectives ${people}, files ${names}. ` +
-      "This window records the request and does not synthesize audio.";
+    status.textContent = describeRequest();
   });
 
   let drag: { card: HTMLElement; pointerId: number; startX: number; startY: number; active: boolean } | null = null;
@@ -121,7 +70,7 @@ export function bindStudio(
   board.addEventListener("pointerdown", (event) => {
     if (event.button !== 0) return;
     const target = event.target as HTMLElement | null;
-    if (!target || target.closest("button, a, input, select, textarea, canvas, audio")) return;
+    if (!target || target.closest("button, a, input, select, textarea, canvas")) return;
     const card = target.closest<HTMLElement>(".engine-source");
     if (!card) return;
     drag = { card, pointerId: event.pointerId, startX: event.clientX, startY: event.clientY, active: false };
@@ -155,12 +104,8 @@ export function bindStudio(
       loaded.dataset.engineId = id;
       loadedId.textContent = id;
       drop.classList.add("is-loaded");
-      // Sync Voice dropdown to dragged engine when it matches a TTS id
-      const voiceSel = document.querySelector<HTMLSelectElement>("#voice");
-      if (voiceSel && id && Array.from(voiceSel.options).some((o) => o.value === id)) {
-        voiceSel.value = id;
-      }
-      status.textContent = `Loaded voice model ${title} (${id}). Voice TTS synced.`;
+      if (voiceById(id)) voice.value = id;
+      status.textContent = `Loaded voice model ${title} (${id}).`;
       emit();
     }
     drop.classList.remove("is-hot");
@@ -170,70 +115,120 @@ export function bindStudio(
   };
   board.addEventListener("pointerup", finish);
   board.addEventListener("pointercancel", finish);
-  renderAgentSlots();
+
+  emitFn = () => {
+    onChange(readSelection());
+  };
   emit();
 
-  function collectAgents(): string[] {
-    const primary = selectValue("#agent");
-    return [primary, ...extraAgents].slice(0, MAX_AGENTS);
+  function emit(): void {
+    emitFn();
   }
+}
 
-  function renderAgentSlots(): void {
-    agentSlots.replaceChildren();
-    extraAgents.forEach((id, index) => {
-      const row = document.createElement("div");
-      row.className = "agent-slot-row";
-      const sel = document.createElement("select");
-      sel.dataset.agentIndex = String(index);
-      sel.setAttribute("aria-label", `Agent ${index + 2}`);
-      for (const [value, label] of Object.entries(PERSONA_LABELS)) {
-        const opt = document.createElement("option");
-        opt.value = value;
-        opt.textContent = label;
-        if (value === id) opt.selected = true;
-        sel.append(opt);
-      }
+export function applySidepane(next: { agents?: string[]; voice?: string; durationMin?: number }): void {
+  if (next.agents && next.agents.length > 0) {
+    const ids = next.agents.filter((id) => personaById(id)).slice(0, MAX_AGENTS);
+    if (ids.length > 0) renderAgents(ids);
+  }
+  if (next.voice && voiceById(next.voice)) {
+    const voice = document.querySelector<HTMLSelectElement>("#voice");
+    if (voice) voice.value = next.voice;
+  }
+  if (typeof next.durationMin === "number") {
+    const duration = document.querySelector<HTMLSelectElement>("#duration");
+    if (duration) duration.value = String(next.durationMin);
+  }
+  emitFn();
+}
+
+export function readSelection(): StudioSelection {
+  const loaded = document.querySelector<HTMLElement>("#loaded-model");
+  const duration = Number(selectValue("#duration"));
+  return {
+    engineId: loaded?.dataset.engineId || "",
+    engineTitle: loaded?.dataset.engineTitle || "",
+    agents: readAgents(),
+    voice: selectValue("#voice") || "kokoro_onnx",
+    durationMin: Number.isFinite(duration) ? duration : 3,
+  };
+}
+
+export function describeRequest(): string {
+  const selection = readSelection();
+  const names = files.map((file) => file.name).join(", ") || "no files";
+  const personas = selection.agents.map((id) => personaById(id)?.name ?? id).join(", ");
+  const voice = voiceById(selection.voice);
+  const model = selection.engineTitle || "none";
+  return (
+    `Podcast request recorded: agents ${personas}, voice model ${voice?.label ?? selection.voice}, ` +
+    `loaded card ${model}, duration ${selection.durationMin} min, files ${names}. ` +
+    "synthesizedSpeech is false until a synth tool returns audio."
+  );
+}
+
+export function promptNote(): string {
+  const node = document.querySelector<HTMLTextAreaElement>("#prompt");
+  return (node?.value ?? "").slice(0, 200);
+}
+
+function renderAgents(ids: string[]): void {
+  const host = required("#agents");
+  const chosen = unique(ids).slice(0, MAX_AGENTS);
+  const list = chosen.length > 0 ? chosen : ["alice"];
+  host.replaceChildren();
+  list.forEach((id, index) => {
+    const row = document.createElement("div");
+    row.className = "agent-row";
+    const select = document.createElement("select");
+    select.className = "agent-slot";
+    select.setAttribute("aria-label", `Agent ${index + 1}`);
+    for (const persona of PERSONAS) {
+      const option = document.createElement("option");
+      option.value = persona.id;
+      option.textContent = persona.name;
+      if (persona.id === id) option.selected = true;
+      select.append(option);
+    }
+    select.addEventListener("change", () => {
+      renderAgents(readAgents());
+      emitFn();
+    });
+    row.append(select);
+    if (index > 0) {
       const remove = document.createElement("button");
       remove.type = "button";
-      remove.dataset.removeAgent = String(index);
+      remove.className = "agent-remove";
       remove.textContent = "×";
-      remove.title = "Remove agent";
-      row.append(sel, remove);
-      agentSlots.append(row);
-    });
-    const n = 1 + extraAgents.length;
-    agentCount.textContent = `${n} / ${MAX_AGENTS} agents`;
-  }
-
-  function emit(): void {
-    const duration = Number(selectValue("#duration"));
-    const agents = collectAgents();
-    onChange({
-      engineId: loaded.dataset.engineId || "",
-      engineTitle: loaded.dataset.engineTitle || "",
-      agent: agents[0] ?? "anton",
-      agents,
-      voice: selectValue("#voice"),
-      durationMin: Number.isFinite(duration) ? duration : 3,
-      perspectives: participantNames(perspectives),
-    });
-  }
+      remove.setAttribute("aria-label", `Remove agent ${index + 1}`);
+      remove.addEventListener("click", () => {
+        const next = readAgents().filter((_, slot) => slot !== index);
+        renderAgents(next);
+        emitFn();
+      });
+      row.append(remove);
+    }
+    host.append(row);
+  });
+  const add = document.querySelector<HTMLButtonElement>("#add-agent");
+  if (add) add.disabled = list.length >= MAX_AGENTS;
 }
 
-function addPerspective(host: HTMLElement, value: string): void {
-  const input = document.createElement("input");
-  input.type = "text";
-  input.className = "perspective-slot";
-  input.placeholder = "Participant";
-  input.value = value;
-  input.setAttribute("aria-label", "Perspective participant");
-  host.append(input);
+function readAgents(): string[] {
+  return unique(
+    Array.from(document.querySelectorAll<HTMLSelectElement>("#agents .agent-slot")).map((node) => node.value),
+  ).slice(0, MAX_AGENTS);
 }
 
-function participantNames(host: HTMLElement): string[] {
-  return Array.from(host.querySelectorAll<HTMLInputElement>(".perspective-slot"))
-    .map((node) => node.value.trim())
-    .filter((value) => value.length > 0);
+function unique(ids: string[]): string[] {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const id of ids) {
+    if (!id || seen.has(id) || !personaById(id)) continue;
+    seen.add(id);
+    out.push(id);
+  }
+  return out;
 }
 
 function addFiles(list: FileList, host: HTMLElement): void {
@@ -257,6 +252,12 @@ function selectValue(selector: string): string {
 
 function required(selector: string): HTMLElement {
   const node = document.querySelector<HTMLElement>(selector);
+  if (!node) throw new Error(`missing ${selector}`);
+  return node;
+}
+
+function requiredSelect(selector: string): HTMLSelectElement {
+  const node = document.querySelector<HTMLSelectElement>(selector);
   if (!node) throw new Error(`missing ${selector}`);
   return node;
 }

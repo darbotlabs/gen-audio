@@ -30,7 +30,9 @@
             "PodcastCast",
             "ServeHealth",
             "BenchmarkCompare",
-            "ConnectorStatus"
+            "ConnectorStatus",
+            "LibraryClip",
+            "VoiceProfile"
           ]
         },
         "title": { "type": "string", "minLength": 1, "maxLength": 120 },
@@ -45,7 +47,9 @@
         { "if": { "properties": { "kind": { "const": "PodcastCast" } } }, "then": { "properties": { "body": { "$ref": "#/$defs/podcastCast" } } } },
         { "if": { "properties": { "kind": { "const": "ServeHealth" } } }, "then": { "properties": { "body": { "$ref": "#/$defs/serveHealth" } } } },
         { "if": { "properties": { "kind": { "const": "BenchmarkCompare" } } }, "then": { "properties": { "body": { "$ref": "#/$defs/benchmark" } } } },
-        { "if": { "properties": { "kind": { "const": "ConnectorStatus" } } }, "then": { "properties": { "body": { "$ref": "#/$defs/connectorStatus" } } } }
+        { "if": { "properties": { "kind": { "const": "ConnectorStatus" } } }, "then": { "properties": { "body": { "$ref": "#/$defs/connectorStatus" } } } },
+        { "if": { "properties": { "kind": { "const": "LibraryClip" } } }, "then": { "properties": { "body": { "$ref": "#/$defs/libraryClip" } } } },
+        { "if": { "properties": { "kind": { "const": "VoiceProfile" } } }, "then": { "properties": { "body": { "$ref": "#/$defs/voiceProfile" } } } }
       ]
     },
     "engineStatus": {
@@ -119,6 +123,46 @@
             }
           }
         }
+      }
+    },
+    "libraryClip": {
+      "type": "object",
+      "required": ["engineId", "status", "synthesizedSpeech", "summary"],
+      "properties": {
+        "engineId": { "type": "string" },
+        "status": { "enum": ["ok", "running", "weights_absent", "unavailable", "external"] },
+        "synthesizedSpeech": { "type": "boolean" },
+        "summary": { "type": "string" },
+        "wavUrl": { "type": "string" },
+        "duration_s": { "type": "number" },
+        "sample_rate": { "type": "integer" },
+        "cubePngUrl": { "type": "string" },
+        "cubeJsonUrl": { "type": "string" },
+        "sidecarUrl": { "type": "string" },
+        "semanticName": { "type": "string" },
+        "faceName": { "type": "string" },
+        "inv_hdr": { "type": "number" }
+      }
+    },
+    "voiceProfile": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["agentName", "personaId", "voiceModel", "tone", "purpose", "domain", "accent", "traits", "refs", "spectrogram2d", "spectrogram3d", "notPodcast", "disclaimer"],
+      "properties": {
+        "agentName": { "type": "string", "minLength": 1, "maxLength": 40 },
+        "personaId": { "type": "string" },
+        "voiceModel": { "type": "string" },
+        "tone": { "type": "string" },
+        "purpose": { "type": "string" },
+        "domain": { "type": "string" },
+        "accent": { "type": "string" },
+        "traits": { "type": "string", "minLength": 12 },
+        "refs": { "type": "array", "minItems": 1, "maxItems": 8, "items": { "type": "string" } },
+        "spectrogram2d": { "const": "browser-profile-map" },
+        "spectrogram3d": { "enum": ["none", "library-cube-hook", "fixture-cube"] },
+        "cubeJsonUrl": { "type": "string" },
+        "notPodcast": { "const": true },
+        "disclaimer": { "type": "string", "minLength": 12 }
       }
     },
     "connectorStatus": {

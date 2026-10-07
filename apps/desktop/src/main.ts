@@ -1,16 +1,22 @@
 import example from "../../../schemas/examples/viewport.example.json";
-import { profilePreview, voiceProfileSchema, type ProfilePreview, type VoiceSelection } from "./profiles";
+import { bindCube, clearCube, loadCube, setCubeLayer, setCubeScrub } from "./cubeview";
+import { applyClipNames, harvestNames } from "./library-meta";
+import { pauseClip, playClip, seekClip } from "./playback";
+import { profilePreview, type ProfilePreview, type VoiceSelection } from "./profiles";
 import {
   bindSlideScroll,
   goToSlide,
+  goToSlideId,
   moveFocus,
   moveSlide,
+  paintProfileCanvases,
   renderBoard,
   showRejected,
   slides,
 } from "./render";
-import { bindStudio, type StudioSelection } from "./studio";
+import { applySidepane, bindStudio, describeRequest, promptNote, readSelection, type StudioSelection } from "./studio";
 import { drawCube, drawSpectrogram, makeFixture, play } from "./signal";
+import { voiceById } from "./catalog";
 import { CONNECTOR_MODES, validateViewport, type ViewportDocument } from "./validate";
 
 function required(id: string): HTMLElement {
@@ -26,262 +32,18 @@ const fixture = makeFixture();
 let selection: VoiceSelection = {
   engineId: "",
   engineTitle: "",
-  agent: "anton",
-  agents: ["anton"],
+  agents: ["alice"],
   voice: "kokoro_onnx",
   durationMin: 3,
-  perspectives: [],
 };
 let activePreview: ProfilePreview = profilePreview(selection);
-let cubeAngle = 0.6;
-
-function bindLibraryPlayback(): void {
-  board.querySelectorAll<HTMLAudioElement>("audio.library-audio").forEach((audio) => {
-    const tile = audio.closest(".card");
-    const timeLabel = tile?.querySelector<HTMLElement>("[data-audio-time]");
-    const syncTime = () => {
-      if (!timeLabel) return;
-      const cur = formatClock(audio.currentTime || 0);
-      const dur = formatClock(Number.isFinite(audio.duration) ? audio.duration : 0);
-      timeLabel.textContent = `${cur} / ${dur}`;
-    };
-    audio.ontimeupdate = syncTime;
-    audio.onloadedmetadata = syncTime;
-    audio.onplay = () => {
-      status.textContent = `Playing library clip ${audio.dataset.wavUrl || audio.src}`;
-    };
-    audio.onpause = () => {
-      status.textContent = `Paused library clip @ ${formatClock(audio.currentTime)}`;
-    };
-  });
-  board.querySelectorAll<HTMLButtonElement>("[data-action='bind-cube']").forEach((node) => {
-    node.onclick = () => {
-      const jsonUrl = node.dataset.cubeJsonUrl || "";
-      const pngUrl = node.dataset.cubePngUrl || "";
-      const clipId = node.dataset.clipId || "";
-      void bindCubeFromLibrary(jsonUrl, pngUrl, clipId);
-    };
-  });
-  // Auto-select first real WAV for transport demos
-  const first = board.querySelector<HTMLAudioElement>("audio.library-audio");
-  if (first) {
-    first.dataset.primaryTransport = "1";
-  }
-}
-
-function formatClock(seconds: number): string {
-  if (!Number.isFinite(seconds) || seconds < 0) return "0:00";
-  const m = Math.floor(seconds / 60);
-  const s = Math.floor(seconds % 60);
-  return `${m}:${String(s).padStart(2, "0")}`;
-}
-
-async function bindCubeFromLibrary(jsonUrl: string, pngUrl: string, clipId: string): Promise<void> {
-  const cube = board.querySelector<HTMLCanvasElement>('[data-canvas="cube"]');
-  const note = board.querySelector<HTMLElement>(".cube-bind-note");
-  if (!cube) {
-    status.textContent = "No Cube3D canvas on current board — load example and open Pipeline slide.";
-    return;
-  }
-  if (!jsonUrl) {
-    status.textContent = "Clip has no cube JSON — cannot bind (honest).";
-    return;
-  }
-  try {
-    const res = await fetch(jsonUrl);
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    const data = await res.json();
-    cube.dataset.painted = "library";
-    cube.dataset.cubeJsonUrl = jsonUrl;
-    cube.dataset.clipId = clipId;
-    drawLibraryCube(cube, data);
-    if (note) {
-      note.textContent =
-        `Interactive cube bound to library clip ${clipId || jsonUrl} — dataset≠fixture; layers signal/tonality/confidence/quality.`;
-    }
-    const pill = cube.closest(".face")?.querySelector(".pill");
-    if (pill) {
-      pill.textContent = "library-bound";
-      pill.classList.remove("warn");
-    }
-    status.textContent = `F5 cube bound to ${jsonUrl}` + (pngUrl ? ` (+ ${pngUrl})` : "");
-    // Jump to pipeline slide if cube is there
-    const slide = cube.closest<HTMLElement>(".slide");
-    if (slide?.dataset.slideIndex) goToSlide(board, Number(slide.dataset.slideIndex));
-  } catch (err) {
-    status.textContent = `Cube bind failed: ${String(err)}`;
-  }
-}
-
-function drawLibraryCube(canvas: HTMLCanvasElement, data: unknown): void {
-  // Prefer real library points if present; else draw fixture-style cloud labeled library-bound
-  const points: number[] = [];
-  const colors: number[] = [];
-  const record = data && typeof data === "object" ? (data as Record<string, unknown>) : {};
-  const layers = Array.isArray(record.layers) ? record.layers : ["signal", "tonality", "confidence", "quality"];
-  const grid = Array.isArray(record.points)
-    ? (record.points as unknown[])
-    : Array.isArray(record.voxels)
-      ? (record.voxels as unknown[])
-      : null;
-  if (grid) {
-    for (const pt of grid.slice(0, 4000)) {
-      if (!pt || typeof pt !== "object") continue;
-      const row = pt as Record<string, unknown>;
-      const x = Number(row.x ?? row[0] ?? 0);
-      const y = Number(row.y ?? row[1] ?? 0);
-      const z = Number(row.z ?? row[2] ?? 0);
-      if (![x, y, z].every(Number.isFinite)) continue;
-      points.push(x, y, z);
-      const li = Number(row.layer ?? row.l ?? 0) % 4;
-      const palette = [
-        [0.2, 0.85, 0.7],
-        [0.85, 0.55, 0.2],
-        [0.4, 0.55, 0.95],
-        [0.9, 0.35, 0.7],
-      ][li] ?? [0.3, 0.7, 0.7];
-      colors.push(palette[0], palette[1], palette[2], 1);
-    }
-  }
-  if (points.length < 9) {
-    // Synthesize layer point cloud from inv_hdr / summary fields so UI stays honest about binding
-    const inv = typeof record.inv_hdr === "number" ? record.inv_hdr : 0.1;
-    for (let layer = 0; layer < 4; layer += 1) {
-      for (let i = 0; i < 200; i += 1) {
-        const a = (i / 200) * Math.PI * 2;
-        const r = 0.3 + layer * 0.15 + inv;
-        points.push(Math.cos(a) * r, (layer / 3) * 1.6 - 0.8, Math.sin(a) * r * (0.6 + inv));
-        const palette = [
-          [0.2, 0.85, 0.7],
-          [0.85, 0.55, 0.2],
-          [0.4, 0.55, 0.95],
-          [0.9, 0.35, 0.7],
-        ][layer];
-        colors.push(palette[0], palette[1], palette[2], 1);
-      }
-    }
-    canvas.dataset.cubeLayers = layers.map(String).join("/");
-  }
-  paintCubePoints(canvas, points, colors, cubeAngle);
-  bindCubeDrag(canvas);
-}
-
-function paintCubePoints(canvas: HTMLCanvasElement, points: number[], colors: number[], angle: number): void {
-  const gl = canvas.getContext("webgl");
-  if (!gl) {
-    const ctx = canvas.getContext("2d");
-    if (ctx) {
-      canvas.width = 480;
-      canvas.height = 220;
-      ctx.fillStyle = "#0a0c10";
-      ctx.fillRect(0, 0, 480, 220);
-      ctx.fillStyle = "#3ee0c5";
-      ctx.fillText("WebGL unavailable — library cube bound (2D fallback)", 12, 24);
-      ctx.fillText(canvas.dataset.cubeJsonUrl || "", 12, 44);
-    }
-    return;
-  }
-  canvas.width = 480;
-  canvas.height = 220;
-  gl.viewport(0, 0, canvas.width, canvas.height);
-  const vs = `
-    attribute vec3 a_pos;
-    attribute vec4 a_color;
-    uniform float u_angle;
-    varying vec4 v_color;
-    void main() {
-      float c = cos(u_angle);
-      float s = sin(u_angle);
-      float x = a_pos.x * c - a_pos.z * s;
-      float z = a_pos.x * s + a_pos.z * c;
-      gl_Position = vec4(x * 0.85, a_pos.y * 0.75, 0.0, 1.4 + z);
-      gl_PointSize = 3.0;
-      v_color = a_color;
-    }
-  `;
-  const fs = `
-    precision mediump float;
-    varying vec4 v_color;
-    void main() { gl_FragColor = v_color; }
-  `;
-  const program = link(gl, vs, fs);
-  gl.useProgram(program);
-  bindAttr(gl, program, "a_pos", 3, new Float32Array(points));
-  bindAttr(gl, program, "a_color", 4, new Float32Array(colors));
-  const loc = gl.getUniformLocation(program, "u_angle");
-  gl.uniform1f(loc, angle);
-  gl.clearColor(0.04, 0.05, 0.07, 1);
-  gl.clear(gl.COLOR_BUFFER_BIT);
-  gl.drawArrays(gl.POINTS, 0, points.length / 3);
-  (canvas as HTMLCanvasElement & { __cubePoints?: number[]; __cubeColors?: number[] }).__cubePoints = points;
-  (canvas as HTMLCanvasElement & { __cubePoints?: number[]; __cubeColors?: number[] }).__cubeColors = colors;
-}
-
-function bindCubeDrag(canvas: HTMLCanvasElement): void {
-  if (canvas.dataset.dragBound === "1") return;
-  canvas.dataset.dragBound = "1";
-  let dragging = false;
-  let lastX = 0;
-  canvas.addEventListener("pointerdown", (e) => {
-    dragging = true;
-    lastX = e.clientX;
-    canvas.setPointerCapture(e.pointerId);
-  });
-  canvas.addEventListener("pointermove", (e) => {
-    if (!dragging) return;
-    const dx = e.clientX - lastX;
-    lastX = e.clientX;
-    cubeAngle += dx * 0.01;
-    const ext = canvas as HTMLCanvasElement & { __cubePoints?: number[]; __cubeColors?: number[] };
-    if (ext.__cubePoints && ext.__cubeColors) {
-      paintCubePoints(canvas, ext.__cubePoints, ext.__cubeColors, cubeAngle);
-    }
-  });
-  const end = () => {
-    dragging = false;
-  };
-  canvas.addEventListener("pointerup", end);
-  canvas.addEventListener("pointercancel", end);
-}
-
-function link(gl: WebGLRenderingContext, vsSource: string, fsSource: string): WebGLProgram {
-  const program = gl.createProgram();
-  if (!program) throw new Error("webgl program");
-  gl.attachShader(program, shader(gl, gl.VERTEX_SHADER, vsSource));
-  gl.attachShader(program, shader(gl, gl.FRAGMENT_SHADER, fsSource));
-  gl.linkProgram(program);
-  return program;
-}
-
-function shader(gl: WebGLRenderingContext, type: number, source: string): WebGLShader {
-  const sh = gl.createShader(type);
-  if (!sh) throw new Error("shader");
-  gl.shaderSource(sh, source);
-  gl.compileShader(sh);
-  return sh;
-}
-
-function bindAttr(gl: WebGLRenderingContext, program: WebGLProgram, name: string, size: number, data: Float32Array): void {
-  const buffer = gl.createBuffer();
-  gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
-  gl.bufferData(gl.ARRAY_BUFFER, data, gl.STATIC_DRAW);
-  const loc = gl.getAttribLocation(program, name);
-  gl.enableVertexAttribArray(loc);
-  gl.vertexAttribPointer(loc, size, gl.FLOAT, false, 0, 0);
-}
+let controlCursor = 0;
+const seenControl = new Set<number>();
 
 bindSlideScroll(board);
 
 bindStudio(board, status, (next: StudioSelection) => {
-  selection = {
-    engineId: next.engineId,
-    engineTitle: next.engineTitle,
-    agent: next.agent,
-    agents: next.agents,
-    voice: next.voice,
-    durationMin: next.durationMin,
-    perspectives: next.perspectives,
-  };
+  selection = next;
   if (paintProfile()) status.textContent = activePreview.caption;
 });
 
@@ -295,29 +57,13 @@ function show(documentIn: unknown): void {
   const doc = documentIn as ViewportDocument;
   renderBoard(board, empty, doc);
   paintProfile();
-  bindLibraryPlayback();
-  paintVoiceProfileTiles();
+  paintProfileCanvases();
+  bindCubeCanvas();
+  bindRename();
+  void harvestLibrary();
   const n = slides(board).length;
-  status.textContent = `${doc.cards.length} cards · ${n} snap slides · Agent≠Voice · Library transport ready`;
+  status.textContent = `${doc.cards.length} cards · ${n} snap slides · spectrogram follows side pane (preview, not speech)`;
   requestAnimationFrame(() => goToSlide(board, 0));
-}
-
-function paintVoiceProfileTiles(): void {
-  board.querySelectorAll<HTMLElement>('.card[data-kind="VoiceProfile"]').forEach((tile) => {
-    const canvas = tile.querySelector<HTMLCanvasElement>('[data-canvas="vp-spec-2d"]');
-    const back = tile.querySelector<HTMLCanvasElement>('[data-canvas="vp-back-2d"]');
-    const schema = voiceProfileSchema({
-      ...selection,
-      agent: tile.dataset.personaId || selection.agent,
-    });
-    const preview = profilePreview({
-      ...selection,
-      agent: schema.personaId,
-      agents: [schema.personaId],
-    });
-    if (canvas) drawSpectrogram(canvas, preview.before, `${schema.agentname} · ${schema.ttsModel}`);
-    if (back) drawSpectrogram(back, preview.after, `${schema.agentname} flipside`);
-  });
 }
 
 function paintProfile(): boolean {
@@ -341,15 +87,96 @@ function paintProfile(): boolean {
     node.textContent = activePreview.caption;
   });
   if (panel) panel.dataset.profileKey = activePreview.key;
-  if (cube && cube.dataset.painted !== "library") {
+  if (cube && cube.dataset.painted !== "fixture") {
     drawCube(cube, fixture);
     cube.dataset.painted = "fixture";
-    bindCubeDrag(cube);
   }
   board.querySelectorAll<HTMLButtonElement>("[data-action='play-profile']").forEach((node) => {
     node.onclick = () => play(activePreview.before);
   });
   return before !== null;
+}
+
+function bindCubeCanvas(): void {
+  const canvas = document.querySelector<HTMLCanvasElement>("#cube-viewport");
+  if (!canvas || canvas.dataset.bound === "1") return;
+  canvas.dataset.bound = "1";
+  bindCube(canvas);
+  document.querySelector("#cube-scrub")?.addEventListener("input", (event) => {
+    const input = event.target as HTMLInputElement;
+    setCubeScrub(Number(input.value) / 1000);
+  });
+  document.querySelectorAll<HTMLInputElement>("[data-cube-layer]").forEach((box) => {
+    box.addEventListener("change", () => {
+      setCubeLayer(box.dataset.cubeLayer || "", box.checked);
+    });
+  });
+}
+
+function bindRename(): void {
+  board.querySelectorAll<HTMLButtonElement>("[data-action='rename-clip']").forEach((node) => {
+    node.addEventListener("click", (event) => {
+      event.stopPropagation();
+      const id = node.dataset.clipId;
+      const tile = node.closest<HTMLElement>(".card");
+      if (!id || !tile) return;
+      const semantic = tile.querySelector<HTMLInputElement>("[data-field='semantic']")?.value ?? "";
+      const face = tile.querySelector<HTMLInputElement>("[data-field='face']")?.value ?? "";
+      applyClipNames(tile, semantic, face);
+      status.textContent = `Renamed ${id} in this window. The WAV file was not rewritten.`;
+      void mcpCall("library_rename", { clipId: id, semanticName: semantic, faceName: face });
+    });
+  });
+  board.querySelectorAll<HTMLButtonElement>("[data-action='open-cube']").forEach((node) => {
+    node.addEventListener("click", (event) => {
+      event.stopPropagation();
+      void openCube(node.dataset.cubeJson || "", "profile");
+    });
+  });
+}
+
+async function harvestLibrary(): Promise<void> {
+  const tiles = board.querySelectorAll<HTMLElement>(".library-tile");
+  for (const tile of Array.from(tiles)) {
+    const wav = tile.dataset.wavUrl;
+    if (!wav) continue;
+    const harvested = await harvestNames(wav, tile.dataset.sidecarUrl || undefined);
+    const semantic = tile.querySelector<HTMLInputElement>("[data-field='semantic']");
+    const face = tile.querySelector<HTMLInputElement>("[data-field='face']");
+    if (semantic && !semantic.value) semantic.value = harvested.semantic;
+    if (face && !face.value) face.value = tile.dataset.faceName || harvested.face;
+    const note = tile.querySelector(".harvest-note");
+    if (note) {
+      note.textContent = `Harvested from ${harvested.source}. Rename changes the labels in this window only.`;
+    }
+    if (!tile.dataset.semanticName) tile.dataset.semanticName = harvested.semantic;
+  }
+}
+
+async function openCube(url: string, source: string): Promise<void> {
+  goToSlideId(board, "spatial");
+  const caption = document.querySelector<HTMLElement>("#cube-caption");
+  if (!url) {
+    clearCube("This tile has no cube JSON. Magpie, VibeVoice, and Pocket do not get a stand-in cloud.");
+    return;
+  }
+  const message = await loadCube(url);
+  if (caption) caption.textContent = `${source}: ${message}`;
+}
+
+function selectTile(id: string): void {
+  const tile = board.querySelector<HTMLElement>(`.card[data-id="${CSS.escape(id)}"]`);
+  if (!tile) {
+    status.textContent = `No tile ${id}.`;
+    return;
+  }
+  board.querySelectorAll<HTMLElement>(".card.is-selected").forEach((node) => node.classList.remove("is-selected"));
+  tile.classList.add("is-selected");
+  const slide = tile.closest<HTMLElement>(".slide");
+  if (slide?.dataset.slide) goToSlideId(board, slide.dataset.slide);
+  tile.focus({ preventScroll: true });
+  const cube = tile.dataset.cubeJson;
+  if (cube) void openCube(cube, id);
 }
 
 async function refreshConnectors(doc: ViewportDocument): Promise<ViewportDocument> {
@@ -382,45 +209,6 @@ document.querySelector("#show-example")?.addEventListener("click", () => {
 document.querySelector("#show-empty")?.addEventListener("click", () => {
   show({ version: "1.0", title: "Darbot Gen-Audio", columns: 3, cards: [] });
 });
-document.querySelector("#goto-library-clips")?.addEventListener("click", () => {
-  const list = slides(board);
-  const idx = list.findIndex((s) => s.dataset.slide === "library-clips");
-  if (idx >= 0) goToSlide(board, idx);
-  window.setTimeout(() => {
-    (window as unknown as { __gaSeekMid?: () => void }).__gaSeekMid?.();
-  }, 400);
-  status.textContent = "Library clips slide — HTML audio play/pause/scrub on real WAVs.";
-});
-document.querySelector("#goto-voice-profiles")?.addEventListener("click", () => {
-  const list = slides(board);
-  const idx = list.findIndex((s) => s.dataset.slide === "library-models");
-  if (idx >= 0) goToSlide(board, idx);
-  window.setTimeout(() => {
-    const tile = board.querySelector<HTMLElement>('.card[data-kind="VoiceProfile"]');
-    if (tile && !tile.classList.contains("is-flipped")) {
-      tile.querySelector<HTMLButtonElement>(".flip-toggle")?.click();
-    }
-  }, 350);
-  status.textContent = "Voice profile flipcards — schema on flipside.";
-});
-document.querySelector("#goto-cube-bind")?.addEventListener("click", () => {
-  const list = slides(board);
-  // Prefer pipeline slide with Cube3D, after binding from library clip metadata
-  const bind = board.querySelector<HTMLButtonElement>("[data-action='bind-cube']");
-  if (bind && bind.dataset.cubeJsonUrl) {
-    bind.click();
-  } else {
-    const cubeSlide = list.findIndex((s) => s.querySelector('[data-canvas="cube"]'));
-    if (cubeSlide >= 0) goToSlide(board, cubeSlide);
-    void bindCubeFromLibrary(
-      "/library/library_kokoro_onnx_cube3d.json",
-      "/library/library_kokoro_onnx_cube3d.png",
-      "kokoro_onnx",
-    );
-  }
-  status.textContent = "Binding cube to library kokoro-onnx JSON (dataset ≠ fixture).";
-});
-
 document.querySelector("#run-improve")?.addEventListener("click", async () => {
   try {
     const { invoke } = await import("@tauri-apps/api/core");
@@ -432,10 +220,30 @@ document.querySelector("#run-improve")?.addEventListener("click", async () => {
     status.textContent = `Python improve needs the desktop shell. ${String(error)}`;
   }
 });
+document.querySelector("#generate-podcast")?.addEventListener("click", () => {
+  void submitGenerate();
+});
+
+document.querySelectorAll<HTMLButtonElement>("#layer-switch [data-layer]").forEach((button) => {
+  button.addEventListener("click", () => {
+    const layer = button.dataset.layer;
+    const target =
+      layer === "models" ? "models" : layer === "clips" ? "library" : layer === "video" ? "video" : layer === "cube" ? "spatial" : "";
+    if (target) goToSlideId(board, target);
+  });
+});
+
+board.addEventListener("click", (event) => {
+  const target = event.target as HTMLElement | null;
+  if (!target || target.closest("button, input, audio, select, textarea, a")) return;
+  const card = target.closest<HTMLElement>(".card");
+  if (!card?.dataset.id) return;
+  selectTile(card.dataset.id);
+});
 
 document.addEventListener("keydown", (event) => {
   const target = event.target as HTMLElement | null;
-  if (target && ["INPUT", "TEXTAREA", "SELECT", "BUTTON", "A", "AUDIO"].includes(target.tagName)) return;
+  if (target && ["INPUT", "TEXTAREA", "SELECT", "BUTTON", "A"].includes(target.tagName)) return;
   if (event.key === "PageDown" || event.key === "ArrowDown") {
     event.preventDefault();
     moveSlide(board, 1);
@@ -465,17 +273,136 @@ document.addEventListener("keydown", (event) => {
   }
 });
 
-/** Seek primary library audio to mid-clip for F3 proof screenshots. */
-(window as unknown as { __gaSeekMid?: () => void }).__gaSeekMid = () => {
-  const audio = board.querySelector<HTMLAudioElement>("audio.library-audio");
-  if (!audio) return;
-  const go = () => {
-    const mid = (audio.duration || 60) * 0.35;
-    audio.currentTime = mid;
-    void audio.play();
+async function submitGenerate(): Promise<void> {
+  const selectionNow = readSelection();
+  const voice = voiceById(selectionNow.voice);
+  status.textContent = describeRequest();
+  const recorded = await mcpCall("ui_generate", {
+    agents: selectionNow.agents,
+    voice: selectionNow.voice,
+    durationMin: selectionNow.durationMin,
+    promptNote: promptNote(),
+  });
+  if (!recorded) {
+    status.textContent = `${describeRequest()} MCP is not listening on 127.0.0.1:8765.`;
+    return;
+  }
+  if (voice?.synthAdapter) {
+    const synth = await mcpCall("synth", {
+      output: "request.wav",
+      script: "examples/podcast_script_sample.txt",
+    });
+    status.textContent = `Generate → MCP synth (sample script, not the pasted prompt): ${clip(synth)}`;
+    return;
+  }
+  status.textContent = `Generate → MCP ui_generate. No synth adapter for ${voice?.label ?? selectionNow.voice}. ${clip(recorded)}`;
+}
+
+async function mcpCall(name: string, args: Record<string, unknown>): Promise<unknown | null> {
+  try {
+    const response = await fetch("http://127.0.0.1:8765/mcp", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        jsonrpc: "2.0",
+        id: 1,
+        method: "tools/call",
+        params: { name, arguments: args },
+      }),
+    });
+    if (!response.ok) return null;
+    const payload: unknown = await response.json();
+    noteControlSeq(payload);
+    return payload;
+  } catch {
+    return null;
+  }
+}
+
+function noteControlSeq(payload: unknown): void {
+  if (!payload || typeof payload !== "object") return;
+  const text = (payload as { result?: { content?: Array<{ text?: string }> } }).result?.content?.[0]?.text;
+  if (!text) return;
+  try {
+    const body = JSON.parse(text) as { seq?: number; sidepane?: { seq?: number } };
+    if (typeof body.seq === "number") seenControl.add(body.seq);
+    if (typeof body.sidepane?.seq === "number") seenControl.add(body.sidepane.seq);
+  } catch {
+    /* tool text is not a control envelope */
+  }
+}
+
+function clip(value: unknown): string {
+  const text = JSON.stringify(value);
+  return text.length > 280 ? `${text.slice(0, 280)}…` : text;
+}
+
+function applyControl(event: { seq?: number; op?: string; args?: Record<string, unknown> }): void {
+  if (typeof event.seq === "number") {
+    if (seenControl.has(event.seq)) return;
+    seenControl.add(event.seq);
+    controlCursor = Math.max(controlCursor, event.seq);
+  }
+  const args = event.args ?? {};
+  if (event.op === "navigate" && typeof args.slide === "string") {
+    goToSlideId(board, args.slide);
+    if (typeof args.tileId === "string") selectTile(args.tileId);
+  } else if (event.op === "select" && typeof args.tileId === "string") {
+    selectTile(args.tileId);
+  } else if (event.op === "playback" && typeof args.tileId === "string") {
+    const action = String(args.action ?? "");
+    if (action === "play") void playClip(args.tileId).then((result) => {
+      status.textContent = result === "playing" ? `Playing ${args.tileId}` : result;
+    });
+    else if (action === "pause") status.textContent = pauseClip(args.tileId);
+    else if (action === "seek") status.textContent = seekClip(args.tileId, Number(args.seconds));
+  } else if (event.op === "sidepane") {
+    applySidepane({
+      agents: Array.isArray(args.agents) ? args.agents.map(String) : undefined,
+      voice: typeof args.voice === "string" ? args.voice : undefined,
+      durationMin: typeof args.durationMin === "number" ? args.durationMin : undefined,
+    });
+  } else if (event.op === "generate") {
+    applySidepane({
+      agents: Array.isArray(args.agents) ? args.agents.map(String) : undefined,
+      voice: typeof args.voice === "string" ? args.voice : undefined,
+      durationMin: typeof args.durationMin === "number" ? args.durationMin : undefined,
+    });
+    status.textContent = "Remote generate request recorded. synthesizedSpeech is false.";
+  } else if (event.op === "rename" && typeof args.clipId === "string") {
+    const tile = board.querySelector<HTMLElement>(`.card[data-id="${CSS.escape(args.clipId)}"]`);
+    if (!tile) return;
+    applyClipNames(
+      tile,
+      typeof args.semanticName === "string" ? args.semanticName : undefined,
+      typeof args.faceName === "string" ? args.faceName : undefined,
+    );
+    const semantic = tile.querySelector<HTMLInputElement>("[data-field='semantic']");
+    const face = tile.querySelector<HTMLInputElement>("[data-field='face']");
+    if (semantic && typeof args.semanticName === "string") semantic.value = args.semanticName;
+    if (face && typeof args.faceName === "string") face.value = args.faceName;
+  }
+}
+
+function connectControl(): void {
+  let source: EventSource;
+  try {
+    source = new EventSource(`http://127.0.0.1:8765/control/stream?after=${controlCursor}&wait=800`);
+  } catch {
+    return;
+  }
+  source.addEventListener("control", (event) => {
+    try {
+      applyControl(JSON.parse((event as MessageEvent).data) as { seq?: number; op?: string; args?: Record<string, unknown> });
+    } catch {
+      /* ignore malformed events */
+    }
+  });
+  source.onerror = () => {
+    source.close();
+    window.setTimeout(connectControl, 4000);
   };
-  if (Number.isFinite(audio.duration) && audio.duration > 0) go();
-  else audio.onloadedmetadata = go;
-};
+}
 
 void refreshConnectors(example as ViewportDocument).then(show);
+connectControl();
