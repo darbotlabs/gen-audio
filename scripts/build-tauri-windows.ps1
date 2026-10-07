@@ -10,11 +10,11 @@ Set-Location $root
 function Invoke-Checked {
     param(
         [Parameter(Mandatory = $true)][string]$File,
-        [Parameter(ValueFromRemainingArguments = $true)][string[]]$Args
+        [Parameter(ValueFromRemainingArguments = $true)][string[]]$CommandArgs
     )
-    & $File @Args
+    & $File @CommandArgs
     if ($LASTEXITCODE -ne 0) {
-        throw "$File $($Args -join ' ') failed with exit $LASTEXITCODE"
+        throw "$File $($CommandArgs -join ' ') failed with exit $LASTEXITCODE"
     }
 }
 
