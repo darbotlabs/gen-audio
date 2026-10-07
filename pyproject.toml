@@ -1,0 +1,50 @@
+[build-system]
+requires = ["setuptools>=69", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "gen-audio"
+version = "0.1.0"
+description = "GenAID Audio toolkit: multi-speaker podcast synthesis, a 24 kHz publish chain, spectrograms, and a cube-revision sketch."
+readme = "README.md"
+requires-python = ">=3.14,<3.15"
+license = { text = "MIT" }
+authors = [{ name = "Darbot Labs" }]
+keywords = ["audio", "tts", "podcast", "kokoro", "genaid"]
+classifiers = [
+    "Programming Language :: Python :: 3.14",
+]
+dependencies = [
+    "numpy>=1.26",
+    "soundfile>=0.12",
+    "scipy>=1.11",
+    "matplotlib>=3.8",
+]
+
+[project.optional-dependencies]
+kokoro = [
+    "kokoro-onnx>=0.4.9",
+    "onnxruntime>=1.16",
+]
+dev = [
+    "pytest>=8",
+]
+
+[project.urls]
+Homepage = "https://github.com/darbotlabs/gen-audio"
+Documentation = "https://github.com/darbotlabs/gen-audio/blob/main/docs/ARCHITECTURE.md"
+Issues = "https://github.com/darbotlabs/gen-audio/issues"
+
+[project.scripts]
+gen-audio-synth = "gen_audio.cli.synth:main"
+gen-audio-improve = "gen_audio.cli.improve:main"
+gen-audio-spectrogram = "gen_audio.cli.spectrogram:main"
+gen-audio-cube = "gen_audio.cli.cube:main"
+gen-audio-compare = "gen_audio.cli.compare:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"

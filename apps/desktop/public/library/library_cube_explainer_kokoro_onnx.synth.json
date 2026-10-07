@@ -1,0 +1,111 @@
+{
+  "engine": "kokoro_onnx",
+  "sample_rate": 24000,
+  "samples": 3771216,
+  "seconds": 157.134,
+  "gap_s": 0.35,
+  "improved": false,
+  "turns": [
+    {
+      "speaker_id": "1",
+      "name": "Alice",
+      "voice": "af_heart",
+      "lang": "en-us",
+      "speed": 1.0,
+      "text": "This Gen-Audio briefing explains spectrogram cubes. A cube is not a flat spectrogram. It is a spatial stack with four honest layers: signal, tonality, confidence, and quality.",
+      "samples": 287232,
+      "sample_rate": 24000
+    },
+    {
+      "speaker_id": "2",
+      "name": "Frank",
+      "voice": "am_michael",
+      "lang": "en-us",
+      "speed": 1.0,
+      "text": "Signal is the raw energy surface across time and frequency. Tonality tracks formant and harmonic structure. Confidence marks how stable the estimate is. Quality is the inverse-HDR publish score, not a beauty filter.",
+      "samples": 378880,
+      "sample_rate": 24000
+    },
+    {
+      "speaker_id": "1",
+      "name": "Alice",
+      "voice": "af_heart",
+      "lang": "en-us",
+      "speed": 1.0,
+      "text": "Gen-Audio builds cubes from real Library WAVs. When a clip synthesizes on kokoro-onnx, the board binds cube JSON and PNG to that clip. Fixture theater badges clear. The Cube3D livetile must say Library, never Fixture, once bound.",
+      "samples": 413696,
+      "sample_rate": 24000
+    },
+    {
+      "speaker_id": "2",
+      "name": "Frank",
+      "voice": "am_michael",
+      "lang": "en-us",
+      "speed": 1.0,
+      "text": "Benchmark context: misaki to kokoro led the inverse-HDR ranking, then dayour kokoro, then kokoro-onnx. Magpie and VibeVoice stayed near flat when they could not run. Honesty means unavailable paths stay empty tiles.",
+      "samples": 401920,
+      "sample_rate": 24000
+    },
+    {
+      "speaker_id": "1",
+      "name": "Alice",
+      "voice": "af_heart",
+      "lang": "en-us",
+      "speed": 1.0,
+      "text": "On the desktop, Agent means persona: Anton, Alice, Khortana, Rocky, Sensei, Optimus Timelarp. Voice means the TTS model: kokoro-onnx, dayour kokoro, misaki to kokoro. Up to eight agents can share one generation track.",
+      "samples": 389120,
+      "sample_rate": 24000
+    },
+    {
+      "speaker_id": "2",
+      "name": "Frank",
+      "voice": "am_michael",
+      "lang": "en-us",
+      "speed": 1.0,
+      "text": "Optimus Timelarp is the gating persona. Tone assertive. Purpose gating and harden. Domain product stamps. Traits decisive, honest, screenshot-proof, and AP-7 hard kill. Flip the VoiceProfile card for full schema, refs, and two-D plus three-D spectrogram hooks.",
+      "samples": 476160,
+      "sample_rate": 24000
+    },
+    {
+      "speaker_id": "1",
+      "name": "Alice",
+      "voice": "af_heart",
+      "lang": "en-us",
+      "speed": 1.0,
+      "text": "Floating playback keeps play, pause, scrub, time, and title visible while audio runs. The viewport border shifts from idle teal to amber playing chrome so operators always see active transport.",
+      "samples": 301056,
+      "sample_rate": 24000
+    },
+    {
+      "speaker_id": "2",
+      "name": "Frank",
+      "voice": "am_michael",
+      "lang": "en-us",
+      "speed": 1.0,
+      "text": "MCP and ACP form the atomic control plane. UI navigation tools, library tools, and voice-profile tools stay product-only. No SendKeys theater. No LiveKit until F-gates are firm green.",
+      "samples": 375808,
+      "sample_rate": 24000
+    },
+    {
+      "speaker_id": "1",
+      "name": "Alice",
+      "voice": "af_heart",
+      "lang": "en-us",
+      "speed": 1.0,
+      "text": "This clip itself is a real kokoro-onnx render wired into Library. If you hear it, the tile should show a matching cube with signal, tonality, confidence, and quality. That is the Gen-Audio contract.",
+      "samples": 309760,
+      "sample_rate": 24000
+    },
+    {
+      "speaker_id": "2",
+      "name": "Frank",
+      "voice": "am_michael",
+      "lang": "en-us",
+      "speed": 1.0,
+      "text": "Closing: cubes measure, they do not invent. Fixture tones stay labeled Fixture. Library-bound cubes say Library. Optimus Timelarp stamps only from screenshot proof and tip SHAs. End of cube briefing.",
+      "samples": 361984,
+      "sample_rate": 24000
+    }
+  ],
+  "wav_subtype": "FLOAT"
+}

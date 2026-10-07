@@ -1,0 +1,60 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Gen-Audio",
+  "mainBinaryName": "gen-audio",
+  "version": "0.1.0",
+  "identifier": "labs.darbot.genaudio",
+  "build": {
+    "frontendDist": "../dist",
+    "devUrl": "http://localhost:1420",
+    "beforeDevCommand": "npm --prefix .. run dev",
+    "beforeBuildCommand": "echo dist-ready"
+  },
+  "app": {
+    "windows": [
+      {
+        "label": "main",
+        "title": "Darbot Gen-Audio",
+        "width": 1280,
+        "height": 840,
+        "resizable": true,
+        "visible": true,
+        "skipTaskbar": false
+      }
+    ],
+    "security": {
+      "csp": "default-src 'self'; img-src 'self' data: blob:; media-src 'self' blob:; style-src 'self'; script-src 'self'; connect-src 'self' http://127.0.0.1:8765 http://localhost:8765"
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": [
+      "nsis",
+      "msi",
+      "deb",
+      "appimage",
+      "dmg"
+    ],
+    "externalBin": [
+      "binaries/gen-audio-mcp"
+    ],
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.png",
+      "icons/icon.ico"
+    ],
+    "windows": {
+      "webviewInstallMode": {
+        "type": "downloadBootstrapper",
+        "silent": true
+      },
+      "nsis": {
+        "installMode": "currentUser",
+        "startMenuFolder": "Darbot Gen-Audio",
+        "installerHooks": "windows/hooks.nsh"
+      }
+    }
+  }
+}

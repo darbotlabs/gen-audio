@@ -1,0 +1,13 @@
+# SAMPLE SCRIPT — fixture for the gen-audio parser.
+# This is not a news broadcast, not an interview transcript, and not a product announcement.
+# Speaker 1 is Alice. Speaker 2 is Frank. Voices come from voices/cast_map.example.json.
+
+Speaker 1: Welcome to a sample GenAID Audio conversation. I am Alice, and this file is only a script fixture.
+
+Speaker 2: And I am Frank. We are here to exercise two-speaker turns, not to report events.
+
+Speaker 1: The runnable synthesizer in this repository is kokoro-onnx, and only after you point it at model files on disk. The other engine names are compare slots.
+
+Speaker 2: After a render, the publish chain trims edge silence, high-passes near seventy hertz, peak-normalizes, and resamples to twenty-four kilohertz.
+
+Speaker 1: That is the whole sample. Thanks for reading a fixture.

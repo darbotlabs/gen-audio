@@ -1,0 +1,532 @@
+{
+  "version": "1.0",
+  "title": "Darbot Gen-Audio",
+  "columns": 3,
+  "cards": [
+    {
+      "id": "engine-kokoro",
+      "kind": "EngineStatus",
+      "title": "kokoro-onnx",
+      "body": {
+        "engineId": "kokoro_onnx",
+        "status": "weights_absent",
+        "summary": "The Python SDK can synthesize when GEN_AUDIO_KOKORO_MODEL and GEN_AUDIO_KOKORO_VOICES point at local files. Those weights are not in this repo."
+      },
+      "adaptive": {
+        "type": "AdaptiveCard",
+        "version": "1.5",
+        "$schema": "http://adaptivecards.io/schemas/adaptive-card.json",
+        "body": [
+          {
+            "type": "TextBlock",
+            "text": "kokoro-onnx weights are not bundled.",
+            "wrap": true
+          }
+        ]
+      }
+    },
+    {
+      "id": "engine-vibevoice",
+      "kind": "EngineStatus",
+      "title": "VibeVoice",
+      "body": {
+        "engineId": "vibevoice",
+        "status": "external",
+        "summary": "Compare slot for VibeVoice 1.5B (Alice/Frank in the 2026-10-06 notes). No adapter and no weights in this app."
+      }
+    },
+    {
+      "id": "engine-magpie",
+      "kind": "EngineStatus",
+      "title": "Magpie",
+      "body": {
+        "engineId": "magpie",
+        "status": "external",
+        "summary": "Compare slot for Magpie TTS (Sofia/Jason in the 2026-10-06 notes). No adapter and no weights in this app."
+      }
+    },
+    {
+      "id": "engine-pocket",
+      "kind": "EngineStatus",
+      "title": "Pocket TTS",
+      "body": {
+        "engineId": "pocket_tts",
+        "status": "external",
+        "summary": "Kyutai Pocket TTS stand-in used when PersonaPlex weights are unavailable. No adapter in this app."
+      }
+    },
+    {
+      "id": "spec-fixture",
+      "kind": "SpectrogramPanel",
+      "title": "Spectrogram panel",
+      "span": 2,
+      "body": {
+        "source": "fixture-tone",
+        "notPodcast": true,
+        "disclaimer": "Browser spectrogram of the selected voice profile, not a podcast render and not a Python spectrogram."
+      }
+    },
+    {
+      "id": "cube-fixture",
+      "kind": "Cube3D",
+      "title": "Inverse-HDR cube",
+      "span": 2,
+      "body": {
+        "source": "fixture-tone",
+        "notPodcast": true,
+        "disclaimer": "WebGL point cloud of the same fixture tone. Not a measured podcast cube."
+      }
+    },
+    {
+      "id": "cast-sample",
+      "kind": "PodcastCast",
+      "title": "Sample cast",
+      "body": {
+        "sampleScript": true,
+        "speakers": [
+          {
+            "id": "1",
+            "name": "Alice",
+            "voice": "af_heart"
+          },
+          {
+            "id": "2",
+            "name": "Frank",
+            "voice": "am_michael"
+          }
+        ]
+      }
+    },
+    {
+      "id": "serve-node",
+      "kind": "ServeHealth",
+      "title": "Node health",
+      "body": {
+        "host": "<node>",
+        "port": 8002,
+        "baseUrl": "http://<node>:8002/genaid-audio",
+        "healthUrl": "http://<node>:8002/genaid-audio/health",
+        "probed": false,
+        "role": "node"
+      }
+    },
+    {
+      "id": "serve-gateway",
+      "kind": "ServeHealth",
+      "title": "Shared gateway",
+      "body": {
+        "host": "10.1.8.70",
+        "port": 8002,
+        "baseUrl": "http://10.1.8.70:8002/genaid-audio",
+        "healthUrl": "http://10.1.8.70:8002/genaid-audio/health",
+        "probed": false,
+        "role": "shared-gateway"
+      }
+    },
+    {
+      "id": "bench-ref",
+      "kind": "BenchmarkCompare",
+      "title": "Compare notes",
+      "span": 3,
+      "body": {
+        "measuredHere": false,
+        "sourceNote": "Reference figures from the 2026-10-06 GenAID podcast compare notes. Not remeasured in this repository.",
+        "rows": [
+          {
+            "engine": "pocket_tts",
+            "metric": "teaser_wer",
+            "value": "22.22%",
+            "unit": "WER",
+            "note": "Short teaser ASR in those notes."
+          },
+          {
+            "engine": "vibevoice",
+            "metric": "teaser_wer",
+            "value": "30.00%",
+            "unit": "WER",
+            "note": "Full improved WAV was the preferred publish in those notes."
+          },
+          {
+            "engine": "magpie",
+            "metric": "teaser_wer",
+            "value": "42.22%",
+            "unit": "WER",
+            "note": "Short teaser. Hypothesis was short of the reference."
+          },
+          {
+            "engine": "vibevoice",
+            "metric": "bw95_hz",
+            "value": "2670.5",
+            "unit": "Hz",
+            "note": "Full improved final. Not a new measurement."
+          },
+          {
+            "engine": "kokoro_onnx",
+            "metric": "bw95_hz_raw",
+            "value": "826.9",
+            "unit": "Hz",
+            "note": "Raw file in those notes. Do not rank publish on inv-HDR alone."
+          }
+        ]
+      }
+    },
+    {
+      "id": "conn-mcp",
+      "kind": "ConnectorStatus",
+      "title": "MCP",
+      "body": {
+        "connectorId": "mcp",
+        "mode": "local",
+        "authenticated": false,
+        "detail": "Stateless tool server. No vendor credential."
+      }
+    },
+    {
+      "id": "conn-acp",
+      "kind": "ConnectorStatus",
+      "title": "ACP",
+      "body": {
+        "connectorId": "acp",
+        "mode": "local",
+        "authenticated": false,
+        "detail": "ACP agent. sessionId exists because the protocol requires it."
+      }
+    },
+    {
+      "id": "conn-harness",
+      "kind": "ConnectorStatus",
+      "title": "Harness",
+      "body": {
+        "connectorId": "harness",
+        "mode": "local",
+        "authenticated": false,
+        "detail": "Plans tools and writes a JSONL trace. Does not invent speech."
+      }
+    },
+    {
+      "id": "conn-copilot",
+      "kind": "ConnectorStatus",
+      "title": "Copilot",
+      "body": {
+        "connectorId": "copilot",
+        "mode": "mock",
+        "authenticated": false,
+        "detail": "GitHub Models bridge. Mock until a token is set and GEN_AUDIO_CONNECTOR_LIVE=1."
+      }
+    },
+    {
+      "id": "conn-claude",
+      "kind": "ConnectorStatus",
+      "title": "Claude",
+      "body": {
+        "connectorId": "claude",
+        "mode": "mock",
+        "authenticated": false,
+        "detail": "Anthropic Messages API. Claude Code CLI stays off unless GEN_AUDIO_CLAUDE_CODE_CLI=1."
+      }
+    },
+    {
+      "id": "conn-gpt",
+      "kind": "ConnectorStatus",
+      "title": "GPT",
+      "body": {
+        "connectorId": "gpt",
+        "mode": "mock",
+        "authenticated": false,
+        "detail": "OpenAI chat completions. Mock without OPENAI_API_KEY."
+      }
+    },
+    {
+      "id": "conn-gemini",
+      "kind": "ConnectorStatus",
+      "title": "Gemini",
+      "body": {
+        "connectorId": "gemini",
+        "mode": "mock",
+        "authenticated": false,
+        "detail": "Gemini generateContent. Mock without an API key."
+      }
+    },
+    {
+      "id": "profile-anton",
+      "kind": "VoiceProfile",
+      "title": "Anton",
+      "body": {
+        "agentName": "Anton",
+        "personaId": "anton",
+        "voiceModel": "kokoro_onnx",
+        "tone": "measured",
+        "purpose": "Host a Gen-Audio briefing",
+        "domain": "Desktop app and SDK layout",
+        "accent": "General American",
+        "traits": "Low-mid pitch, even pace, short pauses. Not a connector model.",
+        "refs": [
+          "persona:anton"
+        ],
+        "spectrogram2d": "browser-profile-map",
+        "spectrogram3d": "none",
+        "notPodcast": true,
+        "disclaimer": "Browser profile map for persona Anton. Not a podcast render."
+      }
+    },
+    {
+      "id": "profile-alice",
+      "kind": "VoiceProfile",
+      "title": "Alice",
+      "body": {
+        "agentName": "Alice",
+        "personaId": "alice",
+        "voiceModel": "kokoro_onnx",
+        "tone": "warm",
+        "purpose": "Walk through a labeled example",
+        "domain": "SDK onboarding",
+        "accent": "General American",
+        "traits": "Persona Alice is the agent name. Kokoro pack id af_heart is a reference on this profile, not the Voice selector.",
+        "refs": [
+          "kokoro-pack:af_heart",
+          "persona:alice"
+        ],
+        "spectrogram2d": "browser-profile-map",
+        "spectrogram3d": "library-cube-hook",
+        "cubeJsonUrl": "/library/library_kokoro_onnx_cube3d.json",
+        "notPodcast": true,
+        "disclaimer": "Browser profile map for persona Alice on kokoro-onnx. The cube is the library clip, not a recording of this persona. Not a podcast render."
+      }
+    },
+    {
+      "id": "profile-khortana",
+      "kind": "VoiceProfile",
+      "title": "Khortana",
+      "body": {
+        "agentName": "Khortana",
+        "personaId": "khortana",
+        "voiceModel": "kokoro_onnx",
+        "tone": "bright",
+        "purpose": "Offer a contrasting take",
+        "domain": "Product critique",
+        "accent": "General American",
+        "traits": "Higher placement and a quicker glide. Not a TTS model id.",
+        "refs": [
+          "persona:khortana"
+        ],
+        "spectrogram2d": "browser-profile-map",
+        "spectrogram3d": "none",
+        "notPodcast": true,
+        "disclaimer": "Browser profile map for persona Khortana. Not a podcast render."
+      }
+    },
+    {
+      "id": "profile-rocky",
+      "kind": "VoiceProfile",
+      "title": "Rocky",
+      "body": {
+        "agentName": "Rocky",
+        "personaId": "rocky",
+        "voiceModel": "kokoro_onnx",
+        "tone": "gravel",
+        "purpose": "Short reactions between turns",
+        "domain": "Studio banter",
+        "accent": "General American",
+        "traits": "Low pitch and a narrow band. Not a TTS model id.",
+        "refs": [
+          "persona:rocky"
+        ],
+        "spectrogram2d": "browser-profile-map",
+        "spectrogram3d": "none",
+        "notPodcast": true,
+        "disclaimer": "Browser profile map for persona Rocky. Not a podcast render."
+      }
+    },
+    {
+      "id": "lib-kokoro-onnx",
+      "kind": "LibraryClip",
+      "title": "kokoro-onnx",
+      "body": {
+        "engineId": "kokoro_onnx",
+        "status": "ok",
+        "synthesizedSpeech": true,
+        "wavUrl": "/library/library_kokoro_onnx.wav",
+        "duration_s": 374.766,
+        "sample_rate": 24000,
+        "summary": "Real 6.2 min Gen-Audio briefing @ 24 kHz. 18 turns, 816 words. Not a fixture.",
+        "cubePngUrl": "/library/library_kokoro_onnx_cube3d.png",
+        "cubeJsonUrl": "/library/library_kokoro_onnx_cube3d.json",
+        "sidecarUrl": "/library/library_kokoro_onnx.synth.json",
+        "inv_hdr": 0.09737
+      },
+      "adaptive": {
+        "type": "AdaptiveCard",
+        "version": "1.5",
+        "body": [
+          {
+            "type": "TextBlock",
+            "text": "Real synth: kokoro-onnx \u00b7 374.8s \u00b7 cube attached",
+            "wrap": true
+          },
+          {
+            "type": "FactSet",
+            "facts": [
+              {
+                "title": "Duration",
+                "value": "374.766 s"
+              },
+              {
+                "title": "SR",
+                "value": "24000"
+              },
+              {
+                "title": "inv-HDR",
+                "value": "0.097"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "lib-kokoro",
+      "kind": "LibraryClip",
+      "title": "dayour/kokoro",
+      "body": {
+        "engineId": "kokoro_dayour",
+        "status": "ok",
+        "synthesizedSpeech": true,
+        "wavUrl": "/library/library_kokoro.wav",
+        "duration_s": 375.625,
+        "sample_rate": 24000,
+        "summary": "Real dayour/kokoro torch synth \u2014 375.6s Gen-Audio briefing. Not a fixture."
+      },
+      "adaptive": {
+        "type": "AdaptiveCard",
+        "version": "1.5",
+        "body": [
+          {
+            "type": "TextBlock",
+            "text": "Real synth: dayour/kokoro \u00b7 375.6s",
+            "wrap": true
+          }
+        ]
+      }
+    },
+    {
+      "id": "lib-misaki-kokoro",
+      "kind": "LibraryClip",
+      "title": "misaki\u2192kokoro",
+      "body": {
+        "engineId": "misaki_kokoro",
+        "status": "running",
+        "synthesizedSpeech": false,
+        "summary": "Misaki\u2192Kokoro synthesizing now. No fake WAV until complete."
+      }
+    },
+    {
+      "id": "lib-magpie",
+      "kind": "LibraryClip",
+      "title": "Magpie",
+      "body": {
+        "engineId": "magpie",
+        "status": "unavailable",
+        "synthesizedSpeech": false,
+        "summary": "GGUF weights exist on box; magpie-tts.cpp not built. No fake audio."
+      }
+    },
+    {
+      "id": "lib-vibevoice",
+      "kind": "LibraryClip",
+      "title": "VibeVoice",
+      "body": {
+        "engineId": "vibevoice",
+        "status": "unavailable",
+        "synthesizedSpeech": false,
+        "summary": "1.5B safetensors present but no verified runnable synth harness this pass."
+      }
+    },
+    {
+      "id": "lib-pocket",
+      "kind": "LibraryClip",
+      "title": "Pocket TTS",
+      "body": {
+        "engineId": "pocket_tts",
+        "status": "unavailable",
+        "synthesizedSpeech": false,
+        "summary": "pocket_tts not installed. Prior wrong-topic teaser not reused."
+      }
+    },
+    {
+      "id": "profile-optimus",
+      "kind": "VoiceProfile",
+      "title": "Optimus Timelarp",
+      "body": {
+        "agentName": "Optimus Timelarp",
+        "personaId": "optimus",
+        "voiceModel": "kokoro_onnx",
+        "tone": "assertive",
+        "purpose": "Gate and harden product stamps",
+        "domain": "Product / A-E stamps",
+        "accent": "General American",
+        "traits": "Decisive, honest, screenshot-proof. AP-7 hard kill. Not a TTS model id.",
+        "refs": [
+          "persona:optimus",
+          "tts:kokoro_onnx",
+          "cube:library_cube_explainer",
+          "clip:lib-cube-explainer"
+        ],
+        "spectrogram2d": "browser-profile-map",
+        "spectrogram3d": "library-cube-hook",
+        "cubeJsonUrl": "/library/library_cube_explainer_kokoro_onnx_cube3d.json",
+        "notPodcast": true,
+        "synthesizedSpeech": false,
+        "disclaimer": "Browser profile map for persona Optimus Timelarp with library cube spatial analysis. Not a podcast render."
+      }
+    },
+    {
+      "id": "lib-cube-explainer",
+      "kind": "LibraryClip",
+      "title": "Cube explainer",
+      "body": {
+        "engineId": "kokoro_onnx",
+        "status": "ok",
+        "synthesizedSpeech": true,
+        "wavUrl": "/library/library_cube_explainer_kokoro_onnx.wav",
+        "duration_s": 157.134,
+        "sample_rate": 24000,
+        "summary": "Real kokoro-onnx podcast explaining spectrogram cubes in Gen-Audio. Not a fixture.",
+        "cubePngUrl": "/library/library_cube_explainer_kokoro_onnx_cube3d.png",
+        "cubeJsonUrl": "/library/library_cube_explainer_kokoro_onnx_cube3d.json",
+        "sidecarUrl": "/library/library_cube_explainer_kokoro_onnx.synth.json",
+        "inv_hdr": 0.06963625142864167,
+        "title": "Cube explainer (kokoro-onnx)",
+        "semanticName": "Spectrogram cube explainer \u00b7 Optimus AgentVoice",
+        "faceName": "Cube explainer"
+      },
+      "adaptive": {
+        "type": "AdaptiveCard",
+        "version": "1.5",
+        "body": [
+          {
+            "type": "TextBlock",
+            "text": "Real synth: kokoro-onnx \u00b7 157.1s \u00b7 cube attached",
+            "wrap": true
+          },
+          {
+            "type": "FactSet",
+            "facts": [
+              {
+                "title": "Duration",
+                "value": "157.134 s"
+              },
+              {
+                "title": "SR",
+                "value": "24000"
+              },
+              {
+                "title": "inv-HDR",
+                "value": "0.070"
+              }
+            ]
+          }
+        ]
+      }
+    }
+  ]
+}

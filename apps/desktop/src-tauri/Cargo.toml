@@ -1,0 +1,32 @@
+[package]
+name = "gen-audio-desktop"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+publish.workspace = true
+description = "Darbot Gen-Audio desktop shell."
+
+[features]
+# `tauri build` turns this on so the release WebView embeds frontendDist.
+# A bare `cargo build -p gen-audio-desktop` leaves it off and the exe loads
+# devUrl (http://localhost:1420), which is ERR_CONNECTION_REFUSED on SMAX.
+custom-protocol = ["tauri/custom-protocol"]
+
+[lib]
+name = "gen_audio_desktop_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2.6", features = [] }
+
+[dependencies]
+tauri = { version = "2.11", features = ["tray-icon"] }
+serde = { workspace = true }
+serde_json = { workspace = true }
+gen-audio-connectors = { workspace = true }
+gen-audio-core = { workspace = true }
+gen-audio-mcp = { workspace = true }
+
+[target.'cfg(any(target_os = "macos", windows, target_os = "linux"))'.dependencies]
+tauri-plugin-single-instance = "2"

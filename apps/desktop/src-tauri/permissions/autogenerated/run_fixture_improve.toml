@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-run-fixture-improve"
+description = "Enables the run_fixture_improve command without any pre-configured scope."
+commands.allow = ["run_fixture_improve"]
+
+[[permission]]
+identifier = "deny-run-fixture-improve"
+description = "Denies the run_fixture_improve command without any pre-configured scope."
+commands.deny = ["run_fixture_improve"]

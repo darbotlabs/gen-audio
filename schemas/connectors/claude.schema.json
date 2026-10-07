@@ -1,0 +1,13 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/darbotlabs/gen-audio/schemas/connectors/claude.schema.json",
+  "title": "ClaudeConnectorConfig",
+  "type": "object",
+  "properties": {
+    "ANTHROPIC_API_KEY": { "type": "string" },
+    "ANTHROPIC_MODEL": { "type": "string", "default": "claude-3-5-haiku-latest" },
+    "CLAUDE_CODE_BIN": { "type": "string", "description": "Optional path to the Claude Code CLI." },
+    "GEN_AUDIO_CLAUDE_CODE_CLI": { "enum": ["0", "1"], "description": "Must be 1 before the CLI is spawned." },
+    "GEN_AUDIO_CONNECTOR_LIVE": { "enum": ["0", "1"] }
+  }
+}

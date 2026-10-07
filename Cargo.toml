@@ -1,0 +1,25 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/gen-audio-core",
+    "crates/gen-audio-connectors",
+    "crates/gen-audio-mcp",
+    "crates/gen-audio-acp",
+    "crates/gen-audio-harness",
+    "apps/desktop/src-tauri",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+authors = ["Darbot Labs"]
+publish = false
+
+[workspace.dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+ureq = { version = "2.12.1", default-features = false, features = ["json", "tls"] }
+gen-audio-core = { path = "crates/gen-audio-core" }
+gen-audio-connectors = { path = "crates/gen-audio-connectors" }
+gen-audio-mcp = { path = "crates/gen-audio-mcp" }

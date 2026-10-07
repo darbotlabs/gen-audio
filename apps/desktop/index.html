@@ -1,0 +1,105 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Darbot Gen-Audio</title>
+    <link rel="stylesheet" href="/src/styles.css" />
+  </head>
+  <body>
+    <a class="skip" href="#board">Skip to cards</a>
+    <header class="top">
+      <div class="brand-row">
+        <div class="brand">
+          <span class="mark">DARBOT</span>
+          <span class="product">GEN-AUDIO</span>
+        </div>
+        <p class="lede">
+          Snap slides + side pane. Profile maps and fixture canvases are labeled previews — not product speech.
+        </p>
+      </div>
+      <div class="ga-header-toolbar" aria-label="Gen-Audio header toolbar">
+        <div class="toolbar">
+          <button type="button" id="show-example">Load labeled example</button>
+          <button type="button" id="show-empty">Clear viewport</button>
+          <button type="button" id="run-improve">Run Python improve on fixture</button>
+        </div>
+        <p id="status" class="status" role="status"></p>
+      </div>
+    </header>
+    <div class="studio">
+      <aside class="sidepane" aria-label="Podcast setup">
+        <section id="model-drop" class="model-drop" aria-label="Loaded voice model">
+          <p class="pane-kicker">Loaded voice model</p>
+          <p id="loaded-model" class="loaded-model">Drop an engine card here</p>
+          <p id="loaded-model-id" class="loaded-id"></p>
+        </section>
+        <section class="side-controls" aria-label="Podcast selectors">
+          <div class="field">
+            <div class="agent-head">
+              <span><b>A</b> Agent</span>
+              <button type="button" id="add-agent" class="add-perspective" aria-label="Add agent to this track">+</button>
+            </div>
+            <div id="agents" class="agent-list"></div>
+            <p class="field-hint">Persona, up to 8 per track. Not a connector.</p>
+          </div>
+          <label class="field">
+            <span><b>V</b> Voice</span>
+            <select id="voice" aria-label="Voice model"></select>
+            <p class="field-hint">TTS or G2P model. af_heart is a pack ref on persona Alice, not this list.</p>
+          </label>
+          <label class="field">
+            <span><b>T</b> Duration</span>
+            <select id="duration">
+              <option value="1">1 min</option>
+              <option value="3" selected>3 min</option>
+              <option value="5">5 min</option>
+              <option value="10">10 min</option>
+              <option value="30">30 min</option>
+            </select>
+          </label>
+        </section>
+        <section class="prompt-box" aria-label="Podcast prompt">
+          <label class="file-pick">
+            Choose files
+            <input id="source-files" type="file" multiple />
+          </label>
+          <ul id="file-list" class="file-list"></ul>
+          <textarea id="prompt" rows="3" placeholder="Paste a document or write a prompt (does not claim speech until synthesized)"></textarea>
+          <button type="button" id="generate-podcast">Generate podcast</button>
+        </section>
+      </aside>
+      <section class="viewport" aria-label="Card viewport frame">
+        <div class="viewport-chrome">
+          <span>Viewport</span>
+          <div id="layer-switch" class="layer-switch" role="tablist" aria-label="Viewport layers">
+            <button type="button" data-layer="models" role="tab">Voice models</button>
+            <button type="button" data-layer="clips" role="tab">Audio clips</button>
+            <button type="button" data-layer="video" role="tab">Video</button>
+            <button type="button" data-layer="cube" role="tab">Cube</button>
+          </div>
+          <div class="slide-chrome" aria-live="polite">
+            <span id="slide-label">Slide 1/3</span>
+            <div id="slide-dots" class="slide-dots" role="tablist" aria-label="Viewport slides"></div>
+          </div>
+          <span>Live tiles</span>
+        </div>
+        <main id="board" class="board" aria-label="Card viewport"></main>
+        <p id="empty" class="empty" hidden>No cards in this viewport. Load the labeled example for engines, connectors, and readiness tiles.</p>
+      </section>
+    </div>
+    
+    <div id="floating-playback" class="floating-playback" hidden aria-label="Now playing transport">
+      <button type="button" id="fp-playpause" class="fp-btn" aria-label="Play or pause">Pause</button>
+      <div class="fp-meta">
+        <span id="fp-title" class="fp-title">Library clip</span>
+        <input id="fp-scrub" class="fp-scrub" type="range" min="0" max="1000" value="0" aria-label="Scrub playback" />
+        <span id="fp-time" class="fp-time">0:00 / 0:00</span>
+      </div>
+    </div>
+    <footer class="foot">
+      PageUp/Down or Arrow Up/Down advance whole slides. Arrow Left/Right move cards. Agent is a persona; Voice is the TTS model. Drag a green engine into the side pane. Profile maps and cubes are labeled — not synthesized speech.
+    </footer>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
