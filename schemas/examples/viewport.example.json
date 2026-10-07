@@ -472,14 +472,8 @@
           "misaki→kokoro cube (benchmark winner)"
         ],
         "spectrogram2d": "browser-profile-map",
-        "spectrogram3d": "/library/library_kokoro_onnx_cube3d.json",
+        "spectrogram3d": "library-cube-hook",
         "cubeJsonUrl": "/library/library_kokoro_onnx_cube3d.json",
-        "cubeLayers": [
-          "signal",
-          "tonality",
-          "confidence",
-          "quality"
-        ],
         "notPodcast": true,
         "disclaimer": "Browser profile map for persona Optimus Timelarp with library cube refs. Not a podcast render."
       }
