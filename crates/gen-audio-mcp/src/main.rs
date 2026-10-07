@@ -33,7 +33,7 @@ fn main() {
     let server = Server::boot();
     eprintln!(
         "gen-audio-mcp stdio (stateless). work directory: {}",
-        server.work.display()
+        server.scratch.dir.display()
     );
     gen_audio_mcp::stdio_loop(&server);
 }

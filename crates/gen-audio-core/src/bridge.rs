@@ -6,7 +6,7 @@ use std::process::Command;
 
 use serde_json::{json, Value};
 
-use crate::paths::{read_name_in_work, read_repo_relative, write_name};
+use crate::paths::{read_trusted_script, read_user_repo_file, Scratch};
 use crate::redact::redact_secrets;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -48,45 +48,57 @@ pub struct PythonPlan {
     pub cwd: PathBuf,
 }
 
-pub fn python_program() -> PathBuf {
-    std::env::var("GEN_AUDIO_PYTHON")
-        .map(PathBuf::from)
-        .unwrap_or_else(|_| PathBuf::from(if cfg!(windows) { "python" } else { "python3" }))
+pub fn python_program() -> Result<PathBuf, String> {
+    let fallback = if cfg!(windows) { "python" } else { "python3" };
+    let raw = std::env::var("GEN_AUDIO_PYTHON").unwrap_or_else(|_| fallback.to_string());
+    if raw.is_empty() || raw.contains('\0') || raw.contains("..") {
+        return Err("GEN_AUDIO_PYTHON is empty or contains ..".into());
+    }
+    let path = PathBuf::from(&raw);
+    let name = path
+        .file_name()
+        .and_then(|part| part.to_str())
+        .unwrap_or("");
+    const ALLOWED: &[&str] = &["python", "python3", "python.exe", "python3.exe", "py", "py.exe"];
+    if !ALLOWED.contains(&name) {
+        return Err("GEN_AUDIO_PYTHON basename must be python, python3, or py".into());
+    }
+    Ok(path)
 }
 
 pub fn plan(
     tool: PythonTool,
     repo: &Path,
-    work: &Path,
+    scratch: &Scratch,
     args: &Value,
 ) -> Result<PythonPlan, String> {
-    let script = read_repo_relative(repo, tool.script())?;
+    let script = read_trusted_script(repo, tool.script())?;
     let mut planned = vec![script.to_string_lossy().to_string()];
     match tool {
         PythonTool::Improve => {
-            let input = read_name_in_work(work, req_name(args, "input")?)?;
-            let output = write_name(work, req_name(args, "output")?)?;
+            let input = scratch.open_input(req_name(args, "input")?)?;
+            let output = scratch.prepare_output(req_name(args, "output")?)?;
             planned.push(input.to_string_lossy().to_string());
             planned.push("-o".into());
             planned.push(output.to_string_lossy().to_string());
         }
         PythonTool::Spectrogram => {
-            let before = read_name_in_work(work, req_name(args, "before")?)?;
+            let before = scratch.open_input(req_name(args, "before")?)?;
             planned.push("--before".into());
             planned.push(before.to_string_lossy().to_string());
             if let Some(after) = opt_name(args, "after")? {
-                let after = read_name_in_work(work, after)?;
+                let after = scratch.open_input(after)?;
                 planned.push("--after".into());
                 planned.push(after.to_string_lossy().to_string());
             }
             planned.push("--out-dir".into());
-            planned.push(work.to_string_lossy().to_string());
+            planned.push(scratch.dir.to_string_lossy().to_string());
             planned.push("--title".into());
             planned.push("gen-audio fixture".into());
         }
         PythonTool::Cube => {
-            let input = read_name_in_work(work, req_name(args, "input")?)?;
-            let output = write_name(work, req_name(args, "output")?)?;
+            let input = scratch.open_input(req_name(args, "input")?)?;
+            let output = scratch.prepare_output(req_name(args, "output")?)?;
             planned.push(input.to_string_lossy().to_string());
             planned.push("-o".into());
             planned.push(output.to_string_lossy().to_string());
@@ -106,8 +118,8 @@ pub fn plan(
             {
                 return Err("engine id must be a short lowercase slug".into());
             }
-            let wav = read_name_in_work(work, req_name(args, "input")?)?;
-            let output = write_name(work, "compare-scores.json")?;
+            let wav = scratch.open_input(req_name(args, "input")?)?;
+            let output = scratch.prepare_output("compare-scores.json")?;
             planned.push(format!("{engine}={}", wav.to_string_lossy()));
             planned.push("-o".into());
             planned.push(output.to_string_lossy().to_string());
@@ -121,9 +133,9 @@ pub fn plan(
                 .get("castMap")
                 .and_then(Value::as_str)
                 .unwrap_or("voices/cast_map.example.json");
-            let script_path = read_repo_relative(repo, script_rel)?;
-            let cast_path = read_repo_relative(repo, cast_rel)?;
-            let output = write_name(work, req_name(args, "output")?)?;
+            let script_path = read_user_repo_file(repo, script_rel)?;
+            let cast_path = read_user_repo_file(repo, cast_rel)?;
+            let output = scratch.prepare_output(req_name(args, "output")?)?;
             let model = std::env::var("GEN_AUDIO_KOKORO_MODEL").unwrap_or_default();
             let voices = std::env::var("GEN_AUDIO_KOKORO_VOICES").unwrap_or_default();
             if model.is_empty() || voices.is_empty() {
@@ -146,16 +158,27 @@ pub fn plan(
         }
     }
     Ok(PythonPlan {
-        program: python_program(),
+        program: python_program()?,
         args: planned,
         cwd: repo.to_path_buf(),
     })
 }
 
 pub fn run_plan(plan: &PythonPlan) -> Result<Value, String> {
-    let output = Command::new(&plan.program)
-        .args(&plan.args)
-        .current_dir(&plan.cwd)
+    let mut command = Command::new(&plan.program);
+    command.args(&plan.args).current_dir(&plan.cwd);
+    for key in [
+        "ANTHROPIC_API_KEY",
+        "OPENAI_API_KEY",
+        "GEMINI_API_KEY",
+        "GOOGLE_API_KEY",
+        "GITHUB_TOKEN",
+        "GH_TOKEN",
+        "COPILOT_GITHUB_TOKEN",
+    ] {
+        command.env_remove(key);
+    }
+    let output = command
         .output()
         .map_err(|err| format!("failed to start python: {err}"))?;
     let stdout = redact_secrets(&String::from_utf8_lossy(&output.stdout));
@@ -218,21 +241,20 @@ fn tail(text: &str) -> String {
 mod tests {
     use super::*;
     use crate::fixture::write_fixture_tone;
-    use crate::paths::make_work_dir;
     use serde_json::json;
 
     #[test]
     fn improve_plan_rejects_paths_outside_work() {
-        let work = make_work_dir().unwrap();
+        let scratch = Scratch::create().unwrap();
         let repo = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
             .join("../..")
             .canonicalize()
             .unwrap();
-        write_fixture_tone(&work).unwrap();
+        write_fixture_tone(&scratch).unwrap();
         let good = plan(
             PythonTool::Improve,
             &repo,
-            &work,
+            &scratch,
             &json!({"input": "fixture-tone.wav", "output": "fixture-24k.wav"}),
         )
         .unwrap();
@@ -240,16 +262,24 @@ mod tests {
         assert!(plan(
             PythonTool::Improve,
             &repo,
-            &work,
+            &scratch,
             &json!({"input": "../secret.wav", "output": "out.wav"}),
         )
         .is_err());
-        let _ = std::fs::remove_dir_all(&work);
+        let script_err = plan(
+            PythonTool::Synth,
+            &repo,
+            &scratch,
+            &json!({"output": "nope.wav", "script": "README.md"}),
+        )
+        .unwrap_err();
+        assert!(script_err.contains("examples/"));
+        let _ = std::fs::remove_dir_all(&scratch.dir);
     }
 
     #[test]
     fn synth_does_not_invent_audio_without_models() {
-        let work = make_work_dir().unwrap();
+        let scratch = Scratch::create().unwrap();
         let repo = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
             .join("../..")
             .canonicalize()
@@ -259,11 +289,11 @@ mod tests {
         let err = plan(
             PythonTool::Synth,
             &repo,
-            &work,
+            &scratch,
             &json!({"output": "should-not-exist.wav"}),
         )
         .unwrap_err();
         assert!(err.contains("No speech was invented"));
-        let _ = std::fs::remove_dir_all(&work);
+        let _ = std::fs::remove_dir_all(&scratch.dir);
     }
 }

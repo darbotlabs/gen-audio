@@ -55,6 +55,22 @@ pub fn power_row(id: &str, host: &str, role: &str, port: u16) -> Result<PowerRow
     })
 }
 
+/// Probe targets are loopback, the documented shared gateway, or an explicit
+/// `GEN_AUDIO_PROBE_HOSTS` entry. Arbitrary tool hosts are refused.
+pub fn probe_host_allowed(host: &str) -> Result<(), String> {
+    let bare = bare_host(host)?;
+    let inner = bare.trim_start_matches('[').trim_end_matches(']');
+    if inner == "127.0.0.1" || inner == "localhost" || inner == "::1" || bare == SHARED_GATEWAY_HOST {
+        return Ok(());
+    }
+    if let Ok(list) = std::env::var("GEN_AUDIO_PROBE_HOSTS") {
+        if list.split(',').any(|item| item.trim() == bare) {
+            return Ok(());
+        }
+    }
+    Err("probe host is not allowlisted (loopback, the shared gateway, or GEN_AUDIO_PROBE_HOSTS)".into())
+}
+
 pub fn shared_gateway_row() -> PowerRow {
     power_row("shared-gateway", SHARED_GATEWAY_HOST, "shared-gateway", DEFAULT_PORT)
         .expect("shared gateway constants are valid")
@@ -87,5 +103,9 @@ mod tests {
         assert!(shared.health_url.ends_with("/genaid-audio/health"));
         assert!(node_base_url("http://10.1.8.21", 8002).is_err());
         assert!(node_base_url("10.1.8.21:8002", 8002).is_err());
+        assert!(probe_host_allowed("127.0.0.1").is_ok());
+        assert!(probe_host_allowed(SHARED_GATEWAY_HOST).is_ok());
+        assert!(probe_host_allowed("169.254.169.254").is_err());
+        assert!(probe_host_allowed("example.com").is_err());
     }
 }

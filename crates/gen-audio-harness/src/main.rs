@@ -12,7 +12,7 @@ fn main() {
             eprintln!("error: --script-file needs a path");
             std::process::exit(2);
         };
-        match std::fs::read_to_string(path) {
+        match gen_audio_harness::load_script_arg(path) {
             Ok(text) => text,
             Err(err) => {
                 eprintln!("error: {err}");

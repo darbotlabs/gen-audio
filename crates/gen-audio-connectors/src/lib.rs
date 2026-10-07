@@ -4,6 +4,7 @@
 //! stay in mock mode unless a credential is set AND `GEN_AUDIO_CONNECTOR_LIVE=1`.
 //! Mock completions do not call the network and are not model output.
 
+use std::net::ToSocketAddrs;
 use std::time::Duration;
 
 use gen_audio_core::redact::redact_secrets;
@@ -332,11 +333,10 @@ pub fn chat_body(model: &str, prompt: &str) -> Value {
     })
 }
 
-pub fn claude_code_args(bin: &str, prompt: &str) -> Vec<String> {
+pub fn claude_code_args(bin: &str) -> Vec<String> {
     vec![
         bin.to_string(),
         "-p".into(),
-        prompt.to_string(),
         "--output-format".into(),
         "text".into(),
     ]
@@ -346,12 +346,40 @@ fn run_claude_code(prompt: &str) -> Result<Completion, ConnectorError> {
     let bin = claude_bin().ok_or_else(|| {
         ConnectorError::new("GEN_AUDIO_CLAUDE_CODE_CLI=1 but no claude binary was found on PATH")
     })?;
-    let args = claude_code_args(&bin.to_string_lossy(), prompt);
-    let output = std::process::Command::new(&args[0])
-        .args(&args[1..])
-        .env_remove("ANTHROPIC_API_KEY")
-        .output()
+    let name = bin.file_name().and_then(|part| part.to_str()).unwrap_or("");
+    if name != "claude" && name != "claude.exe" {
+        return Err(ConnectorError::new(
+            "CLAUDE_CODE_BIN must point at a file named claude",
+        ));
+    }
+    let mut child = std::process::Command::new(&bin);
+    child
+        .args(["-p", "--output-format", "text"])
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped());
+    for key in [
+        "OPENAI_API_KEY",
+        "GEMINI_API_KEY",
+        "GOOGLE_API_KEY",
+        "GITHUB_TOKEN",
+        "GH_TOKEN",
+        "COPILOT_GITHUB_TOKEN",
+    ] {
+        child.env_remove(key);
+    }
+    let mut child = child
+        .spawn()
         .map_err(|err| ConnectorError::new(format!("claude binary failed to start: {err}")))?;
+    if let Some(mut stdin) = child.stdin.take() {
+        use std::io::Write;
+        stdin
+            .write_all(prompt.as_bytes())
+            .map_err(|err| ConnectorError::new(format!("claude stdin: {err}")))?;
+    }
+    let output = child
+        .wait_with_output()
+        .map_err(|err| ConnectorError::new(format!("claude binary failed: {err}")))?;
     if !output.status.success() {
         return Err(ConnectorError::new(format!(
             "claude binary exited {}: {}",
@@ -374,6 +402,13 @@ fn claude_bin() -> Option<std::path::PathBuf> {
 }
 
 fn which(name: &str) -> Option<std::path::PathBuf> {
+    if name.contains('\0') || name.contains("..") {
+        return None;
+    }
+    if name.contains('/') || name.contains('\\') {
+        let path = std::path::PathBuf::from(name);
+        return path.is_file().then_some(path);
+    }
     let paths = std::env::var_os("PATH")?;
     for dir in std::env::split_paths(&paths) {
         let candidate = dir.join(name);
@@ -450,28 +485,174 @@ fn check_model(model: &str) -> Result<(), ConnectorError> {
         || model.len() > 80
         || !model
             .chars()
-            .all(|ch| ch.is_ascii_alphanumeric() || matches!(ch, '.' | '_' | '-' | '/'))
+            .all(|ch| ch.is_ascii_alphanumeric() || matches!(ch, '.' | '_' | '-'))
         || model.contains("..")
-        || model.starts_with('/')
     {
         return Err(ConnectorError::new("model id has unsupported characters"));
     }
     Ok(())
 }
 
+fn header_value_ok(value: &str) -> Result<(), ConnectorError> {
+    if value.is_empty() || value.chars().any(|ch| ch.is_control()) {
+        return Err(ConnectorError::new("header value contains control characters"));
+    }
+    Ok(())
+}
+
 pub fn require_https_or_loopback(url: &str) -> Result<String, ConnectorError> {
-    let ok = url.starts_with("https://")
-        || url.starts_with("http://127.0.0.1")
-        || url.starts_with("http://localhost");
-    if !ok || url.contains("://") && url.chars().filter(|ch| *ch == ':').count() > 2 {
-        return Err(ConnectorError::new(
-            "endpoint must be https, or http on 127.0.0.1 / localhost",
-        ));
+    parse_endpoint(url).map_err(ConnectorError::new)?;
+    if url.starts_with("https://") && !loopback_endpoint(&url) {
+        assert_public_destination(&url).map_err(ConnectorError::new)?;
     }
     Ok(url.to_string())
 }
 
+fn loopback_endpoint(url: &str) -> bool {
+    let Ok((scheme, host, _, _)) = parse_endpoint(url) else {
+        return false;
+    };
+    scheme == "http" || host == "127.0.0.1" || host == "localhost" || host == "::1"
+}
+
+fn parse_endpoint(url: &str) -> Result<(String, String, Option<u16>, String), String> {
+    if url.len() < 8 || url.len() > 300 {
+        return Err("endpoint length is out of range".into());
+    }
+    if url.chars().any(|ch| ch.is_control() || ch.is_whitespace() || matches!(ch, '\\' | '@' | '?' | '#')) {
+        return Err("endpoint contains credentials, whitespace, or a query string".into());
+    }
+    let (scheme, rest) = url
+        .split_once("://")
+        .ok_or_else(|| "endpoint is missing a scheme".to_string())?;
+    if scheme != "https" && scheme != "http" {
+        return Err("endpoint scheme must be https or http".into());
+    }
+    let (hostport, path) = match rest.split_once('/') {
+        Some((hostport, path)) => (hostport, format!("/{path}")),
+        None => (rest, String::new()),
+    };
+    if hostport.is_empty() || path.contains("//") {
+        return Err("endpoint host is empty".into());
+    }
+    let (host, port) = split_host_port(hostport)?;
+    if scheme == "http" && host != "127.0.0.1" && host != "localhost" {
+        return Err("http is only allowed for 127.0.0.1 and localhost".into());
+    }
+    if host.contains("..") || host.starts_with('.') || host.ends_with('.') {
+        return Err("endpoint host is not a single name".into());
+    }
+    Ok((scheme.to_string(), host, port, path))
+}
+
+fn split_host_port(hostport: &str) -> Result<(String, Option<u16>), String> {
+    if let Some(inner) = hostport.strip_prefix('[') {
+        let (host, rest) = inner
+            .split_once(']')
+            .ok_or_else(|| "bad ipv6 host".to_string())?;
+        let port = if let Some(raw) = rest.strip_prefix(':') {
+            Some(parse_port(raw)?)
+        } else if rest.is_empty() {
+            None
+        } else {
+            return Err("bad ipv6 host".into());
+        };
+        if host != "::1" {
+            return Err("ipv6 http endpoints must be [::1]".into());
+        }
+        return Ok((host.to_string(), port));
+    }
+    let (host, port) = match hostport.rsplit_once(':') {
+        Some((host, port)) if !host.is_empty() && port.chars().all(|ch| ch.is_ascii_digit()) => {
+            (host, Some(parse_port(port)?))
+        }
+        _ => (hostport, None),
+    };
+    if host.is_empty() || host.contains(':') {
+        return Err("endpoint host is invalid".into());
+    }
+    Ok((host.to_string(), port))
+}
+
+fn parse_port(raw: &str) -> Result<u16, String> {
+    let port: u16 = raw.parse().map_err(|_| "bad port".to_string())?;
+    if port == 0 {
+        return Err("port must be between 1 and 65535".into());
+    }
+    Ok(port)
+}
+
+fn assert_public_destination(url: &str) -> Result<(), String> {
+    let (_, host, port, _) = parse_endpoint(url)?;
+    if is_blocked_name(&host) {
+        return Err("endpoint host is not a public name".into());
+    }
+    if let Ok(ip) = host.parse::<std::net::IpAddr>() {
+        if ip_blocked(ip) {
+            return Err("endpoint address is not public".into());
+        }
+        return Ok(());
+    }
+    let allow_private = std::env::var("GEN_AUDIO_CONNECTOR_ALLOW_PRIVATE").ok().as_deref() == Some("1");
+    if allow_private {
+        return Ok(());
+    }
+    let socket_port = port.unwrap_or(443);
+    let looked_up = (host.as_str(), socket_port)
+        .to_socket_addrs()
+        .map_err(|_| "endpoint host did not resolve".to_string())?;
+    let mut saw = false;
+    for addr in looked_up {
+        saw = true;
+        if ip_blocked(addr.ip()) {
+            return Err("endpoint resolved to a non-public address".into());
+        }
+    }
+    if !saw {
+        return Err("endpoint host did not resolve".into());
+    }
+    Ok(())
+}
+
+fn is_blocked_name(host: &str) -> bool {
+    let host = host.to_ascii_lowercase();
+    host == "metadata.google.internal"
+        || host.ends_with(".local")
+        || host.ends_with(".internal")
+        || host.ends_with(".localhost")
+}
+
+fn ip_blocked(ip: std::net::IpAddr) -> bool {
+    match ip {
+        std::net::IpAddr::V4(v4) => {
+            let [a, b, _, _] = v4.octets();
+            v4.is_private()
+                || v4.is_loopback()
+                || v4.is_link_local()
+                || v4.is_unspecified()
+                || v4.is_broadcast()
+                || v4.is_multicast()
+                || a == 0
+                || (a == 100 && (b & 0b1100_0000) == 64)
+                || (a == 192 && b == 0 && v4.octets()[2] == 2)
+                || (a == 198 && b == 51 && v4.octets()[2] == 100)
+                || (a == 203 && b == 0 && v4.octets()[2] == 113)
+        }
+        std::net::IpAddr::V6(v6) => {
+            v6.is_loopback()
+                || v6.is_unspecified()
+                || v6.is_multicast()
+                || (v6.segments()[0] & 0xffc0) == 0xfe80
+                || (v6.segments()[0] & 0xfe00) == 0xfc00
+        }
+    }
+}
+
 fn send_json(url: &str, headers: &[(&str, &str)], body: &Value) -> Result<String, ConnectorError> {
+    require_https_or_loopback(url)?;
+    for (_, value) in headers {
+        header_value_ok(value)?;
+    }
     let agent = ureq::AgentBuilder::new()
         .timeout_connect(Duration::from_secs(8))
         .timeout_read(Duration::from_secs(25))
@@ -545,10 +726,16 @@ mod tests {
         let body = chat_body("gpt-4o-mini", "hi");
         assert_eq!(body["messages"][0]["content"], "hi");
         assert!(require_https_or_loopback("http://example.com").is_err());
-        assert!(require_https_or_loopback("https://api.openai.com/v1").is_ok());
+        assert!(require_https_or_loopback("http://127.0.0.1.evil.com").is_err());
+        assert!(require_https_or_loopback("http://localhost.attacker.com").is_err());
+        assert!(require_https_or_loopback("https://user:token@api.openai.com/v1").is_err());
+        assert!(require_https_or_loopback("https://169.254.169.254/latest").is_err());
+        assert!(require_https_or_loopback("http://127.0.0.1:9/v1").is_ok());
+        assert!(parse_endpoint("https://api.openai.com/v1").is_ok());
         assert!(check_model("../etc").is_err());
-        let args = claude_code_args("claude", "ping");
+        assert!(check_model("gemini/flash").is_err());
+        let args = claude_code_args("claude");
         assert_eq!(args[1], "-p");
-        assert!(!args.iter().any(|arg| arg.contains("sh -c")));
+        assert!(!args.iter().any(|arg| arg.contains("ping") || arg.contains("sh -c")));
     }
 }

@@ -1,6 +1,10 @@
 {
   "identifier": "default",
-  "description": "Gen-Audio main window",
+  "description": "Gen-Audio main window. Custom commands only. No shell, fs, or path plugins.",
   "windows": ["main"],
-  "permissions": ["core:default"]
+  "permissions": [
+    "allow-connector-statuses",
+    "allow-viewport-example",
+    "allow-run-fixture-improve"
+  ]
 }

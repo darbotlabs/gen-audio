@@ -17,15 +17,21 @@ fn viewport_example() -> Value {
 #[tauri::command]
 fn run_fixture_improve() -> Result<Value, String> {
     let server = Server::boot();
-    write_fixture_tone(&server.work)?;
+    write_fixture_tone(&server.scratch)?;
     let repo = server.repo.ok_or("repository root not found")?;
     let plan = bridge::plan(
         PythonTool::Improve,
         &repo,
-        &server.work,
+        &server.scratch,
         &json!({"input": "fixture-tone.wav", "output": "fixture-24k.wav"}),
     )?;
-    bridge::run_plan(&plan)
+    let ran = bridge::run_plan(&plan)?;
+    Ok(json!({
+        "ok": ran.get("ok").cloned().unwrap_or(Value::Bool(false)),
+        "code": ran.get("code").cloned().unwrap_or(Value::Null),
+        "synthesizedSpeech": false,
+        "fixture": true
+    }))
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]

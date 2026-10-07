@@ -47,7 +47,7 @@ pub fn run(options: &HarnessOptions) -> Result<Vec<Value>, String> {
     ));
     if options.write_fixture {
         let server = Server::boot();
-        let tone = write_fixture_tone(&server.work)?;
+        let tone = write_fixture_tone(&server.scratch)?;
         trace.push(event(
             "fixture_tone",
             json!({
@@ -68,7 +68,7 @@ pub fn run(options: &HarnessOptions) -> Result<Vec<Value>, String> {
                 let planned = gen_audio_core::bridge::plan(
                     gen_audio_core::bridge::PythonTool::Improve,
                     repo.as_ref().unwrap(),
-                    &server.work,
+                    &server.scratch,
                     &json!({"input": "fixture-tone.wav", "output": "fixture-24k.wav"}),
                 );
                 match planned {
@@ -91,7 +91,7 @@ pub fn run(options: &HarnessOptions) -> Result<Vec<Value>, String> {
         }
         trace.push(event(
             "work_dir",
-            json!({"path": server.work, "kept": true}),
+            json!({"kept": true, "scope": "process-scratch"}),
         ));
     }
     for report in health_all() {
@@ -132,9 +132,33 @@ fn speaker_ids(turns: &[Turn]) -> Vec<String> {
     ids
 }
 
+pub fn load_script_arg(raw: &str) -> Result<String, String> {
+    if raw.chars().count() > 512 || raw.contains('\0') {
+        return Err("script path is empty or too long".into());
+    }
+    let repo = paths::find_repo_root().ok_or("repository root not found")?;
+    let rel = if std::path::Path::new(raw).is_absolute() {
+        let canon = std::path::PathBuf::from(raw)
+            .canonicalize()
+            .map_err(|err| err.to_string())?;
+        if !canon.starts_with(&repo) {
+            return Err("script file must stay inside the repository".into());
+        }
+        canon
+            .strip_prefix(&repo)
+            .map_err(|err| err.to_string())?
+            .to_string_lossy()
+            .replace('\\', "/")
+    } else {
+        raw.replace('\\', "/")
+    };
+    let path = paths::read_user_repo_file(&repo, &rel)?;
+    std::fs::read_to_string(path).map_err(|err| err.to_string())
+}
+
 pub fn load_repo_script() -> Result<String, String> {
     let repo = paths::find_repo_root().ok_or("repository root not found")?;
-    let path = paths::read_repo_relative(&repo, "examples/podcast_script_sample.txt")?;
+    let path = paths::read_user_repo_file(&repo, "examples/podcast_script_sample.txt")?;
     std::fs::read_to_string(path).map_err(|err| err.to_string())
 }
 

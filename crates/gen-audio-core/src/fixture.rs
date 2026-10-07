@@ -3,11 +3,10 @@
 //! The WAV is not speech and not a podcast render. A sidecar JSON says so.
 
 use std::fs;
-use std::path::Path;
 
 use serde_json::json;
 
-use crate::paths::write_name;
+use crate::paths::Scratch;
 
 pub const FIXTURE_WAV_NAME: &str = "fixture-tone.wav";
 pub const FIXTURE_SIDECAR_NAME: &str = "fixture-tone.fixture.json";
@@ -19,9 +18,9 @@ pub struct FixtureTone {
     pub samples: usize,
 }
 
-pub fn write_fixture_tone(work: &Path) -> Result<FixtureTone, String> {
-    let wav_path = write_name(work, FIXTURE_WAV_NAME)?;
-    let sidecar_path = write_name(work, FIXTURE_SIDECAR_NAME)?;
+pub fn write_fixture_tone(scratch: &Scratch) -> Result<FixtureTone, String> {
+    let wav_path = scratch.prepare_output(FIXTURE_WAV_NAME)?;
+    let sidecar_path = scratch.prepare_output(FIXTURE_SIDECAR_NAME)?;
     let sample_rate: u32 = 16_000;
     let edge: usize = (0.08 * sample_rate as f32) as usize;
     let body: usize = (0.50 * sample_rate as f32) as usize;
@@ -84,12 +83,12 @@ fn encode_wav(samples: &[f32], sample_rate: u32) -> Vec<u8> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::paths::make_work_dir;
+    use crate::paths::Scratch;
 
     #[test]
     fn fixture_is_labeled_and_not_empty() {
-        let work = make_work_dir().unwrap();
-        let tone = write_fixture_tone(&work).unwrap();
+        let scratch = Scratch::create().unwrap();
+        let tone = write_fixture_tone(&scratch).unwrap();
         assert!(tone.samples > 1000);
         let meta: serde_json::Value =
             serde_json::from_str(&std::fs::read_to_string(&tone.sidecar).unwrap()).unwrap();
@@ -97,6 +96,6 @@ mod tests {
         assert_eq!(meta["kind"], "fixture-tone");
         let header = std::fs::read(&tone.wav).unwrap();
         assert_eq!(&header[0..4], b"RIFF");
-        let _ = std::fs::remove_dir_all(&work);
+        let _ = std::fs::remove_dir_all(&scratch.dir);
     }
 }

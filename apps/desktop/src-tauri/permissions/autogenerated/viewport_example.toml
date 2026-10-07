@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-viewport-example"
+description = "Enables the viewport_example command without any pre-configured scope."
+commands.allow = ["viewport_example"]
+
+[[permission]]
+identifier = "deny-viewport-example"
+description = "Denies the viewport_example command without any pre-configured scope."
+commands.deny = ["viewport_example"]

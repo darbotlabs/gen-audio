@@ -30,7 +30,7 @@ Never commit these. `.env` files are gitignored.
 | `GEN_AUDIO_CLAUDE_CODE_CLI` | claude | Must be `1` before that binary is spawned. |
 | `OPENAI_API_KEY` | gpt | Chat completions key. |
 | `OPENAI_MODEL` | gpt | Default `gpt-4o-mini`. |
-| `OPENAI_BASE_URL` | gpt | Default `https://api.openai.com/v1`. http is allowed only for `127.0.0.1` and `localhost`. |
+| `OPENAI_BASE_URL` | gpt | Default `https://api.openai.com/v1`. http is allowed only when the host is exactly `127.0.0.1` or `localhost`. https endpoints must resolve to a public address unless `GEN_AUDIO_CONNECTOR_ALLOW_PRIVATE=1`. |
 | `GEMINI_API_KEY` or `GOOGLE_API_KEY` | gemini | Sent as `x-goog-api-key`. |
 | `GEMINI_MODEL` | gemini | Default `gemini-2.0-flash`. |
 
@@ -53,4 +53,4 @@ The MCP smoke writes a fixture tone. The harness trace includes one `connector_h
 
 `serve_health` builds `http://<host>:8002/genaid-audio/health`. It does not report the node healthy unless `probe` is true and the JSON body has `"service": "genaid-audio"`. `GET /health` on the MCP port is the MCP process, not the Ray Serve app. That body says `"service": "gen-audio-mcp"`.
 
-Synth from MCP reads `GEN_AUDIO_KOKORO_MODEL` and `GEN_AUDIO_KOKORO_VOICES` from the environment, and both files must sit under `GEN_AUDIO_MODEL_DIR`. Tool arguments cannot pass an arbitrary filesystem path.
+Synth from MCP reads `GEN_AUDIO_KOKORO_MODEL` and `GEN_AUDIO_KOKORO_VOICES` from the environment, and both files must sit under `GEN_AUDIO_MODEL_DIR`. `script` and `castMap` may only name files under `examples/` or `voices/`. The Claude Code prompt is written to the CLI stdin, not argv. `CLAUDE_CODE_BIN` must be a file named `claude`. The desktop capability set allows the three app commands and does not grant shell or filesystem plugins. `run_fixture_improve` returns status fields only, not Python stdout.

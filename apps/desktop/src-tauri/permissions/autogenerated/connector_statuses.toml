@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-connector-statuses"
+description = "Enables the connector_statuses command without any pre-configured scope."
+commands.allow = ["connector_statuses"]
+
+[[permission]]
+identifier = "deny-connector-statuses"
+description = "Denies the connector_statuses command without any pre-configured scope."
+commands.deny = ["connector_statuses"]

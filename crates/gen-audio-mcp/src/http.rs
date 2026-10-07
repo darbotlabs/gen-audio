@@ -10,14 +10,21 @@ use crate::{handle, Server};
 
 pub fn serve(addr: &str) -> std::io::Result<()> {
     ensure_bind_allowed(addr)?;
+    let socket: SocketAddr = addr.parse().map_err(|err| {
+        std::io::Error::new(std::io::ErrorKind::InvalidInput, format!("addr: {err}"))
+    })?;
+    let remote = !socket.ip().is_loopback();
     let listener = TcpListener::bind(addr)?;
-    let server = Server::boot();
+    let shared = Server::boot();
     for stream in listener.incoming() {
-        match stream {
-            Ok(stream) => {
-                let _ = handle_connection(&server, stream);
-            }
-            Err(_) => continue,
+        let Ok(stream) = stream else { continue };
+        if remote {
+            let isolated = Server::isolated();
+            let dir = isolated.scratch.dir.clone();
+            let _ = handle_connection(&isolated, stream);
+            let _ = std::fs::remove_dir_all(dir);
+        } else {
+            let _ = handle_connection(&shared, stream);
         }
     }
     Ok(())
@@ -39,26 +46,9 @@ pub fn ensure_bind_allowed(addr: &str) -> std::io::Result<()> {
 
 pub fn handle_connection(server: &Server, mut stream: TcpStream) -> std::io::Result<()> {
     stream.set_read_timeout(Some(Duration::from_secs(5)))?;
-    let mut buf = vec![0u8; 64 * 1024];
-    let mut filled = 0usize;
-    while filled < buf.len() {
-        match stream.read(&mut buf[filled..]) {
-            Ok(0) => break,
-            Ok(n) => {
-                filled += n;
-                if buf[..filled].windows(4).any(|w| w == b"\r\n\r\n") {
-                    break;
-                }
-            }
-            Err(err) if err.kind() == std::io::ErrorKind::WouldBlock || err.kind() == std::io::ErrorKind::TimedOut => {
-                break;
-            }
-            Err(err) => return Err(err),
-        }
-    }
-    let text = String::from_utf8_lossy(&buf[..filled]);
-    let Some((head, rest)) = text.split_once("\r\n\r\n") else {
-        return write_response(&mut stream, 400, br#"{"error":"bad request"}"#);
+    let (head, body) = match read_request(&mut stream) {
+        Ok(parts) => parts,
+        Err(kind) => return write_response(&mut stream, kind.0, kind.1),
     };
     let mut lines = head.lines();
     let request = lines.next().unwrap_or("");
@@ -72,24 +62,16 @@ pub fn handle_connection(server: &Server, mut stream: TcpStream) -> std::io::Res
     if method != "POST" || path != "/mcp" {
         return write_response(&mut stream, 404, br#"{"error":"not found"}"#);
     }
-    if head.to_ascii_lowercase().contains("transfer-encoding: chunked") {
+    if head.to_ascii_lowercase().contains("transfer-encoding:") {
         return write_response(&mut stream, 400, br#"{"error":"chunked bodies are not accepted"}"#);
     }
-    let length = content_length(head).unwrap_or(rest.len());
-    if length > 1024 * 1024 {
-        return write_response(&mut stream, 413, br#"{"error":"body too large"}"#);
+    let Some(length) = content_length(&head) else {
+        return write_response(&mut stream, 411, br#"{"error":"content-length required"}"#);
+    };
+    if body.len() != length {
+        return write_response(&mut stream, 400, br#"{"error":"incomplete body"}"#);
     }
-    let mut body = rest.as_bytes().to_vec();
-    while body.len() < length && body.len() < 1024 * 1024 {
-        let mut chunk = [0u8; 4096];
-        match stream.read(&mut chunk) {
-            Ok(0) => break,
-            Ok(n) => body.extend_from_slice(&chunk[..n]),
-            Err(_) => break,
-        }
-    }
-    let body = &body[..length.min(body.len())];
-    let message: Value = match serde_json::from_slice(body) {
+    let message: Value = match serde_json::from_slice(&body) {
         Ok(value) => value,
         Err(_) => return write_response(&mut stream, 400, br#"{"error":"invalid json"}"#),
     };
@@ -100,10 +82,65 @@ pub fn handle_connection(server: &Server, mut stream: TcpStream) -> std::io::Res
         }
         Ok(None) => write_response(&mut stream, 202, b"{}"),
         Err(err) => {
-            let payload = format!(r#"{{"error":"{}"}}"#, err.replace('"', "'"));
-            write_response(&mut stream, 500, payload.as_bytes())
+            let payload = serde_json::to_vec(&serde_json::json!({"error": err})).unwrap_or_else(|_| b"{}".to_vec());
+            write_response(&mut stream, 500, &payload)
         }
     }
+}
+
+fn read_request(stream: &mut TcpStream) -> Result<(String, Vec<u8>), (u16, &'static [u8])> {
+    let mut buf = Vec::new();
+    let mut tmp = [0u8; 4096];
+    let header_end = loop {
+        if buf.len() > 1024 * 1024 + 8192 {
+            return Err((413, br#"{"error":"body too large"}"#));
+        }
+        match stream.read(&mut tmp) {
+            Ok(0) => break None,
+            Ok(n) => {
+                buf.extend_from_slice(&tmp[..n]);
+                if let Some(pos) = buf.windows(4).position(|w| w == b"\r\n\r\n") {
+                    break Some(pos);
+                }
+            }
+            Err(err) if err.kind() == std::io::ErrorKind::WouldBlock || err.kind() == std::io::ErrorKind::TimedOut => {
+                break None;
+            }
+            Err(_) => return Err((400, br#"{"error":"bad request"}"#)),
+        }
+    };
+    let Some(pos) = header_end else {
+        return Err((400, br#"{"error":"bad request"}"#));
+    };
+    let head = String::from_utf8_lossy(&buf[..pos]).into_owned();
+    if head.to_ascii_lowercase().contains("transfer-encoding:") {
+        return Err((400, br#"{"error":"chunked bodies are not accepted"}"#));
+    }
+    let mut body = buf[pos + 4..].to_vec();
+    let Some(length) = content_length(&head) else {
+        if body.is_empty() && head.lines().next().unwrap_or("").starts_with("GET ") {
+            return Ok((head, body));
+        }
+        return Err((411, br#"{"error":"content-length required"}"#));
+    };
+    if length > 1024 * 1024 {
+        return Err((413, br#"{"error":"body too large"}"#));
+    }
+    while body.len() < length {
+        match stream.read(&mut tmp) {
+            Ok(0) => break,
+            Ok(n) => {
+                let need = length - body.len();
+                body.extend_from_slice(&tmp[..n.min(need)]);
+            }
+            Err(err) if err.kind() == std::io::ErrorKind::WouldBlock || err.kind() == std::io::ErrorKind::TimedOut => break,
+            Err(_) => return Err((400, br#"{"error":"bad request"}"#)),
+        }
+    }
+    if body.len() != length {
+        return Err((400, br#"{"error":"incomplete body"}"#));
+    }
+    Ok((head, body))
 }
 
 fn content_length(head: &str) -> Option<usize> {
@@ -123,6 +160,7 @@ fn write_response(stream: &mut TcpStream, status: u16, body: &[u8]) -> std::io::
         202 => "Accepted",
         400 => "Bad Request",
         404 => "Not Found",
+        411 => "Length Required",
         413 => "Payload Too Large",
         _ => "Error",
     };

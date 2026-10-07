@@ -11,25 +11,33 @@ use gen_audio_core::benchmark::{reference_rows, SOURCE_NOTE};
 use gen_audio_core::bridge::{self, PythonTool};
 use gen_audio_core::engines;
 use gen_audio_core::fixture::{self, write_fixture_tone};
-use gen_audio_core::paths::{self, find_repo_root};
+use gen_audio_core::paths::{self, find_repo_root, Scratch};
+use gen_audio_core::redact::redact_secrets;
 use gen_audio_core::serve::{self, health_url, node_base_url};
 use serde_json::{json, Value};
 
 pub struct Server {
-    pub work: PathBuf,
+    pub scratch: Scratch,
     pub repo: Option<PathBuf>,
 }
 
 impl Server {
     pub fn boot() -> Self {
-        let work = std::env::var("GEN_AUDIO_WORK_DIR")
-            .ok()
-            .map(PathBuf::from)
-            .filter(|path| path.is_dir())
-            .and_then(|path| path.canonicalize().ok())
-            .unwrap_or_else(|| paths::make_work_dir().expect("work directory"));
+        let scratch = if let Ok(raw) = std::env::var("GEN_AUDIO_WORK_DIR") {
+            Scratch::new(PathBuf::from(raw)).expect("GEN_AUDIO_WORK_DIR must be a dedicated directory outside the repository")
+        } else {
+            Scratch::create().expect("work directory")
+        };
         Self {
-            work,
+            scratch,
+            repo: find_repo_root(),
+        }
+    }
+
+    /// Fresh scratch for one remote HTTP request. Not shared with other clients.
+    pub fn isolated() -> Self {
+        Self {
+            scratch: Scratch::create().expect("isolated work directory"),
             repo: find_repo_root(),
         }
     }
@@ -139,10 +147,24 @@ fn tool_defs() -> Vec<Value> {
 }
 
 fn tool(name: &str, description: &str) -> Value {
+    let (properties, required) = match name {
+        "synth" => (json!({"script": {"type": "string"}, "castMap": {"type": "string"}, "output": {"type": "string"}}), json!(["output"])),
+        "improve" => (json!({"input": {"type": "string"}, "output": {"type": "string"}}), json!(["input", "output"])),
+        "cube_revision" => (json!({"input": {"type": "string"}, "output": {"type": "string"}, "maxSteps": {"type": "integer"}}), json!(["input", "output"])),
+        "spectrogram" => (json!({"before": {"type": "string"}, "after": {"type": "string"}}), json!(["before"])),
+        "serve_health" => (json!({"host": {"type": "string"}, "port": {"type": "integer"}, "probe": {"type": "boolean"}}), json!([])),
+        "connector_health" => (json!({"id": {"type": "string"}}), json!([])),
+        _ => (json!({}), json!([])),
+    };
     json!({
         "name": name,
         "description": description,
-        "inputSchema": {"type": "object", "additionalProperties": true}
+        "inputSchema": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": properties,
+            "required": required
+        }
     })
 }
 
@@ -152,6 +174,7 @@ pub fn call_tool(server: &Server, params: &Value) -> Result<Value, (i32, String)
         .and_then(Value::as_str)
         .ok_or((-32602, "tools/call needs a name".into()))?;
     let args = params.get("arguments").cloned().unwrap_or(json!({}));
+    known_arguments(name, &args)?;
     let payload = match name {
         "synth" => synth(server, &args)?,
         "improve" => python_tool(server, PythonTool::Improve, &args)?,
@@ -172,9 +195,31 @@ pub fn call_tool(server: &Server, params: &Value) -> Result<Value, (i32, String)
     }))
 }
 
+fn known_arguments(name: &str, args: &Value) -> Result<(), (i32, String)> {
+    let allowed: &[&str] = match name {
+        "synth" => &["script", "castMap", "output"],
+        "improve" => &["input", "output"],
+        "spectrogram" => &["before", "after"],
+        "cube_revision" => &["input", "output", "maxSteps"],
+        "serve_health" => &["host", "port", "probe"],
+        "connector_health" => &["id"],
+        "list_connectors" | "list_engines" | "fixture_tone" | "benchmark_reference" | "harness_plan" => &[],
+        _ => &[],
+    };
+    let obj = args
+        .as_object()
+        .ok_or((-32602, "arguments must be an object".to_string()))?;
+    for key in obj.keys() {
+        if !allowed.contains(&key.as_str()) {
+            return Err((-32602, format!("unexpected argument {key}")));
+        }
+    }
+    Ok(())
+}
+
 fn synth(server: &Server, args: &Value) -> Result<Value, (i32, String)> {
     match server.repo.as_deref() {
-        Some(repo) => match bridge::plan(PythonTool::Synth, repo, &server.work, args) {
+        Some(repo) => match bridge::plan(PythonTool::Synth, repo, &server.scratch, args) {
             Err(message) if message.contains("No speech was invented") => Ok(json!({
                 "ok": false,
                 "synthesized": false,
@@ -198,19 +243,20 @@ fn python_tool(server: &Server, tool: PythonTool, args: &Value) -> Result<Value,
         .repo
         .as_ref()
         .ok_or((-32603, "repository root not found".to_string()))?;
-    let plan = bridge::plan(tool, repo, &server.work, args).map_err(|message| (-32602, message))?;
-    bridge::run_plan(&plan).map_err(|message| (-32603, message))
+    let plan = bridge::plan(tool, repo, &server.scratch, args).map_err(|message| (-32602, message))?;
+    let ran = bridge::run_plan(&plan).map_err(|message| (-32603, message))?;
+    let _ = server.scratch.adopt_new_files();
+    Ok(ran)
 }
 
 fn fixture(server: &Server) -> Result<Value, (i32, String)> {
-    let tone = write_fixture_tone(&server.work).map_err(|err| (-32603, err))?;
+    let tone = write_fixture_tone(&server.scratch).map_err(|err| (-32603, err))?;
     let meta = std::fs::read_to_string(&tone.sidecar).map_err(|err| (-32603, err.to_string()))?;
     let meta: Value = serde_json::from_str(&meta).map_err(|err| (-32603, err.to_string()))?;
     Ok(json!({
         "ok": true,
         "wav": fixture::FIXTURE_WAV_NAME,
-        "sidecar": meta,
-        "work": server.work
+        "sidecar": meta
     }))
 }
 
@@ -230,6 +276,9 @@ fn serve_health(args: &Value) -> Result<Value, (i32, String)> {
     let base = node_base_url(host, port).map_err(|err| (-32602, err))?;
     let health = health_url(host, port).map_err(|err| (-32602, err))?;
     let probe = args.get("probe").and_then(Value::as_bool).unwrap_or(false);
+    if probe {
+        serve::probe_host_allowed(host).map_err(|err| (-32602, err))?;
+    }
     if !probe {
         return Ok(json!({
             "ok": true,
@@ -247,14 +296,18 @@ fn serve_health(args: &Value) -> Result<Value, (i32, String)> {
     match agent.get(&health).call() {
         Ok(response) => {
             let body = response.into_string().unwrap_or_default();
-            let parsed: Value = serde_json::from_str(&body).unwrap_or(Value::Null);
-            let matches = parsed.get("service").and_then(Value::as_str) == Some(serve::SERVICE_NAME);
+            let clipped: String = body.chars().take(512).collect();
+            let parsed: Value = serde_json::from_str(&clipped).unwrap_or(Value::Null);
+            let service = parsed.get("service").and_then(Value::as_str);
+            let status = parsed.get("status").and_then(Value::as_str);
+            let matches = service == Some(serve::SERVICE_NAME);
             Ok(json!({
                 "ok": matches,
                 "probed": true,
                 "baseUrl": base,
                 "healthUrl": health,
-                "body": parsed
+                "service": service,
+                "status": status
             }))
         }
         Err(err) => Ok(json!({
@@ -262,7 +315,7 @@ fn serve_health(args: &Value) -> Result<Value, (i32, String)> {
             "probed": true,
             "baseUrl": base,
             "healthUrl": health,
-            "error": err.to_string()
+            "error": redact_secrets(&err.to_string())
         })),
     }
 }
@@ -283,7 +336,7 @@ fn harness_plan(server: &Server) -> Result<Value, (i32, String)> {
         .as_ref()
         .ok_or((-32603, "repository root not found".to_string()))?;
     let text = std::fs::read_to_string(
-        paths::read_repo_relative(repo, "examples/podcast_script_sample.txt").map_err(|err| (-32603, err))?,
+        paths::read_user_repo_file(repo, "examples/podcast_script_sample.txt").map_err(|err| (-32603, err))?,
     )
     .map_err(|err| (-32603, err.to_string()))?;
     let turns = gen_audio_core::script::parse_script(&text).map_err(|err| (-32602, err))?;
@@ -300,7 +353,7 @@ fn error_response(id: Option<Value>, code: i32, message: &str) -> Value {
     json!({
         "jsonrpc": "2.0",
         "id": id.unwrap_or(Value::Null),
-        "error": {"code": code, "message": message}
+        "error": {"code": code, "message": redact_secrets(message)}
     })
 }
 
@@ -313,6 +366,11 @@ pub fn stdio_loop(server: &Server) {
             Err(_) => break,
         };
         if line.trim().is_empty() {
+            continue;
+        }
+        if line.len() > 1024 * 1024 {
+            let _ = writeln!(stdout, "{}", error_response(None, -32600, "request larger than 1 MiB"));
+            let _ = stdout.flush();
             continue;
         }
         let message: Value = match serde_json::from_str(&line) {
@@ -366,6 +424,34 @@ mod tests {
         )
         .unwrap();
         assert!(note.is_none());
-        let _ = std::fs::remove_dir_all(&server.work);
+        let _ = std::fs::remove_dir_all(&server.scratch.dir);
+    }
+
+    #[test]
+    fn untrusted_tool_args_cannot_read_arbitrary_files() {
+        let server = Server::boot();
+        let readme = handle(
+            &server,
+            json!({"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"synth","arguments":{"output":"x.wav","script":"README.md"}}}),
+        )
+        .unwrap()
+        .unwrap();
+        let message = readme["error"]["message"].as_str().unwrap_or("");
+        assert!(message.contains("examples/"), "{message}");
+        let extra = handle(
+            &server,
+            json!({"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"serve_health","arguments":{"host":"169.254.169.254","probe":true,"token":"sk-supersecret"}}}),
+        )
+        .unwrap()
+        .unwrap();
+        assert!(extra["error"]["message"].as_str().unwrap_or("").contains("unexpected argument"));
+        let probe = handle(
+            &server,
+            json!({"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"serve_health","arguments":{"host":"169.254.169.254","probe":true}}}),
+        )
+        .unwrap()
+        .unwrap();
+        assert!(probe["error"]["message"].as_str().unwrap_or("").contains("allowlist"));
+        let _ = std::fs::remove_dir_all(&server.scratch.dir);
     }
 }
