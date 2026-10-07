@@ -14,9 +14,11 @@ Release builds embed `apps/desktop/dist` (`frontendDist`: `../dist`). `devUrl` i
 
 ```bash
 scripts/build-tauri.sh                 # Linux: mcp handshake, npm run build, then tauri build --bundles deb
-# Windows, from PowerShell:
+# Windows, from Windows PowerShell 5.1 or PowerShell 7:
 # scripts/build-tauri-windows.ps1      # mcp handshake, npm run build, then tauri build --bundles nsis,msi
 ```
+
+`scripts/build-tauri-windows.ps1` pins `@tauri-apps/cli` at 2.12.1 (the `tauri` version in `Cargo.lock`) and prints the newest NSIS and MSI by last write time.
 
 ```bash
 # library crates and ACP / MCP / harness tests
