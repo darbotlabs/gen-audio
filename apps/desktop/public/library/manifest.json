@@ -7,14 +7,14 @@
       "status": "ok",
       "synthesizedSpeech": true,
       "sample_rate": 24000,
-      "duration_s": 314.2696666666667,
+      "duration_s": 157.134,
       "wavUrl": "/library/library_cube_explainer_kokoro_onnx.wav",
       "wav": "artifacts/library/library_cube_explainer_kokoro_onnx.wav",
       "cube": {
-        "pngUrl": "/library/library_kokoro_onnx_cube3d.png",
-        "jsonUrl": "/library/library_kokoro_onnx_cube3d.json",
-        "inv_hdr": 0.09737,
-        "note": "Spatial analysis uses kokoro-onnx inverse-HDR cube layers (signal/tonality/confidence/quality)."
+        "pngUrl": "/library/library_cube_explainer_kokoro_onnx_cube3d.png",
+        "jsonUrl": "/library/library_cube_explainer_kokoro_onnx_cube3d.json",
+        "inv_hdr": 0.06963625142864167,
+        "note": "Dedicated inverse-HDR cube from cube-explainer WAV (signal/tonality/confidence/quality)."
       },
       "summary": "Real kokoro-onnx WAV explaining spectrogram cubes. synthesizedSpeech true."
     },

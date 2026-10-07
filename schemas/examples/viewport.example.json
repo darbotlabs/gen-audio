@@ -360,7 +360,7 @@
         "body": [
           {
             "type": "TextBlock",
-            "text": "Real synth: kokoro-onnx · 374.8s · cube attached",
+            "text": "Real synth: kokoro-onnx \u00b7 374.8s \u00b7 cube attached",
             "wrap": true
           },
           {
@@ -394,7 +394,7 @@
         "wavUrl": "/library/library_kokoro.wav",
         "duration_s": 375.625,
         "sample_rate": 24000,
-        "summary": "Real dayour/kokoro torch synth — 375.6s Gen-Audio briefing. Not a fixture."
+        "summary": "Real dayour/kokoro torch synth \u2014 375.6s Gen-Audio briefing. Not a fixture."
       },
       "adaptive": {
         "type": "AdaptiveCard",
@@ -402,7 +402,7 @@
         "body": [
           {
             "type": "TextBlock",
-            "text": "Real synth: dayour/kokoro · 375.6s",
+            "text": "Real synth: dayour/kokoro \u00b7 375.6s",
             "wrap": true
           }
         ]
@@ -411,12 +411,12 @@
     {
       "id": "lib-misaki-kokoro",
       "kind": "LibraryClip",
-      "title": "misaki→kokoro",
+      "title": "misaki\u2192kokoro",
       "body": {
         "engineId": "misaki_kokoro",
         "status": "running",
         "synthesizedSpeech": false,
-        "summary": "Misaki→Kokoro synthesizing now. No fake WAV until complete."
+        "summary": "Misaki\u2192Kokoro synthesizing now. No fake WAV until complete."
       }
     },
     {
@@ -468,14 +468,14 @@
         "refs": [
           "persona:optimus",
           "tts:kokoro_onnx",
-          "/library/library_kokoro_onnx_cube3d.json",
-          "misaki→kokoro cube (benchmark winner)"
+          "cube:library_cube_explainer",
+          "clip:lib-cube-explainer"
         ],
         "spectrogram2d": "browser-profile-map",
         "spectrogram3d": "library-cube-hook",
-        "cubeJsonUrl": "/library/library_kokoro_onnx_cube3d.json",
+        "cubeJsonUrl": "/library/library_cube_explainer_kokoro_onnx_cube3d.json",
         "notPodcast": true,
-        "disclaimer": "Browser profile map for persona Optimus Timelarp with library cube refs. Not a podcast render."
+        "disclaimer": "Browser profile map for persona Optimus Timelarp with library cube spatial analysis. Not a podcast render."
       }
     },
     {
@@ -487,14 +487,16 @@
         "status": "ok",
         "synthesizedSpeech": true,
         "wavUrl": "/library/library_cube_explainer_kokoro_onnx.wav",
-        "duration_s": 374.766,
+        "duration_s": 157.134,
         "sample_rate": 24000,
-        "summary": "Real kokoro-onnx briefing on inverse-HDR cubes. Not a fixture.",
-        "cubePngUrl": "/library/library_kokoro_onnx_cube3d.png",
-        "cubeJsonUrl": "/library/library_kokoro_onnx_cube3d.json",
-        "sidecarUrl": "/library/library_kokoro_onnx.synth.json",
-        "inv_hdr": 0.09737,
-        "title": "Cube explainer (kokoro-onnx)"
+        "summary": "Real kokoro-onnx podcast explaining spectrogram cubes in Gen-Audio. Not a fixture.",
+        "cubePngUrl": "/library/library_cube_explainer_kokoro_onnx_cube3d.png",
+        "cubeJsonUrl": "/library/library_cube_explainer_kokoro_onnx_cube3d.json",
+        "sidecarUrl": "/library/library_cube_explainer_kokoro_onnx.synth.json",
+        "inv_hdr": 0.06963625142864167,
+        "title": "Cube explainer (kokoro-onnx)",
+        "semanticName": "Spectrogram cube explainer \u00b7 Optimus AgentVoice",
+        "faceName": "Cube explainer"
       },
       "adaptive": {
         "type": "AdaptiveCard",
@@ -502,7 +504,7 @@
         "body": [
           {
             "type": "TextBlock",
-            "text": "Real synth: kokoro-onnx · 374.8s · cube attached",
+            "text": "Real synth: kokoro-onnx \u00b7 157.1s \u00b7 cube attached",
             "wrap": true
           },
           {
@@ -510,7 +512,7 @@
             "facts": [
               {
                 "title": "Duration",
-                "value": "374.766 s"
+                "value": "157.134 s"
               },
               {
                 "title": "SR",
@@ -518,7 +520,7 @@
               },
               {
                 "title": "inv-HDR",
-                "value": "0.097"
+                "value": "0.070"
               }
             ]
           }
