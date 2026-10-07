@@ -246,6 +246,12 @@ fn validate_voice_profile(id: &str, obj: &serde_json::Map<String, Value>) -> Res
         return Err(format!("card {id} spectrogram3d is not a known hook"));
     }
     expect_const(obj.get("notPodcast"), true, "notPodcast")?;
+    if let Some(speech) = obj.get("synthesizedSpeech") {
+        expect_const(Some(speech), false, "synthesizedSpeech")?;
+    }
+    if obj.get("wavUrl").is_some() {
+        return Err(format!("card {id} must not claim a WAV on a voice profile"));
+    }
     let disclaimer = expect_string(obj.get("disclaimer"), "disclaimer", 12, 400)?;
     if !disclaimer.to_ascii_lowercase().contains("not") {
         return Err(format!("card {id} disclaimer must say the profile is not a podcast render"));
@@ -326,6 +332,21 @@ mod tests {
         assert_ne!(value["agentName"], "af_heart");
         assert!(value["refs"].to_string().contains("af_heart"));
         assert_eq!(value["notPodcast"], true);
+    }
+
+    #[test]
+    fn optimus_profile_is_a_persona_and_not_a_wav_claim() {
+        let raw = include_str!("../../../schemas/examples/voice_profile.optimus.json");
+        let value: Value = serde_json::from_str(raw).unwrap();
+        let obj = value.as_object().expect("profile object");
+        validate_voice_profile("profile-optimus", obj).unwrap();
+        assert_eq!(value["personaId"], "optimus");
+        assert_eq!(value["agentName"], "Optimus Timelarp");
+        assert_eq!(value["notPodcast"], true);
+        assert_eq!(value["synthesizedSpeech"], false);
+        assert!(value.get("wavUrl").is_none());
+        let public = include_str!("../../../apps/desktop/public/library/voice_profile.optimus.json");
+        assert_eq!(public, raw);
     }
 
     #[test]

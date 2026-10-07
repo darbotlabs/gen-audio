@@ -172,6 +172,10 @@ function validateBody(id: string, kind: string, body: Record<string, unknown>): 
       return `card ${id} spectrogram3d is not a known hook`;
     }
     if (body.notPodcast !== true) return `card ${id} must set notPodcast true`;
+    if (body.synthesizedSpeech !== undefined && body.synthesizedSpeech !== false) {
+      return `card ${id} synthesizedSpeech must be false on a voice profile`;
+    }
+    if (body.wavUrl) return `card ${id} must not claim a WAV on a voice profile`;
     if (!boundedString(body.disclaimer, 12, 400) || !String(body.disclaimer).toLowerCase().includes("not")) {
       return `card ${id} disclaimer must say the profile is not a podcast render`;
     }

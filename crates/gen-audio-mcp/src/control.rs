@@ -563,3 +563,20 @@ pub fn voice_profile_list() -> Value {
         "note": "Agent is a persona. Voice is a TTS or G2P model. LLM ids stay on Connectors."
     })
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn validate_track_and_voice_profile_get_accept_optimus() {
+        validate_track(&[json!("optimus")], "kokoro_onnx").expect("optimus track");
+        let profile = voice_profile_get(&json!({"personaId": "optimus"})).expect("profile");
+        assert_eq!(profile["personaId"], "optimus");
+        assert_eq!(profile["notPodcast"], true);
+        assert_eq!(profile["synthesizedSpeech"], false);
+        assert!(profile.get("wavUrl").is_none());
+        assert!(validate_track(&[json!("not-a-persona")], "kokoro_onnx").is_err());
+    }
+}

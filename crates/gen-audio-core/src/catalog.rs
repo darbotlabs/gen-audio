@@ -99,6 +99,21 @@ const PERSONAS: &[Persona] = &[
         refs: &["persona:rocky"],
     },
     Persona {
+        id: "optimus",
+        name: "Optimus Timelarp",
+        tone: "assertive",
+        purpose: "Gate and harden product stamps",
+        domain: "Product / A-E stamps",
+        accent: "General American",
+        traits: "Decisive, honest, screenshot-proof. AP-7 hard kill. Not a TTS model id.",
+        refs: &[
+            "persona:optimus",
+            "tts:kokoro_onnx",
+            "cube:library_cube_explainer",
+            "clip:lib-cube-explainer",
+        ],
+    },
+    Persona {
         id: "frank",
         name: "Frank",
         tone: "plain",
@@ -304,8 +319,12 @@ pub fn voice_profile_value(id: &str) -> Option<Value> {
         "traits": person.traits,
         "refs": person.refs,
         "spectrogram2d": "browser-profile-map",
-        "spectrogram3d": if person.id == "alice" { "library-cube-hook" } else { "none" },
-        "cubeJsonUrl": if person.id == "alice" { Value::String("/library/library_kokoro_onnx_cube3d.json".into()) } else { Value::Null },
+        "spectrogram3d": if matches!(person.id, "alice" | "optimus") { "library-cube-hook" } else { "none" },
+        "cubeJsonUrl": match person.id {
+            "alice" => Value::String("/library/library_kokoro_onnx_cube3d.json".into()),
+            "optimus" => Value::String("/library/library_cube_explainer_kokoro_onnx_cube3d.json".into()),
+            _ => Value::Null,
+        },
         "notPodcast": true,
         "synthesizedSpeech": false,
         "disclaimer": format!(
@@ -313,4 +332,24 @@ pub fn voice_profile_value(id: &str) -> Option<Value> {
             person.name, voice_label
         )
     }))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn optimus_is_a_catalog_persona_without_a_wav_claim() {
+        let person = persona("optimus").expect("optimus");
+        assert_eq!(person.name, "Optimus Timelarp");
+        let profile = voice_profile_value("optimus").expect("profile");
+        assert_eq!(profile["notPodcast"], true);
+        assert_eq!(profile["synthesizedSpeech"], false);
+        assert!(profile.get("wavUrl").is_none());
+        assert_eq!(profile["spectrogram3d"], "library-cube-hook");
+        assert_eq!(
+            profile["cubeJsonUrl"],
+            "/library/library_cube_explainer_kokoro_onnx_cube3d.json"
+        );
+    }
 }

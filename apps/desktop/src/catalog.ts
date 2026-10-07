@@ -81,7 +81,7 @@ export const PERSONAS: Persona[] = [
     domain: "Product / A-E stamps",
     accent: "General American",
     traits: "Decisive, honest, screenshot-proof. AP-7 hard kill. Not a TTS model id.",
-    refs: ["persona:optimus", "cube:library_kokoro_onnx", "cube:misaki-kokoro-winner"],
+    refs: ["persona:optimus", "tts:kokoro_onnx", "cube:library_cube_explainer", "clip:lib-cube-explainer"],
     f0: 118,
     formants: [520, 1400, 2550],
   },

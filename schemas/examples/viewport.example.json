@@ -475,6 +475,7 @@
         "spectrogram3d": "library-cube-hook",
         "cubeJsonUrl": "/library/library_cube_explainer_kokoro_onnx_cube3d.json",
         "notPodcast": true,
+        "synthesizedSpeech": false,
         "disclaimer": "Browser profile map for persona Optimus Timelarp with library cube spatial analysis. Not a podcast render."
       }
     },

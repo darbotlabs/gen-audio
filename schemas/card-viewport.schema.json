@@ -163,6 +163,7 @@
         "spectrogram3d": { "enum": ["none", "library-cube-hook", "fixture-cube"] },
         "cubeJsonUrl": { "type": "string" },
         "notPodcast": { "const": true },
+        "synthesizedSpeech": { "const": false },
         "disclaimer": { "type": "string", "minLength": 12 }
       }
     },
