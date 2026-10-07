@@ -39,6 +39,8 @@ const state = {
   canvas: null as HTMLCanvasElement | null,
   sourceUrl: "",
   clockListeners: new Set<(fraction: number) => void>(),
+  rafId: 0 as number,
+  audioClock: null as (() => number | null) | null,
 };
 
 function ensureLayer(id: string, order: number): LayerParams {
@@ -93,6 +95,36 @@ export function setCubeScrub(fraction: number, opts?: { silent?: boolean }): voi
 
 export function getCubeScrub(): number {
   return state.scrub;
+}
+
+/**
+ * LIVE viewport: drive cube time-bin from audio via rAF while playing.
+ * getFraction returns 0..1 from the active Library WAV, or null if idle.
+ */
+export function startLiveCubeClock(getFraction: () => number | null): void {
+  state.audioClock = getFraction;
+  if (state.rafId) return;
+  const tick = () => {
+    state.rafId = window.requestAnimationFrame(tick);
+    if (!state.audioClock) return;
+    const fraction = state.audioClock();
+    if (fraction === null || !Number.isFinite(fraction)) return;
+    // silent: do not re-seek audio; only advance the bitdot time-slice + scrub UI
+    setCubeScrub(fraction, { silent: true });
+    const scrub = document.querySelector<HTMLInputElement>("#cube-scrub");
+    if (scrub && !scrub.matches(":active")) scrub.value = String(Math.round(fraction * 1000));
+    const fp = document.querySelector<HTMLInputElement>("#fp-scrub");
+    if (fp && !fp.matches(":active")) fp.value = String(Math.round(fraction * 1000));
+  };
+  state.rafId = window.requestAnimationFrame(tick);
+}
+
+export function stopLiveCubeClock(): void {
+  state.audioClock = null;
+  if (state.rafId) {
+    window.cancelAnimationFrame(state.rafId);
+    state.rafId = 0;
+  }
 }
 
 export function onCubeClock(listener: (fraction: number) => void): () => void {
@@ -335,7 +367,9 @@ function draw(): void {
     const color = DEFAULT_COLORS[layer.id] ?? [0.7, 0.7, 0.7];
     for (const point of state.points) {
       if (point.layer !== layer.id) continue;
-      if (point.t > state.scrub + 0.0001) continue;
+      // Live time-bin: keep a trailing window ending at the shared playhead.
+      const window = 0.08;
+      if (point.t > state.scrub + 0.0001 || point.t < state.scrub - window) continue;
       const gainV = Math.max(0, Math.min(1, point.v * layer.gain));
       const src: [number, number, number, number] = [
         color[0],

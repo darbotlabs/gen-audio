@@ -1,4 +1,4 @@
-import { setCubeScrub } from "./cubeview";
+import { setCubeScrub, startLiveCubeClock, stopLiveCubeClock } from "./cubeview";
 /** HTML audio transport for library tiles. Missing files stay missing. */
 
 const players = new Map<string, HTMLAudioElement>();
@@ -113,6 +113,11 @@ export async function playClip(clipId: string): Promise<string> {
     setPlayingChrome(true);
     await audio.play();
     syncFloater(clipId);
+    startLiveCubeClock(() => {
+      const current = activeId ? player(activeId) : undefined;
+      if (!current || current.paused || !Number.isFinite(current.duration) || current.duration <= 0) return null;
+      return current.currentTime / current.duration;
+    });
     return "playing";
   } catch (error) {
     if (!anyPlaying()) setPlayingChrome(false);
@@ -124,6 +129,11 @@ export function pauseClip(clipId: string): string {
   const audio = player(clipId);
   if (!audio) return "no player";
   audio.pause();
+  let playing = false;
+  for (const other of players.values()) {
+    if (!other.paused && !other.ended) { playing = true; break; }
+  }
+  if (!playing) stopLiveCubeClock();
   return "paused";
 }
 
@@ -234,13 +244,24 @@ export function bindFloatingPlayback(): void {
       activeId = clipId;
       setPlayingChrome(true);
       syncFloater(clipId);
+      startLiveCubeClock(() => {
+        const current = activeId ? player(activeId) : undefined;
+        if (!current || current.paused || !Number.isFinite(current.duration) || current.duration <= 0) return null;
+        return current.currentTime / current.duration;
+      });
     });
     audio.addEventListener("pause", () => {
       if (activeId === clipId) syncFloater(clipId);
-      if (!anyPlaying()) setPlayingChrome(false);
+      if (!anyPlaying()) {
+        setPlayingChrome(false);
+        stopLiveCubeClock();
+      }
     });
     audio.addEventListener("ended", () => {
-      if (!anyPlaying()) setPlayingChrome(false);
+      if (!anyPlaying()) {
+        setPlayingChrome(false);
+        stopLiveCubeClock();
+      }
     });
     audio.addEventListener("timeupdate", () => {
       if (activeId === clipId) {
