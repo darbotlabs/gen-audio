@@ -88,6 +88,15 @@
         <p id="empty" class="empty" hidden>No cards in this viewport. Load the labeled example for engines, connectors, and readiness tiles.</p>
       </section>
     </div>
+    
+    <div id="floating-playback" class="floating-playback" hidden aria-label="Now playing transport">
+      <button type="button" id="fp-playpause" class="fp-btn" aria-label="Play or pause">Pause</button>
+      <div class="fp-meta">
+        <span id="fp-title" class="fp-title">Library clip</span>
+        <input id="fp-scrub" class="fp-scrub" type="range" min="0" max="1000" value="0" aria-label="Scrub playback" />
+        <span id="fp-time" class="fp-time">0:00 / 0:00</span>
+      </div>
+    </div>
     <footer class="foot">
       PageUp/Down or Arrow Up/Down advance whole slides. Arrow Left/Right move cards. Agent is a persona; Voice is the TTS model. Drag a green engine into the side pane. Profile maps and cubes are labeled — not synthesized speech.
     </footer>

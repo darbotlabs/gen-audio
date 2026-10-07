@@ -1,7 +1,7 @@
 import example from "../../../schemas/examples/viewport.example.json";
 import { bindCube, clearCube, loadCube, setCubeLayer, setCubeScrub } from "./cubeview";
 import { applyClipNames, harvestNames } from "./library-meta";
-import { pauseClip, playClip, seekClip } from "./playback";
+import { bindFloatingPlayback, pauseClip, playClip, seekClip } from "./playback";
 import { profilePreview, type ProfilePreview, type VoiceSelection } from "./profiles";
 import {
   bindSlideScroll,
@@ -62,6 +62,7 @@ function show(documentIn: unknown): void {
   bindCubeCanvas();
   bindRename();
   void harvestLibrary();
+  bindFloatingPlayback();
   const n = slides(board).length;
   status.textContent = `${doc.cards.length} cards · ${n} snap slides · spectrogram follows side pane (preview, not speech)`;
   requestAnimationFrame(() => goToSlide(board, 0));
@@ -190,6 +191,28 @@ async function openCube(url: string, source: string): Promise<void> {
   }
   const message = await loadCube(url);
   if (caption) caption.textContent = `${source}: ${message}`;
+  // F5 honesty: library-bound cubes must never keep a FIXTURE live-mark.
+  const cubeCard = board.querySelector<HTMLElement>('.card[data-kind="Cube3D"]');
+  if (cubeCard && !/did not load|no signal/i.test(message)) {
+    cubeCard.dataset.cubeSource = "library";
+    const live = cubeCard.querySelector<HTMLElement>(".live-mark");
+    if (live) {
+      live.textContent = "Library";
+      live.dataset.source = "library";
+    }
+    const pill = cubeCard.querySelector<HTMLElement>(".pill");
+    if (pill) {
+      pill.textContent = "library-bound";
+      pill.classList.remove("warn");
+    }
+    for (const node of Array.from(cubeCard.querySelectorAll<HTMLElement>(".summary"))) {
+      if (/fixture|visual toy/i.test(node.textContent || "")) {
+        node.textContent =
+          "Interactive cube bound to library clip JSON - layers signal/tonality/confidence/quality.";
+      }
+    }
+  }
+  status.textContent = `F5 cube bound (${source}) - badge Library`;
 }
 
 function selectTile(id: string): void {

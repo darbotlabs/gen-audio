@@ -31,7 +31,7 @@ export const SLIDE_SCHEMAS: SlideSchema[] = [
     blurb: "Agent personas. Flip a tile for tone, purpose, domain, accent, traits, and refs.",
     columns: 3,
     layer: "models",
-    cardIds: ["profile-anton", "profile-alice", "profile-khortana", "profile-rocky"],
+    cardIds: ["profile-anton", "profile-alice", "profile-khortana", "profile-rocky", "profile-optimus"],
   },
   {
     id: "studio",
@@ -231,7 +231,11 @@ function frontFace(card: ViewportCard): HTMLElement {
 
 /** Honest badge: fixture tiles are Fixture, not "Live product speech". */
 function liveLabel(card: ViewportCard): string {
-  if (card.kind === "SpectrogramPanel" || card.kind === "Cube3D") return "Fixture";
+  if (card.kind === "Cube3D") {
+    if (card.body.datasetBound === "library" || card.body.source === "library-clip") return "Library";
+    return "Fixture";
+  }
+  if (card.kind === "SpectrogramPanel") return "Fixture";
   if (card.kind === "PodcastCast") return "Sample";
   if (card.kind === "BenchmarkCompare") return "Ref only";
   if (card.kind === "EngineStatus") {
@@ -354,10 +358,15 @@ function bodyFor(card: ViewportCard, kind: string, body: Record<string, unknown>
     play.dataset.action = "play-profile";
     wrap.append(before, after, play);
   } else if (kind === "Cube3D") {
-    wrap.append(pill("fixture theater", true));
+    const bound = body.datasetBound === "library" || body.source === "library-clip";
+    wrap.append(pill(bound ? "library-bound" : "fixture theater", !bound));
     wrap.append(paragraph(String(body.disclaimer ?? "")));
-    wrap.append(paragraph("Visual toy only. Not a render pipeline output."));
-    wrap.append(canvas("cube"));
+    wrap.append(paragraph(bound
+      ? "Interactive cube bound to library clip JSON - layers signal/tonality/confidence/quality."
+      : "Visual toy only until a real Library clip binds cube JSON. Not a render pipeline output."));
+    const cube = canvas("cube");
+    if (body.cubeJsonUrl) cube.dataset.cubeJsonUrl = String(body.cubeJsonUrl);
+    wrap.append(cube);
   } else if (kind === "PodcastCast") {
     wrap.append(pill("sample script", true));
     wrap.append(paragraph("Sample script only. Speaker names are personas. af_heart and am_michael are Kokoro pack ids, not the Voice selector. synthesizedSpeech is false here."));

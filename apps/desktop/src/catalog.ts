@@ -74,6 +74,18 @@ export const PERSONAS: Persona[] = [
     formants: [450, 1100, 2200],
   },
   {
+    id: "optimus",
+    name: "Optimus Timelarp",
+    tone: "assertive",
+    purpose: "Gate and harden product stamps",
+    domain: "Product / A-E stamps",
+    accent: "General American",
+    traits: "Decisive, honest, screenshot-proof. AP-7 hard kill. Not a TTS model id.",
+    refs: ["persona:optimus", "cube:library_kokoro_onnx", "cube:misaki-kokoro-winner"],
+    f0: 118,
+    formants: [520, 1400, 2550],
+  },
+  {
     id: "frank",
     name: "Frank",
     tone: "plain",

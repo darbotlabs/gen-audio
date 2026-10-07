@@ -260,7 +260,9 @@
         "domain": "Desktop app and SDK layout",
         "accent": "General American",
         "traits": "Low-mid pitch, even pace, short pauses. Not a connector model.",
-        "refs": ["persona:anton"],
+        "refs": [
+          "persona:anton"
+        ],
         "spectrogram2d": "browser-profile-map",
         "spectrogram3d": "none",
         "notPodcast": true,
@@ -280,7 +282,10 @@
         "domain": "SDK onboarding",
         "accent": "General American",
         "traits": "Persona Alice is the agent name. Kokoro pack id af_heart is a reference on this profile, not the Voice selector.",
-        "refs": ["kokoro-pack:af_heart", "persona:alice"],
+        "refs": [
+          "kokoro-pack:af_heart",
+          "persona:alice"
+        ],
         "spectrogram2d": "browser-profile-map",
         "spectrogram3d": "library-cube-hook",
         "cubeJsonUrl": "/library/library_kokoro_onnx_cube3d.json",
@@ -301,7 +306,9 @@
         "domain": "Product critique",
         "accent": "General American",
         "traits": "Higher placement and a quicker glide. Not a TTS model id.",
-        "refs": ["persona:khortana"],
+        "refs": [
+          "persona:khortana"
+        ],
         "spectrogram2d": "browser-profile-map",
         "spectrogram3d": "none",
         "notPodcast": true,
@@ -321,7 +328,9 @@
         "domain": "Studio banter",
         "accent": "General American",
         "traits": "Low pitch and a narrow band. Not a TTS model id.",
-        "refs": ["persona:rocky"],
+        "refs": [
+          "persona:rocky"
+        ],
         "spectrogram2d": "browser-profile-map",
         "spectrogram3d": "none",
         "notPodcast": true,
@@ -351,7 +360,7 @@
         "body": [
           {
             "type": "TextBlock",
-            "text": "Real synth: kokoro-onnx \u00b7 374.8s \u00b7 cube attached",
+            "text": "Real synth: kokoro-onnx · 374.8s · cube attached",
             "wrap": true
           },
           {
@@ -385,7 +394,7 @@
         "wavUrl": "/library/library_kokoro.wav",
         "duration_s": 375.625,
         "sample_rate": 24000,
-        "summary": "Real dayour/kokoro torch synth \u2014 375.6s Gen-Audio briefing. Not a fixture."
+        "summary": "Real dayour/kokoro torch synth — 375.6s Gen-Audio briefing. Not a fixture."
       },
       "adaptive": {
         "type": "AdaptiveCard",
@@ -393,7 +402,7 @@
         "body": [
           {
             "type": "TextBlock",
-            "text": "Real synth: dayour/kokoro \u00b7 375.6s",
+            "text": "Real synth: dayour/kokoro · 375.6s",
             "wrap": true
           }
         ]
@@ -402,12 +411,12 @@
     {
       "id": "lib-misaki-kokoro",
       "kind": "LibraryClip",
-      "title": "misaki\u2192kokoro",
+      "title": "misaki→kokoro",
       "body": {
         "engineId": "misaki_kokoro",
         "status": "running",
         "synthesizedSpeech": false,
-        "summary": "Misaki\u2192Kokoro synthesizing now. No fake WAV until complete."
+        "summary": "Misaki→Kokoro synthesizing now. No fake WAV until complete."
       }
     },
     {
@@ -441,6 +450,38 @@
         "status": "unavailable",
         "synthesizedSpeech": false,
         "summary": "pocket_tts not installed. Prior wrong-topic teaser not reused."
+      }
+    },
+    {
+      "id": "profile-optimus",
+      "kind": "VoiceProfile",
+      "title": "Optimus Timelarp",
+      "body": {
+        "agentName": "Optimus Timelarp",
+        "personaId": "optimus",
+        "voiceModel": "kokoro_onnx",
+        "tone": "assertive",
+        "purpose": "Gate and harden product stamps",
+        "domain": "Product / A-E stamps",
+        "accent": "General American",
+        "traits": "Decisive, honest, screenshot-proof. AP-7 hard kill. Not a TTS model id.",
+        "refs": [
+          "persona:optimus",
+          "tts:kokoro_onnx",
+          "/library/library_kokoro_onnx_cube3d.json",
+          "misaki→kokoro cube (benchmark winner)"
+        ],
+        "spectrogram2d": "browser-profile-map",
+        "spectrogram3d": "/library/library_kokoro_onnx_cube3d.json",
+        "cubeJsonUrl": "/library/library_kokoro_onnx_cube3d.json",
+        "cubeLayers": [
+          "signal",
+          "tonality",
+          "confidence",
+          "quality"
+        ],
+        "notPodcast": true,
+        "disclaimer": "Browser profile map for persona Optimus Timelarp with library cube refs. Not a podcast render."
       }
     }
   ]

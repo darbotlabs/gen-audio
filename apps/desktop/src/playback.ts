@@ -106,9 +106,13 @@ export async function playClip(clipId: string): Promise<string> {
     if (id !== clipId && !other.paused) other.pause();
   }
   try {
+    activeId = clipId;
+    setPlayingChrome(true);
     await audio.play();
+    syncFloater(clipId);
     return "playing";
   } catch (error) {
+    if (!anyPlaying()) setPlayingChrome(false);
     return `play failed: ${String(error)}`;
   }
 }
@@ -128,4 +132,87 @@ export function seekClip(clipId: string, seconds: number): string {
   if (Number.isFinite(duration) && seconds > duration) return "past end";
   audio.currentTime = seconds;
   return "seeked";
+}
+
+/** Floating transport + viewport playing chrome. */
+let activeId: string | null = null;
+
+function floater(): {
+  root: HTMLElement;
+  btn: HTMLButtonElement;
+  title: HTMLElement;
+  scrub: HTMLInputElement;
+  time: HTMLElement;
+} | null {
+  const root = document.querySelector<HTMLElement>("#floating-playback");
+  const btn = document.querySelector<HTMLButtonElement>("#fp-playpause");
+  const title = document.querySelector<HTMLElement>("#fp-title");
+  const scrub = document.querySelector<HTMLInputElement>("#fp-scrub");
+  const time = document.querySelector<HTMLElement>("#fp-time");
+  if (!root || !btn || !title || !scrub || !time) return null;
+  return { root, btn, title, scrub, time };
+}
+
+function syncFloater(clipId: string): void {
+  const audio = player(clipId);
+  const ui = floater();
+  if (!audio || !ui) return;
+  const tile = document.querySelector<HTMLElement>(`.card[data-id="${CSS.escape(clipId)}"]`);
+  ui.title.textContent = tile?.querySelector("h2")?.textContent?.trim() || clipId;
+  const duration = audio.duration || 0;
+  const cur = audio.currentTime || 0;
+  ui.time.textContent = `${formatTime(cur)} / ${formatTime(duration)}`;
+  ui.scrub.value = duration > 0 ? String(Math.round((cur / duration) * 1000)) : "0";
+  ui.btn.textContent = audio.paused ? "Play" : "Pause";
+}
+
+function setPlayingChrome(on: boolean): void {
+  document.querySelector(".viewport")?.classList.toggle("is-playing", on);
+  const ui = floater();
+  if (!ui) return;
+  ui.root.hidden = !on;
+}
+
+function anyPlaying(): boolean {
+  for (const audio of players.values()) {
+    if (!audio.paused && !audio.ended) return true;
+  }
+  return false;
+}
+
+export function bindFloatingPlayback(): void {
+  const ui = floater();
+  if (!ui || ui.root.dataset.bound === "1") return;
+  ui.root.dataset.bound = "1";
+  ui.btn.addEventListener("click", () => {
+    if (!activeId) return;
+    const audio = player(activeId);
+    if (!audio) return;
+    if (audio.paused) void playClip(activeId);
+    else pauseClip(activeId);
+  });
+  ui.scrub.addEventListener("input", () => {
+    if (!activeId) return;
+    const audio = player(activeId);
+    if (!audio || !audio.duration) return;
+    audio.currentTime = (Number(ui.scrub.value) / 1000) * audio.duration;
+    syncFloater(activeId);
+  });
+  for (const [clipId, audio] of players) {
+    audio.addEventListener("play", () => {
+      activeId = clipId;
+      setPlayingChrome(true);
+      syncFloater(clipId);
+    });
+    audio.addEventListener("pause", () => {
+      if (activeId === clipId) syncFloater(clipId);
+      if (!anyPlaying()) setPlayingChrome(false);
+    });
+    audio.addEventListener("ended", () => {
+      if (!anyPlaying()) setPlayingChrome(false);
+    });
+    audio.addEventListener("timeupdate", () => {
+      if (activeId === clipId) syncFloater(clipId);
+    });
+  }
 }
