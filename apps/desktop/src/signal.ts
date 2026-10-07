@@ -79,6 +79,7 @@ export function drawSpectrogram(canvas: HTMLCanvasElement, audio: FixtureBuffer,
   ctx.fillStyle = "#9aa6bd";
   ctx.font = "12px sans-serif";
   ctx.fillText(title, 8, 14);
+  canvas.dataset.caption = title;
 }
 
 export function drawCube(canvas: HTMLCanvasElement, audio: FixtureBuffer): void {

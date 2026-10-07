@@ -140,7 +140,7 @@ Do not point the artifact directory at a folder you then commit. Generated audio
 
 The browser checker in `apps/desktop/src/validate.ts` enforces the same honesty rules as `gen_audio_core::cards`: fixture visuals, `sampleScript: true`, unprobed versus probed serve rows, connector ids, and benchmark notes that say the figures were not remeasured. A rejected document replaces the board with that error. An empty card list keeps the empty-state sentence. Cards are validated again in `gen_audio_core::cards` before a document is treated as renderable. `SpectrogramPanel` and `Cube3D` must set `source` to `fixture-tone` and `notPodcast` to true. `BenchmarkCompare.measuredHere` must be false. Figures in the example board are copied from the 2026-10-06 compare notes (`gen_audio_core::benchmark`) and are not recomputed here. Inverse-HDR is not a publish ranking: those notes preferred the wider VibeVoice final even when Kokoro's inv-HDR rose more.
 
-The in-window spectrogram and cube are a browser DFT / WebGL sketch of the same fixture idea. The caption says they are not the Python `specgram` and not a podcast. The Python chain remains the publish path.
+The in-window spectrogram is a browser DFT of the side-pane voice profile: agent, voice, duration, perspective names, and the engine dropped into the load slot. The caption says that map is not the Python `specgram` and not a podcast. The cube stays a WebGL sketch of the sine fixture. The Python chain remains the publish path.
 
 ## Connectors
 

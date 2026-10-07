@@ -1,7 +1,8 @@
 import example from "../../../schemas/examples/viewport.example.json";
+import { profilePreview, type ProfilePreview, type VoiceSelection } from "./profiles";
 import { renderBoard, moveFocus, showRejected } from "./render";
-import { bindStudio } from "./studio";
-import { drawCube, drawSpectrogram, makeFixture, play, previewImprove } from "./signal";
+import { bindStudio, type StudioSelection } from "./studio";
+import { drawCube, drawSpectrogram, makeFixture, play } from "./signal";
 import { CONNECTOR_MODES, validateViewport, type ViewportDocument } from "./validate";
 
 function required(id: string): HTMLElement {
@@ -13,10 +14,21 @@ function required(id: string): HTMLElement {
 const board = required("#board");
 const empty = required("#empty");
 const status = required("#status");
-bindStudio(board, status);
-
 const fixture = makeFixture();
-const improved = previewImprove(fixture);
+let selection: VoiceSelection = {
+  engineId: "",
+  engineTitle: "",
+  agent: "local",
+  voice: "af_heart",
+  durationMin: 3,
+  perspectives: [],
+};
+let activePreview: ProfilePreview = profilePreview(selection);
+
+bindStudio(board, status, (next: StudioSelection) => {
+  selection = next;
+  if (paintProfile()) status.textContent = activePreview.caption;
+});
 
 function show(documentIn: unknown): void {
   const error = validateViewport(documentIn);
@@ -27,20 +39,39 @@ function show(documentIn: unknown): void {
   }
   const doc = documentIn as ViewportDocument;
   renderBoard(board, empty, doc);
-  paint();
-  status.textContent = `${doc.cards.length} cards. Fixture visuals are generated in this window.`;
+  paintProfile();
+  status.textContent = `${doc.cards.length} cards. The spectrogram follows the side pane voice profile.`;
 }
 
-function paint(): void {
+function paintProfile(): boolean {
+  activePreview = profilePreview(selection);
+  const panel = board.querySelector<HTMLElement>('[data-kind="SpectrogramPanel"]');
   const before = board.querySelector<HTMLCanvasElement>('[data-canvas="spec-before"]');
   const after = board.querySelector<HTMLCanvasElement>('[data-canvas="spec-after"]');
   const cube = board.querySelector<HTMLCanvasElement>('[data-canvas="cube"]');
-  if (before) drawSpectrogram(before, fixture, "fixture before (browser)");
-  if (after) drawSpectrogram(after, improved, "browser preview after (not Python)");
-  if (cube) drawCube(cube, fixture);
-  board.querySelectorAll<HTMLButtonElement>("[data-action='play-fixture']").forEach((node) => {
-    node.addEventListener("click", () => play(fixture));
+  if (before) {
+    drawSpectrogram(before, activePreview.before, activePreview.beforeTitle);
+    before.dataset.profileKey = activePreview.key;
+  }
+  if (after) {
+    drawSpectrogram(after, activePreview.after, activePreview.afterTitle);
+    after.dataset.profileKey = activePreview.key;
+  }
+  panel?.querySelectorAll<HTMLElement>(".spec-title").forEach((node) => {
+    node.textContent = activePreview.heading;
   });
+  panel?.querySelectorAll<HTMLElement>(".spec-disclaimer").forEach((node) => {
+    node.textContent = activePreview.caption;
+  });
+  if (panel) panel.dataset.profileKey = activePreview.key;
+  if (cube && cube.dataset.painted !== "fixture") {
+    drawCube(cube, fixture);
+    cube.dataset.painted = "fixture";
+  }
+  board.querySelectorAll<HTMLButtonElement>("[data-action='play-profile']").forEach((node) => {
+    node.onclick = () => play(activePreview.before);
+  });
+  return before !== null;
 }
 
 async function refreshConnectors(doc: ViewportDocument): Promise<ViewportDocument> {

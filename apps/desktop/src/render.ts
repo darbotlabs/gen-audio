@@ -65,6 +65,7 @@ function frontFace(card: ViewportDocument["cards"][number]): HTMLElement {
   row.append(kind, live);
   const title = window.document.createElement("h2");
   title.textContent = card.title;
+  if (card.kind === "SpectrogramPanel") title.classList.add("spec-title");
   const flip = button("Flip");
   flip.className = "flip-toggle";
   flip.setAttribute("aria-pressed", "false");
@@ -132,11 +133,13 @@ function bodyFor(kind: string, body: Record<string, unknown>): HTMLElement {
     wrap.append(pill(String(body.status), body.status !== "implemented"));
     wrap.append(paragraph(String(body.summary ?? "")));
   } else if (kind === "SpectrogramPanel") {
-    wrap.append(paragraph(String(body.disclaimer ?? "")));
+    const note = paragraph(String(body.disclaimer ?? ""));
+    note.classList.add("spec-disclaimer");
+    wrap.append(note);
     const before = canvas("spec-before");
     const after = canvas("spec-after");
-    const play = button("Play fixture tone");
-    play.dataset.action = "play-fixture";
+    const play = button("Play profile preview");
+    play.dataset.action = "play-profile";
     wrap.append(before, after, play);
   } else if (kind === "Cube3D") {
     wrap.append(paragraph(String(body.disclaimer ?? "")));

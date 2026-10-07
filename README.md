@@ -4,7 +4,7 @@ Darbot Gen-Audio is a desktop app plus a Python SDK for multi-speaker podcast to
 
 [genaid](https://github.com/darbotlabs/genaid) is a separate JavaScript prompting framework. This repository does not vendor that code.
 
-This repo does not ship model weights, voice binaries, API keys, or podcast renders. Spectrogram and cube views in the desktop app are drawn from a sine **fixture tone**. They are not speech.
+This repo does not ship model weights, voice binaries, API keys, or podcast renders. The spectrogram panel draws a browser formant map for the agent, voice, duration, perspectives, and loaded engine in the side pane. That map is not speech and not the Python spectrogram. The cube view stays a sine fixture tone.
 
 ## Desktop app
 
@@ -30,7 +30,7 @@ npm run build
 npm run dev   # browser preview on :1420, or `cargo tauri dev` inside src-tauri
 ```
 
-The board sits inside a viewport border beside a blue setup pane. Drag a green engine card into the upper half of that pane to load the voice model. The lower half selects agent, voice, duration, and perspective participants, and the bottom of the pane takes files or a pasted prompt. Each card is a live tile: the front is the board face, the back is the Adaptive Card text when one is attached, and Enter or Flip turns it. Arrow keys move between cards. Home and End jump. "Empty viewport" shows the empty state inside the same border. "Run Python improve on fixture" calls the Python SDK from the Tauri shell and does nothing useful in a plain browser.
+The board sits inside a viewport border beside a blue setup pane. Drag a green engine card into the upper half of that pane to load the voice model. The lower half selects agent, voice, duration, and perspective participants, and the bottom of the pane takes files or a pasted prompt. Those controls, and a dropped engine, redraw the spectrogram panel's before and after preview for that voice profile. Each card is a live tile: the front is the board face, the back is the Adaptive Card text when one is attached, and Enter or Flip turns it. Arrow keys move between cards. Home and End jump. "Empty viewport" shows the empty state inside the same border. "Run Python improve on fixture" calls the Python SDK from the Tauri shell and does nothing useful in a plain browser.
 
 The card contract is `schemas/card-viewport.schema.json`. The example board is `schemas/examples/viewport.example.json`.
 
@@ -64,7 +64,7 @@ The installable package is still `gen_audio` (`pip install -e .`). It turns a tw
 | VibeVoice, Magpie, Pocket TTS, dayour Kokoro | Names on the compare list only. No adapter and no weights |
 | misaki | Grapheme-to-phoneme library used by Kokoro. Not a waveform engine, and this repo does not call it |
 | Node HTTP process | Not started by import. URL helpers plus `python -m gen_audio.node_http` |
-| Tauri desktop card viewport | Implemented. Spectrogram and cube views use a fixture tone |
+| Tauri desktop card viewport | Implemented. The spectrogram panel follows the side-pane voice profile. The cube view uses a fixture tone |
 | Stateless MCP (`gen-audio-mcp`) | Implemented (stdio and loopback HTTP) |
 | ACP agent (`gen-audio-acp`) | Implemented handshake and `session/prompt` |
 | Harness traces (`gen-audio-harness`) | Implemented. Synth is skipped without weights |

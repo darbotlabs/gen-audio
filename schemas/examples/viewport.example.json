@@ -54,12 +54,12 @@
     {
       "id": "spec-fixture",
       "kind": "SpectrogramPanel",
-      "title": "Spectrogram fixture",
+      "title": "Spectrogram panel",
       "span": 2,
       "body": {
         "source": "fixture-tone",
         "notPodcast": true,
-        "disclaimer": "Browser preview of a sine fixture, not a podcast render and not a Python spectrogram."
+        "disclaimer": "Browser spectrogram of the selected voice profile, not a podcast render and not a Python spectrogram."
       }
     },
     {

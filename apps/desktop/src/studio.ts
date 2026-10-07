@@ -1,6 +1,19 @@
 const files: File[] = [];
 
-export function bindStudio(board: HTMLElement, status: HTMLElement): void {
+export interface StudioSelection {
+  engineId: string;
+  engineTitle: string;
+  agent: string;
+  voice: string;
+  durationMin: number;
+  perspectives: string[];
+}
+
+export function bindStudio(
+  board: HTMLElement,
+  status: HTMLElement,
+  onChange: (selection: StudioSelection) => void,
+): void {
   const drop = required("#model-drop");
   const loaded = required("#loaded-model");
   const loadedId = required("#loaded-model-id");
@@ -14,7 +27,14 @@ export function bindStudio(board: HTMLElement, status: HTMLElement): void {
   document.body.append(ghost);
 
   addPerspective(perspectives, "");
-  required("#add-perspective").addEventListener("click", () => addPerspective(perspectives, ""));
+  required("#add-perspective").addEventListener("click", () => {
+    addPerspective(perspectives, "");
+    emit();
+  });
+  for (const selector of ["#agent", "#voice", "#duration"]) {
+    required(selector).addEventListener("change", emit);
+  }
+  perspectives.addEventListener("input", emit);
 
   fileInput.addEventListener("change", () => {
     if (fileInput.files) addFiles(fileInput.files, fileList);
@@ -77,6 +97,7 @@ export function bindStudio(board: HTMLElement, status: HTMLElement): void {
       loadedId.textContent = id;
       drop.classList.add("is-loaded");
       status.textContent = `Loaded voice model ${title} (${id}).`;
+      emit();
     }
     drop.classList.remove("is-hot");
     ghost.hidden = true;
@@ -85,6 +106,19 @@ export function bindStudio(board: HTMLElement, status: HTMLElement): void {
   };
   board.addEventListener("pointerup", finish);
   board.addEventListener("pointercancel", finish);
+  emit();
+
+  function emit(): void {
+    const duration = Number(selectValue("#duration"));
+    onChange({
+      engineId: loaded.dataset.engineId || "",
+      engineTitle: loaded.dataset.engineTitle || "",
+      agent: selectValue("#agent"),
+      voice: selectValue("#voice"),
+      durationMin: Number.isFinite(duration) ? duration : 3,
+      perspectives: participantNames(perspectives),
+    });
+  }
 }
 
 function addPerspective(host: HTMLElement, value: string): void {
