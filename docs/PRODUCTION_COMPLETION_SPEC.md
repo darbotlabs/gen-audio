@@ -60,7 +60,7 @@ No `TODO`, `FIXME`, `HACK`, `NYI`, `WIP`, `dummy`, or `fake` markers remain in p
 ### Done
 
 - Embedded Tauri release uses `frontendDist` (`../dist`) with `custom-protocol`; launch the installer / `gen-audio.exe` from `tauri build`, not a bare `cargo build` that loads `devUrl` (`http://localhost:1420`).
-- Tray: close hides to tray; tray **Quit** stops the sidecar and `app.exit(0)`. `tauri-plugin-single-instance` focuses the existing window on second start (no dual tray).
+- Tray: close hides to tray; tray **Quit** stops the sidecar and `app.exit(0)`. `tauri-plugin-single-instance` focuses the existing window on second start (no dual tray). A second start with `--quit` invokes the same `request_quit` path.
 - Library slide: livetiles backed by real synth WAVs on disk (`artifacts/library/`, served via `apps/desktop/public/library/`). WAVs are gitignored; JSON/PNG thumbs and `manifest.json` may ship in-tree. Manifest marks `synthesizedSpeech: true` only for real clips; unavailable engines stay `unavailable` with reasons — no fake speech.
 - Fixture / example viewport content is labeled as fixture theater in the UI (not podcast speech). Browser DFT / WebGL cube sketch is not the Python matplotlib spectrogram path.
 - Guards: `pytest tests/test_guards.py` → 14 passed on Python 3.14.
@@ -74,5 +74,5 @@ No `TODO`, `FIXME`, `HACK`, `NYI`, `WIP`, `dummy`, or `fake` markers remain in p
 
 ### Not done (product yellow)
 
-- Full tray Quit click-through proof on every new build (document trigger + PIDs gone).
+- Manual tray-menu Quit click-through on every new build when UI Automation cannot see the Win11 tray (document trigger + PIDs gone). Product also accepts `gen-audio.exe --quit` on a second start, which calls the same `request_quit` path as tray Quit (stop sidecar + `app.exit(0)`).
 - Fresh NSIS + MSI from `scripts/build-tauri-windows.ps1` after each dirty UI/tray change when Optimus re-stamps A.

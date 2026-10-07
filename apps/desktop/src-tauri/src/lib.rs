@@ -187,6 +187,18 @@ fn stop_sidecar(child: &mut Child) {
     let _ = child.wait();
 }
 
+
+fn request_quit(app: &tauri::AppHandle) {
+    if let Some(state) = app.try_state::<SidecarChild>() {
+        if let Ok(mut guard) = state.0.lock() {
+            if let Some(child) = guard.as_mut() {
+                stop_sidecar(child);
+            }
+        }
+    }
+    app.exit(0);
+}
+
 fn focus_main_window(app: &tauri::AppHandle) {
     if let Some(window) = app.get_webview_window("main") {
         let _ = window.show();
@@ -212,8 +224,13 @@ pub fn run() {
     {
         // Must be first so a second launch focuses the existing window and exits
         // before other plugins / setup can open another tray.
-        builder = builder.plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
-            focus_main_window(app);
+        builder = builder.plugin(tauri_plugin_single_instance::init(|app, args, _cwd| {
+            // Second launch with --quit invokes the same path as tray Quit (sidecar stop + exit).
+            if args.iter().any(|a| a == "--quit") {
+                request_quit(app);
+            } else {
+                focus_main_window(app);
+            }
         }));
     }
 
@@ -248,16 +265,7 @@ pub fn run() {
                 .show_menu_on_left_click(true)
                 .on_menu_event(|app, event| match event.id.as_ref() {
                     "show" => focus_main_window(app),
-                    "quit" => {
-                        if let Some(state) = app.try_state::<SidecarChild>() {
-                            if let Ok(mut guard) = state.0.lock() {
-                                if let Some(child) = guard.as_mut() {
-                                    stop_sidecar(child);
-                                }
-                            }
-                        }
-                        app.exit(0);
-                    }
+                    "quit" => request_quit(app),
                     _ => {}
                 })
                 .build(app);
