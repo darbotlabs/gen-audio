@@ -1,4 +1,7 @@
+use std::path::PathBuf;
+use std::process::{Child, Command, Stdio};
 use std::sync::Mutex;
+use std::time::{Duration, Instant};
 
 use gen_audio_core::bridge::{self, PythonTool};
 use gen_audio_core::fixture::write_fixture_tone;
@@ -15,7 +18,10 @@ struct McpRuntime {
     addr: String,
     handshake_ok: bool,
     detail: String,
+    mode: String,
 }
+
+struct SidecarChild(Mutex<Option<Child>>);
 
 #[tauri::command]
 fn connector_statuses() -> Vec<gen_audio_connectors::HealthReport> {
@@ -50,42 +56,133 @@ fn run_fixture_improve() -> Result<Value, String> {
 
 #[tauri::command]
 fn mcp_status(state: tauri::State<'_, Mutex<McpRuntime>>) -> Result<McpRuntime, String> {
-    state.lock().map(|guard| guard.clone()).map_err(|_| "mcp status lock".into())
+    state
+        .lock()
+        .map(|guard| guard.clone())
+        .map_err(|_| "mcp status lock".into())
 }
 
-fn boot_mcp() -> McpRuntime {
-    let preferred = std::env::var("GEN_AUDIO_MCP_ADDR").unwrap_or_else(|_| "127.0.0.1:8765".into());
-    let bound = http::spawn_loopback(&preferred).or_else(|_| http::spawn_loopback("127.0.0.1:0"));
-    match bound {
-        Ok(addr) => {
-            let text = addr.to_string();
+fn preferred_addr() -> String {
+    std::env::var("GEN_AUDIO_MCP_ADDR").unwrap_or_else(|_| "127.0.0.1:8765".into())
+}
+
+fn sidecar_binary() -> Option<PathBuf> {
+    let exe = std::env::current_exe().ok()?;
+    let dir = exe.parent()?;
+    ["gen-audio-mcp.exe", "gen-audio-mcp"]
+        .into_iter()
+        .map(|name| dir.join(name))
+        .find(|path| path.is_file())
+}
+
+fn runtime(addr: String, handshake_ok: bool, detail: impl Into<String>, mode: &str) -> McpRuntime {
+    McpRuntime {
+        addr,
+        handshake_ok,
+        detail: detail.into(),
+        mode: mode.into(),
+    }
+}
+
+fn wait_for_handshake(addr: &str) -> bool {
+    let started = Instant::now();
+    while started.elapsed() < Duration::from_secs(8) {
+        if http::initialize_handshake(addr).is_ok() {
+            return true;
+        }
+        std::thread::sleep(Duration::from_millis(150));
+    }
+    false
+}
+
+fn boot_mcp() -> (McpRuntime, Option<Child>) {
+    let addr = preferred_addr();
+    if http::initialize_handshake(&addr).is_ok() {
+        return (
+            runtime(addr, true, "initialize ok (already listening)", "existing"),
+            None,
+        );
+    }
+    if let Some(bin) = sidecar_binary() {
+        match Command::new(&bin)
+            .args(["--http", &addr])
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()
+        {
+            Ok(child) => {
+                if wait_for_handshake(&addr) {
+                    register_login_autostart();
+                    return (
+                        runtime(addr, true, "initialize ok (sidecar)", "sidecar"),
+                        Some(child),
+                    );
+                }
+                let mut child = child;
+                let _ = child.kill();
+                let _ = child.wait();
+            }
+            Err(_) => {}
+        }
+    }
+    match http::spawn_loopback(&addr).or_else(|_| http::spawn_loopback("127.0.0.1:0")) {
+        Ok(bound) => {
+            let text = bound.to_string();
             match http::initialize_handshake(&text) {
-                Ok(_) => McpRuntime {
-                    addr: text,
-                    handshake_ok: true,
-                    detail: "initialize ok".into(),
-                },
-                Err(err) => McpRuntime {
-                    addr: text,
-                    handshake_ok: false,
-                    detail: err,
-                },
+                Ok(_) => (
+                    runtime(text, true, "initialize ok (in-process)", "in-process"),
+                    None,
+                ),
+                Err(err) => (runtime(text, false, err, "in-process"), None),
             }
         }
-        Err(err) => McpRuntime {
-            addr: preferred,
-            handshake_ok: false,
-            detail: err.to_string(),
-        },
+        Err(err) => (runtime(addr, false, err.to_string(), "failed"), None),
     }
+}
+
+#[cfg(windows)]
+fn register_login_autostart() {
+    if std::env::var("GEN_AUDIO_AUTOSTART").ok().as_deref() == Some("0") {
+        return;
+    }
+    let Ok(exe) = std::env::current_exe() else {
+        return;
+    };
+    let value = format!("\"{}\"", exe.display());
+    let _ = Command::new("reg")
+        .args([
+            "add",
+            r"HKCU\Software\Microsoft\Windows\CurrentVersion\Run",
+            "/v",
+            "DarbotGenAudio",
+            "/t",
+            "REG_SZ",
+            "/d",
+            &value,
+            "/f",
+        ])
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status();
+}
+
+#[cfg(not(windows))]
+fn register_login_autostart() {}
+
+fn stop_sidecar(child: &mut Child) {
+    let _ = child.kill();
+    let _ = child.wait();
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    let mcp = boot_mcp();
-    let tooltip = format!("Gen-Audio MCP {}", mcp.addr);
-    tauri::Builder::default()
+    let (mcp, child) = boot_mcp();
+    let tooltip = format!("Gen-Audio MCP {} ({})", mcp.addr, mcp.mode);
+    let app = tauri::Builder::default()
         .manage(Mutex::new(mcp))
+        .manage(SidecarChild(Mutex::new(child)))
         .invoke_handler(tauri::generate_handler![
             connector_statuses,
             viewport_example,
@@ -107,10 +204,20 @@ pub fn run() {
                     "show" => {
                         if let Some(window) = app.get_webview_window("main") {
                             let _ = window.show();
+                            let _ = window.unminimize();
                             let _ = window.set_focus();
                         }
                     }
-                    "quit" => app.exit(0),
+                    "quit" => {
+                        if let Some(state) = app.try_state::<SidecarChild>() {
+                            if let Ok(mut guard) = state.0.lock() {
+                                if let Some(child) = guard.as_mut() {
+                                    stop_sidecar(child);
+                                }
+                            }
+                        }
+                        app.exit(0);
+                    }
                     _ => {}
                 })
                 .build(app)
@@ -131,8 +238,20 @@ pub fn run() {
                 }
             }
         })
-        .run(tauri::generate_context!())
+        .build(tauri::generate_context!())
         .expect("error while running Gen-Audio");
+
+    app.run(|app, event| {
+        if let tauri::RunEvent::Exit = event {
+            if let Some(state) = app.try_state::<SidecarChild>() {
+                if let Ok(mut guard) = state.0.lock() {
+                    if let Some(child) = guard.as_mut() {
+                        stop_sidecar(child);
+                    }
+                }
+            }
+        }
+    });
 }
 
 struct TrayArmed(bool);

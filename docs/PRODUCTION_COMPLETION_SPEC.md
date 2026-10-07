@@ -1,6 +1,6 @@
 # Production completion
 
-Python stays `requires-python = ">=3.14,<3.15"` with the classifier `Programming Language :: Python :: 3.14` only. Length caps, path confinement, checksum pins, and `/health` versus `/ready` are Gen-Audio code in `gen_audio.guards` (see `docs/genlm-audio/REVIEW-2026-10-06.md`). This file lists what is still open.
+Python stays `requires-python = ">=3.14,<3.15"` with the classifier `Programming Language :: Python :: 3.14` only. Length caps, path confinement, checksum pins, `/health` versus `/ready`, and TTS error classes are Gen-Audio code in `gen_audio.guards` (see `docs/genlm-audio/REVIEW-2026-10-06.md`). This file lists what is still open before a Windows install is the product.
 
 ## Blockers
 
@@ -8,10 +8,10 @@ Python stays `requires-python = ">=3.14,<3.15"` with the classifier `Programming
 
 Acceptance:
 
-- `scripts/build-tauri-windows.ps1` builds `gen-audio-mcp.exe`, runs an MCP `initialize` handshake on `127.0.0.1:8765`, builds the desktop crate with the tray menu, and invokes `tauri build --bundles nsis,msi`.
-- The desktop process starts the MCP listener in-process and also ships the `gen-audio-mcp` binary beside it.
-- Closing the window hides it while the tray stays. Quit on the tray exits.
-- `mcp_status` reports the bound address and whether `initialize` returned protocol `2025-03-26` and server name `gen-audio`.
+- `scripts/build-tauri-windows.ps1` builds `gen-audio-mcp.exe`, runs an MCP `initialize` handshake on `127.0.0.1:8765`, stages `apps/desktop/src-tauri/binaries/gen-audio-mcp-<triple>.exe`, runs `npm ci` and `npm run build` in `apps/desktop`, and fails if `apps/desktop/dist/index.html` is missing. Only then does it invoke `tauri build --bundles nsis,msi`. It does not `cargo build` the desktop crate first. It fails unless an NSIS `*setup.exe` and an `.msi` exist. Launch the installer, not a pre-dist `gen-audio-desktop.exe` (that WebView is `http://localhost:1420`).
+- The installer ships `gen-audio.exe` and `gen-audio-mcp.exe` side by side. Launch starts the sidecar, shows the window on the taskbar, and keeps a tray icon. If the sidecar binary is absent, the process falls back to the in-process listener. Closing the window hides it. Quit stops the sidecar.
+- The NSIS hook adds a Startup shortcut. A packaged sidecar start also writes `HKCU\...\Run\DarbotGenAudio` unless `GEN_AUDIO_AUTOSTART=0`.
+- `mcp_status` reports the bound address, `mode` (`sidecar`, `in-process`, `existing`, or `failed`), and whether `initialize` returned protocol `2025-03-26` and server name `gen-audio`.
 
 `scripts/build-tauri.sh` is the Linux counterpart (deb when the Tauri CLI and webkit SDK are present). SMAX runs the Windows script.
 

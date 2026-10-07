@@ -10,7 +10,10 @@ export function showRejected(board: HTMLElement, empty: HTMLElement, error: stri
   empty.textContent = `Viewport rejected: ${error}`;
 }
 
+const liveTimers = new WeakMap<HTMLElement, number>();
+
 export function renderBoard(board: HTMLElement, empty: HTMLElement, document: ViewportDocument): void {
+  stopLiveCycle(board);
   board.replaceChildren();
   const columns = document.columns ?? 3;
   board.style.setProperty("--cols", String(columns));
@@ -19,24 +22,102 @@ export function renderBoard(board: HTMLElement, empty: HTMLElement, document: Vi
   if (document.cards.length === 0) empty.textContent = EMPTY_COPY;
   document.cards.forEach((card, index) => {
     const article = window.document.createElement("article");
-    article.className = "card";
+    article.className = "card livetile";
     article.tabIndex = index === 0 ? 0 : -1;
     article.dataset.id = card.id;
     article.dataset.kind = card.kind;
     const span = Math.min(card.span ?? 1, columns);
     if (span > 1) article.dataset.span = String(span);
     article.setAttribute("aria-label", `${card.kind}: ${card.title}`);
-    const kind = window.document.createElement("div");
-    kind.className = "kind";
-    kind.textContent = card.kind;
-    const title = window.document.createElement("h2");
-    title.textContent = card.title;
-    article.append(kind, title);
-    article.append(bodyFor(card.kind, card.body));
-    const companion = adaptiveCaption(card.adaptive);
-    if (companion) article.append(companion);
+
+    const flip = window.document.createElement("div");
+    flip.className = "flip";
+    flip.append(frontFace(card), backFace(card));
+    article.append(flip);
+    article.addEventListener("keydown", (event) => {
+      if (event.key !== "Enter" && event.key !== " ") return;
+      const target = event.target as HTMLElement | null;
+      if (target && target.closest("button") && !target.classList.contains("flip-toggle")) return;
+      event.preventDefault();
+      toggleFlip(article);
+    });
     board.append(article);
   });
+  startLiveCycle(board);
+}
+
+function frontFace(card: ViewportDocument["cards"][number]): HTMLElement {
+  const face = window.document.createElement("div");
+  face.className = "face front";
+  const row = window.document.createElement("div");
+  row.className = "live-row";
+  const kind = window.document.createElement("div");
+  kind.className = "kind";
+  kind.textContent = card.kind;
+  const live = window.document.createElement("span");
+  live.className = "live-mark";
+  live.textContent = "Live";
+  row.append(kind, live);
+  const title = window.document.createElement("h2");
+  title.textContent = card.title;
+  const flip = button("Flip");
+  flip.className = "flip-toggle";
+  flip.setAttribute("aria-pressed", "false");
+  flip.addEventListener("click", (event) => {
+    event.stopPropagation();
+    const article = flip.closest(".card");
+    if (article instanceof HTMLElement) toggleFlip(article);
+  });
+  face.append(row, title, bodyFor(card.kind, card.body), flip);
+  return face;
+}
+
+function backFace(card: ViewportDocument["cards"][number]): HTMLElement {
+  const face = window.document.createElement("div");
+  face.className = "face back";
+  const kind = window.document.createElement("div");
+  kind.className = "kind";
+  kind.textContent = "Adaptive card";
+  const title = window.document.createElement("h2");
+  title.textContent = card.title;
+  face.append(kind, title, adaptiveFace(card));
+  const flip = button("Show front");
+  flip.className = "flip-toggle";
+  flip.addEventListener("click", (event) => {
+    event.stopPropagation();
+    const article = flip.closest(".card");
+    if (article instanceof HTMLElement) toggleFlip(article);
+  });
+  face.append(flip);
+  return face;
+}
+
+function toggleFlip(article: HTMLElement): void {
+  article.classList.toggle("is-flipped");
+  const pressed = article.classList.contains("is-flipped");
+  article.querySelectorAll<HTMLButtonElement>(".flip-toggle").forEach((node) => {
+    node.setAttribute("aria-pressed", pressed ? "true" : "false");
+  });
+}
+
+function startLiveCycle(board: HTMLElement): void {
+  if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+  let cursor = 0;
+  const timer = window.setInterval(() => {
+    const tiles = Array.from(board.querySelectorAll<HTMLElement>(".livetile"));
+    if (tiles.length === 0) return;
+    const idle = tiles.filter((tile) => !tile.matches(":hover") && !tile.matches(":focus-within"));
+    if (idle.length === 0) return;
+    toggleFlip(idle[cursor % idle.length]);
+    cursor += 1;
+  }, 7000);
+  liveTimers.set(board, timer);
+}
+
+function stopLiveCycle(board: HTMLElement): void {
+  const timer = liveTimers.get(board);
+  if (timer !== undefined) window.clearInterval(timer);
+  liveTimers.delete(board);
 }
 
 function bodyFor(kind: string, body: Record<string, unknown>): HTMLElement {
@@ -130,19 +211,47 @@ function button(label: string): HTMLButtonElement {
   return node;
 }
 
-function adaptiveCaption(adaptive: ViewportDocument["cards"][number]["adaptive"]): HTMLElement | null {
-  if (!adaptive || adaptive.type !== "AdaptiveCard" || !Array.isArray(adaptive.body)) return null;
-  const texts: string[] = [];
-  for (const block of adaptive.body) {
+function adaptiveFace(card: ViewportDocument["cards"][number]): HTMLElement {
+  const wrap = window.document.createElement("div");
+  wrap.className = "adaptive-body";
+  const blocks = card.adaptive?.type === "AdaptiveCard" && Array.isArray(card.adaptive.body)
+    ? card.adaptive.body
+    : [];
+  let wrote = false;
+  for (const block of blocks) {
     if (!block || typeof block !== "object") continue;
     const record = block as Record<string, unknown>;
-    if (record.type === "TextBlock" && typeof record.text === "string") texts.push(record.text);
+    if (record.type === "TextBlock" && typeof record.text === "string") {
+      wrap.append(paragraph(record.text));
+      wrote = true;
+    } else if (record.type === "FactSet" && Array.isArray(record.facts)) {
+      const list = window.document.createElement("ul");
+      for (const fact of record.facts) {
+        if (!fact || typeof fact !== "object") continue;
+        const row = fact as Record<string, unknown>;
+        const item = window.document.createElement("li");
+        item.textContent = `${String(row.title ?? "")}: ${String(row.value ?? "")}`;
+        list.append(item);
+      }
+      if (list.childElementCount > 0) {
+        wrap.append(list);
+        wrote = true;
+      }
+    }
   }
-  if (texts.length === 0) return null;
-  const note = window.document.createElement("p");
-  note.className = "summary";
-  note.textContent = `Adaptive Card companion, not a second board: ${texts.join(" ")}`;
-  return note;
+  if (!wrote) {
+    wrap.append(paragraph(fallbackBack(card.kind, card.body)));
+  }
+  return wrap;
+}
+
+function fallbackBack(kind: string, body: Record<string, unknown>): string {
+  if (kind === "EngineStatus") return `${String(body.engineId ?? "engine")} is ${String(body.status ?? "unknown")}.`;
+  if (kind === "ConnectorStatus") return `${String(body.connectorId ?? "connector")} mode ${String(body.mode ?? "unknown")}.`;
+  if (kind === "ServeHealth") return String(body.healthUrl ?? "Health URL is not set.");
+  if (kind === "PodcastCast") return "Sample cast only. This face is not a second board.";
+  if (kind === "BenchmarkCompare") return String(body.sourceNote ?? "Scores are not remeasured in this window.");
+  return String(body.disclaimer ?? "Fixture face. Not a podcast render.");
 }
 
 export function cards(board: HTMLElement): HTMLElement[] {

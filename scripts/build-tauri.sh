@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Release-build the Gen-Audio desktop app and the gen-audio-mcp sidecar.
-# Linux packages deb when the webview SDK is present. NSIS/MSI are Windows-only;
-# use scripts/build-tauri-windows.ps1 on that host.
+# The sidecar is staged for Tauri externalBin before bundling. NSIS/MSI are
+# Windows-only; use scripts/build-tauri-windows.ps1 on that host.
 set -euo pipefail
 
 root="$(cd "$(dirname "$0")/.." && pwd)"
@@ -9,6 +9,10 @@ cd "$root"
 
 if ! command -v cargo >/dev/null 2>&1; then
   echo "error: cargo is required" >&2
+  exit 1
+fi
+if ! command -v rustc >/dev/null 2>&1; then
+  echo "error: rustc is required" >&2
   exit 1
 fi
 
@@ -37,23 +41,28 @@ response="$(curl -sf -H 'Content-Type: application/json' --data "$body" "http://
 printf '%s\n' "$response" | grep -q '"protocolVersion":"2025-03-26"'
 printf '%s\n' "$response" | grep -q '"name":"gen-audio"'
 echo "mcp handshake ok"
+kill "$pid" >/dev/null 2>&1 || true
+trap - EXIT
 
-echo "desktop libraries (tray + embedded mcp)"
-cargo build -p gen-audio-desktop --release
+triple="$(rustc -vV | sed -n 's/^host: //p')"
+test -n "$triple"
+mkdir -p apps/desktop/src-tauri/binaries
+staged="apps/desktop/src-tauri/binaries/gen-audio-mcp-${triple}"
+cp -f "$sidecar" "$staged"
+chmod +x "$staged"
+echo "staged sidecar $staged"
 
-if command -v npm >/dev/null 2>&1; then
-  (cd apps/desktop && npm ci && npm run build)
+if ! command -v npm >/dev/null 2>&1; then
+  echo "error: npm is required before the desktop compile" >&2
+  exit 1
 fi
 
-if cargo tauri --version >/dev/null 2>&1 || npx --yes @tauri-apps/cli --version >/dev/null 2>&1; then
-  echo "package linux bundles"
-  (cd apps/desktop/src-tauri && npx --yes @tauri-apps/cli build --bundles deb) || {
-    echo "tauri bundle step did not produce a deb; the release binary is still at target/release"
-  }
-else
-  echo "tauri cli not used; release binary is target/release/gen-audio-desktop"
-fi
+echo "frontend (must exist before any desktop compile)"
+(cd apps/desktop && npm ci && npm run build)
+test -f apps/desktop/dist/index.html
+echo "frontend dist ok apps/desktop/dist/index.html"
 
-echo "sidecar copy next to the desktop binary"
-cp -f "$sidecar" "target/release/gen-audio-mcp"
+echo "package deb (tauri build embeds frontendDist; do not cargo-build the desktop first)"
+(cd apps/desktop/src-tauri && npx --yes @tauri-apps/cli build --bundles deb)
+
 echo "build-tauri.sh finished"

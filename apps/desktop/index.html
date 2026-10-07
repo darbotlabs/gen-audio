@@ -23,10 +23,16 @@
       </div>
       <p id="status" class="status" role="status"></p>
     </header>
-    <main id="board" class="board" aria-label="Card viewport"></main>
-    <p id="empty" class="empty" hidden>No cards in this viewport. Load the example to see engine, spectrogram, cube, and connector cards.</p>
+    <section class="viewport" aria-label="Card viewport frame">
+      <div class="viewport-chrome">
+        <span>Viewport</span>
+        <span>Live tiles</span>
+      </div>
+      <main id="board" class="board" aria-label="Card viewport"></main>
+      <p id="empty" class="empty" hidden>No cards in this viewport. Load the example to see engine, spectrogram, cube, and connector cards.</p>
+    </section>
     <footer class="foot">
-      Arrow keys move between cards. Home and End jump. The shared gateway is one row, not a substitute for a node.
+      Arrow keys move between cards. Home and End jump. Enter or Flip turns a live tile. The shared gateway is one row, not a substitute for a node.
     </footer>
     <script type="module" src="/src/main.ts"></script>
   </body>

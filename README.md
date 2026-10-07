@@ -8,12 +8,14 @@ This repo does not ship model weights, voice binaries, API keys, or podcast rend
 
 ## Desktop app
 
-Targets: Windows (WebView2, NSIS and MSI), macOS (WebKit, dmg), Linux (webkit2gtk 4.1, deb/appimage). The desktop process starts the stateless MCP listener on `127.0.0.1:8765` (or `GEN_AUDIO_MCP_ADDR`) and keeps a tray icon. Closing the window hides it. Quit is on the tray menu.
+Targets: Windows (WebView2, NSIS and MSI), macOS (WebKit, dmg), Linux (webkit2gtk 4.1, deb/appimage). Ship the installer from the build script. Do not launch `target/release/gen-audio-desktop.exe` from a bare `cargo build -p gen-audio-desktop`: that compile leaves the `custom-protocol` feature off, so the WebView loads `devUrl` `http://localhost:1420` and Edge reports `ERR_CONNECTION_REFUSED`. MCP on `127.0.0.1:8765` can still be healthy while that window is dead.
+
+Release builds embed `apps/desktop/dist` (`frontendDist`: `../dist`). `devUrl` is only for `tauri dev`. The scripts build the Vite app and refuse to continue if `apps/desktop/dist/index.html` is missing, then run `tauri build`. The installed app keeps a tray icon and a taskbar button while the window is open. It starts `gen-audio-mcp` beside the executable on `127.0.0.1:8765` (or `GEN_AUDIO_MCP_ADDR`). Closing the window hides it. Quit is on the tray menu and stops the sidecar. On Windows, a successful sidecar start registers the app under the current user's Run key unless `GEN_AUDIO_AUTOSTART=0`.
 
 ```bash
-scripts/build-tauri.sh                 # Linux: mcp handshake, release binary, deb when the Tauri CLI is present
+scripts/build-tauri.sh                 # Linux: mcp handshake, npm run build, then tauri build --bundles deb
 # Windows, from PowerShell:
-# scripts/build-tauri-windows.ps1      # NSIS + MSI, sidecar gen-audio-mcp.exe, initialize handshake
+# scripts/build-tauri-windows.ps1      # mcp handshake, npm run build, then tauri build --bundles nsis,msi
 ```
 
 ```bash
@@ -28,7 +30,7 @@ npm run build
 npm run dev   # browser preview on :1420, or `cargo tauri dev` inside src-tauri
 ```
 
-Keyboard: arrow keys move between cards, Home and End jump. "Empty viewport" shows the empty state. "Run Python improve on fixture" calls the Python SDK from the Tauri shell and does nothing useful in a plain browser.
+The board sits inside a viewport border. Each card is a live tile: the front is the board face, the back is the Adaptive Card text when one is attached, and Enter or Flip turns it. Arrow keys move between cards. Home and End jump. "Empty viewport" shows the empty state inside the same border. "Run Python improve on fixture" calls the Python SDK from the Tauri shell and does nothing useful in a plain browser.
 
 The card contract is `schemas/card-viewport.schema.json`. The example board is `schemas/examples/viewport.example.json`.
 
