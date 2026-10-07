@@ -61,7 +61,7 @@ The installable package is still `gen_audio` (`pip install -e .`). It turns a tw
 | Engine compare on WAVs you already have | Implemented as measurement only; it does not rank engines |
 | VibeVoice, Magpie, Pocket TTS, dayour Kokoro | Names on the compare list only. No adapter and no weights |
 | misaki | Grapheme-to-phoneme library used by Kokoro. Not a waveform engine, and this repo does not call it |
-| Ray Serve process | Not started by this package. URL and health-body helpers only |
+| Node HTTP process | Not started by import. URL helpers plus `python -m gen_audio.node_http` |
 | Tauri desktop card viewport | Implemented. Spectrogram and cube views use a fixture tone |
 | Stateless MCP (`gen-audio-mcp`) | Implemented (stdio and loopback HTTP) |
 | ACP agent (`gen-audio-acp`) | Implemented handshake and `session/prompt` |

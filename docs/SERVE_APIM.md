@@ -2,7 +2,7 @@
 
 gen-audio's service name is `genaid-audio`. A node that hosts it listens on port **8002** with route prefix **`/genaid-audio`**.
 
-This repository does not start Ray Serve, does not ship an APIM policy file, and does not open a socket on import. `gen_audio.serve` only builds the URLs and the health JSON so node config and clients use the same strings.
+This repository does not ship an APIM policy file and does not open a socket on import. `gen_audio.serve` builds the node URLs and the health and ready JSON. `python -m gen_audio.node_http` is the loopback process that serves those routes.
 
 ## Base URL
 

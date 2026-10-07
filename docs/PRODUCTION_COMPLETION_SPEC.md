@@ -1,6 +1,6 @@
 # Production completion
 
-Python stays `requires-python = ">=3.14,<3.15"` with the classifier `Programming Language :: Python :: 3.14` only. The dlm_cluster pull request 3 controls are in `gen_audio.guards` (see `docs/genlm-audio/REVIEW-2026-10-06.md`). This file is the checklist for what still has to be true before a Windows install is the product.
+Python stays `requires-python = ">=3.14,<3.15"` with the classifier `Programming Language :: Python :: 3.14` only. Length caps, path confinement, checksum pins, and `/health` versus `/ready` are Gen-Audio code in `gen_audio.guards` (see `docs/genlm-audio/REVIEW-2026-10-06.md`). This file lists what is still open.
 
 ## Blockers
 
@@ -19,7 +19,7 @@ Acceptance:
 
 Acceptance:
 
-- `tests/test_guards.py` is the 14-test suite from dlm_cluster PR 3 and passes on Python 3.14.
+- `tests/test_guards.py` (14 tests) passes on Python 3.14.
 - Speaker scripts parsed by `gen_audio.cast` and the Rust harness reject oversized segments. Environment variables may tighten the caps and cannot raise the hard ceilings.
 - Kokoro model resolution honors `GENAID_MODEL_BASE`, `GENAID_LOCAL_FILES_ONLY`, and the SHA256 pin.
 - `GET /genaid-audio/health` is liveness. `GET /genaid-audio/ready` is readiness. Gateway health stays HTTP 200 when speech is down; gateway ready is 503. TTS proxy failures are 504, 503, forwarded 4xx, or 502, and the log line has no user-text prefix.

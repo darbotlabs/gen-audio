@@ -1,4 +1,4 @@
-//! Per-node Ray Serve URL builder. Does not open a socket.
+//! Per-node Gen-Audio URL builder. Does not open a socket.
 
 pub const SERVICE_NAME: &str = "genaid-audio";
 pub const DEFAULT_PORT: u16 = 8002;

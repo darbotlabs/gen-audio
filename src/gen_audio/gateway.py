@@ -1,9 +1,8 @@
-"""Gateway readiness and TTS error classes.
+"""Gen-Audio readiness and TTS error classes.
 
-This is the gen-audio stand-in for the dlm_cluster gateway router. It does not
-import FastAPI or Ray. ``/health`` stays HTTP 200 when speech is down so a
-portal can still offer script generation. ``/ready`` is 503 in that case.
-TTS proxy logs record status and exception type, not a prefix of the user text.
+``/health`` stays HTTP 200 when speech is down so a caller can still see that
+the process is up. ``/ready`` is 503 in that case. TTS failure logs record
+status and exception type, not a prefix of the user text.
 """
 
 from __future__ import annotations

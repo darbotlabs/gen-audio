@@ -1,8 +1,7 @@
-"""URL helpers for a per-node Ray Serve deployment of genaid-audio.
+"""URL helpers for a Gen-Audio node.
 
-Importing this module does not start a server. The health body is the JSON a
-node-side app should return from ``GET /genaid-audio/health``. See
-``docs/SERVE_APIM.md``.
+Importing this module does not start a server. ``GET /genaid-audio/health`` is
+liveness. ``GET /genaid-audio/ready`` is readiness. See ``docs/SERVE_APIM.md``.
 """
 
 from __future__ import annotations
