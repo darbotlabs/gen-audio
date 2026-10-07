@@ -1,0 +1,16 @@
+{
+  "_note": "Example cast map for kokoro-onnx. Alice is Speaker 1, Frank is Speaker 2. This file is not audio and it is not a news script.",
+  "engine": "kokoro_onnx",
+  "default_lang": "en-us",
+  "default_speed": 1.0,
+  "speakers": {
+    "1": {
+      "name": "Alice",
+      "voice": "af_heart"
+    },
+    "2": {
+      "name": "Frank",
+      "voice": "am_michael"
+    }
+  }
+}

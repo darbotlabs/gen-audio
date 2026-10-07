@@ -1,0 +1,39 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.eggs/
+build/
+dist/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Environments
+.venv/
+venv/
+env/
+.env
+.env.*
+
+# Local model weights and generated audio. Do not commit these.
+models/
+audio/
+artifacts/
+out/
+*.wav
+*.flac
+*.mp3
+*.ogg
+*.opus
+*.onnx
+*.ort
+*.bin
+
+# Editor / OS
+.DS_Store
+.idea/
+.vscode/
