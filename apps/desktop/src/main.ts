@@ -10,7 +10,7 @@ import {
   rebuildLayerMatrixUi,
   setCubeScrub,
 } from "./cubeview";
-import { isClipPlaying, seekActiveFraction, seekClipFraction } from "./playback";
+import { isClipPlaying, seekActiveFraction, seekClipFraction, setCubeClockClip } from "./playback";
 import { applyClipNames, harvestNames } from "./library-meta";
 import { bindFloatingPlayback, pauseClip, playClip, seekClip } from "./playback";
 import { profilePreview, type ProfilePreview, type VoiceSelection } from "./profiles";
@@ -152,6 +152,7 @@ function ensureDefaultCube(): void {
 
 async function bindCubeSource(clipId: string, url: string, source: string): Promise<void> {
   cubeClipId = clipId;
+  setCubeClockClip(clipId);
   const caption = document.querySelector<HTMLElement>("#cube-caption");
   const message = await loadCube(url);
   if (caption) caption.textContent = source === "default" ? message : `${source}: ${message}`;
@@ -179,6 +180,12 @@ function bindCubeCanvas(): void {
       if (option?.dataset.cubeJson) void bindCubeSource(option.value, option.dataset.cubeJson, option.value);
     });
   }
+  const layersToggle = document.querySelector<HTMLButtonElement>("#cube-matrix-toggle");
+  layersToggle?.addEventListener("click", () => {
+    const collapsed = document.querySelector("#cube-layer-matrix")?.classList.toggle("is-collapsed") ?? false;
+    layersToggle.textContent = collapsed ? "Layers \u25b8" : "Layers \u25be";
+    layersToggle.setAttribute("aria-expanded", collapsed ? "false" : "true");
+  });
   document.querySelector<HTMLButtonElement>("#cube-play")?.addEventListener("click", () => {
     if (!cubeClipId) return;
     const action = isClipPlaying(cubeClipId) ? pauseClip(cubeClipId) : null;
@@ -292,11 +299,14 @@ async function openCube(url: string, source: string): Promise<void> {
   goToSlideId(board, "spatial");
   const caption = document.querySelector<HTMLElement>("#cube-caption");
   if (!url) {
+    cubeClipId = "";
+    setCubeClockClip(null);
     clearCube("This tile has no cube JSON. Magpie, VibeVoice, and Pocket do not get a stand-in cloud.");
     return;
   }
   const owner = board.querySelector<HTMLElement>(`.library-tile[data-cube-json="${CSS.escape(url)}"]`);
   cubeClipId = owner?.dataset.id ?? "";
+  setCubeClockClip(cubeClipId || null);
   const message = await loadCube(url);
   if (caption) caption.textContent = `${source}: ${message}`;
   syncCubeChrome();

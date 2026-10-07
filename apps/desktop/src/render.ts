@@ -668,7 +668,29 @@ function appendUtilitySlides(board: HTMLElement, startIndex: number): number {
   play.id = "cube-play";
   play.textContent = "Play";
   play.setAttribute("aria-label", "Play the clip bound to this cube");
-  picker.append(select, play);
+  const layersToggle = window.document.createElement("button");
+  layersToggle.type = "button";
+  layersToggle.id = "cube-matrix-toggle";
+  layersToggle.className = "cube-matrix-toggle";
+  layersToggle.textContent = "Layers \u25be";
+  layersToggle.setAttribute("aria-expanded", "true");
+  layersToggle.setAttribute("aria-controls", "cube-layer-matrix");
+  picker.append(select, play, layersToggle);
+
+  const badge = window.document.createElement("p");
+  badge.id = "cube-badge";
+  badge.className = "cube-overlay cube-badge";
+
+  const clock = window.document.createElement("p");
+  clock.id = "cube-clock";
+  clock.className = "cube-overlay cube-clock";
+  clock.setAttribute("aria-live", "off");
+
+  const fallback = window.document.createElement("img");
+  fallback.id = "cube-fallback";
+  fallback.className = "cube-fallback";
+  fallback.hidden = true;
+  fallback.alt = "Static cube image";
 
   const caption = window.document.createElement("p");
   caption.id = "cube-caption";
@@ -686,10 +708,10 @@ function appendUtilitySlides(board: HTMLElement, startIndex: number): number {
   scrub.className = "cube-overlay";
   scrub.min = "0";
   scrub.max = "1000";
-  scrub.value = "1000";
+  scrub.value = "0";
   scrub.setAttribute("aria-label", "Shared cube and audio clock");
 
-  stage.append(canvas, labels, title, legend, picker, caption, matrix, scrub);
+  stage.append(canvas, labels, fallback, title, badge, legend, picker, caption, clock, matrix, scrub);
   spatial.append(stage);
   board.append(spatial);
   return 2;
@@ -809,6 +831,7 @@ export function syncSlideChrome(index: number, total: number): void {
   });
   const board = window.document.querySelector<HTMLElement>("#board");
   const layer = board ? slides(board)[index]?.dataset.layer : undefined;
+  window.document.body.classList.toggle("cube-active", layer === "cube");
   window.document.querySelectorAll<HTMLButtonElement>("#layer-switch [data-layer]").forEach((button) => {
     button.setAttribute("aria-selected", button.dataset.layer === layer ? "true" : "false");
   });

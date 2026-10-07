@@ -422,7 +422,7 @@
         "summary": "Real misaki\u2192kokoro WAV \u00b7 genaid_full_misaki_kokoro @ 24 kHz. Inverse-HDR cube attached. Not a fixture.",
         "cubePngUrl": "/library/genaid_full_misaki_kokoro_cube3d.png",
         "cubeJsonUrl": "/library/library_genaid_full_misaki_kokoro_cube3d.json",
-        "inv_hdr": 0.23634383082389832
+        "inv_hdr": 0.23948296904563904
       },
       "adaptive": {
         "type": "AdaptiveCard",
@@ -446,11 +446,15 @@
               },
               {
                 "title": "inv-HDR",
-                "value": "0.236"
+                "value": "0.239"
               },
               {
                 "title": "Cube points",
                 "value": "3600"
+              },
+              {
+                "title": "Cube",
+                "value": "rev 2 \u00b7 395 time bins \u00b7 0:00\u20132:19"
               }
             ]
           }

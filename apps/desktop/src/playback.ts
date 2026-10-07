@@ -1,9 +1,26 @@
-import { setCubeScrub, startLiveCubeClock, stopLiveCubeClock } from "./cubeview";
+import { getCubeMeta, setCubeScrub, startLiveCubeClock, stopLiveCubeClock } from "./cubeview";
 /** HTML audio transport for library tiles. Missing files stay missing. */
 
 const players = new Map<string, HTMLAudioElement>();
 
 let activeId: string | null = null;
+/** The clip the cube is showing. The cube clock follows only this clip, not the last one played. */
+let cubeClockClip: string | null = null;
+
+export function setCubeClockClip(clipId: string | null): void {
+  cubeClockClip = clipId;
+}
+
+function drivesCube(clipId: string | null): boolean {
+  return Boolean(clipId) && (!cubeClockClip || clipId === cubeClockClip);
+}
+
+function cubeFraction(): number | null {
+  const current = activeId ? player(activeId) : undefined;
+  if (!drivesCube(activeId)) return null;
+  if (!current || current.paused || !Number.isFinite(current.duration) || current.duration <= 0) return null;
+  return current.currentTime / current.duration;
+}
 
 function formatTime(seconds: number): string {
   if (!Number.isFinite(seconds) || seconds < 0) return "0:00";
@@ -113,11 +130,7 @@ export async function playClip(clipId: string): Promise<string> {
     setPlayingChrome(true);
     await audio.play();
     syncFloater(clipId);
-    startLiveCubeClock(() => {
-      const current = activeId ? player(activeId) : undefined;
-      if (!current || current.paused || !Number.isFinite(current.duration) || current.duration <= 0) return null;
-      return current.currentTime / current.duration;
-    });
+    startLiveCubeClock(cubeFraction);
     return "playing";
   } catch (error) {
     if (!anyPlaying()) setPlayingChrome(false);
@@ -145,11 +158,17 @@ export function seekClip(clipId: string, seconds: number): string {
   if (Number.isFinite(duration) && seconds > duration) return "past end";
   audio.currentTime = seconds;
   activeId = clipId;
-  // Keep ONE clock: MCP/UI seek must slice bitdot layers + floating scrub together.
-  if (Number.isFinite(duration) && duration > 0) {
-    setCubeScrub(seconds / duration, { silent: true });
+  // Keep ONE clock: MCP/UI seek must slice bitdot layers + floating scrub together,
+  // but only for the clip the cube is showing.
+  if (drivesCube(clipId)) {
+    // Before metadata loads, audio.duration is NaN; the cube JSON carries the same WAV duration.
+    const clock = Number.isFinite(duration) && duration > 0 ? duration : getCubeMeta()?.durationS ?? 0;
+    if (clock > 0) setCubeScrub(Math.min(1, seconds / clock), { silent: true });
   }
   syncFloater(clipId);
+  if (audio.readyState > 0 && audio.seekable.length === 0) {
+    return `cube at ${formatTime(seconds)}; this WAV source does not support seeking`;
+  }
   return "seeked";
 }
 
@@ -259,7 +278,7 @@ export function bindFloatingPlayback(): void {
     if (!audio || !audio.duration) return;
     const fraction = Number(ui.scrub.value) / 1000;
     audio.currentTime = fraction * audio.duration;
-    setCubeScrub(fraction);
+    if (drivesCube(activeId)) setCubeScrub(fraction);
     syncFloater(activeId);
   });
   for (const [clipId, audio] of players) {
@@ -267,11 +286,7 @@ export function bindFloatingPlayback(): void {
       activeId = clipId;
       setPlayingChrome(true);
       syncFloater(clipId);
-      startLiveCubeClock(() => {
-        const current = activeId ? player(activeId) : undefined;
-        if (!current || current.paused || !Number.isFinite(current.duration) || current.duration <= 0) return null;
-        return current.currentTime / current.duration;
-      });
+      startLiveCubeClock(cubeFraction);
     });
     audio.addEventListener("pause", () => {
       if (activeId === clipId) syncFloater(clipId);
@@ -290,7 +305,9 @@ export function bindFloatingPlayback(): void {
       if (activeId === clipId) {
         syncFloater(clipId);
         const duration = audio.duration;
-        if (Number.isFinite(duration) && duration > 0) {
+        // Only a playing clip drives the cube here. A paused seek already set the cube;
+        // a source without range support snaps currentTime back to 0 and must not undo it.
+        if (!audio.paused && drivesCube(clipId) && Number.isFinite(duration) && duration > 0) {
           setCubeScrub(audio.currentTime / duration, { silent: true });
         }
       }

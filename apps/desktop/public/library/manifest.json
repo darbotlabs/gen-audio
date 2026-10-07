@@ -67,9 +67,18 @@
       "cube": {
         "pngUrl": "/library/genaid_full_misaki_kokoro_cube3d.png",
         "jsonUrl": "/library/library_genaid_full_misaki_kokoro_cube3d.json",
-        "inv_hdr": 0.23634383082389832,
-        "duration_s": 43.425,
-        "note": "Inverse-HDR bitdot cube (signal/tonality/confidence/quality). Cube JSON records duration_s 43.425; the WAV header reads 139.375 s."
+        "inv_hdr": 0.23948296904563904,
+        "cube_revision": 2,
+        "duration_s": 139.375,
+        "cube_shape_f_t": [
+          102,
+          395
+        ],
+        "bin_seconds": 0.352,
+        "cube_covers_s": 139.04,
+        "n_points": 3600,
+        "n_points_source": 115689,
+        "note": "Inverse-HDR bitdot cube rev 2 over the full 139.375 s WAV (stft 1024/256 @ 24 kHz; signal/tonality/confidence/quality). Scrub maps by seconds: bin = floor(t / 0.352 s)."
       },
       "summary": "Real misaki\u2192kokoro WAV (genaid_full_misaki_kokoro). synthesizedSpeech true."
     },

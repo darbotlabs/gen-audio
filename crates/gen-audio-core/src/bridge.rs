@@ -258,7 +258,8 @@ mod tests {
             &json!({"input": "fixture-tone.wav", "output": "fixture-24k.wav"}),
         )
         .unwrap();
-        assert!(good.args.iter().any(|arg| arg.ends_with("scripts/improve.py")));
+        let improve_py = Path::new("scripts").join("improve.py");
+        assert!(good.args.iter().any(|arg| Path::new(arg).ends_with(&improve_py)));
         assert!(plan(
             PythonTool::Improve,
             &repo,
