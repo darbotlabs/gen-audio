@@ -1,5 +1,6 @@
 import example from "../../../schemas/examples/viewport.example.json";
 import { renderBoard, moveFocus, showRejected } from "./render";
+import { bindStudio } from "./studio";
 import { drawCube, drawSpectrogram, makeFixture, play, previewImprove } from "./signal";
 import { CONNECTOR_MODES, validateViewport, type ViewportDocument } from "./validate";
 
@@ -12,6 +13,7 @@ function required(id: string): HTMLElement {
 const board = required("#board");
 const empty = required("#empty");
 const status = required("#status");
+bindStudio(board, status);
 
 const fixture = makeFixture();
 const improved = previewImprove(fixture);

@@ -28,6 +28,11 @@ export function renderBoard(board: HTMLElement, empty: HTMLElement, document: Vi
     article.dataset.kind = card.kind;
     const span = Math.min(card.span ?? 1, columns);
     if (span > 1) article.dataset.span = String(span);
+    if (card.kind === "EngineStatus") {
+      article.classList.add("engine-source");
+      article.dataset.engineId = String(card.body.engineId ?? card.id);
+      article.dataset.engineTitle = card.title;
+    }
     article.setAttribute("aria-label", `${card.kind}: ${card.title}`);
 
     const flip = window.document.createElement("div");
@@ -106,6 +111,7 @@ function startLiveCycle(board: HTMLElement): void {
   const timer = window.setInterval(() => {
     const tiles = Array.from(board.querySelectorAll<HTMLElement>(".livetile"));
     if (tiles.length === 0) return;
+    if (document.body.classList.contains("is-dragging")) return;
     const idle = tiles.filter((tile) => !tile.matches(":hover") && !tile.matches(":focus-within"));
     if (idle.length === 0) return;
     toggleFlip(idle[cursor % idle.length]);

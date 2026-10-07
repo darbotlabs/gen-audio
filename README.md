@@ -30,7 +30,7 @@ npm run build
 npm run dev   # browser preview on :1420, or `cargo tauri dev` inside src-tauri
 ```
 
-The board sits inside a viewport border. Each card is a live tile: the front is the board face, the back is the Adaptive Card text when one is attached, and Enter or Flip turns it. Arrow keys move between cards. Home and End jump. "Empty viewport" shows the empty state inside the same border. "Run Python improve on fixture" calls the Python SDK from the Tauri shell and does nothing useful in a plain browser.
+The board sits inside a viewport border beside a blue setup pane. Drag a green engine card into the upper half of that pane to load the voice model. The lower half selects agent, voice, duration, and perspective participants, and the bottom of the pane takes files or a pasted prompt. Each card is a live tile: the front is the board face, the back is the Adaptive Card text when one is attached, and Enter or Flip turns it. Arrow keys move between cards. Home and End jump. "Empty viewport" shows the empty state inside the same border. "Run Python improve on fixture" calls the Python SDK from the Tauri shell and does nothing useful in a plain browser.
 
 The card contract is `schemas/card-viewport.schema.json`. The example board is `schemas/examples/viewport.example.json`.
 

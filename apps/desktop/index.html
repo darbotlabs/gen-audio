@@ -23,16 +23,69 @@
       </div>
       <p id="status" class="status" role="status"></p>
     </header>
-    <section class="viewport" aria-label="Card viewport frame">
-      <div class="viewport-chrome">
-        <span>Viewport</span>
-        <span>Live tiles</span>
-      </div>
-      <main id="board" class="board" aria-label="Card viewport"></main>
-      <p id="empty" class="empty" hidden>No cards in this viewport. Load the example to see engine, spectrogram, cube, and connector cards.</p>
-    </section>
+    <div class="studio">
+      <aside class="sidepane" aria-label="Podcast setup">
+        <section id="model-drop" class="model-drop" aria-label="Loaded voice model">
+          <p class="pane-kicker">Loaded voice model</p>
+          <p id="loaded-model" class="loaded-model">Drop an engine card here</p>
+          <p id="loaded-model-id" class="loaded-id"></p>
+        </section>
+        <section class="side-controls" aria-label="Podcast selectors">
+          <label class="field">
+            <span><b>A</b> Agent</span>
+            <select id="agent">
+              <option value="local">Local</option>
+              <option value="copilot">Copilot</option>
+              <option value="claude">Claude</option>
+              <option value="gpt">GPT</option>
+              <option value="gemini">Gemini</option>
+            </select>
+          </label>
+          <label class="field">
+            <span><b>P</b> Voice</span>
+            <select id="voice">
+              <option value="af_heart">Alice · af_heart</option>
+              <option value="am_michael">Frank · am_michael</option>
+              <option value="cast">Cast default</option>
+            </select>
+          </label>
+          <label class="field">
+            <span><b>T</b> Duration</span>
+            <select id="duration">
+              <option value="1">1 min</option>
+              <option value="3" selected>3 min</option>
+              <option value="5">5 min</option>
+              <option value="10">10 min</option>
+              <option value="30">30 min</option>
+            </select>
+          </label>
+          <div class="field">
+            <span>Perspectives</span>
+            <div id="perspectives" class="perspectives"></div>
+            <button type="button" id="add-perspective" class="add-perspective">+</button>
+          </div>
+        </section>
+        <section class="prompt-box" aria-label="Podcast prompt">
+          <label class="file-pick">
+            Choose files
+            <input id="source-files" type="file" multiple />
+          </label>
+          <ul id="file-list" class="file-list"></ul>
+          <textarea id="prompt" rows="4" placeholder="Paste a document or write a prompt to generate a podcast"></textarea>
+          <button type="button" id="generate-podcast">Generate podcast</button>
+        </section>
+      </aside>
+      <section class="viewport" aria-label="Card viewport frame">
+        <div class="viewport-chrome">
+          <span>Viewport</span>
+          <span>Live tiles</span>
+        </div>
+        <main id="board" class="board" aria-label="Card viewport"></main>
+        <p id="empty" class="empty" hidden>No cards in this viewport. Load the example to see engine, spectrogram, cube, and connector cards.</p>
+      </section>
+    </div>
     <footer class="foot">
-      Arrow keys move between cards. Home and End jump. Enter or Flip turns a live tile. The shared gateway is one row, not a substitute for a node.
+      Drag a green engine card into the upper side pane to load that voice model. Arrow keys move between cards. Enter or Flip turns a live tile.
     </footer>
     <script type="module" src="/src/main.ts"></script>
   </body>
