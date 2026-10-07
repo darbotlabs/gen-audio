@@ -7,6 +7,7 @@ export const CARD_KINDS = [
   "BenchmarkCompare",
   "ConnectorStatus",
   "LibraryClip",
+  "VoiceProfile",
 ] as const;
 
 export const CONNECTOR_IDS = ["mcp", "acp", "harness", "copilot", "claude", "gpt", "gemini"] as const;
@@ -87,9 +88,18 @@ function validateBody(id: string, kind: string, body: Record<string, unknown>): 
     }
     if (!boundedString(body.summary, 1, 400)) return `card ${id} summary is required`;
   }
-  if (kind === "SpectrogramPanel" || kind === "Cube3D") {
+  if (kind === "SpectrogramPanel") {
     if (body.source !== "fixture-tone" || body.notPodcast !== true) {
       return `card ${id} must be a labeled fixture, not a podcast claim`;
+    }
+    if (!boundedString(body.disclaimer, 12, 400) || !String(body.disclaimer).toLowerCase().includes("not")) {
+      return `card ${id} disclaimer must say the visual is not a podcast render`;
+    }
+  }
+  if (kind === "Cube3D") {
+    const srcOk = body.source === "fixture-tone" || body.source === "library-clip";
+    if (!srcOk || body.notPodcast !== true) {
+      return `card ${id} must be fixture-tone or library-clip with notPodcast`;
     }
     if (!boundedString(body.disclaimer, 12, 400) || !String(body.disclaimer).toLowerCase().includes("not")) {
       return `card ${id} disclaimer must say the visual is not a podcast render`;
@@ -139,6 +149,17 @@ function validateBody(id: string, kind: string, body: Record<string, unknown>): 
     } else if (body.wavUrl) {
       return `card ${id} must not set wavUrl unless synthesizedSpeech is true`;
     }
+  }
+  if (kind === "VoiceProfile") {
+    if (!boundedString(body.agentname, 1, 40)) return `card ${id} agentname is required`;
+    if (!boundedString(body.personaId, 1, 40)) return `card ${id} personaId is required`;
+    if (!boundedString(body.ttsModel, 1, 60)) return `card ${id} ttsModel is required`;
+    if (!boundedString(body.tone, 1, 40)) return `card ${id} tone is required`;
+    if (!boundedString(body.purpose, 1, 40)) return `card ${id} purpose is required`;
+    if (!boundedString(body.domain, 1, 40)) return `card ${id} domain is required`;
+    if (!boundedString(body.accent, 1, 40)) return `card ${id} accent is required`;
+    if (!Array.isArray(body.traits)) return `card ${id} traits must be an array`;
+    if (!Array.isArray(body.refs)) return `card ${id} refs must be an array`;
   }
   if (kind === "ConnectorStatus") {
     if (typeof body.connectorId !== "string" || !CONNECTOR_IDS.includes(body.connectorId as (typeof CONNECTOR_IDS)[number])) {

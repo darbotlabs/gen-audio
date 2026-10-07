@@ -15,7 +15,7 @@
           <span class="product">GEN-AUDIO</span>
         </div>
         <p class="lede">
-          Snap slides + side pane. Profile maps and fixture canvases are labeled previews — not product speech.
+          Agent = persona · Voice = TTS model · Library = real WAVs + cube layers. Not LiveKit.
         </p>
       </div>
       <div class="ga-header-toolbar" aria-label="Gen-Audio header toolbar">
@@ -23,6 +23,9 @@
           <button type="button" id="show-example">Load labeled example</button>
           <button type="button" id="show-empty">Clear viewport</button>
           <button type="button" id="run-improve">Run Python improve on fixture</button>
+          <button type="button" id="goto-library-clips">Library clips</button>
+          <button type="button" id="goto-voice-profiles">Voice profiles</button>
+          <button type="button" id="goto-cube-bind">Bind library cube</button>
         </div>
         <p id="status" class="status" role="status"></p>
       </div>
@@ -35,22 +38,31 @@
           <p id="loaded-model-id" class="loaded-id"></p>
         </section>
         <section class="side-controls" aria-label="Podcast selectors">
-          <label class="field">
-            <span><b>A</b> Agent</span>
-            <select id="agent">
-              <option value="local">Local</option>
-              <option value="copilot">Copilot</option>
-              <option value="claude">Claude</option>
-              <option value="gpt">GPT</option>
-              <option value="gemini">Gemini</option>
+          <div class="field agent-field">
+            <div class="agent-label-row">
+              <span><b>A</b> Agent <em class="hint">(persona)</em></span>
+              <button type="button" id="add-agent" class="add-agent" title="Add agent (max 8)">+</button>
+            </div>
+            <select id="agent" aria-label="Primary agent persona">
+              <option value="anton">Anton</option>
+              <option value="alice">Alice</option>
+              <option value="khortana">Khortana</option>
+              <option value="rocky">Rocky</option>
+              <option value="sensei">Sensei</option>
+              <option value="optimus">Optimus</option>
             </select>
-          </label>
+            <div id="agent-slots" class="agent-slots" aria-label="Additional agents on track"></div>
+            <p id="agent-count" class="agent-count">1 / 8 agents</p>
+          </div>
           <label class="field">
-            <span><b>P</b> Voice</span>
-            <select id="voice">
-              <option value="af_heart">Alice — af_heart</option>
-              <option value="am_michael">Frank — am_michael</option>
-              <option value="cast">Cast default</option>
+            <span><b>V</b> Voice <em class="hint">(TTS model)</em></span>
+            <select id="voice" aria-label="TTS / voice language model">
+              <option value="kokoro_onnx">kokoro-onnx</option>
+              <option value="kokoro_dayour">dayour/kokoro</option>
+              <option value="misaki_kokoro">misaki→kokoro</option>
+              <option value="magpie">Magpie TTS</option>
+              <option value="vibevoice">VibeVoice</option>
+              <option value="pocket_tts">Pocket TTS</option>
             </select>
           </label>
           <label class="field">
@@ -93,7 +105,7 @@
       </section>
     </div>
     <footer class="foot">
-      PageUp/Down or Arrow Up/Down advance whole slides. Arrow Left/Right move cards. Drag a green engine into the side pane. Profile redraws the spectrogram preview — not synthesized speech.
+      PageUp/Down advance slides. Agent = persona (≤8). Voice = TTS engine. Library audio has play/pause/scrub. Cube binds to selected real clip JSON.
     </footer>
     <script type="module" src="/src/main.ts"></script>
   </body>

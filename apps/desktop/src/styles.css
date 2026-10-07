@@ -564,3 +564,54 @@ th, td { text-align: left; padding: 0.12rem 0.25rem; border-bottom: 1px solid va
   outline: 1px solid rgba(201, 123, 255, 0.55);
   outline-offset: 1px;
 }
+
+
+/* F-gate: Agent/Voice split + library transport + voice profiles */
+.hint { color: #9ad7ff; font-style: normal; font-size: 0.68rem; margin-left: 0.2rem; }
+.agent-label-row { display: flex; justify-content: space-between; align-items: center; gap: 0.35rem; }
+.add-agent { min-width: 2rem; padding: 0.15rem 0.45rem; font-weight: 700; }
+.agent-slots { display: grid; gap: 0.25rem; margin-top: 0.25rem; }
+.agent-slot-row { display: grid; grid-template-columns: 1fr auto; gap: 0.25rem; }
+.agent-count { margin: 0.15rem 0 0; color: #9ad7ff; font-size: 0.68rem; }
+.library-audio {
+  width: 100%;
+  height: 2rem;
+  margin: 0.25rem 0;
+  border-radius: 8px;
+  background: #0a0c10;
+}
+.audio-time { font-variant-numeric: tabular-nums; color: #c9b6ff !important; }
+.harvest-fields { display: grid; gap: 0.2rem; margin-top: 0.25rem; }
+.harvest-input {
+  width: 100%;
+  background: #0b1824;
+  color: var(--text);
+  border: 1px solid #3d6f90;
+  border-radius: 6px;
+  padding: 0.2rem 0.35rem;
+  font-size: 0.7rem;
+}
+.bind-cube { margin-top: 0.2rem; font-size: 0.72rem; }
+.voice-profile-tile .face { border-color: #c97bff; }
+.voice-profile-back .vp-facts {
+  margin: 0.2rem 0;
+  padding-left: 1rem;
+  font-size: 0.7rem;
+  color: #d7e6f5;
+  max-height: 7rem;
+  overflow: hidden;
+}
+.vp-3d-hook {
+  margin-top: 0.25rem;
+  padding: 0.3rem 0.4rem;
+  border: 1px dashed #c97bff;
+  border-radius: 8px;
+  font-size: 0.68rem;
+  color: #e2c6ff;
+}
+.cube-interactive { cursor: grab; height: 110px !important; max-height: 110px !important; }
+.cube-interactive:active { cursor: grabbing; }
+.slide[data-slide="library-models"],
+.slide[data-slide="library-clips"] {
+  --cols: 3;
+}

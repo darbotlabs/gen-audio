@@ -261,7 +261,10 @@
         "summary": "Real 6.2 min Gen-Audio briefing @ 24 kHz. 18 turns, 816 words. Not a fixture.",
         "cubePngUrl": "/library/library_kokoro_onnx_cube3d.png",
         "cubeJsonUrl": "/library/library_kokoro_onnx_cube3d.json",
-        "inv_hdr": 0.09737
+        "inv_hdr": 0.09737,
+        "semanticName": "kokoro-onnx gen-audio clip",
+        "faceName": "kokoro_onnx",
+        "title": "kokoro-onnx"
       },
       "adaptive": {
         "type": "AdaptiveCard",
@@ -269,7 +272,7 @@
         "body": [
           {
             "type": "TextBlock",
-            "text": "Real synth: kokoro-onnx \u00b7 374.8s \u00b7 cube attached",
+            "text": "Real synth: kokoro-onnx · 374.8s · cube attached",
             "wrap": true
           },
           {
@@ -303,7 +306,10 @@
         "wavUrl": "/library/library_kokoro.wav",
         "duration_s": 375.625,
         "sample_rate": 24000,
-        "summary": "Real dayour/kokoro torch synth \u2014 375.6s Gen-Audio briefing. Not a fixture."
+        "summary": "Real dayour/kokoro torch synth — 375.6s Gen-Audio briefing. Not a fixture.",
+        "semanticName": "dayour/kokoro gen-audio clip",
+        "faceName": "kokoro_dayour",
+        "title": "dayour/kokoro"
       },
       "adaptive": {
         "type": "AdaptiveCard",
@@ -311,7 +317,7 @@
         "body": [
           {
             "type": "TextBlock",
-            "text": "Real synth: dayour/kokoro \u00b7 375.6s",
+            "text": "Real synth: dayour/kokoro · 375.6s",
             "wrap": true
           }
         ]
@@ -320,12 +326,13 @@
     {
       "id": "lib-misaki-kokoro",
       "kind": "LibraryClip",
-      "title": "misaki\u2192kokoro",
+      "title": "misaki→kokoro",
       "body": {
         "engineId": "misaki_kokoro",
         "status": "running",
         "synthesizedSpeech": false,
-        "summary": "Misaki\u2192Kokoro synthesizing now. No fake WAV until complete."
+        "summary": "Misaki→Kokoro synthesizing now. No fake WAV until complete.",
+        "title": "misaki→kokoro"
       }
     },
     {
@@ -336,7 +343,8 @@
         "engineId": "magpie",
         "status": "unavailable",
         "synthesizedSpeech": false,
-        "summary": "GGUF weights exist on box; magpie-tts.cpp not built. No fake audio."
+        "summary": "GGUF weights exist on box; magpie-tts.cpp not built. No fake audio.",
+        "title": "Magpie"
       }
     },
     {
@@ -347,7 +355,8 @@
         "engineId": "vibevoice",
         "status": "unavailable",
         "synthesizedSpeech": false,
-        "summary": "1.5B safetensors present but no verified runnable synth harness this pass."
+        "summary": "1.5B safetensors present but no verified runnable synth harness this pass.",
+        "title": "VibeVoice"
       }
     },
     {
@@ -358,7 +367,98 @@
         "engineId": "pocket_tts",
         "status": "unavailable",
         "synthesizedSpeech": false,
-        "summary": "pocket_tts not installed. Prior wrong-topic teaser not reused."
+        "summary": "pocket_tts not installed. Prior wrong-topic teaser not reused.",
+        "title": "Pocket TTS"
+      }
+    },
+    {
+      "id": "vp-anton-kokoro",
+      "kind": "VoiceProfile",
+      "title": "Anton · kokoro-onnx",
+      "body": {
+        "agentname": "Anton",
+        "personaId": "anton",
+        "ttsModel": "kokoro-onnx",
+        "tone": "precise",
+        "purpose": "orchestration",
+        "domain": "systems",
+        "accent": "neutral-US",
+        "traits": [
+          "direct",
+          "technical"
+        ],
+        "refs": [
+          "persona:anton",
+          "tts:kokoro_onnx"
+        ],
+        "cubeJsonUrl": "/library/library_kokoro_onnx_cube3d.json"
+      }
+    },
+    {
+      "id": "vp-alice-kokoro",
+      "kind": "VoiceProfile",
+      "title": "Alice · kokoro-onnx",
+      "body": {
+        "agentname": "Alice",
+        "personaId": "alice",
+        "ttsModel": "kokoro-onnx",
+        "tone": "warm",
+        "purpose": "narration",
+        "domain": "general",
+        "accent": "neutral-US",
+        "traits": [
+          "clear",
+          "friendly"
+        ],
+        "refs": [
+          "persona:alice",
+          "tts:kokoro_onnx",
+          "note:Alice-persona-not-af_heart"
+        ]
+      }
+    },
+    {
+      "id": "vp-khortana-misaki",
+      "kind": "VoiceProfile",
+      "title": "Khortana · misaki→kokoro",
+      "body": {
+        "agentname": "Khortana",
+        "personaId": "khortana",
+        "ttsModel": "misaki→kokoro",
+        "tone": "calm",
+        "purpose": "guidance",
+        "domain": "ops",
+        "accent": "neutral",
+        "traits": [
+          "steady",
+          "strategic"
+        ],
+        "refs": [
+          "persona:khortana",
+          "tts:misaki_kokoro"
+        ]
+      }
+    },
+    {
+      "id": "vp-rocky-dayour",
+      "kind": "VoiceProfile",
+      "title": "Rocky · dayour/kokoro",
+      "body": {
+        "agentname": "Rocky",
+        "personaId": "rocky",
+        "ttsModel": "dayour/kokoro",
+        "tone": "bold",
+        "purpose": "drive",
+        "domain": "execution",
+        "accent": "US-urban",
+        "traits": [
+          "energetic",
+          "blunt"
+        ],
+        "refs": [
+          "persona:rocky",
+          "tts:kokoro_dayour"
+        ]
       }
     }
   ]
