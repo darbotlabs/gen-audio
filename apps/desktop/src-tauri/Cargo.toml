@@ -1,0 +1,23 @@
+[package]
+name = "gen-audio-desktop"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+publish.workspace = true
+description = "Darbot Gen-Audio desktop shell."
+
+[lib]
+name = "gen_audio_desktop_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2.6" }
+
+[dependencies]
+tauri = { version = "2.11" }
+serde = { workspace = true }
+serde_json = { workspace = true }
+gen-audio-connectors = { workspace = true }
+gen-audio-core = { workspace = true }
+gen-audio-mcp = { workspace = true }

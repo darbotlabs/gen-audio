@@ -1,0 +1,12 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/darbotlabs/gen-audio/schemas/connectors/gemini.schema.json",
+  "title": "GeminiConnectorConfig",
+  "type": "object",
+  "properties": {
+    "GEMINI_API_KEY": { "type": "string" },
+    "GOOGLE_API_KEY": { "type": "string", "description": "Fallback if GEMINI_API_KEY is unset." },
+    "GEMINI_MODEL": { "type": "string", "default": "gemini-2.0-flash" },
+    "GEN_AUDIO_CONNECTOR_LIVE": { "enum": ["0", "1"] }
+  }
+}

@@ -131,3 +131,29 @@ Do not point the artifact directory at a folder you then commit. Generated audio
 | `cli/` | argparse entry points used by `scripts/` |
 
 `scripts/*.py` insert `src/` on `sys.path` so a checkout runs without an editable install, as long as the dependencies are present. Console scripts (`gen-audio-synth`, and the rest) come from `pip install`.
+
+## Desktop shell
+
+`apps/desktop` is a Vite + TypeScript viewport. `apps/desktop/src-tauri` is the Tauri 2 shell (Windows WebView2, macOS WebKit, Linux webkit2gtk 4.1). IPC commands are `connector_statuses`, `viewport_example`, and `run_fixture_improve`. The last one writes a fixture tone into the process work directory and calls `scripts/improve.py`. It does not accept a shell string.
+
+Cards are validated again in `gen_audio_core::cards` before a document is treated as renderable. `SpectrogramPanel` and `Cube3D` must set `source` to `fixture-tone` and `notPodcast` to true. `BenchmarkCompare.measuredHere` must be false. Figures in the example board are copied from the 2026-10-06 compare notes (`gen_audio_core::benchmark`) and are not recomputed here. Inverse-HDR is not a publish ranking: those notes preferred the wider VibeVoice final even when Kokoro's inv-HDR rose more.
+
+The in-window spectrogram and cube are a browser DFT / WebGL sketch of the same fixture idea. The caption says they are not the Python `specgram` and not a podcast. The Python chain remains the publish path.
+
+## Connectors
+
+| Surface | Crate / binary | Session | Live behavior |
+| --- | --- | --- | --- |
+| MCP | `gen-audio-mcp` | None. `initialize` stores nothing. HTTP sets `X-Gen-Audio-Stateless` and never `Mcp-Session-Id`. | Tools call the Python CLIs or write a fixture tone. |
+| ACP | `gen-audio-acp` | In-memory `sessionId`, required by ACP, dropped on `session/cancel`. | `session/prompt` returns connector health or a refusal to synthesize. It does not call vendor APIs. |
+| Harness | `gen-audio-harness` | None. JSONL trace on stdout. | Skips synth. Optional fixture and Python improve. |
+| Copilot | `gen-audio-connectors` | None | GitHub Models `POST /inference/chat/completions`, or `COPILOT_STUDIO_ENDPOINT` if you set one. Not the in-IDE Copilot SDK. |
+| Claude | same | None | Anthropic Messages API. `claude -p` only when `GEN_AUDIO_CLAUDE_CODE_CLI=1`. |
+| GPT | same | None | OpenAI-compatible chat completions. |
+| Gemini | same | None | `generateContent`. The key is a header, not a query parameter. |
+
+Vendor calls also require `GEN_AUDIO_CONNECTOR_LIVE=1`. Without it, a present token is reported as `token_present` and `complete` stays a mock envelope. Redirects are disabled so a `Location` header cannot carry `Authorization` to another host. Model ids reject `..`. Tool paths from MCP reject absolute paths and `..`, and writes are a single file name inside the process work directory. Model files for synth must live under `GEN_AUDIO_MODEL_DIR`.
+
+## Work directory
+
+`GEN_AUDIO_WORK_DIR`, or a fresh directory under the system temp dir. Fixture WAVs and Python outputs go there. They are not podcast renders. Do not commit that directory.

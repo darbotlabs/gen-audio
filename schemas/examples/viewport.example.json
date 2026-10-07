@@ -1,0 +1,209 @@
+{
+  "version": "1.0",
+  "title": "Darbot Gen-Audio",
+  "columns": 3,
+  "cards": [
+    {
+      "id": "engine-kokoro",
+      "kind": "EngineStatus",
+      "title": "kokoro-onnx",
+      "body": {
+        "engineId": "kokoro_onnx",
+        "status": "weights_absent",
+        "summary": "The Python SDK can synthesize when GEN_AUDIO_KOKORO_MODEL and GEN_AUDIO_KOKORO_VOICES point at local files. Those weights are not in this repo."
+      },
+      "adaptive": {
+        "type": "AdaptiveCard",
+        "version": "1.5",
+        "$schema": "http://adaptivecards.io/schemas/adaptive-card.json",
+        "body": [
+          { "type": "TextBlock", "text": "kokoro-onnx weights are not bundled.", "wrap": true }
+        ]
+      }
+    },
+    {
+      "id": "engine-vibevoice",
+      "kind": "EngineStatus",
+      "title": "VibeVoice",
+      "body": {
+        "engineId": "vibevoice",
+        "status": "external",
+        "summary": "Compare slot for VibeVoice 1.5B (Alice/Frank in the 2026-10-06 notes). No adapter and no weights in this app."
+      }
+    },
+    {
+      "id": "engine-magpie",
+      "kind": "EngineStatus",
+      "title": "Magpie",
+      "body": {
+        "engineId": "magpie",
+        "status": "external",
+        "summary": "Compare slot for Magpie TTS (Sofia/Jason in the 2026-10-06 notes). No adapter and no weights in this app."
+      }
+    },
+    {
+      "id": "engine-pocket",
+      "kind": "EngineStatus",
+      "title": "Pocket TTS",
+      "body": {
+        "engineId": "pocket_tts",
+        "status": "external",
+        "summary": "Kyutai Pocket TTS stand-in used when PersonaPlex weights are unavailable. No adapter in this app."
+      }
+    },
+    {
+      "id": "spec-fixture",
+      "kind": "SpectrogramPanel",
+      "title": "Spectrogram fixture",
+      "span": 2,
+      "body": {
+        "source": "fixture-tone",
+        "notPodcast": true,
+        "disclaimer": "Browser preview of a sine fixture, not a podcast render and not a Python spectrogram."
+      }
+    },
+    {
+      "id": "cube-fixture",
+      "kind": "Cube3D",
+      "title": "Inverse-HDR cube",
+      "span": 2,
+      "body": {
+        "source": "fixture-tone",
+        "notPodcast": true,
+        "disclaimer": "WebGL point cloud of the same fixture tone. Not a measured podcast cube."
+      }
+    },
+    {
+      "id": "cast-sample",
+      "kind": "PodcastCast",
+      "title": "Sample cast",
+      "body": {
+        "sampleScript": true,
+        "speakers": [
+          { "id": "1", "name": "Alice", "voice": "af_heart" },
+          { "id": "2", "name": "Frank", "voice": "am_michael" }
+        ]
+      }
+    },
+    {
+      "id": "serve-node",
+      "kind": "ServeHealth",
+      "title": "Node health",
+      "body": {
+        "host": "<node>",
+        "port": 8002,
+        "baseUrl": "http://<node>:8002/genaid-audio",
+        "healthUrl": "http://<node>:8002/genaid-audio/health",
+        "probed": false,
+        "role": "node"
+      }
+    },
+    {
+      "id": "serve-gateway",
+      "kind": "ServeHealth",
+      "title": "Shared gateway",
+      "body": {
+        "host": "10.1.8.70",
+        "port": 8002,
+        "baseUrl": "http://10.1.8.70:8002/genaid-audio",
+        "healthUrl": "http://10.1.8.70:8002/genaid-audio/health",
+        "probed": false,
+        "role": "shared-gateway"
+      }
+    },
+    {
+      "id": "bench-ref",
+      "kind": "BenchmarkCompare",
+      "title": "Compare notes",
+      "span": 3,
+      "body": {
+        "measuredHere": false,
+        "sourceNote": "Reference figures from the 2026-10-06 GenAID podcast compare notes. Not remeasured in this repository.",
+        "rows": [
+          { "engine": "pocket_tts", "metric": "teaser_wer", "value": "22.22%", "unit": "WER", "note": "Short teaser ASR in those notes." },
+          { "engine": "vibevoice", "metric": "teaser_wer", "value": "30.00%", "unit": "WER", "note": "Full improved WAV was the preferred publish in those notes." },
+          { "engine": "magpie", "metric": "teaser_wer", "value": "42.22%", "unit": "WER", "note": "Short teaser. Hypothesis was short of the reference." },
+          { "engine": "vibevoice", "metric": "bw95_hz", "value": "2670.5", "unit": "Hz", "note": "Full improved final. Not a new measurement." },
+          { "engine": "kokoro_onnx", "metric": "bw95_hz_raw", "value": "826.9", "unit": "Hz", "note": "Raw file in those notes. Do not rank publish on inv-HDR alone." }
+        ]
+      }
+    },
+    {
+      "id": "conn-mcp",
+      "kind": "ConnectorStatus",
+      "title": "MCP",
+      "body": {
+        "connectorId": "mcp",
+        "mode": "local",
+        "authenticated": false,
+        "detail": "Stateless tool server. No vendor credential."
+      }
+    },
+    {
+      "id": "conn-acp",
+      "kind": "ConnectorStatus",
+      "title": "ACP",
+      "body": {
+        "connectorId": "acp",
+        "mode": "local",
+        "authenticated": false,
+        "detail": "ACP agent. sessionId exists because the protocol requires it."
+      }
+    },
+    {
+      "id": "conn-harness",
+      "kind": "ConnectorStatus",
+      "title": "Harness",
+      "body": {
+        "connectorId": "harness",
+        "mode": "local",
+        "authenticated": false,
+        "detail": "Plans tools and writes a JSONL trace. Does not invent speech."
+      }
+    },
+    {
+      "id": "conn-copilot",
+      "kind": "ConnectorStatus",
+      "title": "Copilot",
+      "body": {
+        "connectorId": "copilot",
+        "mode": "mock",
+        "authenticated": false,
+        "detail": "GitHub Models bridge. Mock until a token is set and GEN_AUDIO_CONNECTOR_LIVE=1."
+      }
+    },
+    {
+      "id": "conn-claude",
+      "kind": "ConnectorStatus",
+      "title": "Claude",
+      "body": {
+        "connectorId": "claude",
+        "mode": "mock",
+        "authenticated": false,
+        "detail": "Anthropic Messages API. Claude Code CLI stays off unless GEN_AUDIO_CLAUDE_CODE_CLI=1."
+      }
+    },
+    {
+      "id": "conn-gpt",
+      "kind": "ConnectorStatus",
+      "title": "GPT",
+      "body": {
+        "connectorId": "gpt",
+        "mode": "mock",
+        "authenticated": false,
+        "detail": "OpenAI chat completions. Mock without OPENAI_API_KEY."
+      }
+    },
+    {
+      "id": "conn-gemini",
+      "kind": "ConnectorStatus",
+      "title": "Gemini",
+      "body": {
+        "connectorId": "gemini",
+        "mode": "mock",
+        "authenticated": false,
+        "detail": "Gemini generateContent. Mock without an API key."
+      }
+    }
+  ]
+}

@@ -1,0 +1,12 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/darbotlabs/gen-audio/schemas/connectors/gpt.schema.json",
+  "title": "GptConnectorConfig",
+  "type": "object",
+  "properties": {
+    "OPENAI_API_KEY": { "type": "string", "description": "Secret. Never commit it." },
+    "OPENAI_MODEL": { "type": "string", "default": "gpt-4o-mini" },
+    "OPENAI_BASE_URL": { "type": "string", "default": "https://api.openai.com/v1" },
+    "GEN_AUDIO_CONNECTOR_LIVE": { "enum": ["0", "1"] }
+  }
+}

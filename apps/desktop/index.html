@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Darbot Gen-Audio</title>
+    <link rel="stylesheet" href="/src/styles.css" />
+  </head>
+  <body>
+    <a class="skip" href="#board">Skip to cards</a>
+    <header class="top">
+      <div class="brand">
+        <span class="mark">DARBOT</span>
+        <span class="product">GEN-AUDIO</span>
+      </div>
+      <p class="lede">
+        Card viewport for engines, fixture spectrograms, and connectors. Fixture tones are not podcast audio.
+      </p>
+      <div class="toolbar">
+        <button type="button" id="show-example">Show example</button>
+        <button type="button" id="show-empty">Empty viewport</button>
+        <button type="button" id="run-improve">Run Python improve on fixture</button>
+      </div>
+      <p id="status" class="status" role="status"></p>
+    </header>
+    <main id="board" class="board" aria-label="Card viewport"></main>
+    <p id="empty" class="empty" hidden>No cards in this viewport. Load the example to see engine, spectrogram, cube, and connector cards.</p>
+    <footer class="foot">
+      Arrow keys move between cards. Home and End jump. The shared gateway is one row, not a substitute for a node.
+    </footer>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

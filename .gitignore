@@ -33,6 +33,11 @@ out/
 *.ort
 *.bin
 
+# Rust / Node
+target/
+node_modules/
+apps/desktop/dist/
+
 # Editor / OS
 .DS_Store
 .idea/

@@ -1,10 +1,47 @@
 # gen-audio
 
-Python toolkit for Darbot GenAID Audio work: turn a two-speaker script into a WAV with [kokoro-onnx](https://github.com/thewh1teagle/kokoro-onnx) when you supply the model files yourself, then run a fixed 24 kHz publish chain, draw before/after spectrograms, and optionally run a small inverse-HDR cube revision sketch.
+Darbot Gen-Audio is a desktop app plus a Python SDK for multi-speaker podcast tooling: a card viewport, fixture spectrogram and inverse-HDR cube views, a stateless MCP server, an Agent Client Protocol agent, a trace-writing harness, and connectors for Copilot, Claude, GPT, and Gemini.
 
 [genaid](https://github.com/darbotlabs/genaid) is a separate JavaScript prompting framework. This repository does not vendor that code.
 
-This package does not ship model weights, voice binaries, or rendered audio.
+This repo does not ship model weights, voice binaries, API keys, or podcast renders. Spectrogram and cube views in the desktop app are drawn from a sine **fixture tone**. They are not speech.
+
+## Desktop app
+
+Targets: Windows (WebView2, NSIS), macOS (WebKit, dmg), Linux (webkit2gtk 4.1, deb/appimage). This environment checks the Linux crate with `cargo check`. A full installer build needs the platform webview SDK (`cargo tauri build` from `apps/desktop/src-tauri` after `npm run build`).
+
+```bash
+# library crates and ACP / MCP / harness tests
+cargo test --workspace --exclude gen-audio-desktop
+cargo check -p gen-audio-desktop
+
+# UI
+cd apps/desktop
+npm install
+npm run build
+npm run dev   # browser preview on :1420, or `cargo tauri dev` inside src-tauri
+```
+
+Keyboard: arrow keys move between cards, Home and End jump. "Empty viewport" shows the empty state. "Run Python improve on fixture" calls the Python SDK from the Tauri shell and does nothing useful in a plain browser.
+
+The card contract is `schemas/card-viewport.schema.json`. The example board is `schemas/examples/viewport.example.json`.
+
+## MCP, ACP, and harness
+
+```bash
+cargo run -p gen-audio-mcp -- --smoke
+cargo run -p gen-audio-mcp -- --http 127.0.0.1:8765
+cargo run -p gen-audio-acp -- --smoke
+cargo run -p gen-audio-harness -- --fixture
+```
+
+MCP is stateless: `initialize` stores no session, HTTP does not set `Mcp-Session-Id`, and the listener refuses non-loopback binds unless `GEN_AUDIO_MCP_HTTP_ALLOW_REMOTE=1`. ACP is session-scoped because that protocol requires `sessionId`. The harness prints JSONL. It skips synthesis instead of inventing speech. `--fixture` writes a labeled sine WAV. `--improve` runs the Python publish chain on that fixture when the checkout is available.
+
+Connector environment variables, mock behavior, and the live flag are in [docs/CONNECTORS.md](docs/CONNECTORS.md).
+
+## Python SDK
+
+The installable package is still `gen_audio` (`pip install -e .`). It turns a two-speaker script into a WAV with [kokoro-onnx](https://github.com/thewh1teagle/kokoro-onnx) when you supply model files, then runs the 24 kHz publish chain, draws spectrogram PNGs, and can run the cube-revision sketch.
 
 ## What actually runs
 
@@ -19,6 +56,11 @@ This package does not ship model weights, voice binaries, or rendered audio.
 | VibeVoice, Magpie, Pocket TTS, dayour Kokoro | Names on the compare list only. No adapter and no weights |
 | misaki | Grapheme-to-phoneme library used by Kokoro. Not a waveform engine, and this repo does not call it |
 | Ray Serve process | Not started by this package. URL and health-body helpers only |
+| Tauri desktop card viewport | Implemented. Spectrogram and cube views use a fixture tone |
+| Stateless MCP (`gen-audio-mcp`) | Implemented (stdio and loopback HTTP) |
+| ACP agent (`gen-audio-acp`) | Implemented handshake and `session/prompt` |
+| Harness traces (`gen-audio-harness`) | Implemented. Synth is skipped without weights |
+| Copilot, Claude, GPT, Gemini connectors | Implemented. Mock unless a key is set and `GEN_AUDIO_CONNECTOR_LIVE=1` |
 
 kokoro-onnx voice ids in the example cast are `af_heart` (Alice, Speaker 1) and `am_michael` (Frank, Speaker 2). Those ids exist in the Kokoro v1 voice list. A voice id still has to be present in the voice pack you load; this repo does not check that until kokoro-onnx does.
 

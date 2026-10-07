@@ -1,0 +1,15 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/darbotlabs/gen-audio/schemas/connectors/copilot.schema.json",
+  "title": "CopilotConnectorConfig",
+  "type": "object",
+  "description": "Bridge to GitHub Models or a user-supplied Copilot Studio endpoint. This is not the in-IDE Copilot chat SDK.",
+  "properties": {
+    "COPILOT_GITHUB_TOKEN": { "type": "string" },
+    "GITHUB_TOKEN": { "type": "string" },
+    "GH_TOKEN": { "type": "string" },
+    "COPILOT_GITHUB_MODEL": { "type": "string", "default": "gpt-4o-mini" },
+    "COPILOT_STUDIO_ENDPOINT": { "type": "string", "description": "Optional https endpoint you control. The prompt is POSTed as JSON." },
+    "GEN_AUDIO_CONNECTOR_LIVE": { "enum": ["0", "1"] }
+  }
+}
