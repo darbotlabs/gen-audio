@@ -234,7 +234,7 @@ fn push_relative(base: &Path, raw: &str) -> Result<PathBuf, String> {
         return Err("path is empty".into());
     }
     let rel = Path::new(raw);
-    if rel.is_absolute() {
+    if rel.is_absolute() || is_foreign_absolute(raw) {
         return Err("absolute paths are not accepted from tool arguments".into());
     }
     let mut out = base.to_path_buf();
@@ -247,6 +247,15 @@ fn push_relative(base: &Path, raw: &str) -> Result<PathBuf, String> {
         }
     }
     Ok(out)
+}
+
+fn is_foreign_absolute(raw: &str) -> bool {
+    let trimmed = raw.trim();
+    if trimmed.starts_with("\\\\") || trimmed.starts_with("//") {
+        return true;
+    }
+    let bytes = trimmed.as_bytes();
+    bytes.len() >= 3 && bytes[0].is_ascii_alphabetic() && bytes[1] == b':'
 }
 
 fn reject_symlink(path: &Path) -> Result<(), String> {
@@ -298,6 +307,9 @@ mod tests {
         assert!(read_user_repo_file(&repo, "voices/cast_map.example.json").is_ok());
         assert!(read_user_repo_file(&repo, "README.md").is_err());
         assert!(read_user_repo_file(&repo, "examples/../README.md").is_err());
+        assert!(read_user_repo_file(&repo, r"C:\Windows\system.ini").is_err());
+        assert!(read_user_repo_file(&repo, r"\\server\share\script.txt").is_err());
+        assert!(write_name(&work, r"C:\out.wav").is_err());
         assert!(read_trusted_script(&repo, "scripts/improve.py").is_ok());
         assert!(read_trusted_script(&repo, "scripts/not-real.py").is_err());
         let scratch = Scratch::new(work.clone()).unwrap();

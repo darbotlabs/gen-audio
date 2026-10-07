@@ -63,7 +63,7 @@
       "properties": {
         "source": { "const": "fixture-tone" },
         "notPodcast": { "const": true },
-        "disclaimer": { "type": "string", "minLength": 12 }
+        "disclaimer": { "type": "string", "minLength": 12, "pattern": "[Nn]ot" }
       }
     },
     "podcastCast": {
@@ -104,7 +104,7 @@
       "required": ["measuredHere", "sourceNote", "rows"],
       "properties": {
         "measuredHere": { "const": false },
-        "sourceNote": { "type": "string", "minLength": 12 },
+        "sourceNote": { "type": "string", "minLength": 12, "pattern": "[Nn]ot remeasured" },
         "rows": {
           "type": "array",
           "items": {

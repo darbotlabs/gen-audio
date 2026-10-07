@@ -1,17 +1,30 @@
 import type { ViewportDocument } from "./validate";
 
+const EMPTY_COPY =
+  "No cards in this viewport. Load the example to see engine, spectrogram, cube, and connector cards.";
+
+export function showRejected(board: HTMLElement, empty: HTMLElement, error: string): void {
+  board.replaceChildren();
+  board.hidden = true;
+  empty.hidden = false;
+  empty.textContent = `Viewport rejected: ${error}`;
+}
+
 export function renderBoard(board: HTMLElement, empty: HTMLElement, document: ViewportDocument): void {
   board.replaceChildren();
-  board.style.setProperty("--cols", String(document.columns ?? 3));
+  const columns = document.columns ?? 3;
+  board.style.setProperty("--cols", String(columns));
   empty.hidden = document.cards.length > 0;
   board.hidden = document.cards.length === 0;
+  if (document.cards.length === 0) empty.textContent = EMPTY_COPY;
   document.cards.forEach((card, index) => {
     const article = window.document.createElement("article");
     article.className = "card";
     article.tabIndex = index === 0 ? 0 : -1;
     article.dataset.id = card.id;
     article.dataset.kind = card.kind;
-    if (card.span) article.dataset.span = String(card.span);
+    const span = Math.min(card.span ?? 1, columns);
+    if (span > 1) article.dataset.span = String(span);
     article.setAttribute("aria-label", `${card.kind}: ${card.title}`);
     const kind = window.document.createElement("div");
     kind.className = "kind";
@@ -20,6 +33,8 @@ export function renderBoard(board: HTMLElement, empty: HTMLElement, document: Vi
     title.textContent = card.title;
     article.append(kind, title);
     article.append(bodyFor(card.kind, card.body));
+    const companion = adaptiveCaption(card.adaptive);
+    if (companion) article.append(companion);
     board.append(article);
   });
 }
@@ -33,7 +48,8 @@ function bodyFor(kind: string, body: Record<string, unknown>): HTMLElement {
     wrap.append(paragraph(String(body.disclaimer ?? "")));
     const before = canvas("spec-before");
     const after = canvas("spec-after");
-    const play = button("play-fixture", "Play fixture tone");
+    const play = button("Play fixture tone");
+    play.dataset.action = "play-fixture";
     wrap.append(before, after, play);
   } else if (kind === "Cube3D") {
     wrap.append(paragraph(String(body.disclaimer ?? "")));
@@ -51,7 +67,10 @@ function bodyFor(kind: string, body: Record<string, unknown>): HTMLElement {
     }
     wrap.append(list);
   } else if (kind === "ServeHealth") {
-    wrap.append(pill(body.probed ? "probed" : "not probed", !body.probed));
+    const probed = body.probed === true;
+    const ok = body.ok === true;
+    const label = !probed ? "not probed" : ok ? "reachable" : "unreachable";
+    wrap.append(pill(label, !probed || !ok));
     wrap.append(paragraph(String(body.healthUrl ?? "")));
     wrap.append(paragraph(`Role: ${String(body.role ?? "")}`));
   } else if (kind === "BenchmarkCompare") {
@@ -104,12 +123,26 @@ function canvas(name: string): HTMLCanvasElement {
   return node;
 }
 
-function button(id: string, label: string): HTMLButtonElement {
+function button(label: string): HTMLButtonElement {
   const node = window.document.createElement("button");
   node.type = "button";
-  node.id = id;
   node.textContent = label;
   return node;
+}
+
+function adaptiveCaption(adaptive: ViewportDocument["cards"][number]["adaptive"]): HTMLElement | null {
+  if (!adaptive || adaptive.type !== "AdaptiveCard" || !Array.isArray(adaptive.body)) return null;
+  const texts: string[] = [];
+  for (const block of adaptive.body) {
+    if (!block || typeof block !== "object") continue;
+    const record = block as Record<string, unknown>;
+    if (record.type === "TextBlock" && typeof record.text === "string") texts.push(record.text);
+  }
+  if (texts.length === 0) return null;
+  const note = window.document.createElement("p");
+  note.className = "summary";
+  note.textContent = `Adaptive Card companion, not a second board: ${texts.join(" ")}`;
+  return note;
 }
 
 export function cards(board: HTMLElement): HTMLElement[] {
@@ -119,7 +152,8 @@ export function cards(board: HTMLElement): HTMLElement[] {
 export function moveFocus(board: HTMLElement, direction: 1 | -1 | "home" | "end"): void {
   const items = cards(board);
   if (items.length === 0) return;
-  const current = items.findIndex((item) => item === window.document.activeElement);
+  const active = window.document.activeElement;
+  const current = items.findIndex((item) => item === active || item.contains(active));
   let next = 0;
   if (direction === "home") next = 0;
   else if (direction === "end") next = items.length - 1;
@@ -128,4 +162,5 @@ export function moveFocus(board: HTMLElement, direction: 1 | -1 | "home" | "end"
     item.tabIndex = index === next ? 0 : -1;
   });
   items[next].focus();
+  items[next].scrollIntoView({ block: "nearest" });
 }

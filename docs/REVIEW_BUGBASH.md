@@ -45,3 +45,42 @@ Assumed that “canonical path is inside the repo” was enough, and that a shar
 Residual risk: DNS is checked once and `ureq` resolves again, so a rebinding name can still move. `adopt_new_files` trusts new names that appear in the scratch after startup; that is safe only while the directory stays mode `0700`. Loopback HTTP still shares one scratch among local clients. Prefix redaction misses tokens that do not match the known shapes. `probe=false` still returns a URL for any syntactically valid host, and the shared gateway remains probeable on purpose. `GEN_AUDIO_MCP_HTTP_ALLOW_REMOTE=1`, `GEN_AUDIO_PROBE_HOSTS`, and `GEN_AUDIO_CONNECTOR_ALLOW_PRIVATE=1` are operator overrides that widen the network. The Claude child still sees `ANTHROPIC_API_KEY`. There is no signature check on the Python interpreter or on kokoro files under `GEN_AUDIO_MODEL_DIR`.
 
 Next round should attack the board itself: schema versus the TypeScript checker, empty state, keyboard focus, Windows paths, and what the webview is allowed to learn from IPC.
+
+## Round 2 — UX, card-viewport schema, empty state, Windows paths, Tauri IPC
+
+### Inverse debate
+
+The strongest case that the board was wrong:
+
+The JSON Schema and the Rust checker were the contract, and the TypeScript checker was a thinner copy. A viewport could omit `sampleScript`, name a connector that does not exist, or attach benchmark rows whose note never said “not remeasured,” and the window would still paint them. A probed-but-down serve row used the same calm pill as a successful probe. Snap scrolling was declared on the grid while the document scrolled, so the snap never ran. Arrow keys called `preventDefault` while focus was on the Play button, and focus lookup compared `activeElement` to the card, so the button was not a child of the roving tabindex. Two spectrogram cards would have shared one `id`. The empty paragraph and a rejected document looked the same: “No cards.” The Adaptive Card payload was stored and never shown, which reads as a second board that does not exist. `run_fixture_improve` had already stopped returning Python stdout in round 1, but connector IPC still wrote `mode` and `detail` onto the card with no enum check. On Linux, `C:\Windows\...` is not `Path::is_absolute`, so a Windows absolute path could be treated as a relative component unless something else rejected the slash.
+
+### Steelman and what changed
+
+One checker, one empty state, one scrollport.
+
+- `apps/desktop/src/validate.ts` now rejects the same honesty failures as `gen_audio_core::cards`: engine status, fixture disclaimer, `sampleScript: true`, serve role and probed/`ok`, benchmark `measuredHere: false` plus a “not remeasured” note, and the seven connector ids and modes. The JSON Schema patterns for disclaimer and `sourceNote` match that wording.
+- A rejected document clears the board and the empty region says `Viewport rejected: ...`. A real empty list keeps the “No cards” sentence.
+- The board is the scrollport (`max-height`, `overflow-y: auto`, `scroll-snap-type`). Arrow keys do not move focus when a button or link is focused. Card spans are clamped to the column count. Narrow layouts still collapse spans. The play control is `data-action`, not a duplicated id.
+- Serve rows say `not probed`, `reachable`, or `unreachable`.
+- Adaptive Card `TextBlock` text is rendered as one caption: “Adaptive Card companion, not a second board.”
+- IPC applies a connector report only when `mode` is in the schema enum and `detail` is a string of 1–400 characters.
+- `push_relative` rejects drive-letter and UNC paths on every operating system.
+
+### Adversarial findings
+
+| Finding | Result |
+| --- | --- |
+| Benchmark card with `measuredHere: true` | TypeScript checker returns an error. `validate.check.mts` asserts it. |
+| Cast card with `sampleScript: false` | Rejected. |
+| `sourceNote` that does not say “not remeasured” | Rejected. |
+| `C:\Windows\system.ini` and `\\server\share\...` as repo reads | Rejected by the path tests. |
+| Play button stealing arrow keys | Arrow handling returns when the target is a button or link. |
+| Snap scroll on a non-scrolling grid | The board element is now the scrollport. |
+
+### Reflection
+
+Assumed the example document was enough to prove the checker, and that CSS `scroll-snap-type` on a grid implied a carousel. The example is valid, so the weak checker never fired. The snap property did nothing because the page, not the board, scrolled.
+
+Residual risk: the TypeScript checker still does not enforce `additionalProperties: false` on every nested object, and it is not a full JSON Schema evaluator. The Adaptive Card caption is text only; there is no Adaptive Card host, action set, or image renderer. Browser spectrogram and cube drawings remain a sine-fixture sketch, which is labeled, and they are not the Python `specgram`. `run_fixture_improve` still needs the Tauri shell; the browser button explains that, and this environment has not launched a WebView. Drive-letter rejection is unit-tested on Linux, not on a Windows host. Horizontal overflow on a very narrow desktop window is reduced by `minmax(0, 1fr)` and the 900px breakpoint, and was not checked in a real WebView.
+
+Next round should attack protocol fidelity: MCP tool schemas versus what the handlers accept, the ACP handshake, whether harness traces actually load a cast map, and whether engine or serve cards can still be read as live results.

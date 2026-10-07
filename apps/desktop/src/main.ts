@@ -1,7 +1,7 @@
 import example from "../../../schemas/examples/viewport.example.json";
-import { renderBoard, moveFocus } from "./render";
+import { renderBoard, moveFocus, showRejected } from "./render";
 import { drawCube, drawSpectrogram, makeFixture, play, previewImprove } from "./signal";
-import { validateViewport, type ViewportDocument } from "./validate";
+import { CONNECTOR_MODES, validateViewport, type ViewportDocument } from "./validate";
 
 function required(id: string): HTMLElement {
   const node = document.querySelector<HTMLElement>(id);
@@ -20,8 +20,7 @@ function show(documentIn: unknown): void {
   const error = validateViewport(documentIn);
   if (error) {
     status.textContent = `Viewport rejected: ${error}`;
-    board.hidden = true;
-    empty.hidden = false;
+    showRejected(board, empty, error);
     return;
   }
   const doc = documentIn as ViewportDocument;
@@ -37,7 +36,9 @@ function paint(): void {
   if (before) drawSpectrogram(before, fixture, "fixture before (browser)");
   if (after) drawSpectrogram(after, improved, "browser preview after (not Python)");
   if (cube) drawCube(cube, fixture);
-  document.querySelector("#play-fixture")?.addEventListener("click", () => play(fixture));
+  board.querySelectorAll<HTMLButtonElement>("[data-action='play-fixture']").forEach((node) => {
+    node.addEventListener("click", () => play(fixture));
+  });
 }
 
 async function refreshConnectors(doc: ViewportDocument): Promise<ViewportDocument> {
@@ -52,8 +53,10 @@ async function refreshConnectors(doc: ViewportDocument): Promise<ViewportDocumen
       const id = String(card.body.connectorId);
       const report = reports.find((item) => item.connector_id === id);
       if (!report) continue;
+      if (!CONNECTOR_MODES.includes(report.mode as (typeof CONNECTOR_MODES)[number])) continue;
+      if (typeof report.detail !== "string" || report.detail.length === 0 || report.detail.length > 400) continue;
       card.body.mode = report.mode;
-      card.body.authenticated = report.authenticated;
+      card.body.authenticated = report.authenticated === true;
       card.body.detail = report.detail;
     }
     return next;
@@ -82,7 +85,7 @@ document.querySelector("#run-improve")?.addEventListener("click", async () => {
 
 document.addEventListener("keydown", (event) => {
   const target = event.target as HTMLElement | null;
-  if (target && ["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName)) return;
+  if (target && ["INPUT", "TEXTAREA", "SELECT", "BUTTON", "A"].includes(target.tagName)) return;
   if (event.key === "ArrowRight" || event.key === "ArrowDown") {
     event.preventDefault();
     moveFocus(board, 1);
