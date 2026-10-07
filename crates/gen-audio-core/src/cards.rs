@@ -316,6 +316,19 @@ mod tests {
     }
 
     #[test]
+    fn voice_profile_example_matches_the_checker() {
+        let raw = include_str!("../../../schemas/examples/voice_profile.alice.json");
+        let value: Value = serde_json::from_str(raw).unwrap();
+        let obj = value.as_object().expect("profile object");
+        validate_voice_profile("profile-alice", obj).unwrap();
+        assert_eq!(value["agentName"], "Alice");
+        assert_eq!(value["voiceModel"], "kokoro_onnx");
+        assert_ne!(value["agentName"], "af_heart");
+        assert!(value["refs"].to_string().contains("af_heart"));
+        assert_eq!(value["notPodcast"], true);
+    }
+
+    #[test]
     fn voice_profile_rejects_a_pack_id_as_the_voice_model() {
         let mut document: Value =
             serde_json::from_str(include_str!("../../../schemas/examples/viewport.example.json")).unwrap();

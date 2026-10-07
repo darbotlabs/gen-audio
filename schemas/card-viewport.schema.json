@@ -145,6 +145,7 @@
       }
     },
     "voiceProfile": {
+      "description": "Canonical fields also live in schemas/voice_profile.schema.json. agentName is a persona. voiceModel is a TTS id. af_heart belongs in refs.",
       "type": "object",
       "additionalProperties": false,
       "required": ["agentName", "personaId", "voiceModel", "tone", "purpose", "domain", "accent", "traits", "refs", "spectrogram2d", "spectrogram3d", "notPodcast", "disclaimer"],

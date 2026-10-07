@@ -222,6 +222,7 @@ button:focus-visible, .card:focus-visible, .slide-dot:focus-visible {
 .layer-switch { display: flex; flex-wrap: wrap; gap: 0.25rem; letter-spacing: 0; text-transform: none; }
 .layer-switch button { padding: 0.15rem 0.45rem; font-size: 0.68rem; }
 .layer-switch button[aria-selected="true"] { background: #143528; border-color: var(--accent); color: var(--accent); }
+.run-state { margin: 0 0 0.25rem; font-size: 0.68rem; color: var(--muted); }
 .transport { display: grid; gap: 0.2rem; margin-top: 0.2rem; }
 .transport-row { display: flex; align-items: center; gap: 0.35rem; }
 .transport-time { font-variant-numeric: tabular-nums; font-size: 0.72rem; color: var(--muted); }

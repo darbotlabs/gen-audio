@@ -146,7 +146,7 @@ The in-window spectrogram is a browser DFT of the side-pane voice profile: perso
 
 | Surface | Crate / binary | Session | Live behavior |
 | --- | --- | --- | --- |
-| MCP | `gen-audio-mcp` | None. `initialize` stores nothing. HTTP sets `X-Gen-Audio-Stateless` and never `Mcp-Session-Id`. `GET /ready` is listener readiness (`speech: false`). `GET /control/stream` is a short SSE snapshot of the process-local command ring, not a client session. | Tools call the Python CLIs, write a fixture tone, or queue a UI command. UI tools do not invent speech. |
+| MCP | `gen-audio-mcp` | None. `initialize` stores nothing. HTTP sets `X-Gen-Audio-Stateless` and never `Mcp-Session-Id`. `GET /ready` is listener readiness (`speech: false`). `GET /control/stream` is a short SSE snapshot of the process-local command ring, not a client session. | Tools call the Python CLIs, write a fixture tone, or queue a UI command. Flip, harvest, and progress events are on that ring. Harvest reads sidecar counts only. `cube_layers` omits point clouds and absolute paths. UI tools do not invent speech. Synth progress is `running`, `refused`, or `unavailable` until a result sets `synthesizedSpeech` true. |
 | ACP | `gen-audio-acp` | In-memory `sessionId`, required by ACP, dropped on `session/cancel`. | `health` / `status` return connector health. Other prompts call MCP voice-profile and UI tools and emit `tool_call` updates. It does not call vendor APIs and it does not invent speech. |
 | Harness | `gen-audio-harness` | None. JSONL trace on stdout. | Skips synth. Optional fixture and Python improve. |
 | Copilot | `gen-audio-connectors` | None | GitHub Models `POST /inference/chat/completions`, or `COPILOT_STUDIO_ENDPOINT` if you set one. Not the in-IDE Copilot SDK. |

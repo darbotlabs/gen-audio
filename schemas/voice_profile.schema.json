@@ -1,0 +1,31 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://darbotlabs.dev/gen-audio/voice-profile.schema.json",
+  "title": "VoiceProfile",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["agentName", "personaId", "voiceModel", "tone", "purpose", "domain", "accent", "traits", "refs", "spectrogram2d", "spectrogram3d", "notPodcast", "disclaimer"],
+  "properties": {
+    "agentName": { "type": "string", "minLength": 1, "maxLength": 40, "description": "Persona display name. Not a TTS model id and not a connector id." },
+    "personaId": { "type": "string", "description": "Persona id such as alice. Not af_heart." },
+    "voiceModel": { "type": "string", "description": "TTS or G2P model id such as kokoro_onnx. Pack ids such as af_heart are refs." },
+    "voiceLabel": { "type": "string" },
+    "tone": { "type": "string", "minLength": 1, "maxLength": 80 },
+    "purpose": { "type": "string", "minLength": 1, "maxLength": 160 },
+    "domain": { "type": "string", "minLength": 1, "maxLength": 160 },
+    "accent": { "type": "string", "minLength": 1, "maxLength": 80 },
+    "traits": { "type": "string", "minLength": 12, "maxLength": 400 },
+    "refs": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 8,
+      "items": { "type": "string", "minLength": 1, "maxLength": 80 }
+    },
+    "spectrogram2d": { "const": "browser-profile-map" },
+    "spectrogram3d": { "enum": ["none", "library-cube-hook", "fixture-cube"] },
+    "cubeJsonUrl": { "type": "string" },
+    "notPodcast": { "const": true },
+    "synthesizedSpeech": { "const": false },
+    "disclaimer": { "type": "string", "minLength": 12, "maxLength": 400 }
+  }
+}

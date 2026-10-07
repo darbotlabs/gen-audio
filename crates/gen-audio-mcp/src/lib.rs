@@ -78,8 +78,11 @@ pub fn smoke() -> Result<String, String> {
         "ui_generate",
         "library_list",
         "library_rename",
+        "library_harvest",
         "voice_profile_get",
         "voice_profile_list",
+        "ui_flip",
+        "cube_layers",
     ] {
         if !names.contains(&required) {
             return Err(format!("missing tool {required}"));
@@ -162,13 +165,16 @@ fn tool_defs() -> Vec<Value> {
         tool("harness_plan", "Parse the sample script and return a harness-style plan. Does not synthesize."),
         tool("ui_navigate", "Queue a viewport slide change for the local Gen-Audio window. Does not render audio."),
         tool("ui_select_tile", "Queue selection of a card id. Loads a 3D cube only when that tile has cube JSON."),
+        tool("ui_flip", "Queue a flipcard. Optional personaId attaches the voice-profile payload. Does not render audio."),
         tool("ui_playback", "Queue play, pause, or seek for a library tile. Does not open the WAV in this process."),
         tool("ui_set_sidepane", "Queue Agent personas (max 8) and a Voice TTS model. Connector ids are rejected."),
         tool("ui_generate", "Record a generation request. synthesizedSpeech is false. Does not call synth."),
         tool("library_list", "List the library catalog. Does not open WAV bytes. Unavailable clips stay unavailable."),
         tool("library_rename", "Queue a semantic name and/or face name. Does not rewrite the WAV."),
+        tool("library_harvest", "Propose a semantic name and face name from the filename and sidecar counts. apply writes a clip ref onto a persona. Does not decode the WAV."),
         tool("voice_profile_get", "Return one persona profile: tone, purpose, domain, accent, traits, refs. Not audio."),
         tool("voice_profile_list", "List personas and TTS voice models. LLM ids are connectors, not agents."),
+        tool("cube_layers", "Read signal, tonality, confidence, and quality summaries from an allowlisted library cube JSON. Omits point clouds and absolute paths."),
     ]
 }
 
@@ -182,12 +188,15 @@ fn tool(name: &str, description: &str) -> Value {
         "connector_health" => (json!({"id": {"type": "string"}}), json!([])),
         "ui_navigate" => (json!({"slide": {"type": "string"}, "tileId": {"type": "string"}}), json!(["slide"])),
         "ui_select_tile" => (json!({"tileId": {"type": "string"}}), json!(["tileId"])),
+        "ui_flip" => (json!({"tileId": {"type": "string"}, "flipped": {"type": "boolean"}, "personaId": {"type": "string"}}), json!(["tileId"])),
         "ui_playback" => (json!({"tileId": {"type": "string"}, "action": {"type": "string"}, "seconds": {"type": "number"}}), json!(["tileId", "action"])),
         "ui_set_sidepane" | "ui_generate" => (
             json!({"agents": {"type": "array"}, "voice": {"type": "string"}, "durationMin": {"type": "integer"}, "promptNote": {"type": "string"}}),
             json!(["agents", "voice"]),
         ),
         "library_rename" => (json!({"clipId": {"type": "string"}, "semanticName": {"type": "string"}, "faceName": {"type": "string"}}), json!(["clipId"])),
+        "library_harvest" => (json!({"clipId": {"type": "string"}, "personaId": {"type": "string"}, "apply": {"type": "boolean"}}), json!(["clipId"])),
+        "cube_layers" => (json!({"clipId": {"type": "string"}}), json!(["clipId"])),
         "voice_profile_get" => (json!({"personaId": {"type": "string"}, "agentName": {"type": "string"}}), json!(["personaId"])),
         _ => (json!({}), json!([])),
     };
@@ -224,11 +233,14 @@ pub fn call_tool(server: &Server, params: &Value) -> Result<Value, (i32, String)
         "harness_plan" => harness_plan(server)?,
         "ui_navigate" => control::ui_navigate(&args)?,
         "ui_select_tile" => control::ui_select_tile(&args)?,
+        "ui_flip" => control::ui_flip(&args)?,
         "ui_playback" => control::ui_playback(&args)?,
         "ui_set_sidepane" => control::ui_set_sidepane(&args)?,
         "ui_generate" => control::ui_generate(&args)?,
         "library_list" => control::library_list(),
         "library_rename" => control::library_rename(&args)?,
+        "library_harvest" => control::library_harvest(server.repo.as_deref(), &args)?,
+        "cube_layers" => control::cube_layers(server.repo.as_deref(), &args)?,
         "voice_profile_get" => control::voice_profile_get(&args)?,
         "voice_profile_list" => control::voice_profile_list(),
         _ => return Err((-32602, format!("unknown tool {name}"))),
@@ -250,9 +262,12 @@ fn known_arguments(name: &str, args: &Value) -> Result<(), (i32, String)> {
         "list_connectors" | "list_engines" | "fixture_tone" | "benchmark_reference" | "harness_plan" | "library_list" | "voice_profile_list" => &[],
         "ui_navigate" => &["slide", "tileId"],
         "ui_select_tile" => &["tileId"],
+        "ui_flip" => &["tileId", "flipped", "personaId"],
         "ui_playback" => &["tileId", "action", "seconds"],
         "ui_set_sidepane" | "ui_generate" => &["agents", "voice", "durationMin", "promptNote"],
         "library_rename" => &["clipId", "semanticName", "faceName"],
+        "library_harvest" => &["clipId", "personaId", "apply"],
+        "cube_layers" => &["clipId"],
         "voice_profile_get" => &["personaId", "agentName"],
         _ => &[],
     };
@@ -270,14 +285,33 @@ fn known_arguments(name: &str, args: &Value) -> Result<(), (i32, String)> {
 fn synth(server: &Server, args: &Value) -> Result<Value, (i32, String)> {
     match server.repo.as_deref() {
         Some(repo) => match bridge::plan(PythonTool::Synth, repo, &server.scratch, args) {
-            Err(message) if message.contains("No speech was invented") => Ok(json!({
-                "ok": false,
-                "synthesized": false,
-                "reason": message,
-                "mock": true
-            })),
+            Err(message) if message.contains("No speech was invented") => {
+                let progress = control::note_progress("kokoro_onnx", "refused", &message, false);
+                Ok(json!({
+                    "ok": false,
+                    "synthesized": false,
+                    "synthesizedSpeech": false,
+                    "phase": "refused",
+                    "reason": message,
+                    "mock": true,
+                    "progress": progress
+                }))
+            }
             Err(message) => Err((-32602, message)),
-            Ok(plan) => bridge::run_plan(&plan).map_err(|message| (-32603, message)),
+            Ok(plan) => {
+                let _ = control::note_progress("kokoro_onnx", "running", "kokoro-onnx synth started", false);
+                let mut ran = bridge::run_plan(&plan).map_err(|message| (-32603, message))?;
+                let speech = ran.get("synthesizedSpeech").and_then(Value::as_bool) == Some(true);
+                let phase = if speech { "ok" } else { "refused" };
+                let detail = if speech {
+                    "synth reported speech"
+                } else {
+                    "synth finished without a speech claim"
+                };
+                ran["phase"] = json!(phase);
+                ran["progress"] = control::note_progress("kokoro_onnx", phase, detail, speech);
+                Ok(ran)
+            }
         },
         None => Ok(json!({
             "ok": false,
@@ -590,6 +624,75 @@ mod tests {
         assert!(profile_text.contains("af_heart"), "{profile_text}");
         assert!(profile_text.contains("\"notPodcast\":true"), "{profile_text}");
         assert!(profile_text.contains("kokoro_onnx"), "{profile_text}");
+        let _ = std::fs::remove_dir_all(&server.scratch.dir);
+    }
+
+    #[test]
+    fn harvest_attaches_a_clip_ref_without_decoding_audio() {
+        let server = Server::boot();
+        let harvested = handle(
+            &server,
+            json!({"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"library_harvest","arguments":{"clipId":"lib-kokoro-onnx","personaId":"alice","apply":true}}}),
+        )
+        .unwrap()
+        .unwrap();
+        let text = harvested["result"]["content"][0]["text"].as_str().unwrap();
+        assert!(text.contains("\"decodedAudio\":false"), "{text}");
+        assert!(text.contains("\"openedWav\":false"), "{text}");
+        assert!(text.contains("816 words") || text.contains("sidecar-counts") || text.contains("kokoro_onnx"), "{text}");
+        assert!(!text.contains("voices-v1.0.bin"), "{text}");
+        assert!(!text.contains("D:\\\\"), "{text}");
+        let profile = handle(
+            &server,
+            json!({"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"voice_profile_get","arguments":{"personaId":"alice"}}}),
+        )
+        .unwrap()
+        .unwrap();
+        let profile_text = profile["result"]["content"][0]["text"].as_str().unwrap();
+        assert!(profile_text.contains("clip:lib-kokoro-onnx"), "{profile_text}");
+        assert!(profile_text.contains("\"notPodcast\":true"), "{profile_text}");
+        let cube = handle(
+            &server,
+            json!({"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"cube_layers","arguments":{"clipId":"lib-kokoro-onnx"}}}),
+        )
+        .unwrap()
+        .unwrap();
+        let cube_text = cube["result"]["content"][0]["text"].as_str().unwrap();
+        assert!(cube_text.contains("signal"), "{cube_text}");
+        assert!(cube_text.contains("tonality"), "{cube_text}");
+        assert!(cube_text.contains("confidence"), "{cube_text}");
+        assert!(cube_text.contains("quality"), "{cube_text}");
+        assert!(cube_text.contains("\"absolutePathsOmitted\":true"), "{cube_text}");
+        assert!(!cube_text.contains("points_preview"), "{cube_text}");
+        assert!(!cube_text.contains("D:\\\\"), "{cube_text}");
+        let empty = handle(
+            &server,
+            json!({"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"cube_layers","arguments":{"clipId":"lib-magpie"}}}),
+        )
+        .unwrap()
+        .unwrap();
+        let empty_text = empty["result"]["content"][0]["text"].as_str().unwrap();
+        assert!(empty_text.contains("unavailable"), "{empty_text}");
+        assert!(!empty_text.contains("points_preview"), "{empty_text}");
+        let flip = handle(
+            &server,
+            json!({"jsonrpc":"2.0","id":5,"method":"tools/call","params":{"name":"ui_flip","arguments":{"tileId":"profile-alice","personaId":"alice","flipped":true}}}),
+        )
+        .unwrap()
+        .unwrap();
+        let flip_text = flip["result"]["content"][0]["text"].as_str().unwrap();
+        assert!(flip_text.contains("\"op\":\"flip\""), "{flip_text}");
+        assert!(flip_text.contains("af_heart"), "{flip_text}");
+        let synth = handle(
+            &server,
+            json!({"jsonrpc":"2.0","id":6,"method":"tools/call","params":{"name":"synth","arguments":{"output":"request.wav","script":"examples/podcast_script_sample.txt"}}}),
+        )
+        .unwrap()
+        .unwrap();
+        let synth_text = synth["result"]["content"][0]["text"].as_str().unwrap();
+        assert!(synth_text.contains("\"phase\":\"refused\""), "{synth_text}");
+        assert!(synth_text.contains("No speech was invented"), "{synth_text}");
+        assert!(!synth_text.contains("\"synthesizedSpeech\":true"), "{synth_text}");
         let _ = std::fs::remove_dir_all(&server.scratch.dir);
     }
 }

@@ -10,8 +10,17 @@ use std::sync::Mutex;
 use gen_audio_connectors::health_all;
 use serde_json::{json, Value};
 
+#[derive(Clone)]
+struct Track {
+    /// ACP requires cwd. It is stored so the session exists and this process never opens it.
+    #[allow(dead_code)]
+    cwd: String,
+    agents: Vec<String>,
+    voice: String,
+}
+
 pub struct Agent {
-    sessions: Mutex<HashMap<String, String>>,
+    sessions: Mutex<HashMap<String, Track>>,
     next: Mutex<u64>,
 }
 
@@ -89,16 +98,25 @@ fn session_new(agent: &Agent, params: &Value) -> Result<Value, String> {
         return Err("session/new requires cwd".into());
     }
     // ACP requires cwd. This agent does not open it and does not read files from it.
+    let agents = params.get("agents").and_then(Value::as_array).cloned().unwrap_or_default();
+    let voice = params.get("voice").and_then(Value::as_str).unwrap_or("").to_string();
+    if !agents.is_empty() || !voice.is_empty() {
+        gen_audio_mcp::control::validate_track(&agents, &voice).map_err(|(_, message)| message)?;
+    }
+    let agent_ids: Vec<String> = agents.iter().filter_map(|value| value.as_str().map(str::to_string)).collect();
     let mut next = agent.next.lock().expect("session counter");
     let id = format!("gen-audio-session-{next}");
     *next += 1;
     drop(next);
-    agent
-        .sessions
-        .lock()
-        .expect("sessions")
-        .insert(id.clone(), cwd.to_string());
-    Ok(json!({"sessionId": id}))
+    agent.sessions.lock().expect("sessions").insert(
+        id.clone(),
+        Track {
+            cwd: cwd.to_string(),
+            agents: agent_ids.clone(),
+            voice: voice.clone(),
+        },
+    );
+    Ok(json!({"sessionId": id, "agents": agent_ids, "voice": voice}))
 }
 
 fn session_prompt(agent: &Agent, params: &Value) -> Result<(Value, Vec<Value>), String> {
@@ -106,9 +124,13 @@ fn session_prompt(agent: &Agent, params: &Value) -> Result<(Value, Vec<Value>), 
         .get("sessionId")
         .and_then(Value::as_str)
         .ok_or("session/prompt requires sessionId")?;
-    if !agent.sessions.lock().expect("sessions").contains_key(session_id) {
-        return Err("unknown sessionId".into());
-    }
+    let track = agent
+        .sessions
+        .lock()
+        .expect("sessions")
+        .get(session_id)
+        .cloned()
+        .ok_or("unknown sessionId")?;
     let prompt = prompt_text(params.get("prompt"))?;
     if prompt.trim().eq_ignore_ascii_case("health") || prompt.trim() == "status" {
         let lines: Vec<String> = health_all()
@@ -132,7 +154,19 @@ fn session_prompt(agent: &Agent, params: &Value) -> Result<(Value, Vec<Value>), 
         });
         return Ok((json!({"stopReason": "end_turn"}), vec![note]));
     }
-    let mut calls = product_plan(&prompt);
+    let mut calls = product_plan(&prompt, &track);
+    for (name, args) in &calls {
+        if name == "ui_set_sidepane" || name == "ui_generate" {
+            if let Some(stored) = agent.sessions.lock().expect("sessions").get_mut(session_id) {
+                if let Some(list) = args.get("agents").and_then(Value::as_array) {
+                    stored.agents = list.iter().filter_map(|value| value.as_str().map(str::to_string)).collect();
+                }
+                if let Some(voice) = args.get("voice").and_then(Value::as_str) {
+                    stored.voice = voice.to_string();
+                }
+            }
+        }
+    }
     if calls.is_empty() {
         calls.push(("voice_profile_list".into(), json!({})));
     }
@@ -237,10 +271,12 @@ fn is_verb(token: &str) -> bool {
             | "rename"
             | "generate"
             | "list"
+            | "flip"
+            | "harvest"
     )
 }
 
-fn product_plan(prompt: &str) -> Vec<(String, Value)> {
+fn product_plan(prompt: &str, track: &Track) -> Vec<(String, Value)> {
     let tokens: Vec<String> = prompt.split_whitespace().map(str::to_string).collect();
     let mut calls = Vec::new();
     let mut agents: Vec<String> = Vec::new();
@@ -333,6 +369,33 @@ fn product_plan(prompt: &str) -> Vec<(String, Value)> {
                 generate = true;
                 index += 1;
             }
+            "flip" => {
+                index += 1;
+                if index < tokens.len() && !is_verb(&tokens[index]) {
+                    let tile = tokens[index].clone();
+                    index += 1;
+                    let mut args = json!({"tileId": tile, "flipped": true});
+                    if index < tokens.len() && !is_verb(&tokens[index]) {
+                        args["personaId"] = json!(tokens[index].to_ascii_lowercase());
+                        index += 1;
+                    }
+                    calls.push(("ui_flip".into(), args));
+                }
+            }
+            "harvest" => {
+                index += 1;
+                if index < tokens.len() && !is_verb(&tokens[index]) {
+                    let clip = tokens[index].clone();
+                    index += 1;
+                    let mut args = json!({"clipId": clip, "apply": false});
+                    if index < tokens.len() && !is_verb(&tokens[index]) {
+                        args["personaId"] = json!(tokens[index].to_ascii_lowercase());
+                        args["apply"] = json!(true);
+                        index += 1;
+                    }
+                    calls.push(("library_harvest".into(), args));
+                }
+            }
             "list" => {
                 calls.push(("voice_profile_list".into(), json!({})));
                 index += 1;
@@ -340,13 +403,19 @@ fn product_plan(prompt: &str) -> Vec<(String, Value)> {
             _ => index += 1,
         }
     }
+    let fallback_agents = if track.agents.is_empty() {
+        vec!["alice".to_string()]
+    } else {
+        track.agents.clone()
+    };
+    let fallback_voice = if track.voice.is_empty() {
+        "kokoro_onnx".to_string()
+    } else {
+        track.voice.clone()
+    };
     if !agents.is_empty() || voice.is_some() {
-        let agents = if agents.is_empty() {
-            vec!["alice".to_string()]
-        } else {
-            agents
-        };
-        let voice = voice.unwrap_or_else(|| "kokoro_onnx".to_string());
+        let agents = if agents.is_empty() { fallback_agents } else { agents };
+        let voice = voice.unwrap_or(fallback_voice);
         let args = json!({"agents": agents, "voice": voice});
         if generate {
             calls.insert(0, ("ui_generate".into(), args));
@@ -358,9 +427,25 @@ fn product_plan(prompt: &str) -> Vec<(String, Value)> {
             0,
             (
                 "ui_generate".into(),
-                json!({"agents": ["alice"], "voice": "kokoro_onnx"}),
+                json!({"agents": fallback_agents, "voice": fallback_voice}),
             ),
         );
+    }
+    if generate {
+        let voice_id = calls
+            .iter()
+            .find(|(name, _)| name == "ui_generate")
+            .and_then(|(_, args)| args.get("voice").and_then(Value::as_str))
+            .unwrap_or("");
+        let adapter = gen_audio_core::catalog::voice_model(voice_id)
+            .map(|model| model.synth_adapter)
+            .unwrap_or(false);
+        if adapter {
+            calls.push((
+                "synth".into(),
+                json!({"output": "request.wav", "script": "examples/podcast_script_sample.txt"}),
+            ));
+        }
     }
     calls
 }
@@ -559,5 +644,54 @@ mod tests {
         assert!(blob.contains("tool_call"), "{blob}");
         assert!(blob.contains("synthesizedSpeech"), "{blob}");
         assert!(!blob.contains("\"synthesizedSpeech\":true"));
+    }
+
+    #[test]
+    fn session_persona_generate_calls_synth_and_does_not_invent_speech() {
+        let agent = Agent::new();
+        let created = handle(
+            &agent,
+            json!({
+                "jsonrpc": "2.0",
+                "id": 1,
+                "method": "session/new",
+                "params": {"cwd": ".", "agents": ["alice"], "voice": "kokoro_onnx"}
+            }),
+        )
+        .unwrap();
+        let result = created.response.unwrap();
+        assert_eq!(result["result"]["agents"][0], "alice");
+        assert_eq!(result["result"]["voice"], "kokoro_onnx");
+        let session_id = result["result"]["sessionId"].as_str().unwrap().to_string();
+        let prompted = handle(
+            &agent,
+            json!({
+                "jsonrpc": "2.0",
+                "id": 2,
+                "method": "session/prompt",
+                "params": {
+                    "sessionId": session_id,
+                    "prompt": [{"type": "text", "text": "generate"}]
+                }
+            }),
+        )
+        .unwrap();
+        let blob = serde_json::to_string(&prompted.notifications).unwrap();
+        assert!(blob.contains("ui_generate"), "{blob}");
+        assert!(blob.contains("synth"), "{blob}");
+        assert!(blob.contains("No speech was invented"), "{blob}");
+        assert!(blob.contains("tool_call"), "{blob}");
+        assert!(!blob.contains("\"synthesizedSpeech\":true"), "{blob}");
+        let rejected = handle(
+            &agent,
+            json!({
+                "jsonrpc": "2.0",
+                "id": 3,
+                "method": "session/new",
+                "params": {"cwd": ".", "agents": ["copilot"], "voice": "af_heart"}
+            }),
+        )
+        .unwrap_err();
+        assert!(rejected.contains("connector") || rejected.contains("af_heart"), "{rejected}");
     }
 }

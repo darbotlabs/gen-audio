@@ -277,10 +277,28 @@ function backFace(card: ViewportCard): HTMLElement {
 }
 
 function toggleFlip(article: HTMLElement): void {
-  article.classList.toggle("is-flipped");
-  const pressed = article.classList.contains("is-flipped");
+  setCardFlipState(article, !article.classList.contains("is-flipped"));
+}
+
+export function setCardFlip(board: HTMLElement, tileId: string, flipped: boolean): boolean {
+  const tile = board.querySelector<HTMLElement>(`.card[data-id="${CSS.escape(tileId)}"]`);
+  if (!tile) return false;
+  setCardFlipState(tile, flipped);
+  return true;
+}
+
+function setCardFlipState(article: HTMLElement, flipped: boolean): void {
+  article.classList.toggle("is-flipped", flipped);
   article.querySelectorAll<HTMLButtonElement>(".flip-toggle").forEach((node) => {
-    node.setAttribute("aria-pressed", pressed ? "true" : "false");
+    node.setAttribute("aria-pressed", flipped ? "true" : "false");
+  });
+}
+
+function syncLayerTabs(slideId: string | undefined): void {
+  const layer =
+    slideId === "models" ? "models" : slideId === "library" ? "clips" : slideId === "video" ? "video" : slideId === "spatial" ? "cube" : "";
+  window.document.querySelectorAll<HTMLButtonElement>("#layer-switch [data-layer]").forEach((button) => {
+    button.setAttribute("aria-selected", button.dataset.layer === layer ? "true" : "false");
   });
 }
 
@@ -523,6 +541,7 @@ function voiceProfileBack(card: ViewportCard): HTMLElement {
     const term = window.document.createElement("dt");
     term.textContent = label;
     const detail = window.document.createElement("dd");
+    detail.dataset.field = label.toLowerCase().replace(/\s+/g, "-");
     detail.textContent = value;
     list.append(term, detail);
   }
@@ -553,7 +572,7 @@ function renameBlock(card: ViewportCard): HTMLElement {
   wrap.className = "rename-block";
   const note = window.document.createElement("p");
   note.className = "summary harvest-note";
-  note.textContent = "Names harvest from the filename and sidecar when one loads. Rename changes labels in this window only.";
+  note.textContent = "Names harvest from the filename and sidecar counts. Audio is not decoded. Attach writes a clip ref on a persona in this process only.";
   const semantic = window.document.createElement("input");
   semantic.type = "text";
   semantic.dataset.field = "semantic";
@@ -571,7 +590,10 @@ function renameBlock(card: ViewportCard): HTMLElement {
   const apply = button("Apply names");
   apply.dataset.action = "rename-clip";
   apply.dataset.clipId = card.id;
-  wrap.append(note, semantic, face, apply);
+  const attach = button("Attach to profile");
+  attach.dataset.action = "attach-profile";
+  attach.dataset.clipId = card.id;
+  wrap.append(note, semantic, face, apply, attach);
   return wrap;
 }
 
@@ -689,6 +711,7 @@ export function goToSlide(board: HTMLElement, index: number): void {
     slideCards[0].focus({ preventScroll: true });
   }
   syncSlideChrome(next, list.length);
+  syncLayerTabs(slide.dataset.slide);
 }
 
 export function moveSlide(board: HTMLElement, direction: 1 | -1 | "home" | "end"): void {

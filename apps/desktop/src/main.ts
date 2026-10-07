@@ -11,10 +11,11 @@ import {
   moveSlide,
   paintProfileCanvases,
   renderBoard,
+  setCardFlip,
   showRejected,
   slides,
 } from "./render";
-import { applySidepane, bindStudio, describeRequest, promptNote, readSelection, type StudioSelection } from "./studio";
+import { applySidepane, bindStudio, promptNote, readSelection, type StudioSelection } from "./studio";
 import { drawCube, drawSpectrogram, makeFixture, play } from "./signal";
 import { voiceById } from "./catalog";
 import { CONNECTOR_MODES, validateViewport, type ViewportDocument } from "./validate";
@@ -125,6 +126,33 @@ function bindRename(): void {
       applyClipNames(tile, semantic, face);
       status.textContent = `Renamed ${id} in this window. The WAV file was not rewritten.`;
       void mcpCall("library_rename", { clipId: id, semanticName: semantic, faceName: face });
+    });
+  });
+  board.querySelectorAll<HTMLButtonElement>("[data-action='attach-profile']").forEach((node) => {
+    node.addEventListener("click", (event) => {
+      event.stopPropagation();
+      const id = node.dataset.clipId;
+      const tile = node.closest<HTMLElement>(".card");
+      if (!id || !tile) return;
+      const personaId = readSelection().agents[0];
+      if (!personaId) {
+        status.textContent = "Add an Agent persona before attaching a clip ref.";
+        return;
+      }
+      const semantic = tile.querySelector<HTMLInputElement>("[data-field='semantic']")?.value ?? "";
+      const face = tile.querySelector<HTMLInputElement>("[data-field='face']")?.value ?? "";
+      applyClipNames(tile, semantic, face);
+      void mcpCall("library_harvest", { clipId: id, personaId, apply: true }).then((payload) => {
+        const body = toolBody(payload);
+        if (!body) {
+          status.textContent = `Names stay on ${id}. MCP is not listening, so the profile ref was not written.`;
+          return;
+        }
+        status.textContent = `Attached clip:${id} to persona ${personaId}. Audio was not decoded. synthesizedSpeech is false.`;
+        if (body.profile && typeof body.profile === "object") {
+          applyFlipcard(body.profile as Record<string, unknown>);
+        }
+      });
     });
   });
   board.querySelectorAll<HTMLButtonElement>("[data-action='open-cube']").forEach((node) => {
@@ -276,7 +304,7 @@ document.addEventListener("keydown", (event) => {
 async function submitGenerate(): Promise<void> {
   const selectionNow = readSelection();
   const voice = voiceById(selectionNow.voice);
-  status.textContent = describeRequest();
+  showRun(selectionNow.voice, voice?.synthAdapter ? "running" : "unavailable", "waiting for MCP", false);
   const recorded = await mcpCall("ui_generate", {
     agents: selectionNow.agents,
     voice: selectionNow.voice,
@@ -284,7 +312,7 @@ async function submitGenerate(): Promise<void> {
     promptNote: promptNote(),
   });
   if (!recorded) {
-    status.textContent = `${describeRequest()} MCP is not listening on 127.0.0.1:8765.`;
+    showRun(selectionNow.voice, "unavailable", "MCP is not listening on 127.0.0.1:8765", false);
     return;
   }
   if (voice?.synthAdapter) {
@@ -292,10 +320,63 @@ async function submitGenerate(): Promise<void> {
       output: "request.wav",
       script: "examples/podcast_script_sample.txt",
     });
-    status.textContent = `Generate → MCP synth (sample script, not the pasted prompt): ${clip(synth)}`;
+    const speech = toolClaimsSpeech(synth);
+    showRun(
+      selectionNow.voice,
+      speech ? "ok" : "refused",
+      "sample script, not the pasted prompt",
+      speech,
+    );
     return;
   }
-  status.textContent = `Generate → MCP ui_generate. No synth adapter for ${voice?.label ?? selectionNow.voice}. ${clip(recorded)}`;
+  showRun(selectionNow.voice, "unavailable", `No synth adapter for ${voice?.label ?? selectionNow.voice}`, false);
+}
+
+function toolBody(payload: unknown): Record<string, unknown> | null {
+  if (!payload || typeof payload !== "object") return null;
+  const text = (payload as { result?: { content?: Array<{ text?: string }> } }).result?.content?.[0]?.text;
+  if (!text) return null;
+  try {
+    const body = JSON.parse(text) as unknown;
+    return body && typeof body === "object" ? (body as Record<string, unknown>) : null;
+  } catch {
+    return null;
+  }
+}
+
+function toolClaimsSpeech(payload: unknown): boolean {
+  const body = toolBody(payload);
+  return body?.synthesizedSpeech === true;
+}
+
+function showRun(voice: string, phase: string, detail: string, speech: boolean): void {
+  const safePhase = speech && phase === "ok" ? "ok" : phase === "ok" ? "refused" : phase;
+  board.querySelectorAll<HTMLElement>(`.card[data-engine-id="${CSS.escape(voice)}"]`).forEach((tile) => {
+    tile.dataset.run = safePhase;
+    let node = tile.querySelector<HTMLElement>(".run-state");
+    if (!node) {
+      node = document.createElement("p");
+      node.className = "run-state";
+      tile.querySelector(".face.front")?.prepend(node);
+    }
+    node.textContent = speech
+      ? `${safePhase}: a synth result claimed speech.`
+      : `${safePhase}: synthesizedSpeech is false. ${detail}`;
+  });
+  status.textContent = speech
+    ? `${safePhase} for ${voice}.`
+    : `${safePhase} for ${voice}. synthesizedSpeech is false. ${detail}`;
+}
+
+function applyFlipcard(profile: Record<string, unknown>): void {
+  const personaId = String(profile.personaId ?? "");
+  if (!personaId) return;
+  const card = board.querySelector<HTMLElement>(`.card[data-id="profile-${CSS.escape(personaId)}"]`);
+  if (!card) return;
+  const refs = Array.isArray(profile.refs) ? profile.refs.map((item) => String(item)).join(", ") : "";
+  const slot = card.querySelector<HTMLElement>('[data-field="refs"]');
+  if (slot && refs) slot.textContent = refs;
+  setCardFlip(board, `profile-${personaId}`, true);
 }
 
 async function mcpCall(name: string, args: Record<string, unknown>): Promise<unknown | null> {
@@ -332,11 +413,6 @@ function noteControlSeq(payload: unknown): void {
   }
 }
 
-function clip(value: unknown): string {
-  const text = JSON.stringify(value);
-  return text.length > 280 ? `${text.slice(0, 280)}…` : text;
-}
-
 function applyControl(event: { seq?: number; op?: string; args?: Record<string, unknown> }): void {
   if (typeof event.seq === "number") {
     if (seenControl.has(event.seq)) return;
@@ -349,6 +425,13 @@ function applyControl(event: { seq?: number; op?: string; args?: Record<string, 
     if (typeof args.tileId === "string") selectTile(args.tileId);
   } else if (event.op === "select" && typeof args.tileId === "string") {
     selectTile(args.tileId);
+  } else if (event.op === "flip" && typeof args.tileId === "string") {
+    setCardFlip(board, args.tileId, args.flipped !== false);
+    if (args.profile && typeof args.profile === "object") applyFlipcard(args.profile as Record<string, unknown>);
+  } else if (event.op === "flipcard" && args.profile && typeof args.profile === "object") {
+    applyFlipcard(args.profile as Record<string, unknown>);
+  } else if (event.op === "progress" && typeof args.voice === "string") {
+    showRun(args.voice, String(args.phase ?? "unavailable"), String(args.detail ?? ""), args.synthesizedSpeech === true);
   } else if (event.op === "playback" && typeof args.tileId === "string") {
     const action = String(args.action ?? "");
     if (action === "play") void playClip(args.tileId).then((result) => {
