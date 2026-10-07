@@ -144,6 +144,12 @@ export function seekClip(clipId: string, seconds: number): string {
   const duration = audio.duration;
   if (Number.isFinite(duration) && seconds > duration) return "past end";
   audio.currentTime = seconds;
+  activeId = clipId;
+  // Keep ONE clock: MCP/UI seek must slice bitdot layers + floating scrub together.
+  if (Number.isFinite(duration) && duration > 0) {
+    setCubeScrub(seconds / duration, { silent: true });
+  }
+  syncFloater(clipId);
   return "seeked";
 }
 

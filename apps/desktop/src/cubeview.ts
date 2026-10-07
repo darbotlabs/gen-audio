@@ -348,7 +348,7 @@ function compositeColor(
 function draw(): void {
   const canvas = state.canvas;
   if (!canvas) return;
-  const gl = canvas.getContext("webgl");
+  const gl = canvas.getContext("webgl", { preserveDrawingBuffer: true, antialias: true });
   if (!gl) {
     const ctx = canvas.getContext("2d");
     if (ctx) {
@@ -368,7 +368,7 @@ function draw(): void {
     for (const point of state.points) {
       if (point.layer !== layer.id) continue;
       // Live time-bin: keep a trailing window ending at the shared playhead.
-      const window = 0.08;
+      const window = 0.18;
       if (point.t > state.scrub + 0.0001 || point.t < state.scrub - window) continue;
       const gainV = Math.max(0, Math.min(1, point.v * layer.gain));
       const src: [number, number, number, number] = [

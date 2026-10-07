@@ -498,7 +498,7 @@ function applyControl(event: { seq?: number; op?: string; args?: Record<string, 
 function connectControl(): void {
   let source: EventSource;
   try {
-    source = new EventSource(`http://127.0.0.1:8765/control/stream?after=${controlCursor}&wait=800`);
+    source = new EventSource(`http://127.0.0.1:8765/control/stream?after=${controlCursor}&wait=2000`);
   } catch {
     return;
   }
@@ -511,9 +511,10 @@ function connectControl(): void {
   });
   source.onerror = () => {
     source.close();
-    window.setTimeout(connectControl, 4000);
+    window.setTimeout(connectControl, 50);
   };
 }
 
 void refreshConnectors(example as ViewportDocument).then(show);
+(window as unknown as { __genAudioScrub?: (f: number) => void }).__genAudioScrub = (fraction: number) => { setCubeScrub(fraction); seekActiveFraction(fraction); };
 connectControl();
