@@ -1,0 +1,162 @@
+{
+  "engine": "kokoro_onnx",
+  "model": "/workspace/genaid-podcast-compare/forks/kokoro-onnx/models/kokoro-v1.0.onnx",
+  "voices_bin": "/workspace/genaid-podcast-compare/forks/kokoro-onnx/models/voices-v1.0.bin",
+  "source": "/workspace/gen-audio-library/out/script.txt",
+  "cast_map": "/workspace/genaid-podcast-compare/voices/cast_map.json",
+  "out": "/workspace/gen-audio-library/out/library_kokoro_onnx.wav",
+  "sample_rate": 24000,
+  "turn_gap_s": 0.35,
+  "speed": 1.0,
+  "lang": "en-us",
+  "n_turns": 18,
+  "n_words": 816,
+  "duration_s": 374.76591666666667,
+  "synth_wall_s": 80.71606278419495,
+  "turns": [
+    {
+      "index": 0,
+      "speaker": "Speaker 1",
+      "voice": "af_heart",
+      "chars": 267,
+      "words": 34,
+      "duration_s": 17.982
+    },
+    {
+      "index": 1,
+      "speaker": "Speaker 2",
+      "voice": "am_michael",
+      "chars": 308,
+      "words": 48,
+      "duration_s": 23.528666666666666
+    },
+    {
+      "index": 2,
+      "speaker": "Speaker 1",
+      "voice": "af_heart",
+      "chars": 295,
+      "words": 49,
+      "duration_s": 20.362666666666666
+    },
+    {
+      "index": 3,
+      "speaker": "Speaker 2",
+      "voice": "am_michael",
+      "chars": 308,
+      "words": 44,
+      "duration_s": 22.497333333333334
+    },
+    {
+      "index": 4,
+      "speaker": "Speaker 1",
+      "voice": "af_heart",
+      "chars": 326,
+      "words": 52,
+      "duration_s": 21.204625
+    },
+    {
+      "index": 5,
+      "speaker": "Speaker 2",
+      "voice": "am_michael",
+      "chars": 286,
+      "words": 46,
+      "duration_s": 22.045333333333332
+    },
+    {
+      "index": 6,
+      "speaker": "Speaker 1",
+      "voice": "af_heart",
+      "chars": 268,
+      "words": 41,
+      "duration_s": 19.68
+    },
+    {
+      "index": 7,
+      "speaker": "Speaker 2",
+      "voice": "am_michael",
+      "chars": 226,
+      "words": 36,
+      "duration_s": 16.356
+    },
+    {
+      "index": 8,
+      "speaker": "Speaker 1",
+      "voice": "af_heart",
+      "chars": 292,
+      "words": 46,
+      "duration_s": 20.180625
+    },
+    {
+      "index": 9,
+      "speaker": "Speaker 2",
+      "voice": "am_michael",
+      "chars": 262,
+      "words": 40,
+      "duration_s": 20.366666666666667
+    },
+    {
+      "index": 10,
+      "speaker": "Speaker 1",
+      "voice": "af_heart",
+      "chars": 282,
+      "words": 46,
+      "duration_s": 18.889333333333333
+    },
+    {
+      "index": 11,
+      "speaker": "Speaker 2",
+      "voice": "am_michael",
+      "chars": 306,
+      "words": 44,
+      "duration_s": 22.911333333333335
+    },
+    {
+      "index": 12,
+      "speaker": "Speaker 1",
+      "voice": "af_heart",
+      "chars": 278,
+      "words": 46,
+      "duration_s": 19.918
+    },
+    {
+      "index": 13,
+      "speaker": "Speaker 2",
+      "voice": "am_michael",
+      "chars": 244,
+      "words": 41,
+      "duration_s": 18.488
+    },
+    {
+      "index": 14,
+      "speaker": "Speaker 1",
+      "voice": "af_heart",
+      "chars": 304,
+      "words": 48,
+      "duration_s": 19.444
+    },
+    {
+      "index": 15,
+      "speaker": "Speaker 2",
+      "voice": "am_michael",
+      "chars": 320,
+      "words": 57,
+      "duration_s": 22.518666666666668
+    },
+    {
+      "index": 16,
+      "speaker": "Speaker 1",
+      "voice": "af_heart",
+      "chars": 291,
+      "words": 46,
+      "duration_s": 19.923333333333332
+    },
+    {
+      "index": 17,
+      "speaker": "Speaker 2",
+      "voice": "am_michael",
+      "chars": 322,
+      "words": 52,
+      "duration_s": 22.169333333333334
+    }
+  ]
+}

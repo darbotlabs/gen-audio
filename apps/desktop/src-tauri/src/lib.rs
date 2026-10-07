@@ -13,6 +13,13 @@ use tauri::menu::{Menu, MenuItem};
 use tauri::tray::TrayIconBuilder;
 use tauri::{Manager, WindowEvent};
 
+#[cfg(windows)]
+use std::os::windows::process::CommandExt;
+
+/// Hide console for console-subsystem children (MCP sidecar is CUI).
+#[cfg(windows)]
+const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+
 #[derive(Clone, Serialize)]
 struct McpRuntime {
     addr: String,
@@ -95,6 +102,17 @@ fn wait_for_handshake(addr: &str) -> bool {
     false
 }
 
+fn spawn_hidden(mut cmd: Command) -> std::io::Result<Child> {
+    cmd.stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null());
+    #[cfg(windows)]
+    {
+        cmd.creation_flags(CREATE_NO_WINDOW);
+    }
+    cmd.spawn()
+}
+
 fn boot_mcp() -> (McpRuntime, Option<Child>) {
     let addr = preferred_addr();
     if http::initialize_handshake(&addr).is_ok() {
@@ -104,13 +122,9 @@ fn boot_mcp() -> (McpRuntime, Option<Child>) {
         );
     }
     if let Some(bin) = sidecar_binary() {
-        match Command::new(&bin)
-            .args(["--http", &addr])
-            .stdin(Stdio::null())
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .spawn()
-        {
+        let mut cmd = Command::new(&bin);
+        cmd.args(["--http", &addr]);
+        match spawn_hidden(cmd) {
             Ok(child) => {
                 if wait_for_handshake(&addr) {
                     register_login_autostart();
@@ -150,22 +164,19 @@ fn register_login_autostart() {
         return;
     };
     let value = format!("\"{}\"", exe.display());
-    let _ = Command::new("reg")
-        .args([
-            "add",
-            r"HKCU\Software\Microsoft\Windows\CurrentVersion\Run",
-            "/v",
-            "DarbotGenAudio",
-            "/t",
-            "REG_SZ",
-            "/d",
-            &value,
-            "/f",
-        ])
-        .stdin(Stdio::null())
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .status();
+    let mut cmd = Command::new("reg");
+    cmd.args([
+        "add",
+        r"HKCU\Software\Microsoft\Windows\CurrentVersion\Run",
+        "/v",
+        "DarbotGenAudio",
+        "/t",
+        "REG_SZ",
+        "/d",
+        &value,
+        "/f",
+    ]);
+    let _ = spawn_hidden(cmd).and_then(|mut child| child.wait());
 }
 
 #[cfg(not(windows))]
@@ -176,13 +187,39 @@ fn stop_sidecar(child: &mut Child) {
     let _ = child.wait();
 }
 
+fn focus_main_window(app: &tauri::AppHandle) {
+    if let Some(window) = app.get_webview_window("main") {
+        let _ = window.show();
+        let _ = window.unminimize();
+        let _ = window.set_focus();
+    }
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    let (mcp, child) = boot_mcp();
-    let tooltip = format!("Gen-Audio MCP {} ({})", mcp.addr, mcp.mode);
-    let app = tauri::Builder::default()
-        .manage(Mutex::new(mcp))
-        .manage(SidecarChild(Mutex::new(child)))
+    // Placeholder until setup boots MCP (second instance exits in the plugin
+    // before setup, so it never starts a second sidecar or tray).
+    let pending = runtime(
+        preferred_addr(),
+        false,
+        "starting",
+        "starting",
+    );
+
+    let mut builder = tauri::Builder::default();
+
+    #[cfg(desktop)]
+    {
+        // Must be first so a second launch focuses the existing window and exits
+        // before other plugins / setup can open another tray.
+        builder = builder.plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
+            focus_main_window(app);
+        }));
+    }
+
+    let app = builder
+        .manage(Mutex::new(pending))
+        .manage(SidecarChild(Mutex::new(None)))
         .invoke_handler(tauri::generate_handler![
             connector_statuses,
             viewport_example,
@@ -190,24 +227,27 @@ pub fn run() {
             mcp_status
         ])
         .setup(move |app| {
+            let (mcp, child) = boot_mcp();
+            let tooltip = format!("Gen-Audio MCP {} ({})", mcp.addr, mcp.mode);
+            if let Ok(mut guard) = app.state::<Mutex<McpRuntime>>().lock() {
+                *guard = mcp;
+            }
+            if let Ok(mut guard) = app.state::<SidecarChild>().0.lock() {
+                *guard = child;
+            }
+
             let show = MenuItem::with_id(app, "show", "Show Gen-Audio", true, None::<&str>)?;
             let status = MenuItem::with_id(app, "mcp", tooltip.clone(), false, None::<&str>)?;
             let quit = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
             let menu = Menu::with_items(app, &[&show, &status, &quit])?;
             let icon = tray_rgba();
-            let tray_ok = TrayIconBuilder::with_id("gen-audio")
+            let _ = TrayIconBuilder::with_id("gen-audio")
                 .tooltip(tooltip)
                 .icon(icon)
                 .menu(&menu)
                 .show_menu_on_left_click(true)
                 .on_menu_event(|app, event| match event.id.as_ref() {
-                    "show" => {
-                        if let Some(window) = app.get_webview_window("main") {
-                            let _ = window.show();
-                            let _ = window.unminimize();
-                            let _ = window.set_focus();
-                        }
-                    }
+                    "show" => focus_main_window(app),
                     "quit" => {
                         if let Some(state) = app.try_state::<SidecarChild>() {
                             if let Ok(mut guard) = state.0.lock() {
@@ -220,22 +260,16 @@ pub fn run() {
                     }
                     _ => {}
                 })
-                .build(app)
-                .is_ok();
-            app.manage(TrayArmed(tray_ok));
+                .build(app);
+            
             Ok(())
         })
         .on_window_event(|window, event| {
-            let armed = window
-                .app_handle()
-                .try_state::<TrayArmed>()
-                .map(|flag| flag.0)
-                .unwrap_or(false);
-            if armed {
-                if let WindowEvent::CloseRequested { api, .. } = event {
-                    api.prevent_close();
-                    let _ = window.hide();
-                }
+            if let WindowEvent::CloseRequested { api, .. } = event {
+                // Product: X hides to tray; Quit is tray-only. Do this even if tray
+                // build failed so a second launch can still focus/show via single-instance.
+                api.prevent_close();
+                let _ = window.hide();
             }
         })
         .build(tauri::generate_context!())
@@ -253,8 +287,6 @@ pub fn run() {
         }
     });
 }
-
-struct TrayArmed(bool);
 
 fn tray_rgba() -> tauri::image::Image<'static> {
     let mut rgba = vec![0u8; 32 * 32 * 4];

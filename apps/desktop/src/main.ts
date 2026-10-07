@@ -1,6 +1,14 @@
 import example from "../../../schemas/examples/viewport.example.json";
 import { profilePreview, type ProfilePreview, type VoiceSelection } from "./profiles";
-import { renderBoard, moveFocus, showRejected } from "./render";
+import {
+  bindSlideScroll,
+  goToSlide,
+  moveFocus,
+  moveSlide,
+  renderBoard,
+  showRejected,
+  slides,
+} from "./render";
 import { bindStudio, type StudioSelection } from "./studio";
 import { drawCube, drawSpectrogram, makeFixture, play } from "./signal";
 import { CONNECTOR_MODES, validateViewport, type ViewportDocument } from "./validate";
@@ -25,6 +33,27 @@ let selection: VoiceSelection = {
 };
 let activePreview: ProfilePreview = profilePreview(selection);
 
+
+function bindLibraryPlayback(): void {
+  board.querySelectorAll<HTMLButtonElement>("[data-action='play-library']").forEach((node) => {
+    node.onclick = () => {
+      const url = node.dataset.wavUrl;
+      if (!url) {
+        status.textContent = "Library tile has no wavUrl (honest empty).";
+        return;
+      }
+      const audio = new Audio(url);
+      void audio.play().then(() => {
+        status.textContent = `Playing library clip ${url}`;
+      }).catch((err) => {
+        status.textContent = `Library play failed: ${String(err)}`;
+      });
+    };
+  });
+}
+
+bindSlideScroll(board);
+
 bindStudio(board, status, (next: StudioSelection) => {
   selection = next;
   if (paintProfile()) status.textContent = activePreview.caption;
@@ -40,7 +69,10 @@ function show(documentIn: unknown): void {
   const doc = documentIn as ViewportDocument;
   renderBoard(board, empty, doc);
   paintProfile();
-  status.textContent = `${doc.cards.length} cards. The spectrogram follows the side pane voice profile.`;
+  bindLibraryPlayback();
+  const n = slides(board).length;
+  status.textContent = `${doc.cards.length} cards · ${n} snap slides · spectrogram follows side pane (preview, not speech)`;
+  requestAnimationFrame(() => goToSlide(board, 0));
 }
 
 function paintProfile(): boolean {
@@ -109,7 +141,7 @@ document.querySelector("#run-improve")?.addEventListener("click", async () => {
     const { invoke } = await import("@tauri-apps/api/core");
     const result = await invoke<Record<string, unknown>>("run_fixture_improve");
     status.textContent = result.ok
-      ? "Python improve finished on the fixture tone."
+      ? "Python improve finished on the fixture tone (fixture only — not podcast speech)."
       : `Python improve did not finish: ${JSON.stringify(result)}`;
   } catch (error) {
     status.textContent = `Python improve needs the desktop shell. ${String(error)}`;
@@ -119,18 +151,32 @@ document.querySelector("#run-improve")?.addEventListener("click", async () => {
 document.addEventListener("keydown", (event) => {
   const target = event.target as HTMLElement | null;
   if (target && ["INPUT", "TEXTAREA", "SELECT", "BUTTON", "A"].includes(target.tagName)) return;
-  if (event.key === "ArrowRight" || event.key === "ArrowDown") {
+  if (event.key === "PageDown" || event.key === "ArrowDown") {
+    event.preventDefault();
+    moveSlide(board, 1);
+    return;
+  }
+  if (event.key === "PageUp" || event.key === "ArrowUp") {
+    event.preventDefault();
+    moveSlide(board, -1);
+    return;
+  }
+  if (event.key === "Home") {
+    event.preventDefault();
+    moveSlide(board, "home");
+    return;
+  }
+  if (event.key === "End") {
+    event.preventDefault();
+    moveSlide(board, "end");
+    return;
+  }
+  if (event.key === "ArrowRight") {
     event.preventDefault();
     moveFocus(board, 1);
-  } else if (event.key === "ArrowLeft" || event.key === "ArrowUp") {
+  } else if (event.key === "ArrowLeft") {
     event.preventDefault();
     moveFocus(board, -1);
-  } else if (event.key === "Home") {
-    event.preventDefault();
-    moveFocus(board, "home");
-  } else if (event.key === "End") {
-    event.preventDefault();
-    moveFocus(board, "end");
   }
 });
 

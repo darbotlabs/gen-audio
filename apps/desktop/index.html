@@ -9,19 +9,23 @@
   <body>
     <a class="skip" href="#board">Skip to cards</a>
     <header class="top">
-      <div class="brand">
-        <span class="mark">DARBOT</span>
-        <span class="product">GEN-AUDIO</span>
+      <div class="brand-row">
+        <div class="brand">
+          <span class="mark">DARBOT</span>
+          <span class="product">GEN-AUDIO</span>
+        </div>
+        <p class="lede">
+          Snap slides + side pane. Profile maps and fixture canvases are labeled previews — not product speech.
+        </p>
       </div>
-      <p class="lede">
-        Card viewport for engines, voice-profile spectrograms, and connectors. Profile maps are not podcast audio.
-      </p>
-      <div class="toolbar">
-        <button type="button" id="show-example">Show example</button>
-        <button type="button" id="show-empty">Empty viewport</button>
-        <button type="button" id="run-improve">Run Python improve on fixture</button>
+      <div class="ga-header-toolbar" aria-label="Gen-Audio header toolbar">
+        <div class="toolbar">
+          <button type="button" id="show-example">Load labeled example</button>
+          <button type="button" id="show-empty">Clear viewport</button>
+          <button type="button" id="run-improve">Run Python improve on fixture</button>
+        </div>
+        <p id="status" class="status" role="status"></p>
       </div>
-      <p id="status" class="status" role="status"></p>
     </header>
     <div class="studio">
       <aside class="sidepane" aria-label="Podcast setup">
@@ -44,8 +48,8 @@
           <label class="field">
             <span><b>P</b> Voice</span>
             <select id="voice">
-              <option value="af_heart">Alice · af_heart</option>
-              <option value="am_michael">Frank · am_michael</option>
+              <option value="af_heart">Alice — af_heart</option>
+              <option value="am_michael">Frank — am_michael</option>
               <option value="cast">Cast default</option>
             </select>
           </label>
@@ -71,21 +75,25 @@
             <input id="source-files" type="file" multiple />
           </label>
           <ul id="file-list" class="file-list"></ul>
-          <textarea id="prompt" rows="4" placeholder="Paste a document or write a prompt to generate a podcast"></textarea>
+          <textarea id="prompt" rows="3" placeholder="Paste a document or write a prompt (does not claim speech until synthesized)"></textarea>
           <button type="button" id="generate-podcast">Generate podcast</button>
         </section>
       </aside>
       <section class="viewport" aria-label="Card viewport frame">
         <div class="viewport-chrome">
           <span>Viewport</span>
+          <div class="slide-chrome" aria-live="polite">
+            <span id="slide-label">Slide 1/3</span>
+            <div id="slide-dots" class="slide-dots" role="tablist" aria-label="Viewport slides"></div>
+          </div>
           <span>Live tiles</span>
         </div>
         <main id="board" class="board" aria-label="Card viewport"></main>
-        <p id="empty" class="empty" hidden>No cards in this viewport. Load the example to see engine, spectrogram, cube, and connector cards.</p>
+        <p id="empty" class="empty" hidden>No cards in this viewport. Load the labeled example for engines, connectors, and readiness tiles.</p>
       </section>
     </div>
     <footer class="foot">
-      Drag a green engine card into the upper side pane to load that voice model. Agent, voice, duration, and perspectives redraw the spectrogram panel. Arrow keys move between cards. Enter or Flip turns a live tile.
+      PageUp/Down or Arrow Up/Down advance whole slides. Arrow Left/Right move cards. Drag a green engine into the side pane. Profile redraws the spectrogram preview — not synthesized speech.
     </footer>
     <script type="module" src="/src/main.ts"></script>
   </body>

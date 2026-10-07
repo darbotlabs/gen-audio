@@ -17,7 +17,11 @@
         "version": "1.5",
         "$schema": "http://adaptivecards.io/schemas/adaptive-card.json",
         "body": [
-          { "type": "TextBlock", "text": "kokoro-onnx weights are not bundled.", "wrap": true }
+          {
+            "type": "TextBlock",
+            "text": "kokoro-onnx weights are not bundled.",
+            "wrap": true
+          }
         ]
       }
     },
@@ -80,8 +84,16 @@
       "body": {
         "sampleScript": true,
         "speakers": [
-          { "id": "1", "name": "Alice", "voice": "af_heart" },
-          { "id": "2", "name": "Frank", "voice": "am_michael" }
+          {
+            "id": "1",
+            "name": "Alice",
+            "voice": "af_heart"
+          },
+          {
+            "id": "2",
+            "name": "Frank",
+            "voice": "am_michael"
+          }
         ]
       }
     },
@@ -120,11 +132,41 @@
         "measuredHere": false,
         "sourceNote": "Reference figures from the 2026-10-06 GenAID podcast compare notes. Not remeasured in this repository.",
         "rows": [
-          { "engine": "pocket_tts", "metric": "teaser_wer", "value": "22.22%", "unit": "WER", "note": "Short teaser ASR in those notes." },
-          { "engine": "vibevoice", "metric": "teaser_wer", "value": "30.00%", "unit": "WER", "note": "Full improved WAV was the preferred publish in those notes." },
-          { "engine": "magpie", "metric": "teaser_wer", "value": "42.22%", "unit": "WER", "note": "Short teaser. Hypothesis was short of the reference." },
-          { "engine": "vibevoice", "metric": "bw95_hz", "value": "2670.5", "unit": "Hz", "note": "Full improved final. Not a new measurement." },
-          { "engine": "kokoro_onnx", "metric": "bw95_hz_raw", "value": "826.9", "unit": "Hz", "note": "Raw file in those notes. Do not rank publish on inv-HDR alone." }
+          {
+            "engine": "pocket_tts",
+            "metric": "teaser_wer",
+            "value": "22.22%",
+            "unit": "WER",
+            "note": "Short teaser ASR in those notes."
+          },
+          {
+            "engine": "vibevoice",
+            "metric": "teaser_wer",
+            "value": "30.00%",
+            "unit": "WER",
+            "note": "Full improved WAV was the preferred publish in those notes."
+          },
+          {
+            "engine": "magpie",
+            "metric": "teaser_wer",
+            "value": "42.22%",
+            "unit": "WER",
+            "note": "Short teaser. Hypothesis was short of the reference."
+          },
+          {
+            "engine": "vibevoice",
+            "metric": "bw95_hz",
+            "value": "2670.5",
+            "unit": "Hz",
+            "note": "Full improved final. Not a new measurement."
+          },
+          {
+            "engine": "kokoro_onnx",
+            "metric": "bw95_hz_raw",
+            "value": "826.9",
+            "unit": "Hz",
+            "note": "Raw file in those notes. Do not rank publish on inv-HDR alone."
+          }
         ]
       }
     },
@@ -203,6 +245,120 @@
         "mode": "mock",
         "authenticated": false,
         "detail": "Gemini generateContent. Mock without an API key."
+      }
+    },
+    {
+      "id": "lib-kokoro-onnx",
+      "kind": "LibraryClip",
+      "title": "kokoro-onnx",
+      "body": {
+        "engineId": "kokoro_onnx",
+        "status": "ok",
+        "synthesizedSpeech": true,
+        "wavUrl": "/library/library_kokoro_onnx.wav",
+        "duration_s": 374.766,
+        "sample_rate": 24000,
+        "summary": "Real 6.2 min Gen-Audio briefing @ 24 kHz. 18 turns, 816 words. Not a fixture.",
+        "cubePngUrl": "/library/library_kokoro_onnx_cube3d.png",
+        "cubeJsonUrl": "/library/library_kokoro_onnx_cube3d.json",
+        "inv_hdr": 0.09737
+      },
+      "adaptive": {
+        "type": "AdaptiveCard",
+        "version": "1.5",
+        "body": [
+          {
+            "type": "TextBlock",
+            "text": "Real synth: kokoro-onnx \u00b7 374.8s \u00b7 cube attached",
+            "wrap": true
+          },
+          {
+            "type": "FactSet",
+            "facts": [
+              {
+                "title": "Duration",
+                "value": "374.766 s"
+              },
+              {
+                "title": "SR",
+                "value": "24000"
+              },
+              {
+                "title": "inv-HDR",
+                "value": "0.097"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "lib-kokoro",
+      "kind": "LibraryClip",
+      "title": "dayour/kokoro",
+      "body": {
+        "engineId": "kokoro_dayour",
+        "status": "ok",
+        "synthesizedSpeech": true,
+        "wavUrl": "/library/library_kokoro.wav",
+        "duration_s": 375.625,
+        "sample_rate": 24000,
+        "summary": "Real dayour/kokoro torch synth \u2014 375.6s Gen-Audio briefing. Not a fixture."
+      },
+      "adaptive": {
+        "type": "AdaptiveCard",
+        "version": "1.5",
+        "body": [
+          {
+            "type": "TextBlock",
+            "text": "Real synth: dayour/kokoro \u00b7 375.6s",
+            "wrap": true
+          }
+        ]
+      }
+    },
+    {
+      "id": "lib-misaki-kokoro",
+      "kind": "LibraryClip",
+      "title": "misaki\u2192kokoro",
+      "body": {
+        "engineId": "misaki_kokoro",
+        "status": "running",
+        "synthesizedSpeech": false,
+        "summary": "Misaki\u2192Kokoro synthesizing now. No fake WAV until complete."
+      }
+    },
+    {
+      "id": "lib-magpie",
+      "kind": "LibraryClip",
+      "title": "Magpie",
+      "body": {
+        "engineId": "magpie",
+        "status": "unavailable",
+        "synthesizedSpeech": false,
+        "summary": "GGUF weights exist on box; magpie-tts.cpp not built. No fake audio."
+      }
+    },
+    {
+      "id": "lib-vibevoice",
+      "kind": "LibraryClip",
+      "title": "VibeVoice",
+      "body": {
+        "engineId": "vibevoice",
+        "status": "unavailable",
+        "synthesizedSpeech": false,
+        "summary": "1.5B safetensors present but no verified runnable synth harness this pass."
+      }
+    },
+    {
+      "id": "lib-pocket",
+      "kind": "LibraryClip",
+      "title": "Pocket TTS",
+      "body": {
+        "engineId": "pocket_tts",
+        "status": "unavailable",
+        "synthesizedSpeech": false,
+        "summary": "pocket_tts not installed. Prior wrong-topic teaser not reused."
       }
     }
   ]

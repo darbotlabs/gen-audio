@@ -14,6 +14,7 @@ pub const CARD_KINDS: &[&str] = &[
     "ServeHealth",
     "BenchmarkCompare",
     "ConnectorStatus",
+    "LibraryClip",
 ];
 
 pub const CONNECTOR_IDS: &[&str] = &[
@@ -170,6 +171,34 @@ fn validate_body(id: &str, kind: &str, body: &Value) -> Result<(), String> {
                 return Err("authenticated must be a boolean".into());
             }
             expect_string(obj.get("detail"), "detail", 1, 400)?;
+        }
+        
+        "LibraryClip" => {
+            expect_string(obj.get("engineId"), "engineId", 1, 40)?;
+            let status = expect_string(obj.get("status"), "status", 1, 40)?;
+            if !matches!(
+                status.as_str(),
+                "ok" | "running" | "weights_absent" | "unavailable" | "external"
+            ) {
+                return Err(format!("card {id} has unknown library status"));
+            }
+            let speech = obj
+                .get("synthesizedSpeech")
+                .and_then(Value::as_bool)
+                .ok_or_else(|| format!("card {id} synthesizedSpeech must be a boolean"))?;
+            expect_string(obj.get("summary"), "summary", 1, 400)?;
+            if speech {
+                expect_string(obj.get("wavUrl"), "wavUrl", 1, 260)?;
+                let dur = obj
+                    .get("duration_s")
+                    .and_then(Value::as_f64)
+                    .ok_or_else(|| format!("card {id} duration_s must be a number"))?;
+                if dur <= 0.0 {
+                    return Err(format!("card {id} duration_s must be > 0"));
+                }
+            } else if obj.get("wavUrl").is_some() {
+                return Err(format!("card {id} must not set wavUrl unless synthesizedSpeech is true"));
+            }
         }
         _ => return Err(format!("unhandled kind {kind}")),
     }

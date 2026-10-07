@@ -1,0 +1,74 @@
+{
+  "clips": [
+    {
+      "synthesizedSpeech": true,
+      "bytes": 17988808,
+      "n_words": 816,
+      "status": "ok",
+      "synth_wall_s": 80.716,
+      "id": "lib-kokoro-onnx",
+      "engineId": "kokoro_onnx",
+      "sample_rate": 24000,
+      "duration_s": 374.766,
+      "cube": {
+        "pngUrl": "/library/library_kokoro_onnx_cube3d.png",
+        "jsonUrl": "/library/library_kokoro_onnx_cube3d.json",
+        "inv_hdr": 0.09737
+      },
+      "wav": "artifacts/library/library_kokoro_onnx.wav",
+      "absWav": "D:\\gen-audio\\artifacts\\library\\library_kokoro_onnx.wav",
+      "n_turns": 18,
+      "title": "kokoro-onnx",
+      "wavUrl": "/library/library_kokoro_onnx.wav"
+    },
+    {
+      "synthesizedSpeech": true,
+      "note": "torch synth in progress on box",
+      "wav": "artifacts/library/library_kokoro.wav",
+      "id": "lib-kokoro",
+      "engineId": "kokoro_dayour",
+      "title": "dayour/kokoro",
+      "status": "ok",
+      "absWav": "D:\\gen-audio\\artifacts\\library\\library_kokoro.wav",
+      "wavUrl": "/library/library_kokoro.wav",
+      "duration_s": 375.625,
+      "sample_rate": 24000,
+      "bytes": 18030044
+    },
+    {
+      "synthesizedSpeech": false,
+      "wav": null,
+      "id": "lib-misaki-kokoro",
+      "engineId": "misaki_kokoro",
+      "title": "misaki\u2192kokoro",
+      "status": "running"
+    },
+    {
+      "synthesizedSpeech": false,
+      "reason": "GGUF present on box; magpie-tts.cpp not built; no SMAX runtime",
+      "id": "lib-magpie",
+      "engineId": "magpie",
+      "title": "Magpie",
+      "status": "unavailable"
+    },
+    {
+      "synthesizedSpeech": false,
+      "reason": "weights on box but no verified runnable synth harness for this pass",
+      "id": "lib-vibevoice",
+      "engineId": "vibevoice",
+      "title": "VibeVoice",
+      "status": "unavailable"
+    },
+    {
+      "synthesizedSpeech": false,
+      "reason": "pocket_tts not installed; not faking prior wrong-topic teaser",
+      "id": "lib-pocket",
+      "engineId": "pocket_tts",
+      "title": "Pocket TTS",
+      "status": "unavailable"
+    }
+  ],
+  "topic": "gen-audio",
+  "version": "1.0",
+  "target_duration_min": 5
+}

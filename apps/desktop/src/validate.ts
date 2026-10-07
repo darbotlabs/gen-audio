@@ -6,11 +6,13 @@ export const CARD_KINDS = [
   "ServeHealth",
   "BenchmarkCompare",
   "ConnectorStatus",
+  "LibraryClip",
 ] as const;
 
 export const CONNECTOR_IDS = ["mcp", "acp", "harness", "copilot", "claude", "gpt", "gemini"] as const;
 export const CONNECTOR_MODES = ["mock", "live", "local", "token_present", "misconfigured"] as const;
 export const ENGINE_STATUSES = ["implemented", "external", "library", "weights_absent", "unavailable"] as const;
+export const LIBRARY_STATUSES = ["ok", "running", "weights_absent", "unavailable", "external"] as const;
 
 export type CardKind = (typeof CARD_KINDS)[number];
 
@@ -121,6 +123,21 @@ function validateBody(id: string, kind: string, body: Record<string, unknown>): 
       if (!isRecord(row)) return "benchmark row must be an object";
       if (!boundedString(row.engine, 1, 40) || !boundedString(row.metric, 1, 40)) return "benchmark row is incomplete";
       if (typeof row.value !== "number" && typeof row.value !== "string") return "benchmark value must be a number or string";
+    }
+  }
+
+  if (kind === "LibraryClip") {
+    if (!boundedString(body.engineId, 1, 40)) return `card ${id} engineId is required`;
+    if (typeof body.status !== "string" || !LIBRARY_STATUSES.includes(body.status as (typeof LIBRARY_STATUSES)[number])) {
+      return `card ${id} has unknown library status`;
+    }
+    if (typeof body.synthesizedSpeech !== "boolean") return `card ${id} synthesizedSpeech must be boolean`;
+    if (!boundedString(body.summary, 1, 400)) return `card ${id} summary is required`;
+    if (body.synthesizedSpeech === true) {
+      if (!boundedString(body.wavUrl, 1, 260)) return `card ${id} wavUrl required for real speech`;
+      if (typeof body.duration_s !== "number" || !(body.duration_s > 0)) return `card ${id} duration_s must be > 0`;
+    } else if (body.wavUrl) {
+      return `card ${id} must not set wavUrl unless synthesizedSpeech is true`;
     }
   }
   if (kind === "ConnectorStatus") {
