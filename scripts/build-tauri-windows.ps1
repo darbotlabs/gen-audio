@@ -88,7 +88,7 @@ Write-Host "frontend dist ok $index"
 Write-Host "package NSIS and MSI (tauri build embeds frontendDist; no bare desktop cargo build)"
 Push-Location (Join-Path $root "apps\desktop\src-tauri")
 try {
-    Invoke-Checked npx --yes "@tauri-apps/cli" build --bundles nsis,msi
+    Invoke-Checked npx --yes "@tauri-apps/cli" build --bundles "nsis,msi"
 } finally {
     Pop-Location
 }
