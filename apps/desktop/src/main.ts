@@ -1,6 +1,16 @@
 import example from "../../../schemas/examples/viewport.example.json";
-import { bindCube, clearCube, loadCube, onCubeClock, rebuildLayerMatrixUi, setCubeScrub } from "./cubeview";
-import { seekActiveFraction } from "./playback";
+import {
+  bindCube,
+  boundCubeUrl,
+  clearCube,
+  cubeNameFromUrl,
+  getCubeMeta,
+  loadCube,
+  onCubeClock,
+  rebuildLayerMatrixUi,
+  setCubeScrub,
+} from "./cubeview";
+import { isClipPlaying, seekActiveFraction, seekClipFraction } from "./playback";
 import { applyClipNames, harvestNames } from "./library-meta";
 import { bindFloatingPlayback, pauseClip, playClip, seekClip } from "./playback";
 import { profilePreview, type ProfilePreview, type VoiceSelection } from "./profiles";
@@ -100,24 +110,115 @@ function paintProfile(): boolean {
   return before !== null;
 }
 
+/** Default Cube-tab binding: the misaki\u2192kokoro Inverse-HDR cube (real WAV + cube JSON). */
+const DEFAULT_CUBE_CLIP = "lib-misaki-kokoro";
+let cubeClipId = "";
+
+function cubeSources(): Array<{ clipId: string; url: string; label: string }> {
+  return Array.from(board.querySelectorAll<HTMLElement>(".library-tile[data-cube-json]"))
+    .filter((tile) => Boolean(tile.dataset.cubeJson && tile.dataset.id))
+    .map((tile) => ({
+      clipId: tile.dataset.id as string,
+      url: tile.dataset.cubeJson as string,
+      label: `${tile.querySelector("h2")?.textContent?.trim() || tile.dataset.id} \u00b7 ${cubeNameFromUrl(tile.dataset.cubeJson as string)}`,
+    }));
+}
+
+function syncCubeChrome(): void {
+  const meta = getCubeMeta();
+  const title = document.querySelector<HTMLElement>("#cube-title");
+  if (title) title.textContent = meta ? meta.title : "Inverse-HDR bitdot cube \u2014 nothing bound";
+  const select = document.querySelector<HTMLSelectElement>("#cube-source");
+  if (select && cubeClipId) select.value = cubeClipId;
+  const play = document.querySelector<HTMLButtonElement>("#cube-play");
+  if (play) {
+    const tile = cubeClipId ? board.querySelector<HTMLElement>(`.card[data-id="${CSS.escape(cubeClipId)}"]`) : null;
+    play.disabled = !tile?.dataset.wavUrl;
+    play.textContent = cubeClipId && isClipPlaying(cubeClipId) ? "Pause" : "Play";
+  }
+}
+
+/** When the Cube tab opens with nothing bound, bind the default library cube. */
+function ensureDefaultCube(): void {
+  if (boundCubeUrl()) return;
+  const sources = cubeSources();
+  const preferred = sources.find((item) => item.clipId === DEFAULT_CUBE_CLIP) ?? sources[0];
+  if (!preferred) {
+    clearCube("No library clip has cube JSON yet. Nothing is drawn.");
+    return;
+  }
+  void bindCubeSource(preferred.clipId, preferred.url, "default");
+}
+
+async function bindCubeSource(clipId: string, url: string, source: string): Promise<void> {
+  cubeClipId = clipId;
+  const caption = document.querySelector<HTMLElement>("#cube-caption");
+  const message = await loadCube(url);
+  if (caption) caption.textContent = source === "default" ? message : `${source}: ${message}`;
+  syncCubeChrome();
+}
+
 function bindCubeCanvas(): void {
   const canvas = document.querySelector<HTMLCanvasElement>("#cube-viewport");
   if (!canvas || canvas.dataset.bound === "1") return;
   canvas.dataset.bound = "1";
-  bindCube(canvas);
+  bindCube(canvas, document.querySelector<HTMLCanvasElement>("#cube-labels"));
   rebuildLayerMatrixUi();
+  const select = document.querySelector<HTMLSelectElement>("#cube-source");
+  if (select) {
+    select.replaceChildren();
+    for (const item of cubeSources()) {
+      const option = document.createElement("option");
+      option.value = item.clipId;
+      option.textContent = item.label;
+      option.dataset.cubeJson = item.url;
+      select.append(option);
+    }
+    select.addEventListener("change", () => {
+      const option = select.selectedOptions[0];
+      if (option?.dataset.cubeJson) void bindCubeSource(option.value, option.dataset.cubeJson, option.value);
+    });
+  }
+  document.querySelector<HTMLButtonElement>("#cube-play")?.addEventListener("click", () => {
+    if (!cubeClipId) return;
+    const action = isClipPlaying(cubeClipId) ? pauseClip(cubeClipId) : null;
+    if (action) {
+      syncCubeChrome();
+      return;
+    }
+    void playClip(cubeClipId).then((result) => {
+      status.textContent = result === "playing" ? `Cube live clock follows ${cubeClipId}` : result;
+      syncCubeChrome();
+    });
+  });
   document.querySelector("#cube-scrub")?.addEventListener("input", (event) => {
     const input = event.target as HTMLInputElement;
     const fraction = Number(input.value) / 1000;
     // ONE clock: scrubber seeks library audio AND slices cube layers.
     setCubeScrub(fraction);
-    const seeked = seekActiveFraction(fraction);
-    if (seeked !== "no player") status.textContent = `Shared clock ${Math.round(fraction * 100)}% · ${seeked}`;
+    const seeked = cubeClipId ? seekClipFraction(cubeClipId, fraction) : seekActiveFraction(fraction);
+    if (seeked !== "no player") status.textContent = `Shared clock ${Math.round(fraction * 100)}% \u00b7 ${seeked}`;
   });
   onCubeClock((fraction) => {
     const fp = document.querySelector<HTMLInputElement>("#fp-scrub");
     if (fp && !fp.matches(":active")) fp.value = String(Math.round(fraction * 1000));
   });
+  const spatial = canvas.closest<HTMLElement>(".slide");
+  if (spatial && typeof IntersectionObserver !== "undefined") {
+    new IntersectionObserver(
+      (entries) => {
+        if (entries.some((entry) => entry.isIntersecting)) {
+          ensureDefaultCube();
+          syncCubeChrome();
+        }
+      },
+      { root: board, threshold: 0.5 },
+    ).observe(spatial);
+  }
+  // Re-render keeps the bound cube; first render binds the default cube.
+  const already = boundCubeUrl();
+  if (already) void bindCubeSource(cubeClipId || DEFAULT_CUBE_CLIP, already, "default");
+  else ensureDefaultCube();
 }
 
 function bindRename(): void {
@@ -194,8 +295,11 @@ async function openCube(url: string, source: string): Promise<void> {
     clearCube("This tile has no cube JSON. Magpie, VibeVoice, and Pocket do not get a stand-in cloud.");
     return;
   }
+  const owner = board.querySelector<HTMLElement>(`.library-tile[data-cube-json="${CSS.escape(url)}"]`);
+  cubeClipId = owner?.dataset.id ?? "";
   const message = await loadCube(url);
   if (caption) caption.textContent = `${source}: ${message}`;
+  syncCubeChrome();
   // F5 honesty: library-bound cubes must never keep a FIXTURE live-mark.
   const cubeCard = board.querySelector<HTMLElement>('.card[data-kind="Cube3D"]');
   if (cubeCard && !/did not load|no signal/i.test(message)) {
@@ -286,6 +390,10 @@ document.querySelectorAll<HTMLButtonElement>("#layer-switch [data-layer]").forEa
     const target =
       layer === "models" ? "models" : layer === "clips" ? "library" : layer === "video" ? "video" : layer === "cube" ? "spatial" : "";
     if (target) goToSlideId(board, target);
+    if (target === "spatial") {
+      ensureDefaultCube();
+      syncCubeChrome();
+    }
   });
 });
 
@@ -450,6 +558,10 @@ function applyControl(event: { seq?: number; op?: string; args?: Record<string, 
   const args = event.args ?? {};
   if (event.op === "navigate" && typeof args.slide === "string") {
     goToSlideId(board, args.slide);
+    if (args.slide === "spatial") {
+      ensureDefaultCube();
+      syncCubeChrome();
+    }
     if (typeof args.tileId === "string") selectTile(args.tileId);
   } else if (event.op === "select" && typeof args.tileId === "string") {
     selectTile(args.tileId);

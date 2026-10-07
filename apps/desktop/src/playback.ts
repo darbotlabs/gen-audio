@@ -154,6 +154,23 @@ export function seekClip(clipId: string, seconds: number): string {
 }
 
 
+/** Seek a specific library clip by shared-clock fraction 0..1 (the clip bound to the cube). */
+export function seekClipFraction(clipId: string, fraction: number): string {
+  const audio = player(clipId);
+  if (!audio || !audio.src) return "no wav";
+  const duration = audio.duration;
+  if (!Number.isFinite(duration) || duration <= 0) return "no duration";
+  activeId = clipId;
+  audio.currentTime = Math.max(0, Math.min(1, fraction)) * duration;
+  syncFloater(clipId);
+  return `seeked ${clipId}`;
+}
+
+export function isClipPlaying(clipId: string): boolean {
+  const audio = player(clipId);
+  return Boolean(audio && !audio.paused && !audio.ended);
+}
+
 export function getActiveClipId(): string | null {
   return activeId;
 }

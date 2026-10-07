@@ -19,12 +19,30 @@ export interface LayerParams {
   order: number; // lower draws first
 }
 
-const DEFAULT_COLORS: Record<string, [number, number, number]> = {
-  signal: [0.29, 0.64, 1],
-  tonality: [0.24, 0.8, 0.43],
-  confidence: [0.94, 0.76, 0.29],
-  quality: [1, 0.35, 0.82],
+/** Legend colors match the matplotlib reference PNG: blue / green / orange / pink. */
+export const LAYER_COLORS: Record<string, [number, number, number]> = {
+  signal: [0.12, 0.53, 1],
+  tonality: [0.16, 0.87, 0.36],
+  confidence: [1, 0.75, 0.12],
+  quality: [0.94, 0.27, 0.56],
 };
+const DEFAULT_COLORS = LAYER_COLORS;
+
+export function layerCss(id: string): string {
+  const c = LAYER_COLORS[id] ?? [0.7, 0.7, 0.7];
+  return `rgb(${Math.round(c[0] * 255)}, ${Math.round(c[1] * 255)}, ${Math.round(c[2] * 255)})`;
+}
+
+export interface CubeMeta {
+  url: string;
+  name: string;
+  title: string;
+  invHdr: number | null;
+  points: number;
+  timeBins: number;
+  freqBins: number;
+  durationS: number | null;
+}
 
 const EXPECTED = ["signal", "tonality", "confidence", "quality"] as const;
 
@@ -32,11 +50,14 @@ const state = {
   points: [] as CubePoint[],
   layerIds: [] as string[],
   layers: new Map<string, LayerParams>(),
-  yaw: 0.7,
-  pitch: 0.45,
+  yaw: -0.45,
+  pitch: -0.55,
   zoom: 1,
   scrub: 1,
   canvas: null as HTMLCanvasElement | null,
+  labels: null as HTMLCanvasElement | null,
+  meta: null as CubeMeta | null,
+  resize: null as ResizeObserver | null,
   sourceUrl: "",
   clockListeners: new Set<(fraction: number) => void>(),
   rafId: 0 as number,
@@ -51,10 +72,32 @@ function ensureLayer(id: string, order: number): LayerParams {
   return created;
 }
 
-export function bindCube(canvas: HTMLCanvasElement): void {
+/**
+ * Bind the WebGL cube canvas. The canvas fills its host: a ResizeObserver
+ * sizes the backing store to clientWidth/Height x devicePixelRatio, so there
+ * is no fixed 640x360 buffer. An optional 2D label canvas draws ticks/axes.
+ */
+export function bindCube(canvas: HTMLCanvasElement, labels?: HTMLCanvasElement | null): void {
   state.canvas = canvas;
-  canvas.width = 640;
-  canvas.height = 360;
+  state.labels = labels ?? null;
+  const fit = () => {
+    const dpr = Math.max(1, window.devicePixelRatio || 1);
+    const width = Math.max(1, Math.round(canvas.clientWidth * dpr));
+    const height = Math.max(1, Math.round(canvas.clientHeight * dpr));
+    for (const node of [canvas, state.labels]) {
+      if (!node) continue;
+      if (node.width !== width) node.width = width;
+      if (node.height !== height) node.height = height;
+    }
+    draw();
+  };
+  state.resize?.disconnect();
+  if (typeof ResizeObserver !== "undefined") {
+    state.resize = new ResizeObserver(fit);
+    state.resize.observe(canvas);
+  }
+  window.addEventListener("resize", fit);
+  fit();
   let drag: { x: number; y: number; yaw: number; pitch: number } | null = null;
   canvas.addEventListener("pointerdown", (event) => {
     drag = { x: event.clientX, y: event.clientY, yaw: state.yaw, pitch: state.pitch };
@@ -63,7 +106,7 @@ export function bindCube(canvas: HTMLCanvasElement): void {
   canvas.addEventListener("pointermove", (event) => {
     if (!drag) return;
     state.yaw = drag.yaw + (event.clientX - drag.x) * 0.01;
-    state.pitch = Math.max(-1.2, Math.min(1.2, drag.pitch + (event.clientY - drag.y) * 0.01));
+    state.pitch = Math.max(-1.45, Math.min(0.6, drag.pitch - (event.clientY - drag.y) * 0.01));
     draw();
   });
   const end = () => {
@@ -80,6 +123,20 @@ export function bindCube(canvas: HTMLCanvasElement): void {
     },
     { passive: false },
   );
+}
+
+export function getCubeMeta(): CubeMeta | null {
+  return state.meta ? { ...state.meta } : null;
+}
+
+export function boundCubeUrl(): string {
+  return state.sourceUrl;
+}
+
+/** Short clip name from a cube URL: library_<name>_cube3d.json -> <name>. */
+export function cubeNameFromUrl(url: string): string {
+  const file = url.split("/").pop() ?? url;
+  return file.replace(/\.json$/i, "").replace(/^library_/, "").replace(/_cube3d$/, "");
 }
 
 /** ONE clock: fraction 0..1 drives cube time-slice. Optionally notify audio scrubbers. */
@@ -182,6 +239,9 @@ export async function loadCube(url: string): Promise<string> {
     points_preview?: CubePoint[];
     engine?: string;
     inv_hdr?: number;
+    title?: string;
+    duration_s?: number;
+    cube_shape_f_t?: number[];
     layers?: Record<string, unknown> | string[];
   };
   const points = Array.isArray(data.points_preview) ? data.points_preview : [];
@@ -197,6 +257,7 @@ export async function loadCube(url: string): Promise<string> {
     state.layerIds = [];
     state.layers.clear();
     state.sourceUrl = "";
+    state.meta = null;
     draw();
     return "Cube JSON has no signal/tonality/confidence/quality preview.";
   }
@@ -206,13 +267,42 @@ export async function loadCube(url: string): Promise<string> {
   names.forEach((id, index) => ensureLayer(id, index));
   state.scrub = 1;
   state.sourceUrl = url;
+  const name = cubeNameFromUrl(url);
+  const shape = shapeOf(data);
+  state.meta = {
+    url,
+    name,
+    title: typeof data.title === "string" && data.title ? data.title : `Inverse-HDR bitdot cube \u2014 ${name}`,
+    invHdr: typeof data.inv_hdr === "number" ? data.inv_hdr : null,
+    points: state.points.length,
+    freqBins: shape[0],
+    timeBins: shape[1],
+    durationS: typeof data.duration_s === "number" ? data.duration_s : null,
+  };
   draw();
   rebuildLayerMatrixUi();
-  const inv = typeof data.inv_hdr === "number" ? data.inv_hdr.toFixed(3) : "?";
-  return `${data.engine ?? "library"} cube · ${state.points.length} preview points · inv-HDR ${inv} · layers ${names.join(" / ")}. Drag to rotate, wheel to zoom, scrub the shared clock. Not a mastering grade.`;
+  const inv = state.meta.invHdr === null ? "?" : state.meta.invHdr.toFixed(4);
+  return `${state.meta.title} \u00b7 inv_hdr ${inv} \u00b7 ${state.points.length} points \u00b7 axes time bin / freq bin / layer`;
+}
+
+function shapeOf(data: { cube_shape_f_t?: number[]; layers?: Record<string, unknown> | string[] }): [number, number] {
+  const direct = data.cube_shape_f_t;
+  if (Array.isArray(direct) && direct.length === 2 && direct.every((n) => Number.isFinite(n) && n > 0)) {
+    return [Number(direct[0]), Number(direct[1])];
+  }
+  if (data.layers && !Array.isArray(data.layers)) {
+    for (const value of Object.values(data.layers)) {
+      const shape = (value as { shape?: unknown })?.shape;
+      if (Array.isArray(shape) && shape.length === 2 && shape.every((n) => Number.isFinite(n) && Number(n) > 0)) {
+        return [Number(shape[0]), Number(shape[1])];
+      }
+    }
+  }
+  return [0, 0];
 }
 
 export function clearCube(message: string): void {
+  state.meta = null;
   state.points = [];
   state.layerIds = [];
   state.layers.clear();
@@ -251,6 +341,7 @@ export function rebuildLayerMatrixUi(): void {
     const name = document.createElement("span");
     name.className = "cube-layer-name";
     name.textContent = layer.id;
+    name.style.setProperty("--swatch", layerCss(layer.id));
 
     const opacity = document.createElement("input");
     opacity.type = "range";
@@ -345,6 +436,49 @@ function compositeColor(
   ];
 }
 
+/** Layer planes stack vertically like the matplotlib reference: signal bottom, quality top. */
+function planeY(z: number, v: number): number {
+  return -0.9 + z * 1.8 + (v - 0.5) * 0.12;
+}
+
+function aspect(): number {
+  const canvas = state.canvas;
+  if (!canvas || canvas.height === 0) return 1;
+  return canvas.width / canvas.height;
+}
+
+const CAMERA = 4.6;
+const SCALE = 2.1;
+const LIFT = 0.1;
+/** Box half-extents: time is the long axis (like the reference), freq is depth, layers are height. */
+const BOX: [number, number, number] = [1.5, 0.85, 1.05];
+
+/** Same transform as the vertex shader, for the 2D label overlay. Returns pixel coords. */
+function project(x: number, y: number, z: number): { px: number; py: number; depth: number } | null {
+  const canvas = state.canvas;
+  if (!canvas) return null;
+  const cy = Math.cos(state.yaw);
+  const sy = Math.sin(state.yaw);
+  const cx = Math.cos(state.pitch);
+  const sx = Math.sin(state.pitch);
+  x *= BOX[0];
+  y *= BOX[1];
+  z *= BOX[2];
+  const x1 = x * cy - z * sy;
+  const z1 = x * sy + z * cy;
+  const y2 = y * cx - z1 * sx;
+  const z2 = y * sx + z1 * cx;
+  const w = CAMERA + z2;
+  if (w <= 0.05) return null;
+  const a = aspect();
+  let nx = (x1 * state.zoom * SCALE) / w;
+  let ny = (y2 * state.zoom * SCALE) / w;
+  if (a > 1) nx /= a;
+  else ny *= a;
+  ny += LIFT;
+  return { px: ((nx + 1) / 2) * canvas.width, py: ((1 - ny) / 2) * canvas.height, depth: z2 };
+}
+
 function draw(): void {
   const canvas = state.canvas;
   if (!canvas) return;
@@ -359,6 +493,7 @@ function draw(): void {
     }
     return;
   }
+  const live = state.scrub < 0.999;
   const ordered = listCubeLayers().filter((layer) => layer.on);
   // Bucket points by rounded t/f/z so layer matrix composites at the same bitdot.
   type Key = string;
@@ -367,19 +502,19 @@ function draw(): void {
     const color = DEFAULT_COLORS[layer.id] ?? [0.7, 0.7, 0.7];
     for (const point of state.points) {
       if (point.layer !== layer.id) continue;
-      // Live time-bin: keep a trailing window ending at the shared playhead.
-      const window = 0.18;
-      if (point.t > state.scrub + 0.0001 || point.t < state.scrub - window) continue;
+      // Live time-bin: the cube fills up to the shared playhead; the trailing window glows.
+      if (point.t > state.scrub + 0.0001) continue;
+      const trailing = !live || point.t >= state.scrub - 0.18;
       const gainV = Math.max(0, Math.min(1, point.v * layer.gain));
       const src: [number, number, number, number] = [
         color[0],
         color[1],
         color[2],
-        (0.35 + gainV * 0.65) * layer.opacity,
+        (0.35 + gainV * 0.65) * layer.opacity * (trailing ? 1 : 0.4),
       ];
       const x = point.t * 2 - 1;
-      const y = point.f * 2 - 1;
-      const z = (point.z * 2 - 1) * 0.85 + (point.v - 0.5) * 0.15;
+      const y = planeY(point.z, point.v);
+      const z = point.f * 2 - 1;
       const key = `${point.t.toFixed(3)}|${point.f.toFixed(3)}|${point.z.toFixed(3)}`;
       const existing = buckets.get(key);
       if (!existing) {
@@ -396,17 +531,127 @@ function draw(): void {
     colors.push(item.rgba[0], item.rgba[1], item.rgba[2], item.rgba[3]);
   }
   gl.viewport(0, 0, canvas.width, canvas.height);
-  gl.clearColor(0.04, 0.05, 0.08, 1);
+  gl.clearColor(0.035, 0.045, 0.07, 1);
   gl.clear(gl.COLOR_BUFFER_BIT);
-  if (positions.length === 0) return;
+  drawLabels();
+  if (state.points.length === 0) return;
+  gl.enable(gl.BLEND);
+  gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
   const program = programFor(gl);
   gl.useProgram(program);
-  bindAttr(gl, program, "a_pos", 3, new Float32Array(positions));
-  bindAttr(gl, program, "a_color", 4, new Float32Array(colors));
+  const dpr = Math.max(1, window.devicePixelRatio || 1);
   gl.uniform1f(gl.getUniformLocation(program, "u_yaw"), state.yaw);
   gl.uniform1f(gl.getUniformLocation(program, "u_pitch"), state.pitch);
   gl.uniform1f(gl.getUniformLocation(program, "u_zoom"), state.zoom);
+  gl.uniform1f(gl.getUniformLocation(program, "u_aspect"), aspect());
+  gl.uniform3f(gl.getUniformLocation(program, "u_box"), BOX[0], BOX[1], BOX[2]);
+  gl.uniform1f(gl.getUniformLocation(program, "u_camera"), CAMERA);
+  gl.uniform1f(gl.getUniformLocation(program, "u_scale"), SCALE);
+  gl.uniform1f(gl.getUniformLocation(program, "u_lift"), LIFT);
+  gl.uniform1f(gl.getUniformLocation(program, "u_point"), Math.max(1.6, Math.min(5, canvas.height / 300)) * Math.min(dpr, 2) * 0.7);
+  const grid = gridLines();
+  bindAttr(gl, program, "a_pos", 3, new Float32Array(grid.positions));
+  bindAttr(gl, program, "a_color", 4, new Float32Array(grid.colors));
+  gl.drawArrays(gl.LINES, 0, grid.positions.length / 3);
+  if (positions.length === 0) return;
+  bindAttr(gl, program, "a_pos", 3, new Float32Array(positions));
+  bindAttr(gl, program, "a_color", 4, new Float32Array(colors));
   gl.drawArrays(gl.POINTS, 0, positions.length / 3);
+}
+
+/** 3D bounding box, floor + back-wall grid, plane outlines, and the live playhead frame. */
+function gridLines(): { positions: number[]; colors: number[] } {
+  const positions: number[] = [];
+  const colors: number[] = [];
+  const seg = (a: number[], b: number[], rgba: number[]) => {
+    positions.push(a[0], a[1], a[2], b[0], b[1], b[2]);
+    colors.push(...rgba, ...rgba);
+  };
+  const box = [0.62, 0.7, 0.82, 0.55];
+  const faint = [0.5, 0.58, 0.7, 0.16];
+  for (const y of [-1, 1]) {
+    for (const z of [-1, 1]) seg([-1, y, z], [1, y, z], box);
+    for (const x of [-1, 1]) seg([x, y, -1], [x, y, 1], box);
+  }
+  for (const x of [-1, 1]) for (const z of [-1, 1]) seg([x, -1, z], [x, 1, z], box);
+  const meta = state.meta;
+  const tStep = tickStep(meta?.timeBins ?? 0, 50);
+  const fStep = tickStep(meta?.freqBins ?? 0, 20);
+  for (const t of ticks(meta?.timeBins ?? 0, tStep)) {
+    const x = t * 2 - 1;
+    seg([x, -1, -1], [x, -1, 1], faint);
+    seg([x, -1, 1], [x, 1, 1], faint);
+  }
+  for (const f of ticks(meta?.freqBins ?? 0, fStep)) {
+    const z = f * 2 - 1;
+    seg([-1, -1, z], [1, -1, z], faint);
+    seg([-1, -1, z], [-1, 1, z], faint);
+  }
+  for (const id of EXPECTED) {
+    const y = planeY(EXPECTED.indexOf(id) / 3, 0.5);
+    seg([-1, y, 1], [1, y, 1], faint);
+    seg([-1, y, -1], [-1, y, 1], faint);
+  }
+  if (state.scrub < 0.999 && state.points.length > 0) {
+    const x = state.scrub * 2 - 1;
+    const head = [0.16, 0.83, 1, 0.85];
+    seg([x, -1, -1], [x, -1, 1], head);
+    seg([x, 1, -1], [x, 1, 1], head);
+    seg([x, -1, -1], [x, 1, -1], head);
+    seg([x, -1, 1], [x, 1, 1], head);
+  }
+  return { positions, colors };
+}
+
+function tickStep(bins: number, preferred: number): number {
+  if (bins <= 0) return 0;
+  return bins / preferred > 9 ? preferred * 2 : preferred;
+}
+
+/** Normalized 0..1 positions for integer bin ticks. */
+function ticks(bins: number, step: number): number[] {
+  if (bins <= 1 || step <= 0) return [];
+  const out: number[] = [];
+  for (let b = 0; b <= bins - 1; b += step) out.push(b / (bins - 1));
+  return out;
+}
+
+/** 2D overlay: tick labels, axis names, layer plane names. Pixel-exact with the GL projection. */
+function drawLabels(): void {
+  const labels = state.labels;
+  if (!labels) return;
+  const ctx = labels.getContext("2d");
+  if (!ctx) return;
+  ctx.clearRect(0, 0, labels.width, labels.height);
+  const meta = state.meta;
+  if (!meta || state.points.length === 0) return;
+  const dpr = Math.max(1, window.devicePixelRatio || 1);
+  const font = Math.round(Math.max(10, Math.min(15, labels.height / dpr / 48)) * dpr);
+  ctx.font = `${font}px "Segoe UI", system-ui, sans-serif`;
+  ctx.fillStyle = "rgba(200, 212, 230, 0.92)";
+  ctx.textBaseline = "middle";
+  const text = (value: string, p: { px: number; py: number } | null, dx = 0, dy = 0, align: CanvasTextAlign = "center") => {
+    if (!p) return;
+    ctx.textAlign = align;
+    ctx.fillText(value, p.px + dx * dpr, p.py + dy * dpr);
+  };
+  const tStep = tickStep(meta.timeBins, 50);
+  for (let b = 0; meta.timeBins > 1 && b <= meta.timeBins - 1; b += tStep) {
+    text(String(b), project((b / (meta.timeBins - 1)) * 2 - 1, -1, -1), 0, 14);
+  }
+  text("time bin", project(0, -1, -1.28), 0, 26);
+  const fStep = tickStep(meta.freqBins, 20);
+  for (let b = 0; meta.freqBins > 1 && b <= meta.freqBins - 1; b += fStep) {
+    text(String(b), project(1, -1, (b / (meta.freqBins - 1)) * 2 - 1), 14, 8, "left");
+  }
+  text("freq bin", project(1.3, -1, 0), 20, 18, "left");
+  for (const id of EXPECTED) {
+    const y = planeY(EXPECTED.indexOf(id) / 3, 0.5);
+    ctx.fillStyle = layerCss(id);
+    text(id, project(1, y, 1), 10, 0, "left");
+  }
+  ctx.fillStyle = "rgba(200, 212, 230, 0.92)";
+  text("layer (+value)", project(1, 1.12, 1), 10, -6, "left");
 }
 
 const programs = new WeakMap<WebGLRenderingContext, WebGLProgram>();
@@ -420,18 +665,29 @@ function programFor(gl: WebGLRenderingContext): WebGLProgram {
     uniform float u_yaw;
     uniform float u_pitch;
     uniform float u_zoom;
+    uniform float u_aspect;
+    uniform float u_point;
+    uniform vec3 u_box;
+    uniform float u_camera;
+    uniform float u_scale;
+    uniform float u_lift;
     varying vec4 v_color;
     void main() {
+      vec3 p = a_pos * u_box;
       float cy = cos(u_yaw);
       float sy = sin(u_yaw);
       float cx = cos(u_pitch);
       float sx = sin(u_pitch);
-      float x1 = a_pos.x * cy - a_pos.z * sy;
-      float z1 = a_pos.x * sy + a_pos.z * cy;
-      float y2 = a_pos.y * cx - z1 * sx;
-      float z2 = a_pos.y * sx + z1 * cx;
-      gl_Position = vec4(x1 * u_zoom * 0.82, y2 * u_zoom * 0.82, 0.0, 1.6 + z2);
-      gl_PointSize = 3.5;
+      float x1 = p.x * cy - p.z * sy;
+      float z1 = p.x * sy + p.z * cy;
+      float y2 = p.y * cx - z1 * sx;
+      float z2 = p.y * sx + z1 * cx;
+      float w = u_camera + z2;
+      float px = x1 * u_zoom * u_scale;
+      float py = y2 * u_zoom * u_scale;
+      if (u_aspect > 1.0) px = px / u_aspect; else py = py * u_aspect;
+      gl_Position = vec4(px, py + u_lift * w, 0.0, w);
+      gl_PointSize = u_point;
       v_color = a_color;
     }
   `;
@@ -457,8 +713,19 @@ function compile(gl: WebGLRenderingContext, type: number, source: string): WebGL
   return shader;
 }
 
+const buffers = new WeakMap<WebGLRenderingContext, Map<string, WebGLBuffer>>();
+
 function bindAttr(gl: WebGLRenderingContext, program: WebGLProgram, name: string, size: number, data: Float32Array): void {
-  const buffer = gl.createBuffer();
+  let cache = buffers.get(gl);
+  if (!cache) {
+    cache = new Map();
+    buffers.set(gl, cache);
+  }
+  let buffer = cache.get(name) ?? null;
+  if (!buffer) {
+    buffer = gl.createBuffer();
+    if (buffer) cache.set(name, buffer);
+  }
   gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
   gl.bufferData(gl.ARRAY_BUFFER, data, gl.DYNAMIC_DRAW);
   const loc = gl.getAttribLocation(program, name);
