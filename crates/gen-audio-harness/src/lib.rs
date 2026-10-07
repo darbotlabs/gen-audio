@@ -29,13 +29,7 @@ pub fn run(options: &HarnessOptions) -> Result<Vec<Value>, String> {
             "speakers": speaker_ids(&turns)
         }),
     ));
-    trace.push(event(
-        "cast_resolved",
-        json!({
-            "engine": options.cast_engine,
-            "note": "Voice ids for kokoro-onnx come from the cast map. Other engines are not synthesized by this harness."
-        }),
-    ));
+    trace.push(event("cast_resolved", load_cast_trace(&options.cast_engine)));
     trace.push(event(
         "tool_plan",
         json!({
@@ -132,6 +126,55 @@ fn speaker_ids(turns: &[Turn]) -> Vec<String> {
     ids
 }
 
+fn load_cast_trace(requested_engine: &str) -> Value {
+    let Some(repo) = paths::find_repo_root() else {
+        return json!({
+            "loaded": false,
+            "synthesized": false,
+            "engine": requested_engine,
+            "reason": "repository root not found"
+        });
+    };
+    let path = match paths::read_user_repo_file(&repo, "voices/cast_map.example.json") {
+        Ok(path) => path,
+        Err(err) => {
+            return json!({"loaded": false, "synthesized": false, "engine": requested_engine, "reason": err});
+        }
+    };
+    let text = match std::fs::read_to_string(path) {
+        Ok(text) => text,
+        Err(err) => {
+            return json!({"loaded": false, "synthesized": false, "reason": err.to_string()});
+        }
+    };
+    let value: Value = match serde_json::from_str(&text) {
+        Ok(value) => value,
+        Err(err) => {
+            return json!({"loaded": false, "synthesized": false, "reason": err.to_string()});
+        }
+    };
+    let engine = value.get("engine").and_then(Value::as_str).unwrap_or(requested_engine);
+    let mut speakers = Vec::new();
+    if let Some(map) = value.get("speakers").and_then(Value::as_object) {
+        for (id, spec) in map {
+            speakers.push(json!({
+                "id": id,
+                "name": spec.get("name").and_then(Value::as_str).unwrap_or(""),
+                "voice": spec.get("voice").and_then(Value::as_str).unwrap_or("")
+            }));
+        }
+    }
+    json!({
+        "loaded": !speakers.is_empty(),
+        "synthesized": false,
+        "engine": engine,
+        "requestedEngine": requested_engine,
+        "source": "voices/cast_map.example.json",
+        "speakers": speakers,
+        "note": "Voice ids were read from the example cast map. This harness did not synthesize them."
+    })
+}
+
 pub fn load_script_arg(raw: &str) -> Result<String, String> {
     if raw.chars().count() > 512 || raw.contains('\0') {
         return Err("script path is empty or too long".into());
@@ -182,6 +225,12 @@ mod tests {
         assert!(names.contains(&"harness_end"));
         let plan = trace.iter().find(|row| row["event"] == "tool_plan").unwrap();
         assert_eq!(plan["synthesized"], false);
+        let cast = trace.iter().find(|row| row["event"] == "cast_resolved").unwrap();
+        assert_eq!(cast["loaded"], true);
+        assert_eq!(cast["synthesized"], false);
+        let voices = cast["speakers"].as_array().unwrap();
+        assert!(voices.iter().any(|row| row["voice"] == "af_heart" && row["name"] == "Alice"));
+        assert!(voices.iter().any(|row| row["voice"] == "am_michael" && row["name"] == "Frank"));
         let jsonl = trace_to_jsonl(&trace);
         assert!(jsonl.lines().count() >= 7);
     }

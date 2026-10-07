@@ -39,6 +39,9 @@ pub struct AcpOutput {
 pub fn handle(agent: &Agent, message: Value) -> Result<AcpOutput, String> {
     let obj = message.as_object().ok_or("request must be an object")?;
     let id = obj.get("id").cloned();
+    if obj.get("jsonrpc").and_then(Value::as_str) != Some("2.0") {
+        return Err("jsonrpc must be 2.0".into());
+    }
     let method = obj.get("method").and_then(Value::as_str).unwrap_or("");
     let params = obj.get("params").cloned().unwrap_or(json!({}));
     let notification = matches!(id, None | Some(Value::Null));
@@ -82,9 +85,10 @@ fn initialize(params: &Value) -> Result<Value, String> {
 
 fn session_new(agent: &Agent, params: &Value) -> Result<Value, String> {
     let cwd = params.get("cwd").and_then(Value::as_str).unwrap_or("");
-    if cwd.is_empty() {
+    if cwd.is_empty() || cwd.chars().count() > 512 {
         return Err("session/new requires cwd".into());
     }
+    // ACP requires cwd. This agent does not open it and does not read files from it.
     let mut next = agent.next.lock().expect("session counter");
     let id = format!("gen-audio-session-{next}");
     *next += 1;
@@ -240,6 +244,7 @@ pub fn stdio_loop(agent: &Agent) {
                 continue;
             }
         };
+        let request_id = message.get("id").cloned().unwrap_or(Value::Null);
         match handle(agent, message) {
             Ok(output) => {
                 for note in output.notifications {
@@ -251,10 +256,14 @@ pub fn stdio_loop(agent: &Agent) {
                 let _ = stdout.flush();
             }
             Err(err) => {
+                let id = request_id;
+                if id.is_null() {
+                    continue;
+                }
                 let _ = writeln!(
                     stdout,
                     "{}",
-                    json!({"jsonrpc":"2.0","id": null, "error": {"code": -32603, "message": err}})
+                    json!({"jsonrpc":"2.0","id": id, "error": {"code": -32603, "message": err}})
                 );
                 let _ = stdout.flush();
             }
@@ -271,5 +280,28 @@ mod tests {
     #[test]
     fn handshake_smoke() {
         assert_eq!(smoke().unwrap(), "acp smoke ok");
+    }
+
+    #[test]
+    fn cwd_is_not_opened_and_errors_keep_the_request_id() {
+        let agent = Agent::new();
+        let created = handle(
+            &agent,
+            json!({"jsonrpc":"2.0","id":7,"method":"session/new","params":{"cwd":"/this/path/is/not/opened"}}),
+        )
+        .unwrap();
+        assert!(created.response.unwrap()["result"]["sessionId"].as_str().unwrap().starts_with("gen-audio-session-"));
+        let missing = handle(
+            &agent,
+            json!({"jsonrpc":"2.0","id":8,"method":"session/load","params":{}}),
+        )
+        .unwrap_err();
+        assert!(missing.contains("method not found"));
+        let bad = handle(
+            &agent,
+            json!({"jsonrpc":"1.0","id":9,"method":"initialize","params":{"protocolVersion":1}}),
+        )
+        .unwrap_err();
+        assert!(bad.contains("2.0"));
     }
 }

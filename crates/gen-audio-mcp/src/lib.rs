@@ -103,7 +103,7 @@ pub fn handle(server: &Server, message: Value) -> Result<Option<Value>, String> 
     let method = obj.get("method").and_then(Value::as_str).unwrap_or("");
     let params = obj.get("params").cloned().unwrap_or(json!({}));
     let result = match method {
-        "initialize" => Ok(initialize_result()),
+        "initialize" => initialize_result(&params),
         "notifications/initialized" | "initialized" => {
             return Ok(None);
         }
@@ -121,13 +121,21 @@ pub fn handle(server: &Server, message: Value) -> Result<Option<Value>, String> 
     }
 }
 
-fn initialize_result() -> Value {
-    json!({
-        "protocolVersion": "2024-11-05",
+fn initialize_result(params: &Value) -> Result<Value, (i32, String)> {
+    const SUPPORTED: &[&str] = &["2024-11-05", "2025-03-26"];
+    let requested = params
+        .get("protocolVersion")
+        .and_then(Value::as_str)
+        .unwrap_or("2024-11-05");
+    if !SUPPORTED.contains(&requested) {
+        return Err((-32602, format!("unsupported protocolVersion {requested}")));
+    }
+    Ok(json!({
+        "protocolVersion": requested,
         "capabilities": {"tools": {"listChanged": false}},
         "serverInfo": {"name": "gen-audio", "version": "0.1.0"},
-        "instructions": "Stateless Gen-Audio MCP. initialize stores no session. tools/call arguments must name files inside the process work directory. This server does not invent podcast audio."
-    })
+        "instructions": "Stateless Gen-Audio MCP. initialize stores no session. tools/call arguments must name files inside the process work directory. This server does not invent podcast audio. serve_health is healthy only when probed is true and the body service is genaid-audio."
+    }))
 }
 
 fn tool_defs() -> Vec<Value> {
@@ -183,7 +191,7 @@ pub fn call_tool(server: &Server, params: &Value) -> Result<Value, (i32, String)
         "serve_health" => serve_health(&args)?,
         "connector_health" => connector_health(&args)?,
         "list_connectors" => json!({"connectors": health_all()}),
-        "list_engines" => json!({"engines": engines::engines()}),
+        "list_engines" => json!({"liveSynth": false, "weightsBundled": false, "engines": engines::engines()}),
         "fixture_tone" => fixture(server)?,
         "benchmark_reference" => json!({"measuredHere": false, "sourceNote": SOURCE_NOTE, "rows": reference_rows()}),
         "harness_plan" => harness_plan(server)?,
@@ -265,12 +273,12 @@ fn serve_health(args: &Value) -> Result<Value, (i32, String)> {
     let port = args.get("port").and_then(Value::as_u64).unwrap_or(8002) as u16;
     if host == "<node>" {
         return Ok(json!({
-            "ok": true,
+            "healthy": false,
             "probed": false,
             "baseUrl": "http://<node>:8002/genaid-audio",
             "healthUrl": "http://<node>:8002/genaid-audio/health",
             "expectedBody": serve::health_payload(),
-            "note": "Placeholder host. Pass a real host to build a row. probe=true performs an HTTP GET and does not treat a closed port as healthy."
+            "note": "Placeholder host. This is not a live genaid-audio probe. Pass a real host to build a row. probe=true performs an HTTP GET."
         }));
     }
     let base = node_base_url(host, port).map_err(|err| (-32602, err))?;
@@ -281,11 +289,12 @@ fn serve_health(args: &Value) -> Result<Value, (i32, String)> {
     }
     if !probe {
         return Ok(json!({
-            "ok": true,
+            "healthy": false,
             "probed": false,
             "baseUrl": base,
             "healthUrl": health,
-            "expectedBody": serve::health_payload()
+            "expectedBody": serve::health_payload(),
+            "note": "URL only. This is not a live genaid-audio probe."
         }));
     }
     let agent = ureq::AgentBuilder::new()
@@ -303,6 +312,7 @@ fn serve_health(args: &Value) -> Result<Value, (i32, String)> {
             let matches = service == Some(serve::SERVICE_NAME);
             Ok(json!({
                 "ok": matches,
+                "healthy": matches,
                 "probed": true,
                 "baseUrl": base,
                 "healthUrl": health,
@@ -312,6 +322,7 @@ fn serve_health(args: &Value) -> Result<Value, (i32, String)> {
         }
         Err(err) => Ok(json!({
             "ok": false,
+            "healthy": false,
             "probed": true,
             "baseUrl": base,
             "healthUrl": health,
@@ -452,6 +463,45 @@ mod tests {
         .unwrap()
         .unwrap();
         assert!(probe["error"]["message"].as_str().unwrap_or("").contains("allowlist"));
+        let _ = std::fs::remove_dir_all(&server.scratch.dir);
+    }
+
+    #[test]
+    fn unprobed_serve_url_is_not_healthy_and_protocol_is_negotiated() {
+        let server = Server::boot();
+        let health = handle(
+            &server,
+            json!({"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"serve_health","arguments":{}}}),
+        )
+        .unwrap()
+        .unwrap();
+        let text = health["result"]["content"][0]["text"].as_str().unwrap();
+        assert!(text.contains("\"healthy\":false"), "{text}");
+        assert!(text.contains("\"probed\":false"), "{text}");
+        assert_eq!(health["result"]["isError"], false);
+        let init = handle(
+            &server,
+            json!({"jsonrpc":"2.0","id":2,"method":"initialize","params":{"protocolVersion":"2025-03-26"}}),
+        )
+        .unwrap()
+        .unwrap();
+        assert_eq!(init["result"]["protocolVersion"], "2025-03-26");
+        let rejected = handle(
+            &server,
+            json!({"jsonrpc":"2.0","id":3,"method":"initialize","params":{"protocolVersion":"1999-01-01"}}),
+        )
+        .unwrap()
+        .unwrap();
+        assert!(rejected["error"]["message"].as_str().unwrap().contains("unsupported"));
+        let engines = handle(
+            &server,
+            json!({"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"list_engines","arguments":{}}}),
+        )
+        .unwrap()
+        .unwrap();
+        let listed = engines["result"]["content"][0]["text"].as_str().unwrap();
+        assert!(listed.contains("\"liveSynth\":false"), "{listed}");
+        assert!(listed.contains("\"weightsBundled\":false") || listed.contains("\"weights_bundled\":false"), "{listed}");
         let _ = std::fs::remove_dir_all(&server.scratch.dir);
     }
 }

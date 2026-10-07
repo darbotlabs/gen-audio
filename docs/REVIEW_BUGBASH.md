@@ -84,3 +84,37 @@ Assumed the example document was enough to prove the checker, and that CSS `scro
 Residual risk: the TypeScript checker still does not enforce `additionalProperties: false` on every nested object, and it is not a full JSON Schema evaluator. The Adaptive Card caption is text only; there is no Adaptive Card host, action set, or image renderer. Browser spectrogram and cube drawings remain a sine-fixture sketch, which is labeled, and they are not the Python `specgram`. `run_fixture_improve` still needs the Tauri shell; the browser button explains that, and this environment has not launched a WebView. Drive-letter rejection is unit-tested on Linux, not on a Windows host. Horizontal overflow on a very narrow desktop window is reduced by `minmax(0, 1fr)` and the 900px breakpoint, and was not checked in a real WebView.
 
 Next round should attack protocol fidelity: MCP tool schemas versus what the handlers accept, the ACP handshake, whether harness traces actually load a cast map, and whether engine or serve cards can still be read as live results.
+
+## Round 3 — Protocol fidelity and engine/serve honesty
+
+### Inverse debate
+
+The strongest case that the protocols were still wrong:
+
+MCP `initialize` ignored the client’s `protocolVersion` and always answered `2024-11-05`, so negotiation was decorative. `serve_health` set `ok: true` for a placeholder host and for an unprobed URL. `tools/call` treats `ok: false` as `isError`, so the inverse was also true: `ok: true` reads as success, and a client that only checks that flag would treat `http://<node>:8002/genaid-audio` as a live Ray Serve process. `list_engines` marked `kokoro_onnx` `implemented`, which is the code path, while the card says `weights_absent`. Nothing in the tool payload said weights are not bundled. The harness emitted `cast_resolved` from the engine string argument and never opened `voices/cast_map.example.json`, so the trace claimed a cast that had not been read. ACP `session/new` required `cwd` and stored it, which looks like a workspace mount, but the process never opened that path. Protocol errors on stdio were returned with `"id": null`, dropping the request id. `GET /health` on the MCP port and `GET /genaid-audio/health` on a Ray node are different services, and the earlier `ok: true` placeholder made that easier to confuse.
+
+### Steelman and what changed
+
+A field means the thing it is named after.
+
+- `initialize` accepts `2024-11-05` and `2025-03-26`, echoes the chosen version, and rejects anything else. It still stores no session.
+- Unprobed `serve_health` results set `healthy: false` and `probed: false` and omit `ok`, so they are not JSON-RPC errors and not a healthy node. A probe sets `healthy` only when `service` is `genaid-audio`.
+- `list_engines` returns `liveSynth: false` and `weightsBundled: false`. Each engine record has `weights_bundled: false`. `implemented` still means the Python entry point exists.
+- `cast_resolved` reads `voices/cast_map.example.json` and records Alice `af_heart` and Frank `am_michael` with `loaded: true` and `synthesized: false`.
+- ACP requires JSON-RPC `2.0`. `session/new` still requires `cwd` and does not open it, covered by a test with a path that does not exist. Stdio errors keep the request id. Notifications still go out before the `session/prompt` result, and `loadSession` stays false.
+
+### Adversarial findings
+
+| Finding | Result |
+| --- | --- |
+| Placeholder `serve_health` looked successful | Payload contains `"healthy":false` and `"probed":false`. `isError` is false. Tested. |
+| `protocolVersion: 1999-01-01` | JSON-RPC error, unsupported. `2025-03-26` is echoed. |
+| `cast_resolved` without a file read | Trace includes Alice and Frank from the example cast map and `synthesized: false`. |
+| `session/load` and a missing directory as `cwd` | Unknown method. `cwd` `/this/path/is/not/opened` still returns a `sessionId`. |
+| Engines presented as live synth | `liveSynth` and `weightsBundled` are false. |
+
+### Reflection
+
+Assumed `ok` on a tool payload meant “the call was well formed,” and that a trace event name was evidence the step had happened. Callers will read `ok` as health. The cast event was a label.
+
+Residual risk: MCP tool schemas are still a subset of the handler checks (types are not re-validated by a JSON Schema library at runtime). ACP does not emit `tool_call` updates, does not implement `session/load`, and its session map is in-memory for the process lifetime, which the spec requires and which is not MCP statelessness. The harness and the Python `cast` parser can still drift; only the example map and the `Speaker N` header are shared. `implemented` on kokoro-onnx remains easy to over-read even with `weights_bundled: false`. No vendor HTTP call and no kokoro render were executed in this review, because there are no API keys and no model weights. `cargo check` covers the Tauri crate; a packaged `tauri build` installer was not produced. Browser spectrogram and cube drawings are still the sine fixture, labeled as such.
