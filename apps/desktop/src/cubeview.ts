@@ -1,6 +1,6 @@
-/** Interactive library cube. Points come from cube JSON. No stand-in cloud. */
+/** Interactive library cube. Points come from cube JSON only. No invented layers. */
 
-interface CubePoint {
+export interface CubePoint {
   t: number;
   f: number;
   z: number;
@@ -8,22 +8,46 @@ interface CubePoint {
   layer: string;
 }
 
-const LAYER_COLOR: Record<string, [number, number, number]> = {
+export type BlendMode = "normal" | "add" | "multiply";
+
+export interface LayerParams {
+  id: string;
+  on: boolean;
+  opacity: number; // 0..1
+  gain: number; // 0.25..3
+  blend: BlendMode;
+  order: number; // lower draws first
+}
+
+const DEFAULT_COLORS: Record<string, [number, number, number]> = {
   signal: [0.29, 0.64, 1],
   tonality: [0.24, 0.8, 0.43],
   confidence: [0.94, 0.76, 0.29],
   quality: [1, 0.35, 0.82],
 };
 
+const EXPECTED = ["signal", "tonality", "confidence", "quality"] as const;
+
 const state = {
   points: [] as CubePoint[],
+  layerIds: [] as string[],
+  layers: new Map<string, LayerParams>(),
   yaw: 0.7,
   pitch: 0.45,
   zoom: 1,
   scrub: 1,
-  layers: new Set(["signal", "tonality", "confidence", "quality"]),
   canvas: null as HTMLCanvasElement | null,
+  sourceUrl: "",
+  clockListeners: new Set<(fraction: number) => void>(),
 };
+
+function ensureLayer(id: string, order: number): LayerParams {
+  const existing = state.layers.get(id);
+  if (existing) return existing;
+  const created: LayerParams = { id, on: true, opacity: 1, gain: 1, blend: "normal", order };
+  state.layers.set(id, created);
+  return created;
+}
 
 export function bindCube(canvas: HTMLCanvasElement): void {
   state.canvas = canvas;
@@ -56,42 +80,237 @@ export function bindCube(canvas: HTMLCanvasElement): void {
   );
 }
 
-export function setCubeScrub(fraction: number): void {
+/** ONE clock: fraction 0..1 drives cube time-slice. Optionally notify audio scrubbers. */
+export function setCubeScrub(fraction: number, opts?: { silent?: boolean }): void {
   state.scrub = Math.max(0, Math.min(1, fraction));
   draw();
+  if (!opts?.silent) {
+    for (const listener of state.clockListeners) listener(state.scrub);
+  }
+  const scrub = document.querySelector<HTMLInputElement>("#cube-scrub");
+  if (scrub && !scrub.matches(":active")) scrub.value = String(Math.round(state.scrub * 1000));
+}
+
+export function getCubeScrub(): number {
+  return state.scrub;
+}
+
+export function onCubeClock(listener: (fraction: number) => void): () => void {
+  state.clockListeners.add(listener);
+  return () => {
+    state.clockListeners.delete(listener);
+  };
 }
 
 export function setCubeLayer(layer: string, on: boolean): void {
-  if (on) state.layers.add(layer);
-  else state.layers.delete(layer);
+  if (!state.layers.has(layer)) return; // never invent layers
+  const params = state.layers.get(layer)!;
+  params.on = on;
   draw();
+}
+
+export function setLayerOpacity(layer: string, opacity: number): void {
+  if (!state.layers.has(layer)) return;
+  state.layers.get(layer)!.opacity = Math.max(0, Math.min(1, opacity));
+  draw();
+}
+
+export function setLayerGain(layer: string, gain: number): void {
+  if (!state.layers.has(layer)) return;
+  state.layers.get(layer)!.gain = Math.max(0.25, Math.min(3, gain));
+  draw();
+}
+
+export function setLayerBlend(layer: string, blend: BlendMode): void {
+  if (!state.layers.has(layer)) return;
+  state.layers.get(layer)!.blend = blend;
+  draw();
+}
+
+/** Reorder by id list. Unknown ids ignored; missing kept at end. JSON layer set only. */
+export function setLayerOrder(orderIds: string[]): void {
+  const known = orderIds.filter((id) => state.layers.has(id));
+  const rest = state.layerIds.filter((id) => !known.includes(id));
+  state.layerIds = [...known, ...rest];
+  state.layerIds.forEach((id, index) => {
+    const params = state.layers.get(id);
+    if (params) params.order = index;
+  });
+  draw();
+}
+
+export function listCubeLayers(): LayerParams[] {
+  return state.layerIds.map((id) => ({ ...state.layers.get(id)! })).sort((a, b) => a.order - b.order);
 }
 
 export async function loadCube(url: string): Promise<string> {
   const response = await fetch(url);
   if (!response.ok) return `Cube JSON did not load (${response.status}).`;
-  const data = (await response.json()) as { points_preview?: CubePoint[]; engine?: string; inv_hdr?: number; layers?: Record<string, unknown> };
+  const data = (await response.json()) as {
+    points_preview?: CubePoint[];
+    engine?: string;
+    inv_hdr?: number;
+    layers?: Record<string, unknown> | string[];
+  };
   const points = Array.isArray(data.points_preview) ? data.points_preview : [];
-  const names = data.layers ? Object.keys(data.layers) : [];
-  const expected = ["signal", "tonality", "confidence", "quality"];
-  const missing = expected.filter((name) => !names.includes(name));
+  const namesFromDict = data.layers && !Array.isArray(data.layers) ? Object.keys(data.layers) : [];
+  const namesFromArr = Array.isArray(data.layers) ? data.layers.map(String) : [];
+  const names = (namesFromDict.length ? namesFromDict : namesFromArr).filter((name) =>
+    (EXPECTED as readonly string[]).includes(name),
+  );
+  // Only accept the four honesty layers present in JSON — do not invent extras.
+  const missing = EXPECTED.filter((name) => !names.includes(name));
   if (points.length === 0 || missing.length > 0) {
     state.points = [];
+    state.layerIds = [];
+    state.layers.clear();
+    state.sourceUrl = "";
     draw();
     return "Cube JSON has no signal/tonality/confidence/quality preview.";
   }
-  state.points = points.filter((point) => expected.includes(point.layer));
+  state.points = points.filter((point) => names.includes(point.layer));
+  state.layerIds = [...names];
+  state.layers.clear();
+  names.forEach((id, index) => ensureLayer(id, index));
   state.scrub = 1;
+  state.sourceUrl = url;
   draw();
+  rebuildLayerMatrixUi();
   const inv = typeof data.inv_hdr === "number" ? data.inv_hdr.toFixed(3) : "?";
-  return `${data.engine ?? "library"} cube · ${state.points.length} preview points · inv-HDR ${inv} · layers signal / tonality / confidence / quality. Drag to rotate, wheel to zoom, scrub the time span. Not a mastering grade.`;
+  return `${data.engine ?? "library"} cube · ${state.points.length} preview points · inv-HDR ${inv} · layers ${names.join(" / ")}. Drag to rotate, wheel to zoom, scrub the shared clock. Not a mastering grade.`;
 }
 
 export function clearCube(message: string): void {
   state.points = [];
+  state.layerIds = [];
+  state.layers.clear();
+  state.sourceUrl = "";
   draw();
   const caption = document.querySelector<HTMLElement>("#cube-caption");
   if (caption) caption.textContent = message;
+  rebuildLayerMatrixUi();
+}
+
+/** Build / refresh opacity·gain·blend·reorder controls from JSON layers only. */
+export function rebuildLayerMatrixUi(): void {
+  const host = document.querySelector<HTMLElement>("#cube-layer-matrix");
+  if (!host) return;
+  host.replaceChildren();
+  const layers = listCubeLayers();
+  if (layers.length === 0) {
+    const empty = document.createElement("p");
+    empty.className = "summary";
+    empty.textContent = "No library cube layers loaded. Matrix stays empty (honest).";
+    host.append(empty);
+    return;
+  }
+  for (const layer of layers) {
+    const row = document.createElement("div");
+    row.className = "cube-layer-row";
+    row.dataset.layerId = layer.id;
+
+    const toggle = document.createElement("input");
+    toggle.type = "checkbox";
+    toggle.checked = layer.on;
+    toggle.dataset.cubeLayer = layer.id;
+    toggle.setAttribute("aria-label", `Toggle ${layer.id}`);
+    toggle.addEventListener("change", () => setCubeLayer(layer.id, toggle.checked));
+
+    const name = document.createElement("span");
+    name.className = "cube-layer-name";
+    name.textContent = layer.id;
+
+    const opacity = document.createElement("input");
+    opacity.type = "range";
+    opacity.min = "0";
+    opacity.max = "100";
+    opacity.value = String(Math.round(layer.opacity * 100));
+    opacity.setAttribute("aria-label", `${layer.id} opacity`);
+    opacity.addEventListener("input", () => setLayerOpacity(layer.id, Number(opacity.value) / 100));
+
+    const gain = document.createElement("input");
+    gain.type = "range";
+    gain.min = "25";
+    gain.max = "300";
+    gain.value = String(Math.round(layer.gain * 100));
+    gain.setAttribute("aria-label", `${layer.id} gain`);
+    gain.addEventListener("input", () => setLayerGain(layer.id, Number(gain.value) / 100));
+
+    const blend = document.createElement("select");
+    blend.setAttribute("aria-label", `${layer.id} blend`);
+    for (const mode of ["normal", "add", "multiply"] as BlendMode[]) {
+      const opt = document.createElement("option");
+      opt.value = mode;
+      opt.textContent = mode;
+      if (mode === layer.blend) opt.selected = true;
+      blend.append(opt);
+    }
+    blend.addEventListener("change", () => setLayerBlend(layer.id, blend.value as BlendMode));
+
+    const up = document.createElement("button");
+    up.type = "button";
+    up.textContent = "↑";
+    up.setAttribute("aria-label", `Move ${layer.id} earlier`);
+    up.addEventListener("click", () => {
+      const ids = listCubeLayers().map((item) => item.id);
+      const index = ids.indexOf(layer.id);
+      if (index > 0) {
+        [ids[index - 1], ids[index]] = [ids[index], ids[index - 1]];
+        setLayerOrder(ids);
+        rebuildLayerMatrixUi();
+      }
+    });
+
+    const down = document.createElement("button");
+    down.type = "button";
+    down.textContent = "↓";
+    down.setAttribute("aria-label", `Move ${layer.id} later`);
+    down.addEventListener("click", () => {
+      const ids = listCubeLayers().map((item) => item.id);
+      const index = ids.indexOf(layer.id);
+      if (index >= 0 && index < ids.length - 1) {
+        [ids[index + 1], ids[index]] = [ids[index], ids[index + 1]];
+        setLayerOrder(ids);
+        rebuildLayerMatrixUi();
+      }
+    });
+
+    row.append(toggle, name, opacity, gain, blend, up, down);
+    host.append(row);
+  }
+}
+
+function compositeColor(
+  base: [number, number, number, number],
+  src: [number, number, number, number],
+  blend: BlendMode,
+): [number, number, number, number] {
+  const a = src[3];
+  if (a <= 0) return base;
+  let r = src[0];
+  let g = src[1];
+  let b = src[2];
+  if (blend === "add") {
+    r = Math.min(1, base[0] + r * a);
+    g = Math.min(1, base[1] + g * a);
+    b = Math.min(1, base[2] + b * a);
+    return [r, g, b, Math.min(1, base[3] + a)];
+  }
+  if (blend === "multiply") {
+    r = base[0] * (1 - a) + base[0] * r * a;
+    g = base[1] * (1 - a) + base[1] * g * a;
+    b = base[2] * (1 - a) + base[2] * b * a;
+    return [r, g, b, Math.min(1, base[3] + a * (1 - base[3]))];
+  }
+  // normal over
+  const outA = a + base[3] * (1 - a);
+  if (outA <= 0) return [0, 0, 0, 0];
+  return [
+    (r * a + base[0] * base[3] * (1 - a)) / outA,
+    (g * a + base[1] * base[3] * (1 - a)) / outA,
+    (b * a + base[2] * base[3] * (1 - a)) / outA,
+    outA,
+  ];
 }
 
 function draw(): void {
@@ -108,16 +327,39 @@ function draw(): void {
     }
     return;
   }
-  const visible = state.points.filter((point) => state.layers.has(point.layer) && point.t <= state.scrub + 0.0001);
+  const ordered = listCubeLayers().filter((layer) => layer.on);
+  // Bucket points by rounded t/f/z so layer matrix composites at the same bitdot.
+  type Key = string;
+  const buckets = new Map<Key, { x: number; y: number; z: number; rgba: [number, number, number, number] }>();
+  for (const layer of ordered) {
+    const color = DEFAULT_COLORS[layer.id] ?? [0.7, 0.7, 0.7];
+    for (const point of state.points) {
+      if (point.layer !== layer.id) continue;
+      if (point.t > state.scrub + 0.0001) continue;
+      const gainV = Math.max(0, Math.min(1, point.v * layer.gain));
+      const src: [number, number, number, number] = [
+        color[0],
+        color[1],
+        color[2],
+        (0.35 + gainV * 0.65) * layer.opacity,
+      ];
+      const x = point.t * 2 - 1;
+      const y = point.f * 2 - 1;
+      const z = (point.z * 2 - 1) * 0.85 + (point.v - 0.5) * 0.15;
+      const key = `${point.t.toFixed(3)}|${point.f.toFixed(3)}|${point.z.toFixed(3)}`;
+      const existing = buckets.get(key);
+      if (!existing) {
+        buckets.set(key, { x, y, z, rgba: src });
+      } else {
+        existing.rgba = compositeColor(existing.rgba, src, layer.blend);
+      }
+    }
+  }
   const positions: number[] = [];
   const colors: number[] = [];
-  for (const point of visible) {
-    const color = LAYER_COLOR[point.layer] ?? [0.7, 0.7, 0.7];
-    const x = point.t * 2 - 1;
-    const y = point.f * 2 - 1;
-    const z = (point.z * 2 - 1) * 0.85 + (point.v - 0.5) * 0.15;
-    positions.push(x, y, z);
-    colors.push(color[0], color[1], color[2], 0.45 + point.v * 0.55);
+  for (const item of buckets.values()) {
+    positions.push(item.x, item.y, item.z);
+    colors.push(item.rgba[0], item.rgba[1], item.rgba[2], item.rgba[3]);
   }
   gl.viewport(0, 0, canvas.width, canvas.height);
   gl.clearColor(0.04, 0.05, 0.08, 1);

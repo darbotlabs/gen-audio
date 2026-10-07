@@ -477,6 +477,53 @@
         "notPodcast": true,
         "disclaimer": "Browser profile map for persona Optimus Timelarp with library cube refs. Not a podcast render."
       }
+    },
+    {
+      "id": "lib-cube-explainer",
+      "kind": "LibraryClip",
+      "title": "Cube explainer",
+      "body": {
+        "engineId": "kokoro_onnx",
+        "status": "ok",
+        "synthesizedSpeech": true,
+        "wavUrl": "/library/library_cube_explainer_kokoro_onnx.wav",
+        "duration_s": 374.766,
+        "sample_rate": 24000,
+        "summary": "Real kokoro-onnx briefing on inverse-HDR cubes. Not a fixture.",
+        "cubePngUrl": "/library/library_kokoro_onnx_cube3d.png",
+        "cubeJsonUrl": "/library/library_kokoro_onnx_cube3d.json",
+        "sidecarUrl": "/library/library_kokoro_onnx.synth.json",
+        "inv_hdr": 0.09737,
+        "title": "Cube explainer (kokoro-onnx)"
+      },
+      "adaptive": {
+        "type": "AdaptiveCard",
+        "version": "1.5",
+        "body": [
+          {
+            "type": "TextBlock",
+            "text": "Real synth: kokoro-onnx · 374.8s · cube attached",
+            "wrap": true
+          },
+          {
+            "type": "FactSet",
+            "facts": [
+              {
+                "title": "Duration",
+                "value": "374.766 s"
+              },
+              {
+                "title": "SR",
+                "value": "24000"
+              },
+              {
+                "title": "inv-HDR",
+                "value": "0.097"
+              }
+            ]
+          }
+        ]
+      }
     }
   ]
 }

@@ -1,5 +1,6 @@
 import example from "../../../schemas/examples/viewport.example.json";
-import { bindCube, clearCube, loadCube, setCubeLayer, setCubeScrub } from "./cubeview";
+import { bindCube, clearCube, loadCube, onCubeClock, rebuildLayerMatrixUi, setCubeScrub } from "./cubeview";
+import { seekActiveFraction } from "./playback";
 import { applyClipNames, harvestNames } from "./library-meta";
 import { bindFloatingPlayback, pauseClip, playClip, seekClip } from "./playback";
 import { profilePreview, type ProfilePreview, type VoiceSelection } from "./profiles";
@@ -104,14 +105,18 @@ function bindCubeCanvas(): void {
   if (!canvas || canvas.dataset.bound === "1") return;
   canvas.dataset.bound = "1";
   bindCube(canvas);
+  rebuildLayerMatrixUi();
   document.querySelector("#cube-scrub")?.addEventListener("input", (event) => {
     const input = event.target as HTMLInputElement;
-    setCubeScrub(Number(input.value) / 1000);
+    const fraction = Number(input.value) / 1000;
+    // ONE clock: scrubber seeks library audio AND slices cube layers.
+    setCubeScrub(fraction);
+    const seeked = seekActiveFraction(fraction);
+    if (seeked !== "no player") status.textContent = `Shared clock ${Math.round(fraction * 100)}% · ${seeked}`;
   });
-  document.querySelectorAll<HTMLInputElement>("[data-cube-layer]").forEach((box) => {
-    box.addEventListener("change", () => {
-      setCubeLayer(box.dataset.cubeLayer || "", box.checked);
-    });
+  onCubeClock((fraction) => {
+    const fp = document.querySelector<HTMLInputElement>("#fp-scrub");
+    if (fp && !fp.matches(":active")) fp.value = String(Math.round(fraction * 1000));
   });
 }
 

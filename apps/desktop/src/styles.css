@@ -647,3 +647,41 @@ th, td { text-align: left; padding: 0.12rem 0.25rem; border-bottom: 1px solid va
 .fp-time { color: var(--muted); font-size: 0.68rem; font-variant-numeric: tabular-nums; }
 .live-mark[data-source="library"] { color: #8af3e2; }
 .live-mark[data-source="fixture"] { color: var(--warn); }
+
+.cube-layer-matrix {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  max-height: 9.5rem;
+  overflow: auto;
+  padding: 0.35rem 0.45rem;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: rgba(8, 12, 18, 0.75);
+}
+.cube-layer-row {
+  display: grid;
+  grid-template-columns: auto minmax(4.5rem, 1fr) 1fr 1fr auto auto auto;
+  gap: 0.35rem;
+  align-items: center;
+  font-size: 0.7rem;
+  color: var(--muted);
+}
+.cube-layer-name {
+  color: #c9f7ef;
+  font-weight: 650;
+  text-transform: lowercase;
+  letter-spacing: 0.04em;
+}
+.cube-layer-row input[type="range"] { width: 100%; accent-color: #29d3ff; }
+.cube-layer-row select {
+  background: #0c1018;
+  color: #e7fff6;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  font-size: 0.68rem;
+}
+.cube-layer-row button {
+  padding: 0.1rem 0.35rem;
+  font-size: 0.7rem;
+}

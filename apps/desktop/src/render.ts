@@ -48,6 +48,7 @@ export const SLIDE_SCHEMAS: SlideSchema[] = [
     columns: 3,
     layer: "clips",
     cardIds: [
+      "lib-cube-explainer",
       "lib-kokoro-onnx",
       "lib-kokoro",
       "lib-misaki-kokoro",
@@ -634,7 +635,7 @@ function appendUtilitySlides(board: HTMLElement, startIndex: number): number {
   const heading = window.document.createElement("h3");
   heading.textContent = "Spatial cube";
   const blurb = window.document.createElement("p");
-  blurb.textContent = "signal / tonality / confidence / quality from a library cube JSON. Drag, zoom, scrub.";
+  blurb.textContent = "Inverse-HDR bitdot studio canvas. Layers from library cube JSON only. Shared clock scrub syncs audio + time-slice.";
   banner.append(heading, blurb);
   const caption = window.document.createElement("p");
   caption.id = "cube-caption";
@@ -643,25 +644,21 @@ function appendUtilitySlides(board: HTMLElement, startIndex: number): number {
   const canvas = window.document.createElement("canvas");
   canvas.id = "cube-viewport";
   canvas.dataset.canvas = "cube-viewport";
-  const controls = window.document.createElement("div");
-  controls.className = "cube-controls";
-  for (const layer of ["signal", "tonality", "confidence", "quality"]) {
-    const label = window.document.createElement("label");
-    const box = window.document.createElement("input");
-    box.type = "checkbox";
-    box.checked = true;
-    box.dataset.cubeLayer = layer;
-    label.append(box, document.createTextNode(layer));
-    controls.append(label);
-  }
+  const matrixLabel = window.document.createElement("p");
+  matrixLabel.className = "summary";
+  matrixLabel.textContent = "Layer matrix (from cube JSON only): opacity · gain · blend · reorder. Shared clock with library playback.";
+  const matrix = window.document.createElement("div");
+  matrix.id = "cube-layer-matrix";
+  matrix.className = "cube-layer-matrix";
+  matrix.setAttribute("aria-label", "Cube layer matrix");
   const scrub = window.document.createElement("input");
   scrub.type = "range";
   scrub.id = "cube-scrub";
   scrub.min = "0";
   scrub.max = "1000";
   scrub.value = "1000";
-  scrub.setAttribute("aria-label", "Cube time span");
-  spatial.append(banner, caption, canvas, controls, scrub);
+  scrub.setAttribute("aria-label", "Shared cube and audio clock");
+  spatial.append(banner, caption, canvas, matrixLabel, matrix, scrub);
   board.append(spatial);
   return 2;
 }

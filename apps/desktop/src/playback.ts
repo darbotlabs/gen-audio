@@ -1,6 +1,9 @@
+import { setCubeScrub } from "./cubeview";
 /** HTML audio transport for library tiles. Missing files stay missing. */
 
 const players = new Map<string, HTMLAudioElement>();
+
+let activeId: string | null = null;
 
 function formatTime(seconds: number): string {
   if (!Number.isFinite(seconds) || seconds < 0) return "0:00";
@@ -134,8 +137,34 @@ export function seekClip(clipId: string, seconds: number): string {
   return "seeked";
 }
 
+
+export function getActiveClipId(): string | null {
+  return activeId;
+}
+
+/** Seek the active library clip by shared-clock fraction 0..1. */
+export function seekActiveFraction(fraction: number): string {
+  if (!activeId) {
+    // Prefer first available player with a WAV.
+    for (const [id, audio] of players) {
+      if (audio.src) {
+        activeId = id;
+        break;
+      }
+    }
+  }
+  if (!activeId) return "no player";
+  const audio = player(activeId);
+  if (!audio || !audio.src) return "no wav";
+  const duration = audio.duration;
+  if (!Number.isFinite(duration) || duration <= 0) return "no duration";
+  const clamped = Math.max(0, Math.min(1, fraction));
+  audio.currentTime = clamped * duration;
+  syncFloater(activeId);
+  return `seeked ${activeId}`;
+}
+
 /** Floating transport + viewport playing chrome. */
-let activeId: string | null = null;
 
 function floater(): {
   root: HTMLElement;
@@ -195,7 +224,9 @@ export function bindFloatingPlayback(): void {
     if (!activeId) return;
     const audio = player(activeId);
     if (!audio || !audio.duration) return;
-    audio.currentTime = (Number(ui.scrub.value) / 1000) * audio.duration;
+    const fraction = Number(ui.scrub.value) / 1000;
+    audio.currentTime = fraction * audio.duration;
+    setCubeScrub(fraction);
     syncFloater(activeId);
   });
   for (const [clipId, audio] of players) {
@@ -212,7 +243,13 @@ export function bindFloatingPlayback(): void {
       if (!anyPlaying()) setPlayingChrome(false);
     });
     audio.addEventListener("timeupdate", () => {
-      if (activeId === clipId) syncFloater(clipId);
+      if (activeId === clipId) {
+        syncFloater(clipId);
+        const duration = audio.duration;
+        if (Number.isFinite(duration) && duration > 0) {
+          setCubeScrub(audio.currentTime / duration, { silent: true });
+        }
+      }
     });
   }
 }
