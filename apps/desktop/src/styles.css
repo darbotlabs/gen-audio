@@ -237,6 +237,7 @@ button:focus-visible, .card:focus-visible, .slide-dot:focus-visible {
 /* Spatial cube: the WebGL canvas IS the card; overlays float on top. */
 .slide.spatial-slide { display: block; position: relative; padding: 0.2rem 0.1rem 0.25rem; overflow: hidden; }
 .cube-stage {
+  container: cube-stage / inline-size;
   position: relative;
   width: 100%;
   height: 100%;
@@ -275,6 +276,7 @@ button:focus-visible, .card:focus-visible, .slide-dot:focus-visible {
   left: 50%;
   transform: translateX(-50%);
   max-width: calc(100% - 36rem);
+  min-width: 0;
   padding: 0.2rem 0.6rem;
   font-size: 0.85rem;
   font-weight: 600;
@@ -816,3 +818,25 @@ th, td { text-align: left; padding: 0.12rem 0.25rem; border-bottom: 1px solid va
   padding: 0.1rem 0.35rem;
   font-size: 0.7rem;
 }
+
+/* Narrow cube stage: the centered title would collapse to nothing between the
+   legend and the picker, so it moves to the top-left row (ellipsized) and the
+   badge and legend step down beneath it. */
+@container cube-stage (max-width: 52rem) {
+  .cube-title {
+    left: 0.5rem;
+    transform: none;
+    max-width: max(6rem, calc(100% - 19.5rem));
+    font-size: 0.75rem;
+  }
+  .cube-badge {
+    left: 0.5rem;
+    transform: none;
+    max-width: calc(60% - 1.5rem);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .cube-legend { top: 4.1rem; }
+}
+.cube-clock.is-beyond { color: var(--warn); }

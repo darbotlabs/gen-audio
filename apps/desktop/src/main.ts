@@ -9,6 +9,7 @@ import {
   onCubeClock,
   rebuildLayerMatrixUi,
   setCubeScrub,
+  unbindCube,
 } from "./cubeview";
 import { isClipPlaying, seekActiveFraction, seekClipFraction, setCubeClockClip } from "./playback";
 import { applyClipNames, harvestNames } from "./library-meta";
@@ -161,7 +162,11 @@ async function bindCubeSource(clipId: string, url: string, source: string): Prom
 
 function bindCubeCanvas(): void {
   const canvas = document.querySelector<HTMLCanvasElement>("#cube-viewport");
-  if (!canvas || canvas.dataset.bound === "1") return;
+  if (!canvas) {
+    unbindCube(); // stage gone: drop the old canvas's window/DPR listeners
+    return;
+  }
+  if (canvas.dataset.bound === "1") return;
   canvas.dataset.bound = "1";
   bindCube(canvas, document.querySelector<HTMLCanvasElement>("#cube-labels"));
   rebuildLayerMatrixUi();
@@ -310,28 +315,9 @@ async function openCube(url: string, source: string): Promise<void> {
   const message = await loadCube(url);
   if (caption) caption.textContent = `${source}: ${message}`;
   syncCubeChrome();
-  // F5 honesty: library-bound cubes must never keep a FIXTURE live-mark.
-  const cubeCard = board.querySelector<HTMLElement>('.card[data-kind="Cube3D"]');
-  if (cubeCard && !/did not load|no signal/i.test(message)) {
-    cubeCard.dataset.cubeSource = "library";
-    const live = cubeCard.querySelector<HTMLElement>(".live-mark");
-    if (live) {
-      live.textContent = "Library";
-      live.dataset.source = "library";
-    }
-    const pill = cubeCard.querySelector<HTMLElement>(".pill");
-    if (pill) {
-      pill.textContent = "library-bound";
-      pill.classList.remove("warn");
-    }
-    for (const node of Array.from(cubeCard.querySelectorAll<HTMLElement>(".summary"))) {
-      if (/fixture|visual toy/i.test(node.textContent || "")) {
-        node.textContent =
-          "Interactive cube bound to library clip JSON - layers signal/tonality/confidence/quality.";
-      }
-    }
-  }
-  status.textContent = `F5 cube bound (${source}) - badge Library`;
+  // The Pipeline cube-fixture card keeps its FIXTURE mark: its canvas still paints the
+  // fixture tone. Only the Cube tab stage (badge "Library ...") draws the library cube.
+  status.textContent = `Cube tab bound (${source}). The Pipeline cube card stays FIXTURE.`;
 }
 
 function selectTile(id: string): void {
@@ -638,5 +624,9 @@ function connectControl(): void {
 }
 
 void refreshConnectors(example as ViewportDocument).then(show);
-(window as unknown as { __genAudioScrub?: (f: number) => void }).__genAudioScrub = (fraction: number) => { setCubeScrub(fraction); seekActiveFraction(fraction); };
+// Test hook: scrubs the cube and ONLY the clip the cube is bound to (never whatever played last).
+(window as unknown as { __genAudioScrub?: (f: number) => string }).__genAudioScrub = (fraction: number) => {
+  setCubeScrub(fraction, { silent: true });
+  return cubeClipId ? seekClipFraction(cubeClipId, fraction) : "no cube clip";
+};
 connectControl();

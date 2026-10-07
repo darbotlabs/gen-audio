@@ -83,6 +83,7 @@ const state = {
   labels: null as HTMLCanvasElement | null,
   meta: null as CubeMeta | null,
   resize: null as ResizeObserver | null,
+  unbind: null as AbortController | null,
   sourceUrl: "",
   clockListeners: new Set<(fraction: number) => void>(),
   rafId: 0 as number,
@@ -102,6 +103,17 @@ function ensureLayer(id: string, order: number): LayerParams {
   return created;
 }
 
+/**
+ * Pitch stays above the horizon (pitch 0 is edge-on, negative looks down).
+ * The planes have a fixed draw order (signal first ... quality last), which
+ * only stacks correctly when viewed from above.
+ */
+const PITCH_MIN = -1.45;
+const PITCH_MAX = -0.08;
+function clampPitch(pitch: number): number {
+  return Math.max(PITCH_MIN, Math.min(PITCH_MAX, pitch));
+}
+
 function dpr(): number {
   return Math.min(2, Math.max(1, window.devicePixelRatio || 1));
 }
@@ -112,6 +124,10 @@ function dpr(): number {
  * there is no fixed 640x360 buffer. An optional 2D label canvas draws ticks/axes.
  */
 export function bindCube(canvas: HTMLCanvasElement, labels?: HTMLCanvasElement | null): void {
+  unbindCube();
+  const listeners = new AbortController();
+  const signal = listeners.signal;
+  state.unbind = listeners;
   state.canvas = canvas;
   state.labels = labels ?? null;
   state.glCache = null;
@@ -127,49 +143,49 @@ export function bindCube(canvas: HTMLCanvasElement, labels?: HTMLCanvasElement |
     }
     draw();
   };
-  state.resize?.disconnect();
   if (typeof ResizeObserver !== "undefined") {
     state.resize = new ResizeObserver(fit);
     state.resize.observe(canvas.parentElement ?? canvas);
   }
-  window.addEventListener("resize", fit);
+  window.addEventListener("resize", fit, { signal });
   // Re-arm on DPR changes (display scaling, monitor moves, zoom).
   const watchDpr = () => {
     const query = window.matchMedia(`(resolution: ${window.devicePixelRatio || 1}dppx)`);
     query.addEventListener("change", () => {
+      if (signal.aborted) return;
       fit();
       watchDpr();
-    }, { once: true });
+    }, { once: true, signal });
   };
   watchDpr();
   canvas.addEventListener("webglcontextlost", (event) => {
     event.preventDefault();
     state.glLost = true;
     state.glCache = null;
-  });
+  }, { signal });
   canvas.addEventListener("webglcontextrestored", () => {
     state.glLost = false;
     state.glCache = null;
     state.builtVersion = -1;
     draw();
-  });
+  }, { signal });
   fit();
   let drag: { x: number; y: number; yaw: number; pitch: number } | null = null;
   canvas.addEventListener("pointerdown", (event) => {
     drag = { x: event.clientX, y: event.clientY, yaw: state.yaw, pitch: state.pitch };
     canvas.setPointerCapture(event.pointerId);
-  });
+  }, { signal });
   canvas.addEventListener("pointermove", (event) => {
     if (!drag) return;
     state.yaw = drag.yaw + (event.clientX - drag.x) * 0.01;
-    state.pitch = Math.max(-1.45, Math.min(0.6, drag.pitch - (event.clientY - drag.y) * 0.01));
+    state.pitch = clampPitch(drag.pitch - (event.clientY - drag.y) * 0.01);
     draw();
-  });
+  }, { signal });
   const end = () => {
     drag = null;
   };
-  canvas.addEventListener("pointerup", end);
-  canvas.addEventListener("pointercancel", end);
+  canvas.addEventListener("pointerup", end, { signal });
+  canvas.addEventListener("pointercancel", end, { signal });
   canvas.addEventListener(
     "wheel",
     (event) => {
@@ -177,8 +193,16 @@ export function bindCube(canvas: HTMLCanvasElement, labels?: HTMLCanvasElement |
       state.zoom = Math.max(0.4, Math.min(2.4, state.zoom * (event.deltaY > 0 ? 0.92 : 1.08)));
       draw();
     },
-    { passive: false },
+    { passive: false, signal },
   );
+}
+
+/** Drop every listener/observer bindCube added (called on re-render and teardown). */
+export function unbindCube(): void {
+  state.unbind?.abort();
+  state.unbind = null;
+  state.resize?.disconnect();
+  state.resize = null;
 }
 
 export function getCubeMeta(): CubeMeta | null {
@@ -242,8 +266,9 @@ function syncClockUi(): void {
   const clock = document.querySelector<HTMLElement>("#cube-clock");
   if (clock) {
     clock.textContent = head && meta
-      ? `${formatClock(head.seconds)} / ${formatClock(meta.durationS ?? 0)} \u00b7 bin ${head.bin} / ${head.timeBins - 1}`
+      ? `${formatClock(head.seconds)} / ${formatClock(meta.durationS ?? 0)} \u00b7 bin ${head.bin} / ${head.timeBins - 1}${head.beyond ? " \u00b7 beyond cube" : ""}`
       : "";
+    clock.classList.toggle("is-beyond", Boolean(head?.beyond));
   }
   const badge = document.querySelector<HTMLElement>("#cube-badge");
   if (badge) {
