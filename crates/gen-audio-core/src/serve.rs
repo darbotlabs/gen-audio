@@ -24,6 +24,10 @@ pub fn health_url(host: &str, port: u16) -> Result<String, String> {
     Ok(format!("{}/health", node_base_url(host, port)?))
 }
 
+pub fn ready_url(host: &str, port: u16) -> Result<String, String> {
+    Ok(format!("{}/ready", node_base_url(host, port)?))
+}
+
 pub fn health_payload() -> serde_json::Value {
     serde_json::json!({
         "status": "ok",
@@ -101,6 +105,10 @@ mod tests {
         assert_eq!(node.health_url, "http://10.1.8.21:8002/genaid-audio/health");
         assert_ne!(node.base_url, shared.base_url);
         assert!(shared.health_url.ends_with("/genaid-audio/health"));
+        assert_eq!(
+            ready_url("10.1.8.21", 8002).unwrap(),
+            "http://10.1.8.21:8002/genaid-audio/ready"
+        );
         assert!(node_base_url("http://10.1.8.21", 8002).is_err());
         assert!(node_base_url("10.1.8.21:8002", 8002).is_err());
         assert!(probe_host_allowed("127.0.0.1").is_ok());

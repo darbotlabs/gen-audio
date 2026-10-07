@@ -4,6 +4,7 @@ fn main() {
             "connector_statuses",
             "viewport_example",
             "run_fixture_improve",
+            "mcp_status",
         ]),
     );
     tauri_build::try_build(attributes).expect("failed to run tauri-build");

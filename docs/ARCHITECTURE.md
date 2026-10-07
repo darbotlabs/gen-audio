@@ -2,6 +2,8 @@
 
 gen-audio is a small Python 3.14 toolkit (`requires-python` is `>=3.14,<3.15`). The installable import name is `gen_audio`. It turns a labeled script into a mono WAV when kokoro-onnx and local model files are available, and it can process a WAV you already have without any model.
 
+The same floor applies to the spectrogram, the genaid-audio URL helpers, podcast script parsing, and any compare-list engine this package scores (VibeVoice, the PersonaPlex CPU stand-in `pocket_tts`, Magpie). genlm-audio, Gradio, and PersonaPlex are not vendored here. A process that imports `gen_audio` uses `>=3.14,<3.15`. Request limits, voice and model path confinement, checksum pins, and `/health` versus `/ready` live in `gen_audio.guards` and are described in `docs/genlm-audio/REVIEW-2026-10-06.md`.
+
 [darbotlabs/genaid](https://github.com/darbotlabs/genaid) is a different project (a JavaScript prompting framework). Nothing in that repository is imported here.
 
 ## Engines

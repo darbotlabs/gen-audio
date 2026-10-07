@@ -9,12 +9,70 @@ use serde_json::Value;
 use crate::{handle, Server};
 
 pub fn serve(addr: &str) -> std::io::Result<()> {
+    let listener = bind_listener(addr)?;
+    accept_loop(listener);
+    Ok(())
+}
+
+/// Bind the loopback MCP listener and accept on a background thread.
+pub fn spawn_loopback(addr: &str) -> std::io::Result<SocketAddr> {
+    let listener = bind_listener(addr)?;
+    let bound = listener.local_addr()?;
+    std::thread::Builder::new()
+        .name("gen-audio-mcp".into())
+        .spawn(move || accept_loop(listener))
+        .map_err(std::io::Error::other)?;
+    Ok(bound)
+}
+
+pub fn initialize_handshake(addr: &str) -> Result<Value, String> {
+    let payload = serde_json::json!({
+        "jsonrpc": "2.0",
+        "id": 1,
+        "method": "initialize",
+        "params": {
+            "protocolVersion": "2025-03-26",
+            "capabilities": {},
+            "clientInfo": {"name": "gen-audio-desktop", "version": "0.1.0"}
+        }
+    });
+    let body = serde_json::to_vec(&payload).map_err(|err| err.to_string())?;
+    let mut stream = TcpStream::connect(addr).map_err(|err| err.to_string())?;
+    stream
+        .set_read_timeout(Some(Duration::from_secs(5)))
+        .map_err(|err| err.to_string())?;
+    let header = format!(
+        "POST /mcp HTTP/1.1\r\nHost: {addr}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+        body.len()
+    );
+    stream.write_all(header.as_bytes()).map_err(|err| err.to_string())?;
+    stream.write_all(&body).map_err(|err| err.to_string())?;
+    let mut buf = Vec::new();
+    stream.read_to_end(&mut buf).map_err(|err| err.to_string())?;
+    let text = String::from_utf8_lossy(&buf);
+    let Some((_, rest)) = text.split_once("\r\n\r\n") else {
+        return Err("handshake response had no body".into());
+    };
+    let value: Value = serde_json::from_str(rest.trim()).map_err(|err| err.to_string())?;
+    if value["result"]["protocolVersion"].as_str() != Some("2025-03-26") {
+        return Err("handshake protocolVersion".into());
+    }
+    if value["result"]["serverInfo"]["name"].as_str() != Some("gen-audio") {
+        return Err("handshake serverInfo.name".into());
+    }
+    Ok(value)
+}
+
+fn bind_listener(addr: &str) -> std::io::Result<TcpListener> {
     ensure_bind_allowed(addr)?;
-    let socket: SocketAddr = addr.parse().map_err(|err| {
-        std::io::Error::new(std::io::ErrorKind::InvalidInput, format!("addr: {err}"))
-    })?;
-    let remote = !socket.ip().is_loopback();
-    let listener = TcpListener::bind(addr)?;
+    TcpListener::bind(addr)
+}
+
+fn accept_loop(listener: TcpListener) {
+    let remote = listener
+        .local_addr()
+        .map(|socket| !socket.ip().is_loopback())
+        .unwrap_or(true);
     let shared = Server::boot();
     for stream in listener.incoming() {
         let Ok(stream) = stream else { continue };
@@ -27,7 +85,6 @@ pub fn serve(addr: &str) -> std::io::Result<()> {
             let _ = handle_connection(&shared, stream);
         }
     }
-    Ok(())
 }
 
 pub fn ensure_bind_allowed(addr: &str) -> std::io::Result<()> {
@@ -196,5 +253,13 @@ mod tests {
         assert!(text.contains("gen-audio-mcp"));
         assert!(!text.to_ascii_lowercase().contains("mcp-session-id"));
         assert!(text.contains("X-Gen-Audio-Stateless"));
+    }
+
+    #[test]
+    fn spawned_listener_completes_initialize() {
+        let addr = spawn_loopback("127.0.0.1:0").unwrap();
+        let value = initialize_handshake(&addr.to_string()).unwrap();
+        assert_eq!(value["result"]["protocolVersion"], "2025-03-26");
+        assert_eq!(value["result"]["serverInfo"]["name"], "gen-audio");
     }
 }

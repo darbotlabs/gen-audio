@@ -13,7 +13,7 @@ use gen_audio_core::engines;
 use gen_audio_core::fixture::{self, write_fixture_tone};
 use gen_audio_core::paths::{self, find_repo_root, Scratch};
 use gen_audio_core::redact::redact_secrets;
-use gen_audio_core::serve::{self, health_url, node_base_url};
+use gen_audio_core::serve::{self, health_url, node_base_url, ready_url};
 use serde_json::{json, Value};
 
 pub struct Server {
@@ -277,12 +277,14 @@ fn serve_health(args: &Value) -> Result<Value, (i32, String)> {
             "probed": false,
             "baseUrl": "http://<node>:8002/genaid-audio",
             "healthUrl": "http://<node>:8002/genaid-audio/health",
+            "readyUrl": "http://<node>:8002/genaid-audio/ready",
             "expectedBody": serve::health_payload(),
             "note": "Placeholder host. This is not a live genaid-audio probe. Pass a real host to build a row. probe=true performs an HTTP GET."
         }));
     }
     let base = node_base_url(host, port).map_err(|err| (-32602, err))?;
     let health = health_url(host, port).map_err(|err| (-32602, err))?;
+    let ready = ready_url(host, port).map_err(|err| (-32602, err))?;
     let probe = args.get("probe").and_then(Value::as_bool).unwrap_or(false);
     if probe {
         serve::probe_host_allowed(host).map_err(|err| (-32602, err))?;
@@ -293,8 +295,9 @@ fn serve_health(args: &Value) -> Result<Value, (i32, String)> {
             "probed": false,
             "baseUrl": base,
             "healthUrl": health,
+            "readyUrl": ready,
             "expectedBody": serve::health_payload(),
-            "note": "URL only. This is not a live genaid-audio probe."
+            "note": "URL only. /health is liveness. /ready is readiness. This is not a live genaid-audio probe."
         }));
     }
     let agent = ureq::AgentBuilder::new()
@@ -316,6 +319,7 @@ fn serve_health(args: &Value) -> Result<Value, (i32, String)> {
                 "probed": true,
                 "baseUrl": base,
                 "healthUrl": health,
+                "readyUrl": ready,
                 "service": service,
                 "status": status
             }))

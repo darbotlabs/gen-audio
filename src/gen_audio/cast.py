@@ -18,6 +18,8 @@ import re
 from dataclasses import dataclass
 from pathlib import Path
 
+from gen_audio.guards import RequestLimitError, enforce_text_limit, max_script_segments, max_total_script_chars
+
 _HEADER = re.compile(
     r"^Speaker\s+(?P<id>\d+)\s*(?:\((?P<name>[^)]*)\))?\s*:\s*(?P<text>.*)$",
     re.IGNORECASE,
@@ -112,7 +114,22 @@ def parse_script(text: str) -> list[Turn]:
     flush()
     if not turns:
         raise ValueError("script contains no Speaker turns")
+    _enforce_script_limits(turns)
     return turns
+
+
+def _enforce_script_limits(turns: list[Turn]) -> None:
+    """Apply the GenAID Audio ceilings to a parsed Speaker script."""
+    segment_cap = max_script_segments()
+    if len(turns) > segment_cap:
+        raise RequestLimitError(f"script exceeds {segment_cap} segments")
+    total = 0
+    for turn in turns:
+        enforce_text_limit(turn.text, "segment")
+        total += len(turn.text)
+    total_cap = max_total_script_chars()
+    if total > total_cap:
+        raise RequestLimitError(f"script exceeds {total_cap} characters")
 
 
 def read_script(path: Path | str) -> list[Turn]:

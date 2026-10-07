@@ -8,7 +8,13 @@ This repo does not ship model weights, voice binaries, API keys, or podcast rend
 
 ## Desktop app
 
-Targets: Windows (WebView2, NSIS), macOS (WebKit, dmg), Linux (webkit2gtk 4.1, deb/appimage). This environment checks the Linux crate with `cargo check`. A full installer build needs the platform webview SDK (`cargo tauri build` from `apps/desktop/src-tauri` after `npm run build`).
+Targets: Windows (WebView2, NSIS and MSI), macOS (WebKit, dmg), Linux (webkit2gtk 4.1, deb/appimage). The desktop process starts the stateless MCP listener on `127.0.0.1:8765` (or `GEN_AUDIO_MCP_ADDR`) and keeps a tray icon. Closing the window hides it. Quit is on the tray menu.
+
+```bash
+scripts/build-tauri.sh                 # Linux: mcp handshake, release binary, deb when the Tauri CLI is present
+# Windows, from PowerShell:
+# scripts/build-tauri-windows.ps1      # NSIS + MSI, sidecar gen-audio-mcp.exe, initialize handshake
+```
 
 ```bash
 # library crates and ACP / MCP / harness tests
@@ -168,6 +174,9 @@ src/gen_audio/          installable package
   synth_kokoro_onnx.py  multi-turn kokoro-onnx render
   improve.py            24 kHz publish chain
   spectrogram.py        before/after PNG helpers
+  guards.py             length, path, checksum, and TTS error guards
+  gateway.py            /health versus /ready and proxy status classes
+  node_http.py          loopback genaid-audio health and ready routes
   cube_revision.py      serial inv-HDR / BW95 / clip_frac sketch
   compare.py            measure existing WAVs
   engines.py            compare-list registry

@@ -37,7 +37,7 @@ GET http://<node>:8002/genaid-audio/health
 
 A 200 from `http://<node>:8002/health` can belong to a different Serve application on the same port. Treat that as a different check. The body that matches this service is `health_payload()`: `status` of `ok`, `service` of `genaid-audio`, `route_prefix` of `/genaid-audio`.
 
-This scaffold does not define a synthesis HTTP API. Rendering is a local `KokoroOnnxSynthesizer` call (or a WAV you already have). Add a request route on the node when a node deployment exists; do not assume one from this repo.
+This repository does not define a synthesis HTTP API. Rendering is a local `KokoroOnnxSynthesizer` call (or a WAV you already have). Add a request route on the node when a node deployment exists; do not assume one from this repo. `GET /genaid-audio/health` is liveness and stays successful when the model is unloaded. `GET /genaid-audio/ready` is readiness.
 
 ## Power Table
 
@@ -99,7 +99,7 @@ Suggested client order:
 
 ## What a node process is responsible for
 
-On each machine the Serve deployment, outside this scaffold, should:
+On each machine the Serve deployment, which this package does not start, should:
 
 * bind port 8002
 * mount the app at `/genaid-audio`

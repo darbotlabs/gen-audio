@@ -87,7 +87,44 @@ pub fn parse_script(text: &str) -> Result<Vec<Turn>, String> {
     if turns.is_empty() {
         return Err("script contains no Speaker turns".into());
     }
+    enforce_limits(&turns)?;
     Ok(turns)
+}
+
+fn env_cap(name: &str, default: usize, ceiling: usize) -> usize {
+    let Ok(raw) = std::env::var(name) else {
+        return default;
+    };
+    let Ok(value) = raw.trim().parse::<usize>() else {
+        return default;
+    };
+    if value < 1 {
+        return default;
+    }
+    value.min(ceiling)
+}
+
+fn enforce_limits(turns: &[Turn]) -> Result<(), String> {
+    let segments = env_cap("GENAID_MAX_SCRIPT_SEGMENTS", 64, 128);
+    if turns.len() > segments {
+        return Err(format!("script exceeds {segments} segments"));
+    }
+    let per_segment = env_cap("GENAID_MAX_SEGMENT_CHARS", 4_000, 8_000);
+    let total_cap = env_cap("GENAID_MAX_TOTAL_SCRIPT_CHARS", 20_000, 20_000);
+    let mut total = 0usize;
+    for turn in turns {
+        if turn.text.contains('\0') {
+            return Err("segment contains a NUL byte".into());
+        }
+        if turn.text.len() > per_segment {
+            return Err(format!("segment exceeds {per_segment} characters"));
+        }
+        total += turn.text.len();
+    }
+    if total > total_cap {
+        return Err(format!("script exceeds {total_cap} characters"));
+    }
+    Ok(())
 }
 
 fn parse_header(line: &str) -> Option<(String, Option<String>, Option<String>)> {

@@ -15,7 +15,7 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 tauri-build = { version = "2.6" }
 
 [dependencies]
-tauri = { version = "2.11" }
+tauri = { version = "2.11", features = ["tray-icon"] }
 serde = { workspace = true }
 serde_json = { workspace = true }
 gen-audio-connectors = { workspace = true }

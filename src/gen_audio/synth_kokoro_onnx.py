@@ -17,13 +17,23 @@ The cast map engine field must be ``kokoro_onnx``. Example voices in
 from __future__ import annotations
 
 import os
+import threading
 from dataclasses import dataclass, field
 from pathlib import Path
 
 import numpy as np
 
 from gen_audio.cast import CastMap, Turn, resolve_turn
+from gen_audio.guards import (
+    local_files_only_enabled,
+    resolve_model_directory,
+    verify_model_checksums,
+)
 from gen_audio.improve import improve, resample_audio
+
+# One generate at a time. Unload and disk IO stay off this lock's caller thread
+# by running through ``run_blocking`` in ``gen_audio.gateway``.
+_MODEL_LOCK = threading.Lock()
 
 DEFAULT_TURN_GAP_S = 0.35
 
@@ -88,7 +98,21 @@ def resolve_model_paths(
             "kokoro-onnx model paths are missing. Pass --model and --voices, or set "
             "GEN_AUDIO_KOKORO_MODEL and GEN_AUDIO_KOKORO_VOICES. This package does not download weights."
         )
-    return Path(model_raw), Path(voices_raw)
+    model_path = Path(model_raw)
+    voices_path = Path(voices_raw)
+    if local_files_only_enabled():
+        for raw in (str(model_path), str(voices_path)):
+            lowered = raw.replace("\\", "/").lower()
+            if "://" in lowered or lowered.startswith("file:"):
+                raise ValueError("GENAID_LOCAL_FILES_ONLY rejects non-local model paths")
+    base = os.environ.get("GENAID_MODEL_BASE", "").strip()
+    if base:
+        model_dir = model_path if model_path.is_dir() else model_path.parent
+        confined = Path(resolve_model_directory(str(model_dir), base))
+        if not model_path.is_dir():
+            model_path = confined / model_path.name
+        verify_model_checksums(str(confined))
+    return model_path, voices_path
 
 
 class KokoroOnnxSynthesizer:
@@ -132,6 +156,17 @@ class KokoroOnnxSynthesizer:
         if not turns:
             raise ValueError("no turns to synthesize")
 
+        with _MODEL_LOCK:
+            return self._synthesize_locked(turns, cast, gap_s=gap_s, improve_publish=improve_publish)
+
+    def _synthesize_locked(
+        self,
+        turns: list[Turn],
+        cast: CastMap,
+        *,
+        gap_s: float,
+        improve_publish: bool,
+    ) -> SynthResult:
         pieces: list[np.ndarray] = []
         rendered: list[SynthTurn] = []
         sample_rate: int | None = None

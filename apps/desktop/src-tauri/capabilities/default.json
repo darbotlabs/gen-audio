@@ -5,6 +5,7 @@
   "permissions": [
     "allow-connector-statuses",
     "allow-viewport-example",
-    "allow-run-fixture-improve"
+    "allow-run-fixture-improve",
+    "allow-mcp-status"
   ]
 }

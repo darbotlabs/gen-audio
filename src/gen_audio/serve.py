@@ -28,12 +28,30 @@ def health_url(host: str, port: int = DEFAULT_PORT, route_prefix: str = ROUTE_PR
     return node_base_url(host, port, route_prefix) + "/health"
 
 
+def ready_url(host: str, port: int = DEFAULT_PORT, route_prefix: str = ROUTE_PREFIX) -> str:
+    """Readiness URL. Liveness stays on ``/health`` when the model is unloaded."""
+    return node_base_url(host, port, route_prefix) + "/ready"
+
+
 def health_payload() -> dict[str, str]:
-    """JSON body for a successful health check."""
+    """Liveness body. This stays successful when the model is not loaded."""
     return {
         "status": "ok",
         "service": SERVICE_NAME,
         "route_prefix": ROUTE_PREFIX,
+    }
+
+
+def ready_payload(*, model_loaded: bool = False) -> dict[str, str | bool]:
+    """Readiness body. An unloaded model is still ready because load is lazy."""
+    return {
+        "ready": True,
+        "status": "ready",
+        "service": SERVICE_NAME,
+        "route_prefix": ROUTE_PREFIX,
+        "model_loaded": model_loaded,
+        "speech_generation": "available" if model_loaded else "load_required",
+        "script_generation": "available",
     }
 
 
