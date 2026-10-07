@@ -1,6 +1,6 @@
 # Architecture
 
-gen-audio is a small Python toolkit. The installable import name is `gen_audio`. It turns a labeled script into a mono WAV when kokoro-onnx and local model files are available, and it can process a WAV you already have without any model.
+gen-audio is a small Python 3.14 toolkit (`requires-python` is `>=3.14,<3.15`). The installable import name is `gen_audio`. It turns a labeled script into a mono WAV when kokoro-onnx and local model files are available, and it can process a WAV you already have without any model.
 
 [darbotlabs/genaid](https://github.com/darbotlabs/genaid) is a different project (a JavaScript prompting framework). Nothing in that repository is imported here.
 

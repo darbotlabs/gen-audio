@@ -7,18 +7,12 @@ name = "gen-audio"
 version = "0.1.0"
 description = "GenAID Audio toolkit: multi-speaker podcast synthesis, a 24 kHz publish chain, spectrograms, and a cube-revision sketch."
 readme = "README.md"
-requires-python = ">=3.10"
+requires-python = ">=3.14,<3.15"
 license = { text = "MIT" }
 authors = [{ name = "Darbot Labs" }]
 keywords = ["audio", "tts", "podcast", "kokoro", "genaid"]
 classifiers = [
-    "License :: OSI Approved :: MIT License",
-    "Operating System :: OS Independent",
-    "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.10",
-    "Programming Language :: Python :: 3.11",
-    "Programming Language :: Python :: 3.12",
-    "Topic :: Multimedia :: Sound/Audio :: Speech",
+    "Programming Language :: Python :: 3.14",
 ]
 dependencies = [
     "numpy>=1.26",

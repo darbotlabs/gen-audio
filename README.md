@@ -66,8 +66,11 @@ kokoro-onnx voice ids in the example cast are `af_heart` (Alice, Speaker 1) and 
 
 ## Install
 
+Python 3.14 is required (`requires-python = ">=3.14,<3.15"`). Install it from [python.org](https://www.python.org/downloads/) or with uv:
+
 ```bash
-python -m venv .venv
+uv python install 3.14
+uv venv --python 3.14 .venv
 source .venv/bin/activate
 pip install -e ".[dev]"
 ```
