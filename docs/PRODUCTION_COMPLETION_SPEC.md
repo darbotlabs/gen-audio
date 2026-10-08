@@ -13,7 +13,7 @@ Acceptance:
 - The NSIS hook adds a Startup shortcut. A packaged sidecar start also writes `HKCU\...\Run\DarbotGenAudio` unless `GEN_AUDIO_AUTOSTART=0`.
 - `mcp_status` reports the bound address, `mode` (`sidecar`, `in-process`, `existing`, or `failed`), and whether `initialize` returned protocol `2025-03-26` and server name `gen-audio`.
 
-`scripts/build-tauri.sh` is the Linux counterpart (deb when the Tauri CLI and webkit SDK are present). SMAX runs the Windows script.
+`scripts/build-tauri-windows.ps1` is the only build script; SMAX runs it. There is no Linux or macOS build script (the Linux `build-tauri.sh` was retired). CI's rust job checks the desktop crate on Linux with `cargo check -p gen-audio-desktop` and builds no installer.
 
 ### GenAID Audio limits on the production path
 

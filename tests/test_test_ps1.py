@@ -100,3 +100,34 @@ def test_require_wavs_turns_a_wav_skip_into_a_failure(tmp_path):
     strict = run("1")
     assert strict.returncode != 0 and "1 failed" in strict.stdout and "1 skipped" in strict.stdout, strict.stdout
     assert "forbids this skip: x.wav" in strict.stdout
+
+
+@pytest.mark.skipif(SHELL is None or shutil.which("git") is None, reason="needs PowerShell and git")
+def test_sprawl_gate_fails_on_a_stray_shell_script_or_any_shebang_file(tmp_path):
+    """B3: the gate scans every executable script type, not only the PowerShell/Python ones it knew."""
+    repo = _temp_repo(tmp_path)
+
+    def sprawl() -> subprocess.CompletedProcess[str]:
+        return subprocess.run([SHELL, "-NoProfile", "-File", str(repo / "scripts" / "test.ps1"), "-Tag", "t",
+                               "-Skip", "Pssa,Regen,Cargo,Npm,Python"], cwd=repo, capture_output=True, text=True, timeout=300)
+
+    # A Rust inner attribute starts with "#!" too; it is not a shebang.
+    (repo / "main.rs").write_text("#![cfg_attr(not(debug_assertions), windows_subsystem = \"windows\")]\nfn main() {}\n", encoding="utf-8")
+    clean = sprawl()
+    assert clean.returncode == 0, clean.stdout + clean.stderr
+    assert "Sprawl PASS" in clean.stdout
+
+    # Split so this test file is not itself a tauri CLI caller to the gate it tests.
+    tauri_cli = "@tauri-apps/" + "cli@2.12.1"
+    (repo / "scripts" / "build-linux.sh").write_text(f"#!/usr/bin/env bash\nnpx --yes {tauri_cli} build --bundles deb\n", encoding="utf-8")
+    (repo / "tools").mkdir()
+    (repo / "tools" / "deploy").write_text("#!/bin/sh\necho hi\n", encoding="utf-8")
+    (repo / "helper.mjs").write_text("console.log(1)\n", encoding="utf-8")
+    stray = sprawl()
+    out = stray.stdout + stray.stderr
+    assert stray.returncode != 0, out
+    assert "SPRAWL outside-allowlist scripts/build-linux.sh" in out
+    assert "SPRAWL tauri-build scripts/build-linux.sh" in out
+    assert "SPRAWL outside-allowlist tools/deploy" in out
+    assert "SPRAWL outside-allowlist helper.mjs" in out
+    assert "main.rs" not in out
