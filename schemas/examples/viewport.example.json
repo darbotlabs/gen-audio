@@ -446,7 +446,7 @@
         "summary": "Real misaki\u2192kokoro WAV \u00b7 genaid_full_misaki_kokoro @ 24 kHz. Inverse-HDR cube attached. Not a fixture.",
         "cubePngUrl": "/library/genaid_full_misaki_kokoro_cube3d.png",
         "cubeJsonUrl": "/library/library_genaid_full_misaki_kokoro_cube3d.json",
-        "inv_hdr": 0.23948296904563904
+        "inv_hdr": 0.07021075781225594
       },
       "adaptive": {
         "type": "AdaptiveCard",
@@ -500,7 +500,7 @@
         "summary": "Real VibeVoice-1.5B podcast \u00b7 Alice + Frank \u00b7 bitdot braille @ 24 kHz. Inverse-HDR cube attached. Not a fixture.",
         "cubePngUrl": "/library/bitdot_braille_vibevoice_cube3d.png",
         "cubeJsonUrl": "/library/library_bitdot_braille_vibevoice_cube3d.json",
-        "inv_hdr": 0.18686723709106445
+        "inv_hdr": 0.0667773777452339
       },
       "adaptive": {
         "type": "AdaptiveCard",

@@ -1,4 +1,13 @@
-"""CLI: run the inverse-HDR cube revision sketch and write WAV, JSON, and an optional plot."""
+"""CLI for the inverse-HDR cube.
+
+Two commands share this entry point (scripts/cube_revision.py):
+
+- ``cube_revision.py INPUT -o OUTPUT [...]`` runs the revision sketch and writes
+  WAV, JSON and an optional plot (unchanged).
+- ``cube_revision.py layers WAV OUT_JSON --stem STEM --engine ENGINE [--revision N]
+  [--png PNG]`` builds the four-layer Library cube JSON (and PNG) that the
+  Library tiles and the Cube tab load. See gen_audio.cube_layers.
+"""
 
 from __future__ import annotations
 
@@ -9,6 +18,7 @@ from pathlib import Path
 
 from gen_audio.artifacts import publish_copy
 from gen_audio.audio_io import read_wav, write_wav
+from gen_audio.cube_layers import library_cube, write_cube_png
 from gen_audio.cube_revision import DEFAULT_MAX_STEPS, revise, write_cube_plot
 
 
@@ -25,7 +35,44 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
+def build_layers_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        prog="cube_revision.py layers",
+        description="Build the four-layer inverse-HDR Library cube JSON for one WAV (covers the full WAV).",
+    )
+    parser.add_argument("wav", type=Path, help="input WAV")
+    parser.add_argument("out", type=Path, help="output cube JSON, e.g. apps/desktop/public/library/library_<stem>_cube3d.json")
+    parser.add_argument("--stem", required=True, help="clip file stem; sets wavUrl, pngUrl and source_wav")
+    parser.add_argument("--engine", required=True, help="engine id recorded in the cube JSON")
+    parser.add_argument("--revision", type=int, default=1, help="cube_revision (bump when the cube changes)")
+    parser.add_argument("--png", type=Path, help="also write the 3D scatter PNG here")
+    return parser
+
+
+def layers_main(argv: list[str]) -> int:
+    args = build_layers_parser().parse_args(argv)
+    try:
+        audio, sample_rate = read_wav(args.wav)
+        doc, cloud = library_cube(audio, sample_rate, stem=args.stem, engine=args.engine, revision=args.revision)
+        args.out.parent.mkdir(parents=True, exist_ok=True)
+        args.out.write_text(json.dumps(doc, ensure_ascii=False), encoding="utf-8")
+        written = [args.out]
+        if args.png is not None:
+            written.append(write_cube_png(args.png, cloud, doc["title"]))
+    except (OSError, ValueError) as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 1
+    summary = {k: v for k, v in doc.items() if k not in ("points_preview", "layers")}
+    print(json.dumps(summary, ensure_ascii=False))
+    for path in written:
+        print(f"wrote {path}")
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
+    argv = list(sys.argv[1:] if argv is None else argv)
+    if argv and argv[0] == "layers":
+        return layers_main(argv[1:])
     args = build_parser().parse_args(argv)
     try:
         audio, sample_rate = read_wav(args.input)

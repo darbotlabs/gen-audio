@@ -67,7 +67,7 @@
       "cube": {
         "pngUrl": "/library/genaid_full_misaki_kokoro_cube3d.png",
         "jsonUrl": "/library/library_genaid_full_misaki_kokoro_cube3d.json",
-        "inv_hdr": 0.23948296904563904,
+        "inv_hdr": 0.07021075781225594,
         "cube_revision": 2,
         "duration_s": 139.375,
         "cube_shape_f_t": [
@@ -102,7 +102,7 @@
       "cube": {
         "pngUrl": "/library/bitdot_braille_vibevoice_cube3d.png",
         "jsonUrl": "/library/library_bitdot_braille_vibevoice_cube3d.json",
-        "inv_hdr": 0.18686723709106445,
+        "inv_hdr": 0.0667773777452339,
         "cube_revision": 1,
         "duration_s": 247.06666666666666,
         "cube_shape_f_t": [

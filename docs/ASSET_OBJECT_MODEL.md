@@ -28,7 +28,7 @@ reconciled choices listed at the end.
   "schema_version": "1.0.0",          // semver; only the major enters the uid; unknown major rejected
   "uid_scheme": "ga1",
   "kind": "cube_ihdr",                // closed enum, snake_case (see §4)
-  "uid": "ga:cube_ihdr:2anzv4lhhjhlv6jocqvnlynvky",
+  "uid": "ga:cube_ihdr:6aq6vmw7tnmvlfddf53q27ttc4",
   "legacy_id": "lib-misaki-kokoro.cube", // old card id / tileId / clipId / persona id; never hashed
   "status": "ok",                     // ok | missing | unavailable; never hashed
   "fields":  { ... },                 // HASHED identity fields: fixed per-kind allowlist, integers only
@@ -79,7 +79,7 @@ uid      = "ga:" K ":" base32(digest[0..16])        RFC 4648 alphabet a-z2-7, lo
 - **JCS (RFC 8785).** The identity projection is restricted so that JCS stays
   trivial and identical in Rust and TS.
   - Integers only, within ±(2^53−1). Use `duration_ms`, `sample_rate_hz`,
-    `bin_frames` and `inv_hdr_ppm` (0.239483 becomes 239483). Floats such as
+    `bin_frames` and `inv_hdr_ppm` (0.070211 becomes 70211). Floats such as
     0.1, 1e-7 and 139.375 are rejected (`float_in_identity`), as are -0
     (`negative_zero`), NaN/Inf and `null` (omit the key instead).
   - **Integral floats are rejected too (D2).** `139375.0` and `1e3` are
@@ -116,10 +116,10 @@ uid      = "ga:" K ":" base32(digest[0..16])        RFC 4648 alphabet a-z2-7, lo
   (`control.rs`). `uid_scheme: "ga1"`. Rehashing in place is never allowed: a
   new scheme or major mints a new uid plus `relations.supersedes: [old uid]`.
 - **Worked example (real misaki cube):**
-  - `JCS(identity)` = `{"fields":{"bin_frames":8448,"covers_ms":139040,"cube_revision":2,"duration_ms":139375,...},"kind":"cube_ihdr","media":[{"role":"cube_json",...},{"role":"cube_png",...}],"schema_major":1,"src":["ga:audio_clip:vtwxksrsuci7zygslimzfy7kdy"]}`
-  - digest = `d01b9af1…4323`
-  - uid = `ga:cube_ihdr:2anzv4lhhjhlv6jocqvnlynvky`
-  - glyph = `⣐⠛`
+  - `JCS(identity)` = `{"fields":{"bin_frames":8448,"covers_ms":139040,"cube_revision":3,"duration_ms":139375,...},"kind":"cube_ihdr","media":[{"role":"cube_json",...},{"role":"cube_png",...}],"schema_major":1,"src":["ga:audio_clip:vtwxksrsuci7zygslimzfy7kdy"]}`
+  - digest = `f021eab2…8642`
+  - uid = `ga:cube_ihdr:6aq6vmw7tnmvlfddf53q27ttc4`
+  - glyph = `⣰⠡`
 
   Darbot's earlier worked example (`…ay76z`, built from the old kokoro_onnx
   cube under a 130-bit encoding) no longer applies: this spec takes 128 bits and
