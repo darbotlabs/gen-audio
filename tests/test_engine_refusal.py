@@ -14,13 +14,27 @@ def test_kokoro_refusal_names_missing_model_env(monkeypatch):
     assert "GEN_AUDIO_KOKORO_VOICES is unset" in blob
 
 
-def test_vibevoice_refusal_names_cuda_or_torch(monkeypatch):
+def test_vibevoice_default_device_does_not_require_cuda(monkeypatch):
     monkeypatch.delenv("GEN_AUDIO_VIBEVOICE_MODEL", raising=False)
+    monkeypatch.delenv("GEN_AUDIO_VIBEVOICE_DEVICE", raising=False)
     found = probe("vibevoice")
     assert found.available is False
     blob = " ".join(found.missing)
     assert "GEN_AUDIO_VIBEVOICE_MODEL is unset" in blob
-    assert "CUDA" in blob or "PyTorch" in blob or "vibevoice package" in blob
+    assert "CUDA" not in blob
+
+
+def test_vibevoice_cuda_device_refuses_when_cuda_is_absent(monkeypatch):
+    monkeypatch.setenv("GEN_AUDIO_VIBEVOICE_DEVICE", "cuda")
+    monkeypatch.setenv("GEN_AUDIO_VIBEVOICE_MODEL", "/tmp/gen-audio-vibevoice-missing")
+    monkeypatch.setattr(
+        "gen_audio.adapters._module_present",
+        lambda name: name in {"torch", "vibevoice"},
+    )
+    monkeypatch.setattr("gen_audio.adapters._cuda_available", lambda: False)
+    found = probe("vibevoice")
+    blob = " ".join(found.missing)
+    assert "GEN_AUDIO_VIBEVOICE_DEVICE is cuda and CUDA is not available" in blob
 
 
 def test_magpie_refusal_names_runtime_and_weights(monkeypatch):

@@ -52,7 +52,21 @@ def probe(engine: str) -> Probe:
 
 
 def synthesize(engine: str, turns: list[Turn], cast: CastMap, output: Path) -> dict:
-    """Render ``turns`` to ``output``. Raises ``EngineRefusal`` when the engine cannot run."""
+    """Render ``turns`` to ``output``. Raises ``EngineRefusal`` when the engine cannot run.
+
+    A successful adapter returns ``engine``, ``sample_rate``, ``samples``, and
+    ``turns``. When it recorded per-line sample cursors it also returns
+    ``speech``:
+
+    - ``speakers``: ``[{idx, persona, voice, engine}]``, ``idx`` 0..7 in
+      first-appearance order, at most 8.
+    - ``segments``: ``[{speaker_idx, start_sample, end_sample}]``, half-open
+      offsets into the written buffer.
+    - ``sample_rate``: the rate of that buffer.
+
+    Omit ``speech`` when the engine cannot name those offsets. The pipeline
+    then stores speakers as ``"unresolved"`` and does not guess.
+    """
     found = probe(engine)
     if not found.available:
         raise EngineRefusal(engine, found.missing)
@@ -126,12 +140,22 @@ def _cuda_available() -> bool:
     return bool(torch.cuda.is_available())
 
 
+def _vibevoice_device() -> str:
+    """Torch device for VibeVoice weights. Default ``cpu`` (1.5B has run there in fp16).
+
+    ``GEN_AUDIO_VIBEVOICE_DEVICE`` overrides it (``cpu``, ``cuda``, ``cuda:0``).
+    A missing CUDA device is a refusal only when this value asks for CUDA.
+    """
+    raw = os.environ.get("GEN_AUDIO_VIBEVOICE_DEVICE", "cpu").strip()
+    if not raw or raw.lower() == "cpu":
+        return "cpu"
+    return raw
+
+
 def _missing_vibevoice() -> list[str]:
     missing: list[str] = []
     if not _module_present("torch"):
         missing.append("PyTorch is not installed")
-    elif not _cuda_available():
-        missing.append("CUDA GPU is not available (torch.cuda.is_available() is false)")
     if not _module_present("vibevoice"):
         missing.append("vibevoice package is not installed")
     model = os.environ.get("GEN_AUDIO_VIBEVOICE_MODEL", "").strip()
@@ -139,6 +163,9 @@ def _missing_vibevoice() -> list[str]:
         missing.append("GEN_AUDIO_VIBEVOICE_MODEL is unset (expected a local VibeVoice-1.5B directory)")
     elif not Path(model).exists():
         missing.append("VibeVoice-1.5B weights are not present at GEN_AUDIO_VIBEVOICE_MODEL")
+    device = _vibevoice_device()
+    if device.lower().startswith("cuda") and _module_present("torch") and not _cuda_available():
+        missing.append(f"GEN_AUDIO_VIBEVOICE_DEVICE is {device} and CUDA is not available")
     return missing
 
 
@@ -244,12 +271,11 @@ def _pocket_voice_state(model, voice: str):
 
 
 def _synth_vibevoice(turns: list[Turn], cast: CastMap, output: Path) -> dict:
-    """Run VibeVoice-1.5B when CUDA, the package, and local weights are present."""
+    """Run VibeVoice-1.5B when the package and local weights load on the configured device."""
     import torch
 
     model_dir = os.environ.get("GEN_AUDIO_VIBEVOICE_MODEL", "").strip()
-    if not torch.cuda.is_available():
-        raise EngineRefusal("vibevoice", ["CUDA GPU is not available (torch.cuda.is_available() is false)"])
+    device = _vibevoice_device()
     try:
         from vibevoice.modular.modeling_vibevoice_inference import (
             VibeVoiceForConditionalGenerationInference,
@@ -262,10 +288,10 @@ def _synth_vibevoice(turns: list[Turn], cast: CastMap, output: Path) -> dict:
         model = VibeVoiceForConditionalGenerationInference.from_pretrained(
             model_dir,
             torch_dtype=torch.float16,
-        ).to("cuda")
+        ).to(device)
         script = "\n".join(f"Speaker {turn.speaker_id}: {turn.text}" for turn in turns)
         inputs = processor(text=script, return_tensors="pt")
-        moved = {key: value.to("cuda") if hasattr(value, "to") else value for key, value in inputs.items()}
+        moved = {key: value.to(device) if hasattr(value, "to") else value for key, value in inputs.items()}
         with torch.no_grad():
             generated = model.generate(**moved)
         speech = generated.speech_outputs[0]
