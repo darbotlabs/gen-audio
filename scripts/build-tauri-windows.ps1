@@ -14,7 +14,7 @@ Every native step is exit-code checked. Before any build step, every library
 WAV named in schemas/asset-object/media.lock.json must be staged with the
 locked sha256 and byte count (they are gitignored, and the release embeds
 them). The script prints exactly one BUILD_OK line, and only after the
-outputs are verified to be from this run. Every run, failed ones included,
+outputs are verified by content (sha256, never mtime). Every run, failed ones included,
 saves its full transcript to target/logs/build-<sha>-<timestamp>.log; the
 first output line (BUILD_LOG) and BUILD_OK (log=) name it.
 
@@ -39,19 +39,7 @@ $root = Split-Path -Parent $PSScriptRoot
 $desktop = Join-Path $root 'apps\desktop'
 $srcTauri = Join-Path $desktop 'src-tauri'
 $releaseDir = Join-Path $root 'target\release'
-# One second of slack for file systems with coarse timestamps.
-$runStart = (Get-Date).AddSeconds(-1)
 Set-Location $root
-
-function Assert-Fresh {
-    param([Parameter(Mandatory = $true)][string]$Path, [Parameter(Mandatory = $true)][string]$What)
-    if (-not (Test-Path -LiteralPath $Path)) { throw "$What is missing: $Path" }
-    $item = Get-Item -LiteralPath $Path
-    if ($item.LastWriteTime -lt $runStart) {
-        throw "$What is stale: $Path was written $($item.LastWriteTime.ToString('s')), before this run started $($runStart.ToString('s'))"
-    }
-    return $item
-}
 
 function Get-FreeLoopbackPort {
     $listener = New-Object System.Net.Sockets.TcpListener ([System.Net.IPAddress]::Loopback), 0
@@ -167,6 +155,20 @@ try {
         Remove-Item Env:VITE_GEN_AUDIO_FIXTURES
     }
 
+    # Outputs are judged by content, never mtime: a no-op rebuild leaves an
+    # up-to-date gen-audio.exe with its old mtime, which the old mtime check
+    # called stale. Fingerprint them before the build, compare after.
+    # Installers are this build's version (tauri.conf.json), not the newest file.
+    $installerGlob = @{ nsis = "*_$($conf.version)_*-setup.exe"; msi = "*_$($conf.version)_*.msi" }
+    $indexPath = Join-Path $desktop 'dist\index.html'
+    $exePath = Join-Path $releaseDir 'gen-audio.exe'
+    $before = @{ index = Get-OutputFingerprint -LiteralPath $indexPath; exe = Get-OutputFingerprint -LiteralPath $exePath }
+    foreach ($kind in 'nsis', 'msi') {
+        foreach ($old in @(Get-ChildItem -Path (Join-Path $releaseDir "bundle\$kind") -Filter $installerGlob[$kind] -ErrorAction SilentlyContinue)) {
+            $before[$old.FullName] = Get-OutputFingerprint -LiteralPath $old.FullName
+        }
+    }
+
     # tauri build runs beforeBuildCommand (npm run build) in apps/desktop, so
     # dist is rebuilt before cargo compiles the WebView.
     $tauriArgs = @('--yes', $TauriCli, 'build')
@@ -179,9 +181,18 @@ try {
         Pop-Location
     }
 
-    # The exe embeds dist, so dist must be from this run and carry the header.
-    $index = Assert-Fresh -Path (Join-Path $desktop 'dist\index.html') -What 'apps/desktop/dist/index.html'
-    $html = Get-Content -LiteralPath $index.FullName -Raw
+    # The exe embeds dist, so dist must hold this tree's public files byte for
+    # byte, and an index.html with the header whose script and style assets exist.
+    $index = Assert-BuildOutput -LiteralPath $indexPath -What 'apps/desktop/dist/index.html' -Before $before.index
+    $drift = @(Get-DistCopyDrift -Source (Join-Path $desktop 'public') -Dist (Join-Path $desktop 'dist'))
+    if ($drift.Count -gt 0) {
+        $drift | ForEach-Object { Write-Output $_ }
+        throw "dist does not hold this tree's apps/desktop/public ($($drift.Count) file(s)); the embedded UI would be stale"
+    }
+    $html = Get-Content -LiteralPath $index.Path -Raw
+    foreach ($ref in @([regex]::Matches($html, '(?:src|href)="/(assets/[^"]+)"') | ForEach-Object { $_.Groups[1].Value })) {
+        if (-not (Test-Path -LiteralPath (Join-Path (Join-Path $desktop 'dist') $ref) -PathType Leaf)) { throw "dist/index.html references /$ref, which is not in dist" }
+    }
     foreach ($marker in 'brand-row', 'ga-header-toolbar') {
         if ($html -notmatch [regex]::Escape($marker)) { throw "dist/index.html has no '$marker'; the embedded UI is not the Gen-Audio header build" }
     }
@@ -193,12 +204,15 @@ try {
     }
     $exampleChunk = @(Get-ChildItem -LiteralPath (Join-Path $desktop 'dist\assets') -Filter 'viewport.example-*.js' -ErrorAction SilentlyContinue)
     if ($exampleChunk.Count -gt 0) { throw "dist has $($exampleChunk[0].Name); VITE_GEN_AUDIO_FIXTURES leaked into a release build" }
-    Write-Step "frontend dist ok $($index.FullName) (no dev fixtures)"
+    Write-Step "frontend dist ok $($index.Path) sha256 $($index.Sha256) ($($index.State); public files match; no dev fixtures)"
 
     # No localhost: a dev build (no custom-protocol) makes tauri-build emit
     # cargo:rustc-cfg=dev, and that exe loads devUrl http://localhost:1420.
+    # Every gen-audio-desktop build-script output is checked, whatever its
+    # mtime (a no-op rebuild does not rewrite it; the fingerprint gate below
+    # allows only one desktop configuration).
     $outputs = @(Get-ChildItem -Path (Join-Path $releaseDir 'build') -Filter 'output' -Recurse -ErrorAction SilentlyContinue |
-            Where-Object { $_.Directory.Name -like 'gen-audio-desktop-*' -and $_.LastWriteTime -ge $runStart })
+            Where-Object { $_.Directory.Name -like 'gen-audio-desktop-*' })
     foreach ($output in $outputs) {
         if (Select-String -LiteralPath $output.FullName -Pattern 'cargo:rustc-cfg=dev' -SimpleMatch -Quiet) {
             throw "dev build detected ($($output.FullName) has cargo:rustc-cfg=dev); this exe would load http://localhost:1420"
@@ -216,22 +230,21 @@ try {
         throw "expected exactly one gen-audio-desktop lib fingerprint under target\release\.fingerprint, found $($fingerprints.Count)"
     }
 
-    $exe = Assert-Fresh -Path (Join-Path $releaseDir 'gen-audio.exe') -What 'target\release\gen-audio.exe'
+    $exe = Assert-BuildOutput -LiteralPath $exePath -What 'target\release\gen-audio.exe' -Before $before.exe
+    Write-Step "exe $($exe.Path) sha256 $($exe.Sha256) ($($exe.State))"
 
     if ($Mode -eq 'Full') {
         $bundleDir = Join-Path $releaseDir 'bundle'
-        $nsis = @(Get-ChildItem -Path (Join-Path $bundleDir 'nsis') -Filter '*-setup.exe' -ErrorAction SilentlyContinue | Sort-Object LastWriteTime -Descending)
-        $msi = @(Get-ChildItem -Path (Join-Path $bundleDir 'msi') -Filter '*.msi' -ErrorAction SilentlyContinue | Sort-Object LastWriteTime -Descending)
-        if ($nsis.Count -lt 1) { throw "no NSIS *-setup.exe under $bundleDir\nsis" }
-        if ($msi.Count -lt 1) { throw "no MSI under $bundleDir\msi" }
-        foreach ($installer in @($nsis[0], $msi[0])) {
-            $fresh = Assert-Fresh -Path $installer.FullName -What 'installer'
-            $hash = Get-Sha256 -LiteralPath $fresh.FullName
-            Write-Output "INSTALLER path=$($fresh.FullName) size=$($fresh.Length) sha256=$hash mtime=$($fresh.LastWriteTime.ToString('yyyy-MM-ddTHH:mm:sszzz'))"
+        foreach ($kind in 'nsis', 'msi') {
+            $found = @(Get-ChildItem -Path (Join-Path $bundleDir $kind) -Filter $installerGlob[$kind] -ErrorAction SilentlyContinue)
+            if ($found.Count -ne 1) { throw "expected one $kind installer $($installerGlob[$kind]) (version $($conf.version)) under $bundleDir\$kind, found $($found.Count): $(($found | ForEach-Object { $_.Name }) -join ', ')" }
+            $installer = $found[0].FullName
+            $built = Assert-BuildOutput -LiteralPath $installer -What "$kind installer" -Before $before[$installer]
+            Write-Output "INSTALLER path=$($built.Path) size=$($built.Length) sha256=$($built.Sha256) state=$($built.State)"
         }
     }
 
-    Write-Output "BUILD_OK mode=$Mode exe=$($exe.FullName) size=$($exe.Length) mtime=$($exe.LastWriteTime.ToString('yyyy-MM-ddTHH:mm:sszzz')) log=$buildLog"
+    Write-Output "BUILD_OK mode=$Mode exe=$($exe.Path) size=$($exe.Length) sha256=$($exe.Sha256) state=$($exe.State) log=$buildLog"
 } catch {
     # Record the failure inside the transcript before it closes, then rethrow.
     Write-Output "BUILD_FAIL log=$buildLog $($_.Exception.Message)"
