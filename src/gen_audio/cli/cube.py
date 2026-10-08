@@ -4,9 +4,10 @@ Two commands share this entry point (scripts/cube_revision.py):
 
 - ``cube_revision.py INPUT -o OUTPUT [...]`` runs the revision sketch and writes
   WAV, JSON and an optional plot (unchanged).
-- ``cube_revision.py layers WAV OUT_JSON --stem STEM --engine ENGINE [--revision N]
-  [--label LABEL] [--png PNG]`` builds the four-layer Library cube JSON (and
-  PNG) that the Library tiles and the Cube tab load. See gen_audio.cube_layers.
+- ``cube_revision.py layers WAV OUT_JSON --stem STEM --engine ENGINE
+  [--label LABEL] [--png PNG]`` builds the rev 3 four-layer Library cube JSON
+  (and PNG) that the Library tiles and the Cube tab load, with the WAV sha256
+  and the generator commit. See gen_audio.cube_layers.
 - ``cube_revision.py manifest [--manifest PATH]`` rewrites the cube mirror in
   the Library manifest from the cube JSON (gen_audio.library_manifest;
   standard library only, no WAVs needed).
@@ -15,6 +16,7 @@ Two commands share this entry point (scripts/cube_revision.py):
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import sys
 from pathlib import Path
@@ -48,7 +50,6 @@ def build_layers_parser() -> argparse.ArgumentParser:
     parser.add_argument("out", type=Path, help="output cube JSON, e.g. apps/desktop/public/library/library_<stem>_cube3d.json")
     parser.add_argument("--stem", required=True, help="clip file stem; sets wavUrl, pngUrl and source_wav")
     parser.add_argument("--engine", required=True, help="engine id recorded in the cube JSON")
-    parser.add_argument("--revision", type=int, default=1, help="cube_revision (bump when the cube changes)")
     parser.add_argument("--label", help="clip name in the title, e.g. misaki\u2192kokoro (default: the stem)")
     parser.add_argument("--png", type=Path, help="also write the 3D scatter PNG here")
     return parser
@@ -72,20 +73,26 @@ def manifest_main(argv: list[str]) -> int:
 
 def layers_main(argv: list[str]) -> int:
     from gen_audio.audio_io import read_wav
-    from gen_audio.cube_layers import library_cube, write_cube_png
+    from gen_audio.cube_layers import generator_commit, library_cube, write_cube_png
 
     args = build_layers_parser().parse_args(argv)
     try:
         audio, sample_rate = read_wav(args.wav)
         doc, cloud = library_cube(
-            audio, sample_rate, stem=args.stem, engine=args.engine, revision=args.revision, label=args.label
+            audio,
+            sample_rate,
+            stem=args.stem,
+            engine=args.engine,
+            source_sha256=hashlib.sha256(args.wav.read_bytes()).hexdigest(),
+            commit=generator_commit(),
+            label=args.label,
         )
         args.out.parent.mkdir(parents=True, exist_ok=True)
         args.out.write_text(json.dumps(doc, ensure_ascii=False), encoding="utf-8")
         written = [args.out]
         if args.png is not None:
             written.append(write_cube_png(args.png, cloud, doc["title"]))
-    except (OSError, ValueError) as exc:
+    except (OSError, ValueError, RuntimeError) as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 1
     summary = {k: v for k, v in doc.items() if k not in ("points_preview", "layers")}
