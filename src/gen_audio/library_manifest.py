@@ -134,6 +134,15 @@ SIDECAR_PATH_KEYS = frozenset({
 TRANSIENT_KEYS = frozenset({"log", "raw_output"})
 UNHASHED = {"transient": True, "unhashed": "not on this machine"}
 
+# L4: an outside directory has no single sha256. A digest of its sorted
+# (relpath, sha256) list was the alternative and is refused: a venv's wheels,
+# .pyc files and absolute shebangs differ per machine, so the digest would
+# bind the provenance to one install and never verify anywhere else, and
+# model dirs are gigabytes to hash on every sync. What a run used from a
+# directory is recorded as files (inference_code, prompt WAVs, outputs); the
+# directory entry says plainly that it claims no content identity.
+DIRECTORY = {"kind": "directory", "content_identity": "none"}
+
 
 def _path_part(value: str) -> tuple[str, str]:
     """``("venvs/x", " (CPython ...)")`` for a path with a trailing note."""
@@ -199,10 +208,10 @@ def _transient_labels(doc: dict) -> set[str]:
 
 
 def file_facts(path: Path) -> dict:
-    """``{"sha256", "bytes"}`` of a file, ``{"kind": "directory"}`` for a
-    directory (no single sha256); FileNotFoundError when it is not here."""
+    """``{"sha256", "bytes"}`` of a file, :data:`DIRECTORY` for a directory
+    (no content identity); FileNotFoundError when it is not here."""
     if path.is_dir():
-        return {"kind": "directory"}
+        return dict(DIRECTORY)
     digest = hashlib.sha256()
     size = 0
     with path.open("rb") as handle:
@@ -240,6 +249,12 @@ def sync_synth_sidecars(library: Path, repo_root: Path | None = None, work_dirs:
         problems = label_work_dir_paths(labelled, repo_root, work_dirs.get(path.name), found, path.name)
         if problems:
             raise ValueError("\n".join(problems))
+        # L4: an old directory entry is upgraded in place; it needs no file.
+        outside = labelled.get("outside_repo")
+        if isinstance(outside, dict):
+            labelled["outside_repo"] = {
+                label: dict(DIRECTORY) if isinstance(fact, dict) and fact.get("kind") == "directory" else fact for label, fact in outside.items()
+            }
         if labelled == doc:
             continue
         transient = _transient_labels(labelled)
