@@ -45,6 +45,11 @@ jobs:
           cargo run -p gen-audio-core --example build_assets -- --from-lock
           cargo run -p gen-audio-core --example asset_vectors
           git diff --exit-code -- apps/desktop/public/library schemas
+      # `cargo test` builds gen-audio-mcp's test harness, not the binary, so
+      # target/debug/gen-audio-mcp does not exist until it is built here (debug
+      # profile, the path the cp below reads).
+      - name: Build MCP sidecar binary (debug)
+        run: cargo build -p gen-audio-mcp
       - name: Stage MCP sidecar so desktop config can see externalBin
         run: |
           triple="$(rustc -vV | sed -n 's/^host: //p')"
