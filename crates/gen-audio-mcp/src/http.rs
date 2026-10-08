@@ -811,11 +811,16 @@ mod tests {
     /// Child half of `every_rejection_reaches_stderr_exactly_once`: run by it
     /// as a separate process of this same test binary with --nocapture, so
     /// log_rejection's eprintln! lands on a real fd 2 the parent reads. Prints
-    /// the lines its workers logged (thread-scoped, as above) on stdout.
+    /// the parent's nonce, then the lines its workers logged (thread-scoped,
+    /// as above) on stdout. Run on its own (`cargo test -- --include-ignored`)
+    /// there is no parent and no nonce: it passes without doing anything.
     #[test]
     #[ignore = "child process of every_rejection_reaches_stderr_exactly_once"]
     fn rejection_stderr_child() {
-        assert_eq!(std::env::var(STDERR_CHILD_ENV).as_deref(), Ok("1"), "run only by every_rejection_reaches_stderr_exactly_once");
+        let Ok(nonce) = std::env::var(STDERR_CHILD_ENV) else {
+            return;
+        };
+        println!("CHILD\t{nonce}");
         for (build, _) in rejection_cases() {
             let (_, _, _, served) = roundtrip_seeded(build, |_| {});
             for line in served {
@@ -835,15 +840,17 @@ mod tests {
     #[test]
     fn every_rejection_reaches_stderr_exactly_once() {
         let module = module_path!().split_once("::").map(|(_, rest)| rest).unwrap_or(module_path!());
+        let nonce = format!("{}-{:?}", std::process::id(), std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_nanos());
         let output = std::process::Command::new(std::env::current_exe().unwrap())
             .args(["--exact", &format!("{module}::rejection_stderr_child"), "--ignored", "--nocapture", "--test-threads=1"])
-            .env(STDERR_CHILD_ENV, "1")
+            .env(STDERR_CHILD_ENV, &nonce)
             .output()
             .unwrap();
         let stdout = String::from_utf8_lossy(&output.stdout);
         let stderr = String::from_utf8_lossy(&output.stderr);
         assert!(output.status.success(), "child failed: {stdout}\n{stderr}");
         assert!(stdout.contains("1 passed"), "the child test ran: {stdout}");
+        assert!(stdout.contains(&format!("CHILD\t{nonce}")), "this run's child, not a quiet one: {stdout}");
         let served: Vec<&str> = stdout.lines().filter_map(|line| line.split_once("SERVED\t").map(|(_, rest)| rest)).collect();
         let logged: Vec<&str> = stderr.lines().filter(|line| line.starts_with("gen-audio-mcp http: ")).collect();
         assert_eq!(served.len(), rejection_cases().len(), "one served line per rejection class: {served:?}");
