@@ -10,8 +10,11 @@ frontendDist, no installers. Faster, for local checks.
 
 Both modes go through the tauri CLI (pinned), so the release exe always has
 the custom-protocol feature and loads the embedded UI, never devUrl.
-Every native step is exit-code checked. The script prints exactly one
-BUILD_OK line, and only after the outputs are verified to be from this run.
+Every native step is exit-code checked. Before any build step, every library
+WAV named in schemas/asset-object/media.lock.json must be staged with the
+locked sha256 and byte count (they are gitignored, and the release embeds
+them). The script prints exactly one BUILD_OK line, and only after the
+outputs are verified to be from this run.
 
 Works on Windows PowerShell 5.1 and PowerShell 7.
 
@@ -72,6 +75,18 @@ if ($hooks -and -not (Test-Path -LiteralPath (Join-Path $srcTauri $hooks))) { th
 if ($conf.build.beforeBuildCommand -ne 'npm run build') {
     throw "tauri.conf.json build.beforeBuildCommand must be 'npm run build' (it runs in apps/desktop); found '$($conf.build.beforeBuildCommand)'"
 }
+
+# The release embeds apps/desktop/public/library through frontendDist, and
+# *.wav is gitignored: a fresh worktree has none. SMAX printed BUILD_OK with
+# zero WAVs and the installed app failed with 'NotSupportedError: no
+# supported sources'. Every WAV in media.lock.json must be staged with the
+# locked bytes, or the build stops here (no skip).
+$wavProblems = @(Get-LibraryWavProblem -Root $root)
+if ($wavProblems.Count -gt 0) {
+    $wavProblems | ForEach-Object { Write-Output $_ }
+    throw "$($wavProblems.Count) library WAV(s) missing or not the media.lock.json bytes; stage them in apps\desktop\public\library before a release build"
+}
+Write-Step 'library WAVs match media.lock.json (sha256, bytes)'
 
 $triple = ((& rustc -vV) | Select-String -Pattern '^host: ').ToString().Split(':', 2)[1].Trim()
 if ($LASTEXITCODE -ne 0 -or -not $triple) { throw 'could not read the rustc host triple' }

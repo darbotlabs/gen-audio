@@ -281,27 +281,14 @@ if (@($results | Where-Object { $_.Step -eq 'Eol' -and $_.Result -eq 'FAIL' }).C
 if ($script:withWav) {
     Invoke-Step 'Wavs' {
         param($log)
-        $library = Join-Path $root 'apps\desktop\public\library'
+        $bad = @(Get-LibraryWavProblem -Root $root)
         $lock = Get-Content -LiteralPath (Join-Path $root 'schemas\asset-object\media.lock.json') -Raw | ConvertFrom-Json
-        $names = @($lock.media.PSObject.Properties | ForEach-Object { $_.Name })
-        if ($names.Count -eq 0) { throw 'media.lock.json lists no WAVs' }
-        $bad = New-Object System.Collections.Generic.List[string]
-        foreach ($name in $names) {
-            $want = [string]$lock.media.$name.sha256
-            $path = Join-Path $library $name
-            if (-not (Test-Path -LiteralPath $path -PathType Leaf)) {
-                $bad.Add("WAV_MISSING $name (stage it in apps/desktop/public/library)")
-                continue
-            }
-            $got = Get-Sha256 -LiteralPath $path
-            $line = "WAV $name sha256 $got"
-            if ($got -ne $want) { $bad.Add("WAV_MISMATCH $name sha256 $got, media.lock.json $want") } else { $line | Add-LogLine -Log $log | Out-Host }
-        }
+        $total = @($lock.media.PSObject.Properties).Count
         if ($bad.Count -gt 0) {
             $bad | Add-LogLine -Log $log | Out-Host
-            throw "$($bad.Count) of $($names.Count) locked WAV(s) missing or not the locked bytes: $(@($bad | ForEach-Object { ($_ -split ' ')[1] }) -join ', ')"
+            throw "$($bad.Count) of $total locked WAV(s) missing or not the locked bytes: $(@($bad | ForEach-Object { ($_ -split ' ')[1] }) -join ', ')"
         }
-        "$($names.Count)/$($names.Count) staged WAVs match media.lock.json sha256"
+        "$total/$total staged WAVs match media.lock.json sha256"
     }
 }
 
