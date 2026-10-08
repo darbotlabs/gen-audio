@@ -14,8 +14,8 @@ sha2 = "0.10"
 unicode-normalization = "0.1"
 
 [features]
-# NoKokoroEnv and KOKORO_ENV (bridge.rs) for other crates' tests. Enabled only
-# from [dev-dependencies]; never in a normal or release build.
+# NoKokoroEnv, ViewportHandle::bind_viewport, and the library-root override.
+# Enabled only from [dev-dependencies]; never in a normal or release build.
 test-support = []
 
 [dev-dependencies]

@@ -501,8 +501,8 @@ fn env_var(name: &str) -> Result<String, std::env::VarError> {
         });
         if let Some(value) = over {
             return match value {
-                Some(text) if !text.is_empty() => Ok(text),
-                _ => Err(std::env::VarError::NotPresent),
+                Some(text) => Ok(text),
+                None => Err(std::env::VarError::NotPresent),
             };
         }
     }
@@ -762,6 +762,21 @@ mod tests {
             assert!(done.text.contains("not model output"));
         }
         assert_eq!(health_one("mcp").unwrap().mode, Mode::Local);
+    }
+
+    #[test]
+    fn empty_overlay_matches_a_real_empty_environment_variable() {
+        // std::env::var returns Ok("") for a variable that is set and empty.
+        // gpt health uses that is_ok() check, so an empty key is TokenPresent
+        // and live stays off. Treating "" as absent would prove the wrong thing.
+        let mut env = credentials_absent();
+        env.insert("OPENAI_API_KEY".into(), Some(String::new()));
+        let _env = bind_env(env);
+        let health = health_one("gpt").unwrap();
+        assert_eq!(health.mode, Mode::TokenPresent);
+        assert!(!health.authenticated);
+        let done = complete_one("gpt", "hello").unwrap();
+        assert!(done.mock);
     }
 
     #[test]

@@ -374,6 +374,27 @@ mod tests {
             assert!(dev.contains("features = [\"test-support\"]"));
         }
     }
+
+    /// Viewport binding and the library-root override are the same kind of seam
+    /// as NoKokoroEnv: other crates' tests reach them through `test-support`,
+    /// and a release build of this crate does not export them.
+    #[test]
+    fn viewport_and_library_test_seams_are_test_support_only() {
+        let gate = "#[cfg(any(test, feature = \"test-support\"))]\n";
+        let files = [
+            (include_str!("viewport.rs"), &["pub struct ViewportHandle", "pub struct ViewportGuard", "pub fn bind_viewport", "thread_local!"][..]),
+            (include_str!("library_store.rs"), &["pub fn set_root_override_for_test", "thread_local!"][..]),
+        ];
+        for (source, items) in files {
+            for item in items {
+                let at = source.find(&format!("\n{item}")).unwrap_or_else(|| panic!("{item} not found"));
+                assert!(
+                    source[..at + 1].ends_with(gate),
+                    "{item} must sit right under the test-support gate"
+                );
+            }
+        }
+    }
     use crate::fixture::write_fixture_tone;
     use serde_json::json;
 

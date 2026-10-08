@@ -8,9 +8,12 @@
 //! Coverage uses the cube's own `sec_per_bin`. Reject reasons stay in one order:
 //! start < 0, selector end, clip missing from `src`, recorded source duration lie.
 
-use std::cell::RefCell;
 use std::collections::BTreeMap;
-use std::sync::{Arc, Mutex, OnceLock};
+#[cfg(any(test, feature = "test-support"))]
+use std::cell::RefCell;
+#[cfg(any(test, feature = "test-support"))]
+use std::sync::Arc;
+use std::sync::{Mutex, OnceLock};
 
 use serde_json::{json, Value};
 
@@ -1025,14 +1028,21 @@ pub struct CoverageOk {
     pub partial: Option<Value>,
 }
 
-/// One viewport. The desktop uses the process default (one window). A caller
-/// that must not share that window — a test asserting a sequence of actions —
-/// binds its own handle for the current thread.
+fn process_viewport() -> &'static Mutex<Viewport> {
+    static STATE: OnceLock<Mutex<Viewport>> = OnceLock::new();
+    STATE.get_or_init(|| Mutex::new(Viewport::release()))
+}
+
+/// One viewport. The desktop uses the process default (one window). A test
+/// that asserts a sequence of actions binds its own handle for this thread.
+/// Release builds have no binding: the type exists only for tests.
 #[derive(Clone)]
+#[cfg(any(test, feature = "test-support"))]
 pub struct ViewportHandle {
     inner: Arc<Mutex<Viewport>>,
 }
 
+#[cfg(any(test, feature = "test-support"))]
 impl ViewportHandle {
     pub fn release() -> Self {
         Self {
@@ -1061,15 +1071,18 @@ impl ViewportHandle {
     }
 }
 
+#[cfg(any(test, feature = "test-support"))]
 thread_local! {
     static BOUND_VIEWPORT: RefCell<Option<ViewportHandle>> = const { RefCell::new(None) };
 }
 
 /// Restores the previous binding, including the process default.
+#[cfg(any(test, feature = "test-support"))]
 pub struct ViewportGuard {
     previous: Option<ViewportHandle>,
 }
 
+#[cfg(any(test, feature = "test-support"))]
 impl Drop for ViewportGuard {
     fn drop(&mut self) {
         let previous = self.previous.take();
@@ -1078,6 +1091,7 @@ impl Drop for ViewportGuard {
 }
 
 /// Viewport reads and writes on this thread use `handle` until the guard drops.
+#[cfg(any(test, feature = "test-support"))]
 pub fn bind_viewport(handle: ViewportHandle) -> ViewportGuard {
     BOUND_VIEWPORT.with(|slot| {
         let previous = slot.borrow_mut().replace(handle);
@@ -1085,31 +1099,48 @@ pub fn bind_viewport(handle: ViewportHandle) -> ViewportGuard {
     })
 }
 
-fn process_viewport() -> ViewportHandle {
-    static STATE: OnceLock<ViewportHandle> = OnceLock::new();
-    STATE.get_or_init(ViewportHandle::release).clone()
-}
-
-fn active_viewport() -> ViewportHandle {
-    BOUND_VIEWPORT
-        .with(|slot| slot.borrow().clone())
-        .unwrap_or_else(process_viewport)
+#[cfg(any(test, feature = "test-support"))]
+fn bound_viewport() -> Option<ViewportHandle> {
+    BOUND_VIEWPORT.with(|slot| slot.borrow().clone())
 }
 
 pub fn apply_global(action: Action) -> Result<Value, ReduceError> {
-    active_viewport().apply(action)
+    #[cfg(any(test, feature = "test-support"))]
+    if let Some(handle) = bound_viewport() {
+        return handle.apply(action);
+    }
+    process_viewport().lock().expect("viewport").apply(action)
 }
 
 pub fn snapshot_global() -> Value {
-    active_viewport().snapshot()
+    #[cfg(any(test, feature = "test-support"))]
+    if let Some(handle) = bound_viewport() {
+        return handle.snapshot();
+    }
+    process_viewport().lock().expect("viewport").snapshot()
 }
 
 pub fn contains_global(uid: &str) -> bool {
-    active_viewport().contains(uid)
+    #[cfg(any(test, feature = "test-support"))]
+    if let Some(handle) = bound_viewport() {
+        return handle.contains(uid);
+    }
+    process_viewport()
+        .lock()
+        .expect("viewport")
+        .assets
+        .contains_key(uid)
 }
 
 pub fn export_global(uid: &str) -> Result<Value, ReduceError> {
-    active_viewport().export(uid)
+    #[cfg(any(test, feature = "test-support"))]
+    if let Some(handle) = bound_viewport() {
+        return handle.export(uid);
+    }
+    process_viewport()
+        .lock()
+        .expect("viewport")
+        .export_card(uid)
 }
 
 fn trim_seconds(value: f64) -> String {

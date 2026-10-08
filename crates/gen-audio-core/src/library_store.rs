@@ -4,6 +4,7 @@
 //! temp work directory. The root is outside the repository. Writes are
 //! confined to that root and the catalog file is replaced atomically.
 
+#[cfg(any(test, feature = "test-support"))]
 use std::cell::RefCell;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -14,20 +15,25 @@ use serde_json::{json, Value};
 use crate::asset::{self, glyph_from_uid, sha256_hex, MediaDigest};
 use crate::paths::find_repo_root;
 
+#[cfg(any(test, feature = "test-support"))]
 thread_local! {
     static ROOT_OVERRIDE: RefCell<Option<PathBuf>> = const { RefCell::new(None) };
 }
 
 /// Tests pin the library root to a temp directory. Other threads are unaffected.
+/// Release builds do not export this: the library root is the env or the
+/// user data directory.
+#[cfg(any(test, feature = "test-support"))]
 pub fn set_root_override_for_test(path: Option<PathBuf>) {
     ROOT_OVERRIDE.with(|slot| *slot.borrow_mut() = path);
 }
 
 pub fn user_library_dir() -> Result<PathBuf, String> {
-    let overridden = ROOT_OVERRIDE.with(|slot| slot.borrow().clone());
-    let dir = if let Some(path) = overridden {
-        path
-    } else if let Ok(raw) = std::env::var("GEN_AUDIO_LIBRARY") {
+    #[cfg(any(test, feature = "test-support"))]
+    if let Some(path) = ROOT_OVERRIDE.with(|slot| slot.borrow().clone()) {
+        return finish_library_dir(path);
+    }
+    let dir = if let Ok(raw) = std::env::var("GEN_AUDIO_LIBRARY") {
         if raw.trim().is_empty() {
             return Err("GEN_AUDIO_LIBRARY is empty".into());
         }
@@ -42,6 +48,10 @@ pub fn user_library_dir() -> Result<PathBuf, String> {
             .unwrap_or_else(std::env::temp_dir);
         base.join("gen-audio").join("library")
     };
+    finish_library_dir(dir)
+}
+
+fn finish_library_dir(dir: PathBuf) -> Result<PathBuf, String> {
     fs::create_dir_all(&dir).map_err(|err| format!("library directory: {err}"))?;
     let dir = dir
         .canonicalize()
