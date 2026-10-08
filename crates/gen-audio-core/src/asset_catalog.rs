@@ -243,16 +243,16 @@ pub fn uid_for_legacy(kind: &str, legacy_id: &str) -> Option<&'static str> {
 mod tests {
     use super::*;
 
-    const MISAKI_CUBE: &str = "ga:cube_ihdr:6aq6vmw7tnmvlfddf53q27ttc4";
+    const MISAKI_CUBE: &str = "ga:cube_ihdr:biaxxmnibxtcur7nxdu3ffvna4";
 
     #[test]
     fn resolves_full_uid_and_prefix() {
         assert!(matches!(resolve(MISAKI_CUBE).unwrap(), Resolve::Found(asset) if asset["legacy_id"] == "lib-misaki-kokoro.cube"));
-        assert!(matches!(resolve("ga:cube_ihdr:6aq6vmw7").unwrap(), Resolve::Found(_)));
+        assert!(matches!(resolve("ga:cube_ihdr:biaxxmni").unwrap(), Resolve::Found(_)));
         assert!(matches!(resolve("ga:cube_ihdr:aaaaaaaaaaaaaaaaaaaaaaaaaa").unwrap(), Resolve::NotFound));
-        assert!(matches!(resolve("ga:cube_ihdr:6aq6"), Err(CatalogError::Invalid(_))));
-        assert!(matches!(resolve("ga:widget:6aq6vmw7tnmvlfddf53q27ttc4"), Err(CatalogError::Invalid(_))));
-        assert!(matches!(resolve("ga:cube_ihdr:6aq6vmw7tnmvlfddf53q27ttcb"), Err(CatalogError::Invalid(_))));
+        assert!(matches!(resolve("ga:cube_ihdr:biax"), Err(CatalogError::Invalid(_))));
+        assert!(matches!(resolve("ga:widget:biaxxmnibxtcur7nxdu3ffvna4"), Err(CatalogError::Invalid(_))));
+        assert!(matches!(resolve("ga:cube_ihdr:biaxxmnibxtcur7nxdu3ffvnaf"), Err(CatalogError::Invalid(_))));
     }
 
     #[test]

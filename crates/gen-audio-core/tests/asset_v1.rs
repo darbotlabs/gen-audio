@@ -18,6 +18,7 @@ const ASSETS: &str = include_str!("../../../apps/desktop/public/library/assets.j
 const VIEWPORT: &str = include_str!("../../../schemas/examples/viewport.example.json");
 const RELEASE_VIEWPORT: &str = include_str!("../../../schemas/examples/viewport.release.json");
 const DEV_ASSETS: &str = include_str!("../../../schemas/asset-object/fixtures/assets.dev.json");
+const MEDIA_LOCK: &str = include_str!("../../../schemas/asset-object/media.lock.json");
 
 fn json(text: &str) -> Value {
     serde_json::from_str(text).expect("json")
@@ -131,12 +132,12 @@ fn rounding_vectors_match() {
     // (3,771,216 / 96 = 39283.5) would round to 39284.
     assert_eq!(bin_frames_inferred(157.134, 24_000, 96).unwrap(), 39_283);
     assert_eq!((3_771_216u64 * 2 + 96) / (2 * 96), 39_284);
-    let fixtures = json(FIXTURES);
-    assert_eq!(
-        fixtures["legacy_index"]["cube_ihdr:lib-cube-explainer.cube"],
-        "ga:cube_ihdr:bcuw4m76pyqanslfiugnvlxnda",
-        "lib-cube-explainer cube uid is pinned by the B1' formula"
-    );
+    // E4: every Library cube is rev 3 with downsample_sf_st and a hop, so none
+    // takes the inferred branch any more; the formula stays pinned by the vectors.
+    let catalog = json(ASSETS);
+    for cube in catalog["assets"].as_array().unwrap().iter().filter(|asset| asset["kind"] == "cube_ihdr") {
+        assert_eq!(cube["provenance"]["params"]["bins_inferred_from_shape"], false, "{}", cube["legacy_id"]);
+    }
 }
 
 #[test]
@@ -209,7 +210,7 @@ fn release_catalog_and_deck_leave_out_dev_fixtures() {
     let mut dev_cards: Vec<String> =
         dev.iter().filter_map(|asset| asset.pointer("/fields/card_id").and_then(Value::as_str).map(str::to_string)).collect();
     dev_cards.sort_unstable();
-    assert_eq!(dev_cards, ["bench-ref", "cube-fixture", "spec-fixture"]);
+    assert_eq!(dev_cards, ["bench-ref", "cast-sample", "cube-fixture", "serve-gateway", "serve-node", "spec-fixture"]);
     // Dev + release is the full migrated set and is valid as one set.
     let mut all = release.clone();
     all.extend(dev);
@@ -300,4 +301,153 @@ fn compare_cubes_migrate_as_real_cubes_of_the_same_wav() {
     assert_eq!(code(migrate_to_v1(&compare_bundle(&"0".repeat(64), "pipeline_r2"))), "source_sha_mismatch");
     assert_eq!(code(migrate_to_v1(&compare_bundle(wav_sha, "library_r3"))), "bad_layer_method");
     assert_eq!(code(migrate_to_v1(&compare_bundle(wav_sha, "pipeline_r9"))), "bad_layer_method");
+}
+
+/// E2: media.lock.json pins exactly the WAVs the release catalog hashes, so CI
+/// (no WAVs, build_assets --from-lock) mints the same clip uids.
+#[test]
+fn media_lock_pins_every_library_wav() {
+    let lock = json(MEDIA_LOCK)["media"].as_object().unwrap().clone();
+    let catalog = json(ASSETS);
+    let mut wavs = 0;
+    for asset in catalog["assets"].as_array().unwrap() {
+        for media in asset["media"].as_array().unwrap().iter().filter(|media| media["role"] == "wav") {
+            let path = media["path"].as_str().unwrap();
+            let locked = &lock[path];
+            assert_eq!(locked["sha256"], media["sha256"], "{path}");
+            assert_eq!(locked["bytes"], media["bytes"], "{path}");
+            assert!(locked["bytes"].as_u64().unwrap() < 25 * 1024 * 1024, "{path} is over 25 MB");
+            wavs += 1;
+        }
+    }
+    assert_eq!(wavs, lock.len(), "media.lock.json has entries no clip uses");
+}
+
+/// Item 2: a cube uid comes from the generator's content (generator_sha256,
+/// layer_method in fields; params via the cube JSON bytes), never a commit.
+#[test]
+fn cube_uid_is_generator_content_and_a_commit_is_provenance_only() {
+    let catalog = json(ASSETS);
+    // The clips' own cubes (library_r3); comparison cubes are `<clip>.cube.<layer_method>`.
+    let cubes: Vec<&Value> = catalog["assets"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|asset| asset["kind"] == "cube_ihdr" && asset["legacy_id"].as_str().is_some_and(|id| id.ends_with(".cube")))
+        .collect();
+    assert_eq!(cubes.len(), 5);
+    for cube in cubes {
+        let id = &cube["legacy_id"];
+        let sha = cube["fields"]["generator_sha256"].as_str().unwrap_or_default();
+        assert!(gen_audio_core::asset::is_sha256_hex(sha), "{id}: fields.generator_sha256");
+        assert_eq!(cube["provenance"]["generator_sha256"], sha, "{id}");
+        assert_eq!(cube["fields"]["layer_method"], "library_r3", "{id}");
+        assert!(cube["fields"].as_object().unwrap().keys().all(|key| !key.contains("commit")), "{id}: no commit in identity");
+        let mut moved = cube.clone();
+        moved["provenance"]["generator_commit"] = Value::from("0123456789abcdef0123456789abcdef01234567");
+        assert_eq!(validate_envelope(&moved).unwrap().uid, cube["uid"].as_str().unwrap(), "{id}: a commit change keeps the uid");
+        let mut edited = cube.clone();
+        edited["fields"]["generator_sha256"] = Value::from("f".repeat(64));
+        assert_ne!(gen_audio_core::asset::envelope_identity(&edited).unwrap(), gen_audio_core::asset::envelope_identity(cube).unwrap(), "{id}");
+    }
+}
+
+/// E (Optimus, F5): status ok only for voice models Generate can produce in
+/// this app. Every model with no in-app adapter is offline_only (clips were
+/// rendered elsewhere, the VibeVoice honesty contract) or unavailable, with a
+/// reason; and its clips' provenance says "offline run".
+#[test]
+fn every_engine_without_an_in_app_adapter_is_offline_only_or_unavailable() {
+    let assets: Value = serde_json::from_str(ASSETS).unwrap();
+    let assets = assets["assets"].as_array().unwrap();
+    let models: Vec<&Value> = assets.iter().filter(|asset| asset["kind"] == "voice_model").collect();
+    assert_eq!(models.len(), gen_audio_core::catalog::voice_models().len());
+    for model in &models {
+        let id = model["legacy_id"].as_str().unwrap();
+        let adapter = model["body"]["synth_adapter"].as_bool().unwrap();
+        let spec = gen_audio_core::catalog::voice_model(id).unwrap();
+        assert_eq!(adapter, spec.synth_adapter, "{id}");
+        if adapter {
+            assert_eq!(model["status"], "ok", "{id} has an adapter");
+            assert!(model["body"].get("availability").is_none(), "{id}");
+            continue;
+        }
+        assert_eq!(model["status"], "unavailable", "{id}: no in-app adapter, so Generate cannot produce it");
+        let availability = &model["body"]["availability"];
+        let status = availability["status"].as_str().unwrap_or_else(|| panic!("{id}: no availability"));
+        assert!(matches!(status, "offline_only" | "unavailable"), "{id}: {status}");
+        assert!(!availability["reason"].as_str().unwrap_or("").is_empty(), "{id}: availability needs a reason");
+        // A model whose clips exist here only as offline renders says so on each clip.
+        for clip in assets.iter().filter(|asset| {
+            asset["kind"] == "audio_clip" && asset["provenance"]["voice_model"] == model["uid"]
+        }) {
+            let generator = clip["provenance"]["generator"].as_str().unwrap_or("");
+            assert!(generator.contains("offline run"), "{id}: clip {} provenance {generator}", clip["legacy_id"]);
+        }
+    }
+    let status = |id: &str| models.iter().find(|model| model["legacy_id"] == id).unwrap()["body"]["availability"]["status"].clone();
+    assert_eq!(status("kokoro_dayour"), "offline_only");
+    assert_eq!(status("misaki"), "offline_only");
+    assert_eq!(status("vibevoice"), "unavailable");
+    // The engine list agrees: only the implemented engine is producible.
+    for engine in gen_audio_core::engines::engines() {
+        let implemented = engine.status == gen_audio_core::engines::EngineStatus::Implemented;
+        if let Some(spec) = gen_audio_core::catalog::voice_model(engine.id) {
+            assert_eq!(implemented, spec.synth_adapter, "{}", engine.id);
+        }
+    }
+}
+
+/// H (Optimus): a persona is config, not audio. No voice_profile and no
+/// persona card may be bound_to a cube whose speakers do not include that
+/// persona. Cubes carry no speakers list today, so no persona is bound to any
+/// cube; the honest link is voice_profile.fields.voice_model, and the claim is
+/// persona_config (never profile_preview).
+#[test]
+fn no_persona_is_bound_to_a_cube_it_does_not_speak_in() {
+    let mut all = json(ASSETS)["assets"].as_array().unwrap().clone();
+    all.extend(json(DEV_ASSETS)["assets"].as_array().unwrap().iter().cloned());
+    let by_uid = |uid: &str| all.iter().find(|asset| asset["uid"] == uid).cloned();
+    let speakers = |cube: &Value| -> Vec<String> {
+        let list = cube.pointer("/body/speakers").or_else(|| cube.pointer("/fields/speakers"));
+        list.and_then(Value::as_array)
+            .map(|items| {
+                items
+                    .iter()
+                    .filter_map(|item| item.as_str().or_else(|| item["persona_id"].as_str()).or_else(|| item["id"].as_str()))
+                    .map(str::to_string)
+                    .collect()
+            })
+            .unwrap_or_default()
+    };
+    let mut personas = 0;
+    let mut bad = Vec::new();
+    for asset in &all {
+        let persona = match asset["kind"].as_str() {
+            Some("voice_profile") => asset["fields"]["persona_id"].as_str(),
+            Some("card") if asset["fields"]["view"] == "VoiceProfile" => asset.pointer("/body/body/personaId").and_then(Value::as_str),
+            _ => continue,
+        };
+        let persona = persona.unwrap_or_else(|| panic!("{} has no persona id", asset["uid"]));
+        personas += 1;
+        let claims = asset["honesty"]["claims"].as_array().unwrap();
+        assert!(claims.iter().any(|claim| claim == "persona_config"), "{} claims {claims:?}", asset["uid"]);
+        assert!(!claims.iter().any(|claim| claim == "profile_preview"), "{}", asset["uid"]);
+        for target in asset.pointer("/relations/bound_to").and_then(Value::as_array).into_iter().flatten() {
+            let target = by_uid(target.as_str().unwrap()).unwrap_or_else(|| panic!("{} bound_to dangles", asset["uid"]));
+            if target["kind"] == "cube_ihdr" && !speakers(&target).iter().any(|id| id == persona) {
+                bad.push(format!("{} ({persona}) -> {} ({})", asset["legacy_id"], target["uid"], target["legacy_id"]));
+            }
+        }
+        if asset["kind"] == "voice_profile" {
+            let model = asset["fields"]["voice_model"].as_str().unwrap();
+            assert_eq!(by_uid(model).map(|m| m["kind"].clone()), Some(Value::from("voice_model")), "{persona}: voice_model");
+        }
+    }
+    assert!(personas >= 10, "expected the 5 voice profiles and their 5 cards, saw {personas}");
+    assert!(bad.is_empty(), "persona bound_to a cube it does not speak in:\n  {}", bad.join("\n  "));
+    for card in json(RELEASE_VIEWPORT)["cards"].as_array().unwrap().iter().filter(|card| card["kind"] == "VoiceProfile") {
+        assert!(card["body"].get("cubeJsonUrl").is_none(), "{}: persona card links a cube", card["id"]);
+        assert_eq!(card["body"]["spectrogram3d"], "none", "{}", card["id"]);
+    }
 }

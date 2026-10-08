@@ -1,12 +1,26 @@
 """Four-layer inverse-HDR "bitdot" cube for Library clips.
 
-This is the generator behind the shipped Library cube JSON files that carry
-``cube_revision``, ``cube_shape_f_t``, ``downsample_sf_st`` and
-``bin_seconds`` (misaki rev 2, bitdot rev 1). It replaces the one-off
-``make_library_cube.py`` and ``make_optimus_*`` generators, which each kept
-their own WAV reader, STFT and layer formulas.
+This is the generator behind every shipped Library cube JSON. It replaces
+the one-off ``make_library_cube.py`` and ``make_optimus_*`` generators, which
+each kept their own WAV reader, STFT and layer formulas.
 
-Method (unchanged from the generator that produced the shipped cubes):
+Revision 3 (``LIBRARY_REVISION``, ``LAYER_METHOD`` ``library_r3``) is the one
+method for all Library clips: the same ``LIBRARY_PARAMS`` for every WAV, no
+per-clip overrides. Each cube JSON records ``source_sha256`` (sha256 of the
+WAV bytes) and ``provenance``: ``generator`` (this file's repo path),
+``generator_sha256`` (sha256 of this file's bytes with CRLF normalized to LF,
+:func:`generator_sha256`), ``layer_method`` and ``params``. Those bytes are
+the cube asset's identity (its uid hashes the cube JSON), so identity comes
+from what the generator says, not from git history: a commit that changes
+this file needs a regen, and a rebase, squash or CRLF checkout does not
+(tests/test_cube_layers.py fails with "regenerate cubes" on a mismatch, and
+build_assets checks it too). No commit SHA is written here. The commit that
+holds these bytes is information only; ``cube_revision.py manifest
+--record-generator-commit`` writes it to the manifest cube block after the
+regen is committed, and build_assets copies it into the cube envelope's
+unhashed provenance (docs/ASSET_OBJECT_MODEL.md, "Cube identity").
+
+Method:
 
 - STFT: Hann window, ``n_fft`` 1024, ``hop`` 256, reflect padding.
 - Layers, each in [0, 1] and the shape of the magnitude spectrogram:
@@ -22,9 +36,9 @@ Method (unchanged from the generator that produced the shipped cubes):
   (``gen_audio.cube_revision.measure``; ARCHITECTURE.md, cube_revision.py).
   The cube JSON's ``inv_hdr_ppm`` identity field derives from it.
 - ``layer_score`` = 0.35 signal + 0.25 tonality + 0.20 confidence + 0.20
-  quality (layer means over the full-resolution layers). Earlier revisions
-  of this generator (misaki rev 2, bitdot rev 1) stored this composite
-  under ``inv_hdr``; it is not rms/peak, so it now has its own key.
+  quality (layer means over the full-resolution layers). Revisions 1 and 2
+  stored this composite under ``inv_hdr``; it is not rms/peak, so it has its
+  own key.
 
 Scrub mapping: ``bin_seconds`` = ``downsample_sf_st[1] * hop / sample_rate``;
 the cube covers ``cube_shape_f_t[1] * bin_seconds`` seconds of the WAV.
@@ -32,12 +46,13 @@ the cube covers ``cube_shape_f_t[1] * bin_seconds`` seconds of the WAV.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from pathlib import Path
 
 import numpy as np
 
 from gen_audio.cube_revision import measure
+from gen_audio.library_manifest import normalized_sha256
 
 LAYER_NAMES = ("signal", "tonality", "confidence", "quality")
 LAYER_COLORS = (
@@ -57,6 +72,34 @@ class CubeParams:
     max_t: int = 400
     thresh: float = 0.12
     per_layer: int = 900
+
+
+# The one Library cube method. Every shipped cube uses exactly these.
+LIBRARY_REVISION = 3
+LAYER_METHOD = "library_r3"
+LIBRARY_PARAMS = CubeParams()
+GENERATOR_PATH = "src/gen_audio/cube_layers.py"
+REPO_ROOT = Path(__file__).resolve().parents[2]
+
+
+def generator_sha256(repo: Path | str = REPO_ROOT) -> str:
+    """sha256 of this generator's bytes with CRLF normalized to LF.
+
+    A Windows checkout with core.autocrlf=true hashes the same as a Linux one.
+    """
+    return normalized_sha256((Path(repo) / GENERATOR_PATH).read_bytes())
+
+
+def check_generator(doc: dict, repo: Path | str = REPO_ROOT) -> None:
+    """Raise ValueError unless a cube JSON was made by this generator's bytes."""
+    recorded = (doc.get("provenance") or {}).get("generator_sha256")
+    current = generator_sha256(repo)
+    if recorded != current:
+        raise ValueError(
+            f"cube {doc.get('wavUrl')} was made by {GENERATOR_PATH} with sha256 {recorded}, "
+            f"but the file now hashes to {current} (CRLF->LF); regenerate cubes: "
+            "python scripts/cube_revision.py layers ... for each Library WAV"
+        )
 
 
 def stft_mag(audio: np.ndarray, n_fft: int = 1024, hop: int = 256) -> np.ndarray:
@@ -216,11 +259,16 @@ def library_cube(
     *,
     stem: str,
     engine: str,
-    revision: int = 1,
-    params: CubeParams = CubeParams(),
+    source_sha256: str,
+    label: str | None = None,
 ) -> tuple[dict, tuple]:
-    """Build the Library cube document. Returns (doc, point_cloud) where
-    point_cloud feeds :func:`write_cube_png`."""
+    """Build the rev 3 Library cube document. Returns (doc, point_cloud) where
+    point_cloud feeds :func:`write_cube_png`. ``source_sha256`` is the sha256
+    of the WAV file and ``label`` names the clip in the title (default: the
+    stem). ``provenance.generator_sha256`` is :func:`generator_sha256`."""
+    params = LIBRARY_PARAMS
+    if len(source_sha256) != 64 or any(c not in "0123456789abcdef" for c in source_sha256):
+        raise ValueError("source_sha256 must be 64 lowercase hex digits")
     y = np.asarray(audio, dtype=np.float64)
     if y.ndim != 1 or len(y) == 0:
         raise ValueError("library_cube expects non-empty mono audio")
@@ -247,9 +295,10 @@ def library_cube(
         }
     doc = {
         "source_wav": f"artifacts/library/{stem}.wav",
+        "source_sha256": source_sha256,
         "engine": engine,
-        "title": f"Inverse-HDR bitdot cube \u2014 {stem}",
-        "cube_revision": int(revision),
+        "title": f"Inverse-HDR cube \u2014 {label or stem}",
+        "cube_revision": LIBRARY_REVISION,
         "sample_rate": int(sample_rate),
         "duration_s": float(len(y) / sample_rate),
         "n_fft": params.n_fft,
@@ -270,6 +319,12 @@ def library_cube(
         "pngUrl": f"/library/{stem}_cube3d.png",
         "wavUrl": f"/library/{stem}.wav",
         "legend": dict(LEGEND),
+        "provenance": {
+            "generator": GENERATOR_PATH,
+            "generator_sha256": generator_sha256(),
+            "layer_method": LAYER_METHOD,
+            "params": asdict(params),
+        },
     }
     return doc, cloud
 

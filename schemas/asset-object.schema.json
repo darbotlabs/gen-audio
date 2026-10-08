@@ -898,12 +898,13 @@
               "library_cube",
               "library_spectrogram",
               "fixture_tone",
-              "profile_preview",
+              "persona_config",
               "reference_only",
               "not_a_podcast_render",
               "engine_unavailable",
               "g2p_only",
-              "status_only"
+              "status_only",
+              "sample_content"
             ]
           }
         },
@@ -949,6 +950,20 @@
         },
         "g2p_model": {
           "$ref": "#/$defs/voice_model_uid"
+        },
+        "generator_commit": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{40}$",
+          "description": "Information only, never in the uid: a commit whose generator file hashes to generator_sha256 (manifest cube block, written by cube_revision.py manifest --record-generator-commit)."
+        },
+        "generator_sha256": {
+          "$ref": "#/$defs/sha256",
+          "description": "sha256 of the generator source with CRLF normalized to LF, as recorded in the cube JSON (also fields.generator_sha256)."
+        },
+        "layer_method": {
+          "type": "string",
+          "pattern": "^library_r[0-9]+$",
+          "description": "Cube layer method; library_r3 is gen_audio.cube_layers revision 3."
         },
         "params": {
           "type": "object",
@@ -1270,6 +1285,15 @@
           "type": "integer",
           "minimum": 0,
           "maximum": 9007199254740991
+        },
+        "generator_sha256": {
+          "$ref": "#/$defs/sha256",
+          "description": "sha256 of the generator source (provenance.generator) with CRLF normalized to LF. Cube identity comes from this content, not from a commit."
+        },
+        "layer_method": {
+          "type": "string",
+          "pattern": "^library_r[0-9]+$",
+          "description": "Cube layer method; library_r3 is gen_audio.cube_layers revision 3."
         }
       }
     },
@@ -1428,6 +1452,7 @@
             "status": {
               "enum": [
                 "unavailable",
+                "offline_only",
                 "weights_absent",
                 "external",
                 "running"
@@ -1475,6 +1500,10 @@
       "properties": {
         "inv_hdr": {
           "type": "number"
+        },
+        "layer_score": {
+          "type": "number",
+          "description": "0.35 signal + 0.25 tonality + 0.20 confidence + 0.20 quality (layer means). Not inv_hdr."
         },
         "duration_s": {
           "type": "number"

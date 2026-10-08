@@ -17,8 +17,8 @@ import {
 } from "./cubeview";
 import { isClipPlaying, seekActiveFraction, seekClipFraction, setCubeClockClip } from "./playback";
 import { applyClipNames, harvestNames } from "./library-meta";
-import { bindFloatingPlayback, pauseClip, playClip, seekClip, setUserPlayReporter } from "./playback";
-import { controlPlayOrigin, userPlayControl } from "./play-control";
+import { bindFloatingPlayback, pauseClip, playClip, releaseAllSeekBlobs, releaseDetachedTransports, seekClipOutcome, setUserPlayReporter } from "./playback";
+import { controlPlayOrigin, McpFailureCounter, postMcp, seekReportControl, userPlayControl } from "./play-control";
 import { fixturesRequested, selectViewport } from "./viewport-source";
 import { glyphBadge } from "./glyph";
 import { loadLibraryCatalog, mediaUrl, sourceSha256, type LibraryCatalog } from "./library-assets";
@@ -26,13 +26,13 @@ import { decorateLibraryTiles } from "./livestrip";
 import { profilePreview, type ProfilePreview, type VoiceSelection } from "./profiles";
 import {
   announceCopy,
+  fillModelCubes,
   bindSlideScroll,
   goToSlide,
   goToSlideId,
   isSnapping,
   moveFocus,
   moveSlide,
-  paintProfileCanvases,
   renderBoard,
   setCardFlip,
   showRejected,
@@ -103,8 +103,9 @@ function show(documentIn: unknown): void {
   }
   const doc = documentIn as ViewportDocument;
   renderBoard(board, empty, doc);
+  // D: tiles this render removed give back their cached seek blob URLs.
+  releaseDetachedTransports();
   paintProfile();
-  paintProfileCanvases();
   bindCubeCanvas();
   bindRename();
   void harvestLibrary();
@@ -112,6 +113,7 @@ function show(documentIn: unknown): void {
   void loadLibraryCatalog(loadDevAssets()).then((catalog) => {
     libraryCatalog = catalog;
     decorateLibraryTiles(board, catalog, (uid) => glyphBadge(uid, { role: "clip", onCopy: announceCopy }));
+    fillModelCubes(board, catalog, { openCube: (url, source) => void openCube(url, source), selectTile });
     syncCubeChrome();
   });
   const n = slides(board).length;
@@ -175,7 +177,7 @@ function syncCubeChrome(): void {
   const meta = getCubeMeta();
   const title = document.querySelector<HTMLElement>("#cube-title");
   if (title) {
-    title.textContent = meta ? meta.title : "Inverse-HDR bitdot cube \u2014 nothing bound";
+    title.textContent = meta ? meta.title : "Inverse-HDR cube \u2014 nothing bound";
   }
   const glyphSlot = document.querySelector<HTMLElement>("#cube-glyph");
   if (glyphSlot) {
@@ -346,6 +348,8 @@ function reportCubeMode(result: { ok: boolean; reason?: string; state: { cube_mo
  * Autoplay and other non-user starts use `playClip(..., "auto")` and change
  * nothing but the audio.
  */
+window.addEventListener("pagehide", () => releaseAllSeekBlobs());
+
 setUserPlayReporter((clipId) => {
   const request = userPlayControl(clipId);
   void mcpCall(request.name, request.args);
@@ -408,8 +412,9 @@ function bindCubeCanvas(): void {
     const fraction = Number(input.value) / 1000;
     // ONE clock: scrubber seeks library audio AND slices cube layers.
     setCubeScrub(fraction);
-    const seeked = cubeClipId ? seekClipFraction(cubeClipId, fraction) : seekActiveFraction(fraction);
-    if (seeked !== "no player") status.textContent = `Shared clock ${Math.round(fraction * 100)}% \u00b7 ${seeked}`;
+    void (cubeClipId ? seekClipFraction(cubeClipId, fraction) : seekActiveFraction(fraction)).then((seeked) => {
+      if (seeked !== "no player" && seeked !== "superseded") status.textContent = `Shared clock ${Math.round(fraction * 100)}% \u00b7 ${seeked}`;
+    });
   });
   onCubeClock((fraction) => {
     const fp = document.querySelector<HTMLInputElement>("#fp-scrub");
@@ -472,12 +477,6 @@ function bindRename(): void {
           applyFlipcard(body.profile as Record<string, unknown>);
         }
       });
-    });
-  });
-  board.querySelectorAll<HTMLButtonElement>("[data-action='open-cube']").forEach((node) => {
-    node.addEventListener("click", (event) => {
-      event.stopPropagation();
-      void openCube(node.dataset.cubeJson || "", "profile");
     });
   });
 }
@@ -561,26 +560,40 @@ async function refreshConnectors(doc: ViewportDocument): Promise<ViewportDocumen
   }
 }
 
-document.querySelector("#show-example")?.addEventListener("click", () => {
-  if (!fixturesRequested(fixtureFlag)) {
-    status.textContent = "The labeled fixture deck is dev/test only (VITE_GEN_AUDIO_FIXTURES=1). Showing the Library deck.";
-  }
-  void loadShippedDocument().then(refreshConnectors).then(show);
-});
 document.querySelector("#show-empty")?.addEventListener("click", () => {
   show({ version: "1.0", title: "Darbot Gen-Audio", columns: 3, cards: [] });
 });
-document.querySelector("#run-improve")?.addEventListener("click", async () => {
-  try {
-    const { invoke } = await import("@tauri-apps/api/core");
-    const result = await invoke<Record<string, unknown>>("run_fixture_improve");
-    status.textContent = result.ok
-      ? "Python improve finished on the fixture tone (fixture only — not podcast speech)."
-      : `Python improve did not finish: ${JSON.stringify(result)}`;
-  } catch (error) {
-    status.textContent = `Python improve needs the desktop shell. ${String(error)}`;
-  }
-});
+// E1 addendum: the fixture controls exist only in dev/test builds. The check is
+// a literal import.meta.env comparison so Vite replaces it at build time and
+// the release bundle drops this block, labels and command name included
+// (apps/desktop/tests/viewport-source.test.ts greps dist for them).
+if (import.meta.env.VITE_GEN_AUDIO_FIXTURES === "1") {
+  const toolbar = document.querySelector(".ga-header-toolbar .toolbar");
+  const showExample = document.createElement("button");
+  showExample.type = "button";
+  showExample.id = "show-example";
+  showExample.textContent = "Load labeled example";
+  showExample.addEventListener("click", () => {
+    void loadShippedDocument().then(refreshConnectors).then(show);
+  });
+  const runImprove = document.createElement("button");
+  runImprove.type = "button";
+  runImprove.id = "run-improve";
+  runImprove.textContent = "Run Python improve on fixture";
+  runImprove.addEventListener("click", async () => {
+    try {
+      const { invoke } = await import("@tauri-apps/api/core");
+      const result = await invoke<Record<string, unknown>>("run_fixture_improve");
+      status.textContent = result.ok
+        ? "Python improve finished on the fixture tone (fixture only — not podcast speech)."
+        : `Python improve did not finish: ${JSON.stringify(result)}`;
+    } catch (error) {
+      status.textContent = `Python improve needs a debug desktop shell. ${String(error)}`;
+    }
+  });
+  toolbar?.prepend(showExample);
+  toolbar?.append(runImprove);
+}
 document.querySelector("#generate-podcast")?.addEventListener("click", () => {
   void submitGenerate();
 });
@@ -703,25 +716,18 @@ function applyFlipcard(profile: Record<string, unknown>): void {
   setCardFlip(board, `profile-${personaId}`, true);
 }
 
+// Window->MCP failures are counted, not swallowed. This branch's viewport_get
+// is the interim Cube-mode read (cube_mode / cube_compare, folded into PR #4's
+// reducer later) and takes no window reports, so the counts live on
+// <html data-mcp-failures> and console.warn.
+const mcpFailures = new McpFailureCounter(undefined, (snapshot) => {
+  document.documentElement.dataset.mcpFailures = JSON.stringify(snapshot);
+});
+
 async function mcpCall(name: string, args: Record<string, unknown>): Promise<unknown | null> {
-  try {
-    const response = await fetch("http://127.0.0.1:8765/mcp", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({
-        jsonrpc: "2.0",
-        id: 1,
-        method: "tools/call",
-        params: { name, arguments: args },
-      }),
-    });
-    if (!response.ok) return null;
-    const payload: unknown = await response.json();
-    noteControlSeq(payload);
-    return payload;
-  } catch {
-    return null;
-  }
+  const payload = await postMcp(fetch, "http://127.0.0.1:8765/mcp", name, args, mcpFailures);
+  if (payload !== null) noteControlSeq(payload);
+  return payload;
 }
 
 function noteControlSeq(payload: unknown): void {
@@ -768,7 +774,17 @@ function applyControl(event: { seq?: number; op?: string; args?: Record<string, 
       status.textContent = result === "playing" ? `Playing ${args.tileId}` : result;
     });
     else if (action === "pause") status.textContent = pauseClip(args.tileId);
-    else if (action === "seek") status.textContent = seekClip(args.tileId, Number(args.seconds));
+    else if (action === "seek") {
+      const requested = Number(args.seconds);
+      void seekClipOutcome(args.tileId, requested).then((landing) => {
+        if (landing.status !== "superseded") status.textContent = landing.status;
+        // Tell MCP where it landed: ui_playback answers the agent with {requested_t, landed_t, ok, reason}.
+        if (typeof event.seq === "number") {
+          const report = seekReportControl(event.seq, requested, landing);
+          void mcpCall(report.name, report.args);
+        }
+      });
+    }
   } else if (event.op === "sidepane") {
     applySidepane({
       agents: Array.isArray(args.agents) ? args.agents.map(String) : undefined,
@@ -822,9 +838,12 @@ function connectControl(): void {
 void loadShippedDocument().then(refreshConnectors).then(show);
 // The bus ring holds 128 events; viewport_get is the Cube mode's resync.
 void boardReady.then(() => cubeMode.sync()).then(reportCubeMode);
-// Test hook: scrubs the cube and ONLY the clip the cube is bound to (never whatever played last).
-(window as unknown as { __genAudioScrub?: (f: number) => string }).__genAudioScrub = (fraction: number) => {
-  setCubeScrub(fraction, { silent: true });
-  return cubeClipId ? seekClipFraction(cubeClipId, fraction) : "no cube clip";
-};
+// Test hook (dev/test builds only, E1 addendum): scrubs the cube and ONLY the
+// clip the cube is bound to (never whatever played last).
+if (import.meta.env.VITE_GEN_AUDIO_FIXTURES === "1") {
+  (window as unknown as { __genAudioScrub?: (f: number) => Promise<string> }).__genAudioScrub = (fraction: number) => {
+    setCubeScrub(fraction, { silent: true });
+    return cubeClipId ? seekClipFraction(cubeClipId, fraction) : Promise.resolve("no cube clip");
+  };
+}
 connectControl();

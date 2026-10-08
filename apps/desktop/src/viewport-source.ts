@@ -11,7 +11,7 @@ export function selectViewport<T>(flag: string | undefined, release: T, example:
 }
 
 /** Claims that make an asset dev/test-only; mirrors Rust `asset::DEV_FIXTURE_CLAIMS`. */
-export const DEV_FIXTURE_CLAIMS = ["fixture_tone", "reference_only"] as const;
+export const DEV_FIXTURE_CLAIMS = ["fixture_tone", "reference_only", "sample_content"] as const;
 
 /** Mirrors Rust `asset::is_dev_fixture`: honesty.fixture, or a dev-only claim. */
 export function isDevFixture(asset: { honesty?: { fixture?: unknown; claims?: unknown } }): boolean {

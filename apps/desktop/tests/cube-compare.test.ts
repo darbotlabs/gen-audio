@@ -67,8 +67,11 @@ function side(name: string): CompareSide {
 test("layer methods are read from the cube JSON, never guessed", () => {
   assert.equal(layerMethodOf(read(MISAKI)), "library_r3");
   assert.equal(layerMethodOf(read(MISAKI_R2)), "pipeline_r2");
-  // The legacy rev-1 cubes came from the retired generator: no layer_score, no method.
-  assert.equal(layerMethodOf(read("library_kokoro_onnx_cube3d.json")), null);
+  // Every Library cube now names its method in provenance (#5 E4: all five at rev 3).
+  assert.equal(layerMethodOf(read("library_kokoro_onnx_cube3d.json")), "library_r3");
+  // Never guessed: a JSON that records no method is unknown, layer_score or not.
+  assert.equal(layerMethodOf({ layer_score: 0.25 }), null);
+  assert.equal(layerMethodOf({ provenance: { layer_method: "pipeline_r9" } }), null);
   assert.equal(LAYER_METHOD_LABELS.library_r3, "Library formulas, rev 3");
   assert.equal(LAYER_METHOD_LABELS.pipeline_r2, "Pipeline formulas, rev 2 (PR #4)");
 });
@@ -91,8 +94,11 @@ test("a mismatched source_sha256 is refused", () => {
   // The JSON's own sha must agree with its envelope's.
   const forged = { ...read(MISAKI_R2), source_sha256: "0".repeat(64) };
   assert.match(String(sideFromDoc(`/library/${MISAKI_R2}`, forged, envelopeSha(MISAKI_R2))), /asset envelope says/);
-  // A library_r3 JSON has no sha of its own; without the envelope it cannot be matched.
-  assert.match(String(sideFromDoc(`/library/${MISAKI}`, read(MISAKI), null)), /no source_sha256/);
+  // A library_r3 JSON records its WAV's sha (#5 E4), so it matches without the envelope;
+  // a cube JSON with no sha and no envelope cannot be matched.
+  assert.equal((sideFromDoc(`/library/${MISAKI}`, read(MISAKI), null) as CompareSide).sourceSha256, read(MISAKI).source_sha256);
+  const { source_sha256: _dropped, ...noSha } = read(MISAKI);
+  assert.match(String(sideFromDoc(`/library/${MISAKI}`, noSha, null)), /no source_sha256/);
 });
 
 test("seek maps seconds to each cube's own bin on one shared slice (bitdot: 0.619 s vs 0.352 s bins)", () => {
@@ -116,14 +122,33 @@ test("seek maps seconds to each cube's own bin on one shared slice (bitdot: 0.61
 test("one clock drives both slices: play, pause, seek and scrub; drift 0", async () => {
   const cube = await import("../src/cubeview.ts");
   const playback = await import("../src/playback.ts");
+  const { Seeker } = await import("../src/seek.ts");
+  // #5's verified seeks (seek.ts): a fully seekable element that fires `seeked`, no settle delay.
+  playback.setSeeker(new Seeker(undefined, { timeoutMs: 500, settleMs: 0 }));
+  const listeners = new Map<string, Set<() => void>>();
+  let time = 0;
   const audio = {
     src: `/library/genaid_full_misaki_kokoro.wav`,
     paused: true,
     ended: false,
-    currentTime: 0,
+    get currentTime() {
+      return time;
+    },
+    set currentTime(value: number) {
+      time = value;
+      queueMicrotask(() => listeners.get("seeked")?.forEach((listener) => listener()));
+    },
     duration: read(MISAKI).duration_s,
     readyState: 4,
-    seekable: { length: 1 },
+    seekable: { length: 1, start: () => 0, end: () => read(MISAKI).duration_s },
+    addEventListener(type: string, listener: () => void) {
+      if (!listeners.has(type)) listeners.set(type, new Set());
+      listeners.get(type)!.add(listener);
+    },
+    removeEventListener(type: string, listener: () => void) {
+      listeners.get(type)?.delete(listener);
+    },
+    load() {},
     async play() {
       audio.paused = false;
     },
@@ -182,11 +207,15 @@ test("one clock drives both slices: play, pause, seek and scrub; drift 0", async
   assert.deepEqual(cube.getComparePlayheads(), playing);
 
   // Seek (MCP ui_playback seek / UI) moves both, paused or not.
-  assert.equal(playback.seekClip("lib-misaki-kokoro", 100), "seeked");
+  // Seeks are verified since #5: the result says where the clock landed.
+  assert.equal(await playback.seekClip("lib-misaki-kokoro", 100), "seeked to 1:40");
   expectBoth(100);
 
   // Scrub the shared cube scrubber: one fraction, both slices.
   cube.setCubeScrub(0.5);
+  expectBoth(0.5 * read(MISAKI).duration_s);
+  // The scrub's seek is async (seek.ts); let it land on the same clock before moving on.
+  await new Promise((resolve) => setTimeout(resolve, 0));
   expectBoth(0.5 * read(MISAKI).duration_s);
 
   // Leaving Compare drops the second pane; rebinding the cube also ends it.

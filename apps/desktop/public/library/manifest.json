@@ -13,8 +13,18 @@
       "cube": {
         "pngUrl": "/library/library_cube_explainer_kokoro_onnx_cube3d.png",
         "jsonUrl": "/library/library_cube_explainer_kokoro_onnx_cube3d.json",
-        "inv_hdr": 0.06963625142864167,
-        "note": "Dedicated inverse-HDR cube from cube-explainer WAV (signal/tonality/confidence/quality)."
+        "inv_hdr": 0.06963625142871165,
+        "note": "Inverse-HDR cube rev 3 over the full 157.134 s WAV (stft 1024/256 @ 24 kHz, downsample 5x37; signal/tonality/confidence/quality). Scrub maps by seconds: bin = floor(t / 0.394667 s).",
+        "cube_revision": 3,
+        "duration_s": 157.134,
+        "cube_shape_f_t": [
+          102,
+          398
+        ],
+        "bin_seconds": 0.39466666666666667,
+        "cube_covers_s": 157.07733333333334,
+        "n_points": 3600,
+        "n_points_source": 125565
       },
       "summary": "Real kokoro-onnx WAV explaining spectrogram cubes. synthesizedSpeech true."
     },
@@ -31,27 +41,60 @@
       "cube": {
         "pngUrl": "/library/library_kokoro_onnx_cube3d.png",
         "jsonUrl": "/library/library_kokoro_onnx_cube3d.json",
-        "inv_hdr": 0.09737
+        "inv_hdr": 0.09736873190278225,
+        "cube_revision": 3,
+        "duration_s": 374.76591666666667,
+        "cube_shape_f_t": [
+          102,
+          399
+        ],
+        "bin_seconds": 0.9386666666666666,
+        "cube_covers_s": 374.528,
+        "n_points": 3600,
+        "n_points_source": 115974,
+        "note": "Inverse-HDR cube rev 3 over the full 374.766 s WAV (stft 1024/256 @ 24 kHz, downsample 5x88; signal/tonality/confidence/quality). Scrub maps by seconds: bin = floor(t / 0.938667 s)."
       },
       "wav": "artifacts/library/library_kokoro_onnx.wav",
-      "absWav": "D:\\gen-audio\\artifacts\\library\\library_kokoro_onnx.wav",
       "n_turns": 18,
       "title": "kokoro-onnx",
       "wavUrl": "/library/library_kokoro_onnx.wav"
     },
     {
       "synthesizedSpeech": true,
-      "note": "torch synth in progress on box",
       "wav": "artifacts/library/library_kokoro.wav",
       "id": "lib-kokoro",
       "engineId": "kokoro_dayour",
       "title": "dayour/kokoro",
       "status": "ok",
-      "absWav": "D:\\gen-audio\\artifacts\\library\\library_kokoro.wav",
       "wavUrl": "/library/library_kokoro.wav",
       "duration_s": 375.625,
       "sample_rate": 24000,
-      "bytes": 18030044
+      "bytes": 18030044,
+      "cube": {
+        "pngUrl": "/library/library_kokoro_cube3d.png",
+        "jsonUrl": "/library/library_kokoro_cube3d.json",
+        "inv_hdr": 0.06455033665251082,
+        "cube_revision": 3,
+        "duration_s": 375.625,
+        "cube_shape_f_t": [
+          102,
+          395
+        ],
+        "bin_seconds": 0.9493333333333334,
+        "cube_covers_s": 374.9866666666667,
+        "n_points": 3600,
+        "n_points_source": 121627,
+        "note": "Inverse-HDR cube rev 3 over the full 375.625 s WAV (stft 1024/256 @ 24 kHz, downsample 5x89; signal/tonality/confidence/quality). Scrub maps by seconds: bin = floor(t / 0.949333 s)."
+      },
+      "provenance": {
+        "engine": "dayour/kokoro",
+        "generator": "dayour/kokoro torch runtime (offline run outside this app; no synth record for this WAV was found on the box)",
+        "params": {
+          "sample_rate": 24000,
+          "output_sha256": "8c12bc70c2a2e4ec19c431210b25ad3e9e18cab61a6f0af5774b5027d6d1c462"
+        }
+      },
+      "summary": "Real dayour/kokoro WAV, 375.6 s @ 24 kHz mono. Offline run: rendered with the dayour/kokoro torch runtime outside this app; no in-app adapter. synthesizedSpeech true."
     },
     {
       "id": "lib-misaki-kokoro",
@@ -68,7 +111,7 @@
         "pngUrl": "/library/genaid_full_misaki_kokoro_cube3d.png",
         "jsonUrl": "/library/library_genaid_full_misaki_kokoro_cube3d.json",
         "inv_hdr": 0.07021075781225594,
-        "cube_revision": 2,
+        "cube_revision": 3,
         "duration_s": 139.375,
         "cube_shape_f_t": [
           102,
@@ -78,7 +121,7 @@
         "cube_covers_s": 139.04,
         "n_points": 3600,
         "n_points_source": 115689,
-        "note": "Inverse-HDR bitdot cube rev 2 over the full 139.375 s WAV (stft 1024/256 @ 24 kHz; signal/tonality/confidence/quality). Scrub maps by seconds: bin = floor(t / 0.352 s).",
+        "note": "Inverse-HDR cube rev 3 over the full 139.375 s WAV (stft 1024/256 @ 24 kHz, downsample 5x33; signal/tonality/confidence/quality). Scrub maps by seconds: bin = floor(t / 0.352 s).",
         "compare": [
           {
             "layer_method": "pipeline_r2",
@@ -88,7 +131,23 @@
           }
         ]
       },
-      "summary": "Real misaki\u2192kokoro WAV (genaid_full_misaki_kokoro). synthesizedSpeech true."
+      "summary": "Real misaki\u2192kokoro WAV (genaid_full_misaki_kokoro). Offline run: dayour/misaki G2P + dayour/kokoro torch outside this app; no in-app adapter. synthesizedSpeech true.",
+      "provenance": {
+        "engine": "dayour/misaki+kokoro(phoneme)",
+        "generator": "genaid-podcast-compare scripts/synth_genaid_kokoro.py --mode misaki (offline run; dayour/misaki G2P + dayour/kokoro torch outside this app)",
+        "params": {
+          "device": "cpu",
+          "sample_rate": 24000,
+          "n_turns": 9,
+          "wall_time_s": 26.69,
+          "voices": {
+            "Speaker 1": "af_heart",
+            "Speaker 2": "am_michael"
+          },
+          "output_sha256": "61b8ca26b3f4759ce643738e2afbc80f7bf2a5eb554c5fedbfbdc2d9bfad3d38",
+          "synth_record": "genaid_full_misaki_kokoro.synth.json (on the box that rendered it; not shipped)"
+        }
+      }
     },
     {
       "id": "lib-bitdot-braille-vibevoice",
@@ -111,7 +170,7 @@
         "pngUrl": "/library/bitdot_braille_vibevoice_cube3d.png",
         "jsonUrl": "/library/library_bitdot_braille_vibevoice_cube3d.json",
         "inv_hdr": 0.0667773777452339,
-        "cube_revision": 1,
+        "cube_revision": 3,
         "duration_s": 247.06666666666666,
         "cube_shape_f_t": [
           102,
@@ -121,7 +180,7 @@
         "cube_covers_s": 246.848,
         "n_points": 3600,
         "n_points_source": 94667,
-        "note": "Inverse-HDR bitdot cube rev 1 over the full 247.067 s WAV (stft 1024/256 @ 24 kHz, downsample 5x58; signal/tonality/confidence/quality). Scrub maps by seconds: bin = floor(t / 0.618667 s).",
+        "note": "Inverse-HDR cube rev 3 over the full 247.067 s WAV (stft 1024/256 @ 24 kHz, downsample 5x58; signal/tonality/confidence/quality). Scrub maps by seconds: bin = floor(t / 0.618667 s).",
         "compare": [
           {
             "layer_method": "pipeline_r2",

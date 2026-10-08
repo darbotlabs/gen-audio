@@ -28,7 +28,7 @@ reconciled choices listed at the end.
   "schema_version": "1.0.0",          // semver; only the major enters the uid; unknown major rejected
   "uid_scheme": "ga1",
   "kind": "cube_ihdr",                // closed enum, snake_case (see §4)
-  "uid": "ga:cube_ihdr:6aq6vmw7tnmvlfddf53q27ttc4",
+  "uid": "ga:cube_ihdr:biaxxmnibxtcur7nxdu3ffvna4",
   "legacy_id": "lib-misaki-kokoro.cube", // old card id / tileId / clipId / persona id; never hashed
   "status": "ok",                     // ok | missing | unavailable; never hashed
   "fields":  { ... },                 // HASHED identity fields: fixed per-kind allowlist, integers only
@@ -36,7 +36,7 @@ reconciled choices listed at the end.
   "src":     ["ga:audio_clip:..."],   // HASHED derived_from parents (Merkle DAG)
   "relations": { "layer_of", "bound_to", "composes", "supersedes" }, // unhashed links
   "honesty": { "synthesized_speech", "fixture", "not_podcast", "claims": [closed vocabulary], "note" },
-  "provenance": { "generator", "engine", "voice_model", "g2p_model", "params", "created_at" },
+  "provenance": { "generator", "generator_sha256", "generator_commit", "layer_method", "engine", "voice_model", "g2p_model", "params", "created_at" },
   "display": { "title", "summary", "semantic_name", "face_name", "glyph", "display_rev" }, // display_rev: integer, unhashed
   "body": { ... },                    // per-kind payload, unhashed; float views live here
   "extensions": { "x-vendor-thing": ... } // namespaced, never hashed
@@ -116,10 +116,10 @@ uid      = "ga:" K ":" base32(digest[0..16])        RFC 4648 alphabet a-z2-7, lo
   (`control.rs`). `uid_scheme: "ga1"`. Rehashing in place is never allowed: a
   new scheme or major mints a new uid plus `relations.supersedes: [old uid]`.
 - **Worked example (real misaki cube):**
-  - `JCS(identity)` = `{"fields":{"bin_frames":8448,"covers_ms":139040,"cube_revision":3,"duration_ms":139375,...},"kind":"cube_ihdr","media":[{"role":"cube_json",...},{"role":"cube_png",...}],"schema_major":1,"src":["ga:audio_clip:vtwxksrsuci7zygslimzfy7kdy"]}`
-  - digest = `f021eab2…8642`
-  - uid = `ga:cube_ihdr:6aq6vmw7tnmvlfddf53q27ttc4`
-  - glyph = `⣰⠡`
+  - `JCS(identity)` = `{"fields":{"bin_frames":8448,"covers_ms":139040,"cube_revision":3,"duration_ms":139375,"freq_bins":102,"generator_sha256":"410fa703…2db35",...,"layer_method":"library_r3",...},"kind":"cube_ihdr","media":[{"role":"cube_json",...},{"role":"cube_png",...}],"schema_major":1,"src":["ga:audio_clip:vtwxksrsuci7zygslimzfy7kdy"]}`
+  - digest = `0a017bb1…c47e`
+  - uid = `ga:cube_ihdr:biaxxmnibxtcur7nxdu3ffvna4`
+  - glyph = `⠊⠁`
 
   Darbot's earlier worked example (`…ay76z`, built from the old kokoro_onnx
   cube under a 130-bit encoding) no longer applies: this spec takes 128 bits and
@@ -144,13 +144,15 @@ Negative or non-finite inputs are an error (`bad_rounding_input`).
 **`bin_frames` (B1′).** `asset_migrate.rs` takes the branches in this order:
 when the cube JSON has `downsample_sf_st` and a hop is known, `bin_frames =
 downsample_sf_st[1] × hop`; otherwise it is inferred from the cube JSON's own
-float `duration_s` as above. Cubes without `bin_seconds` (the older library
-cubes: `lib-kokoro-onnx`, `lib-cube-explainer`) take the inferred path. The
+float `duration_s` as above. Since E4 every shipped Library cube is rev 3
+(`gen_audio.cube_layers`, `layer_method: library_r3`) and takes the first
+branch; the inferred branch remains for cube JSON without `downsample_sf_st`
+(the older library cubes took it before E4). The
 two-step order is normative: `157.134 s × 24000 = 3771215.9999999995`,
 `/ 96 = 39283.49999999999` → **39283** (vector `bin_frames_inferred`, asserted by
 cargo, npm and pytest). Exact rational arithmetic (or frames: 3,771,216 / 96 =
-39283.5) gives 39284, which would re-mint `lib-cube-explainer`'s cube; its uid
-stays `ga:cube_ihdr:bcuw4m76pyqanslfiugnvlxnda`.
+39283.5) gives 39284. (Before E4 this pinned `lib-cube-explainer`'s cube uid,
+`ga:cube_ihdr:bcuw4m76pyqanslfiugnvlxnda`; that cube is now rev 3.)
 
 "The double product" in the other rows is one IEEE-754 binary64 multiply, so
 Rust, TS and Python get bit-identical inputs to the rounding step. Examples (all in
@@ -169,12 +171,36 @@ frames so both languages re-derive `duration_ms` before hashing. None of the
 | voice_profile | persona_id, voice_model (uid), tone, purpose, domain, accent, traits, refs | | profile_json | |
 | audio_clip | engine, sample_rate_hz, duration_ms | channels (1..32) | wav | |
 | spectrogram_2d | source_sha256, sample_rate_hz, n_fft, hop_frames, n_bands, width_px, height_px, duration_ms, covers_ms, db_floor, colormap | | spectrogram_png | exactly 1 audio_clip |
-| cube_ihdr | source_sha256, sample_rate_hz, bin_frames, time_bins, freq_bins, duration_ms, covers_ms, inv_hdr_ppm, cube_revision, n_points | n_fft, hop_frames | cube_json, cube_png | exactly 1 audio_clip |
+| cube_ihdr | source_sha256, sample_rate_hz, bin_frames, time_bins, freq_bins, duration_ms, covers_ms, inv_hdr_ppm, cube_revision, n_points | n_fft, hop_frames, generator_sha256, layer_method | cube_json, cube_png | exactly 1 audio_clip |
 | layer | name (signal/tonality/confidence/quality), index | | | exactly 1 cube_ihdr (= relations.layer_of) |
 | podcast_script | format, n_turns, n_words | | script_txt | |
 | transcript | language, n_words | | transcript_json, transcript_txt | (audio_clip) |
 | card | card_id, view (old card kind) | | | |
 | mcp_tool | name, input_schema | | | |
+
+### Cube identity: generator content, not history
+
+A Library cube's uid says which generator **bytes** made it, never which
+commit:
+
+- `gen_audio.cube_layers` writes `provenance.generator_sha256` into the cube
+  JSON: the sha256 of `src/gen_audio/cube_layers.py` with CRLF normalized to
+  LF, so a Windows `core.autocrlf=true` checkout hashes the same. The JSON also
+  keeps `generator` (the path), `layer_method` (`library_r3`) and `params`.
+- The cube JSON is hashed as the `cube_json` media, and the migration also
+  copies `generator_sha256` and `layer_method` into `fields`. Both routes put
+  the generator's content and method in the preimage; `params` reach it
+  through the cube JSON bytes.
+- No commit SHA is written into the cube JSON or `fields`. A rebase, squash or
+  cherry-pick keeps every cube uid; editing the generator changes them after a
+  regen. `tests/test_cube_layers.py` and `build_assets` fail with "regenerate
+  cubes" when the generator no longer hashes to the recorded value.
+- The commit is information only. `cube_revision.py manifest
+  --record-generator-commit`, run after the regen is committed, writes the
+  newest commit whose generator file has those bytes to the manifest cube block
+  (`generator_commit`). `build_assets` copies it into the cube envelope's
+  `provenance`, which is unhashed. A test checks that a recorded commit holds
+  those bytes, and skips when the commit is not in the clone.
 
 **Media roles (B2).** Each role appears **at most once** per envelope
 (`duplicate_media_role`; schema `contains` + `maxContains: 1` per role; also
@@ -248,10 +274,20 @@ through `src`.
   - Unavailable "clips" (Magpie, VibeVoice, Pocket) are **not** audio_clips:
     they fold into `voice_model.body.availability`, so "no fake audio" is
     structural.
+  - A voice model is `status: ok` only when Generate can produce it here
+    (`synth_adapter`, today only `kokoro_onnx`). A model with no in-app
+    adapter whose clips were rendered elsewhere (`kokoro_dayour`, and the G2P
+    `misaki`) gets `availability {status: "offline_only", reason}` and status
+    `unavailable`; its clips' provenance says "offline run" and its cubes show
+    as offline runs. Tested in `asset_v1.rs` and the npm E test.
   - VoiceProfile → `voice_profile`:
     - `fields` hold the persona text plus the voice_model uid.
     - `body` is the VoiceProfile document itself.
-    - `cubeJsonUrl` becomes `relations.bound_to: [cube uid]`.
+    - No `bound_to` (H): a persona is config, not audio. Its honest link is
+      `fields.voice_model`, and that engine's own clips and cubes link from
+      there. No voice_profile or persona card is bound_to a cube whose
+      speakers do not include that persona (`asset_v1.rs`
+      `no_persona_is_bound_to_a_cube_it_does_not_speak_in`).
   - Viewport card → `card` with `fields{card_id, view}`, where the old card
     `kind` becomes `fields.view`. `viewport.example.json` keeps `id` and gains
     `uid` alongside it, and it still validates against
@@ -305,9 +341,10 @@ produce (migration and `build_assets`), and the UI derives its badge text from
 | audio_clip, synthesized, wav sha known but file absent here | `missing` | true | false | `real_wav`, `synthesized_speech` | real synthesis, not on this machine |
 | audio_clip, not synthesized (recording/import) | `ok` / `missing` | false | false | `real_wav` | real audio, no synthesis claim |
 | audio_clip | `unavailable` | — | — | — | **invalid** (`bad_status`): an unavailable engine has no clip; it is a voice_model |
-| voice_model, engine present | `ok` | false | false | `[]` or `g2p_only` | engine listed |
+| voice_model, Generate can produce it (adapter) | `ok` | false | false | `[]` | engine listed |
+| voice_model, no adapter, offline clips only | `unavailable` (`availability.status: offline_only`) | false | false | `engine_unavailable` or `g2p_only` | offline runs, never generated here |
 | voice_model, engine unavailable | `unavailable` | false | false | `engine_unavailable` (+ `g2p_only`) | greyed engine, never playable |
-| voice_profile | `ok` | **false** (enforced) | false | `profile_preview`, `not_a_podcast_render`; `not_podcast:true` (enforced) | persona preview, not a render |
+| voice_profile | `ok` | **false** (enforced) | false | `persona_config`, `not_a_podcast_render`; `not_podcast:true` (enforced) | persona config, no audio of this persona |
 | cube_ihdr / layer | `ok` | false | false | `library_cube` | analysis of a real clip |
 | spectrogram_2d | `ok` | false | false | `library_spectrogram` | analysis of a real clip |
 | card, fixture tone | `ok` | **false** (enforced) | true | `fixture_tone` | test tone, dev/test only |
@@ -319,13 +356,14 @@ Cards never claim synthesized speech themselves; they point at the clip that
 does through `relations.bound_to`.
 
 **Claims vocabulary:** `real_wav, synthesized_speech, library_cube,
-library_spectrogram, fixture_tone, profile_preview, reference_only,
-not_a_podcast_render, engine_unavailable, g2p_only, status_only`.
+library_spectrogram, fixture_tone, persona_config, reference_only,
+not_a_podcast_render, engine_unavailable, g2p_only, status_only, sample_content`.
 
 **Release vs dev (PR #5 review).** An asset is dev/test-only when
-`honesty.fixture` is true or it claims `fixture_tone` or `reference_only`
-(Rust `is_dev_fixture`, TS `isDevFixture`): today the `spec-fixture`,
-`cube-fixture` and `bench-ref` cards. `build_assets` writes them to
+`honesty.fixture` is true or it claims `fixture_tone`, `reference_only` or
+`sample_content` (Rust `is_dev_fixture`, TS `isDevFixture`): today the
+`spec-fixture`, `cube-fixture`, `bench-ref`, `cast-sample` (sample script),
+`serve-node` and `serve-gateway` (never-probed placeholder endpoints) cards. `build_assets` writes them to
 `schemas/asset-object/fixtures/assets.dev.json` instead of the public
 `assets.json`, and writes `viewport.release.json` (the example deck minus
 those cards). Release builds boot `viewport.release.json`; only

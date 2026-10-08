@@ -17,6 +17,7 @@ const SHA256 = /^[0-9a-f]{64}$/;
 /** The cube JSON fields Compare reads. */
 export interface CubeDocFields {
   layer_method?: unknown;
+  provenance?: { layer_method?: unknown } | null;
   layer_score?: unknown;
   source_sha256?: unknown;
   duration_s?: unknown;
@@ -30,14 +31,14 @@ export interface CubeDocFields {
 }
 
 /**
- * pipeline_r2 JSON records layer_method. library_r3 JSON leaves it out (so the
- * shipped Library cube bytes and their pinned uids stay put) and is the only
- * generator that writes layer_score without it. Anything else is unknown.
+ * The layer method a cube JSON records, never guessed: pipeline_r2 JSON
+ * (gen_audio.cube_pipeline_r2) carries a top-level layer_method, and every
+ * cube JSON from a generator module names it in provenance.layer_method
+ * (library_r3: gen_audio.cube_layers). A JSON that records neither is unknown.
  */
 export function layerMethodOf(doc: CubeDocFields): LayerMethod | null {
-  if (doc.layer_method === "library_r3" || doc.layer_method === "pipeline_r2") return doc.layer_method;
-  if (doc.layer_method === undefined && typeof doc.layer_score === "number") return "library_r3";
-  return null;
+  const recorded = doc.layer_method ?? doc.provenance?.layer_method;
+  return recorded === "library_r3" || recorded === "pipeline_r2" ? recorded : null;
 }
 
 /** One side of the comparison, read from its cube JSON (plus its asset envelope's sha). */

@@ -30,6 +30,7 @@ COMPARE = [
     ("bitdot_braille_vibevoice", "vibevoice", 2),
     ("genaid_full_misaki_kokoro", "misaki_kokoro", 2),
 ]
+COMPARE_CUBES = [cube_json_name(stem) for stem, _engine, _revision in COMPARE]
 
 
 def _sha256(path: Path) -> str:
@@ -77,7 +78,7 @@ def test_cli_dispatches_by_method_to_the_owning_module(tmp_path):
     assert set(LAYER_METHODS) == {"library_r3", "pipeline_r2"}
     wav = write_wav(tmp_path / "tone.wav", _speechish(2.0), 24000)
     out = tmp_path / "r2.json"
-    assert cube_main(["layers", str(wav), str(out), "--stem", "tone", "--engine", "fixture", "--revision", "2", "--method", "pipeline_r2"]) == 0
+    assert cube_main(["layers", str(wav), str(out), "--stem", "tone", "--engine", "fixture", "--method", "pipeline_r2"]) == 0
     audio, sr = read_wav(wav)
     expected, _ = pipeline_r2_cube(audio, sr, stem="tone", engine="fixture", source_sha256=_sha256(wav), revision=2)
     assert json.loads(out.read_text(encoding="utf-8")) == json.loads(json.dumps(expected))
@@ -208,7 +209,7 @@ def test_pipeline_r2_cube_guards_and_keys():
 def test_layers_cli_method_flag_records_method_and_wav_sha(tmp_path):
     wav = write_wav(tmp_path / "tone.wav", _speechish(2.0), 24000)
     out, png = tmp_path / "cube.json", tmp_path / "cube.png"
-    argv = ["layers", str(wav), str(out), "--stem", "tone", "--engine", "fixture", "--revision", "2", "--method", "pipeline_r2", "--png", str(png)]
+    argv = ["layers", str(wav), str(out), "--stem", "tone", "--engine", "fixture", "--method", "pipeline_r2", "--png", str(png)]
     assert cube_main(argv) == 0
     doc = json.loads(out.read_text(encoding="utf-8"))
     assert doc["layer_method"] == "pipeline_r2" and doc["cube_revision"] == 2
