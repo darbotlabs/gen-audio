@@ -17,3 +17,7 @@ serde_json = { workspace = true }
 ureq = { workspace = true }
 gen-audio-core = { workspace = true }
 gen-audio-connectors = { workspace = true }
+
+[dev-dependencies]
+# Tests use gen_audio_core::bridge::NoKokoroEnv (feature test-support).
+gen-audio-core = { workspace = true, features = ["test-support"] }

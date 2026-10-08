@@ -27,7 +27,10 @@ function Invoke-Checked {
     # Native stderr (cargo progress) must not become a terminating error
     # when a caller redirects it under $ErrorActionPreference = 'Stop'.
     $ErrorActionPreference = 'Continue'
-    & $file @commandArgs
+    # Through the host (stderr as plain text), so Start-Transcript records it:
+    # Windows PowerShell 5.1 does not transcribe native output written
+    # straight to the console.
+    & $file @commandArgs 2>&1 | ForEach-Object { "$_" } | Out-Host
     $code = $LASTEXITCODE
     if ($code -ne 0) {
         throw "$file $($commandArgs -join ' ') failed with exit $code"
@@ -52,6 +55,139 @@ function Get-Sha256 {
         $stream.Dispose()
     }
     return (($bytes | ForEach-Object { $_.ToString('x2') }) -join '')
+}
+
+function Get-LibraryWavProblem {
+    # The gitignored library WAVs against schemas/asset-object/media.lock.json:
+    # one line per WAV that is missing, has the wrong byte count, or the wrong
+    # sha256 (WAV_MISSING / WAV_BYTES / WAV_MISMATCH). No output means all
+    # match. Shared by build-tauri-windows.ps1 (a release must embed the real
+    # WAVs) and test.ps1 -WithWav. A gate that passes by skipping is not a gate,
+    # so an empty or unreadable lock is an error too.
+    [CmdletBinding()]
+    [OutputType([string])]
+    param([Parameter(Mandatory = $true)][string]$Root)
+    $lockPath = Join-Path $Root 'schemas\asset-object\media.lock.json'
+    if (-not (Test-Path -LiteralPath $lockPath -PathType Leaf)) { throw "media.lock.json is missing: $lockPath" }
+    $lock = Get-Content -LiteralPath $lockPath -Raw | ConvertFrom-Json
+    $names = @(if ($lock.PSObject.Properties['media']) { $lock.media.PSObject.Properties | ForEach-Object { $_.Name } })
+    if ($names.Count -eq 0) { throw "$lockPath lists no WAVs" }
+    $library = Join-Path $Root 'apps\desktop\public\library'
+    foreach ($name in $names) {
+        $entry = $lock.media.$name
+        $path = Join-Path $library $name
+        if (-not (Test-Path -LiteralPath $path -PathType Leaf)) {
+            "WAV_MISSING $name (stage it in apps/desktop/public/library; *.wav is gitignored)"
+            continue
+        }
+        $bytes = (Get-Item -LiteralPath $path).Length
+        if ($entry.PSObject.Properties['bytes'] -and [int64]$entry.bytes -ne $bytes) {
+            "WAV_BYTES $name has $bytes bytes, media.lock.json $($entry.bytes)"
+            continue
+        }
+        $got = Get-Sha256 -LiteralPath $path
+        if ($got -ne [string]$entry.sha256) { "WAV_MISMATCH $name sha256 $got, media.lock.json $($entry.sha256)" }
+    }
+}
+
+function Select-CargoBinArtifact {
+    # From `cargo build --message-format=json*` stdout lines, the
+    # compiler-artifact cargo reported for binary $Bin: its executable path and
+    # whether cargo's fingerprint said it was already up to date (fresh). That
+    # is cargo's own verdict on staleness; file mtimes are not (a no-op
+    # rebuild leaves the old mtime in place).
+    [CmdletBinding()]
+    [OutputType([pscustomobject])]
+    param([Parameter(Mandatory = $true)][AllowEmptyCollection()][AllowEmptyString()][string[]]$Line, [Parameter(Mandatory = $true)][string]$Bin)
+    $found = $null
+    foreach ($text in $Line) {
+        if (-not $text -or -not $text.StartsWith('{')) { continue }
+        $message = $text | ConvertFrom-Json
+        if (-not $message.PSObject.Properties['reason'] -or $message.reason -ne 'compiler-artifact') { continue }
+        if ($message.target.name -ne $Bin -or @($message.target.kind) -notcontains 'bin') { continue }
+        if (-not $message.PSObject.Properties['executable'] -or -not $message.executable) { continue }
+        $found = [pscustomobject]@{ Executable = [string]$message.executable; Fresh = [bool]$message.fresh }
+    }
+    if (-not $found) { throw "cargo reported no compiler-artifact for bin $Bin, so there is no way to tell which binary it built" }
+    return $found
+}
+
+function Invoke-CargoBinBuild {
+    # cargo build one binary and return Select-CargoBinArtifact's answer
+    # (Executable, Fresh). Throws on a non-zero exit. Diagnostics still go to
+    # the console (json-render-diagnostics); stdout carries the JSON messages.
+    [CmdletBinding()]
+    [OutputType([pscustomobject])]
+    param([Parameter(Mandatory = $true)][string]$Package, [Parameter(Mandatory = $true)][string]$Bin, [string[]]$ExtraArgs = @())
+    $cargoArgs = @('build', '-p', $Package, '--bin', $Bin, '--message-format=json-render-diagnostics') + $ExtraArgs
+    $ErrorActionPreference = 'Continue'
+    # stdout is cargo's JSON; stderr (diagnostics, progress) goes through the
+    # host as text so a build transcript records it.
+    $lines = New-Object System.Collections.Generic.List[string]
+    & cargo @cargoArgs 2>&1 | ForEach-Object {
+        if ($_ -is [System.Management.Automation.ErrorRecord]) { "$_" | Out-Host } else { $lines.Add([string]$_) }
+    }
+    $code = $LASTEXITCODE
+    if ($code -ne 0) { throw "cargo $($cargoArgs -join ' ') failed with exit $code" }
+    return Select-CargoBinArtifact -Line $lines.ToArray() -Bin $Bin
+}
+
+function Get-OutputFingerprint {
+    # Length and sha256 of a build output, or $null when it is missing.
+    [CmdletBinding()]
+    [OutputType([pscustomobject])]
+    param([Parameter(Mandatory = $true)][string]$LiteralPath)
+    if (-not (Test-Path -LiteralPath $LiteralPath -PathType Leaf)) { return $null }
+    $item = Get-Item -LiteralPath $LiteralPath
+    return [pscustomobject]@{ Path = $item.FullName; Length = $item.Length; Sha256 = (Get-Sha256 -LiteralPath $item.FullName) }
+}
+
+function Assert-BuildOutput {
+    # A build output judged by content, never by mtime (a no-op rebuild does
+    # not rewrite an up-to-date output, so its old mtime says nothing). It must
+    # exist after the build step, which is exit-code checked. Its sha256 is
+    # compared with the Get-OutputFingerprint taken before that step: State is
+    # 'rebuilt' (new or changed bytes) or 'unchanged' (same bytes, up to date).
+    [CmdletBinding()]
+    [OutputType([pscustomobject])]
+    param([Parameter(Mandatory = $true)][string]$LiteralPath, [Parameter(Mandatory = $true)][string]$What, [AllowNull()]$Before)
+    $after = Get-OutputFingerprint -LiteralPath $LiteralPath
+    if (-not $after) { throw "$What is missing after the build: $LiteralPath" }
+    $state = if ($Before -and $Before.Sha256 -eq $after.Sha256) { 'unchanged' } else { 'rebuilt' }
+    return ($after | Add-Member -NotePropertyName State -NotePropertyValue $state -PassThru)
+}
+
+function Get-DistCopyDrift {
+    # Files under $Source (apps/desktop/public) that the build should have
+    # copied into $Dist byte for byte: one DIST_MISSING or DIST_CHANGED line
+    # (path relative to $Source, forward slashes) per file that it did not.
+    # No output means dist holds this tree's public files.
+    [CmdletBinding()]
+    [OutputType([string])]
+    param([Parameter(Mandatory = $true)][string]$Source, [Parameter(Mandatory = $true)][string]$Dist)
+    $base = (Resolve-Path -LiteralPath $Source).ProviderPath.TrimEnd('\', '/')
+    foreach ($file in @(Get-ChildItem -LiteralPath $base -Recurse -File)) {
+        $rel = $file.FullName.Substring($base.Length).TrimStart('\', '/') -replace '\\', '/'
+        $copy = Join-Path $Dist $rel
+        if (-not (Test-Path -LiteralPath $copy -PathType Leaf)) { "DIST_MISSING $rel"; continue }
+        if ((Get-Item -LiteralPath $copy).Length -ne $file.Length -or (Get-Sha256 -LiteralPath $copy) -ne (Get-Sha256 -LiteralPath $file.FullName)) {
+            "DIST_CHANGED $rel"
+        }
+    }
+}
+
+function Get-BuildLogPath {
+    # Where a build-tauri-windows.ps1 run saves its transcript:
+    # <Root>/target/logs/build-<12-char HEAD sha>-<yyyyMMdd-HHmmss>.log
+    # ("nogit" in place of the sha outside a git checkout).
+    [CmdletBinding()]
+    [OutputType([string])]
+    param([Parameter(Mandatory = $true)][string]$Root)
+    $ErrorActionPreference = 'Continue'
+    $sha = "$(& git -C $Root rev-parse --short=12 HEAD 2>$null)".Trim()
+    if ($LASTEXITCODE -ne 0 -or -not $sha) { $sha = 'nogit' }
+    $name = 'build-{0}-{1}.log' -f $sha, (Get-Date -Format 'yyyyMMdd-HHmmss')
+    return (Join-Path (Join-Path (Join-Path $Root 'target') 'logs') $name)
 }
 
 function Test-IsWindowsHost {

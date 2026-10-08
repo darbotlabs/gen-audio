@@ -160,9 +160,8 @@
         "accent": { "type": "string" },
         "traits": { "type": "string", "minLength": 12 },
         "refs": { "type": "array", "minItems": 1, "maxItems": 8, "items": { "type": "string" } },
-        "spectrogram2d": { "const": "browser-profile-map" },
-        "spectrogram3d": { "enum": ["none", "library-cube-hook", "fixture-cube"] },
-        "cubeJsonUrl": { "type": "string" },
+        "spectrogram2d": { "const": "none" },
+        "spectrogram3d": { "enum": ["none"] },
         "notPodcast": { "const": true },
         "synthesizedSpeech": { "const": false },
         "disclaimer": { "type": "string", "minLength": 12 }

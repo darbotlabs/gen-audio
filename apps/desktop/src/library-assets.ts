@@ -22,11 +22,80 @@ export interface AssetEnvelope {
   src: string[];
   relations?: Record<string, unknown>;
   honesty?: { synthesized_speech?: boolean; fixture?: boolean; claims?: string[] };
+  provenance?: Record<string, unknown>;
+  body?: Record<string, unknown>;
   display: { title: string; glyph: string; display_rev?: number };
+}
+
+/** One real cube a voice model made (through its clip), for the model card's Cube tab. */
+export interface ModelCubeRow {
+  clipId: string;
+  clipTitle: string;
+  cubeUid: string;
+  revision: number | null;
+  shape: [number, number] | null;
+  invHdr: number | null;
+  layerScore: number | null;
+  layerMethod: string | null;
+  jsonUrl: string;
+}
+
+/**
+ * What a voice model card's Cube tab shows (E4):
+ * - "cubes": the model's clips' cubes; `offline` when the engine is unavailable
+ *   in this app but a clip was rendered elsewhere (VibeVoice -> bitdot).
+ * - "g2p": a G2P-only model (misaki) has no cube of its own; it links the clips
+ *   it phonemized.
+ * - "unavailable": no clip, engine unavailable, with availability.reason.
+ * - "none": an available model with no clip yet. "unknown": no such voice_model.
+ */
+export type ModelCubes =
+  | { state: "cubes"; offline: boolean; rows: ModelCubeRow[] }
+  | { state: "g2p"; clips: Array<{ clipId: string; clipTitle: string }> }
+  | { state: "unavailable"; reason: string }
+  | { state: "none" }
+  | { state: "unknown" };
+
+const num = (value: unknown): number | null => (typeof value === "number" && Number.isFinite(value) ? value : null);
+
+export function modelCubes(assets: readonly AssetEnvelope[], modelId: string): ModelCubes {
+  const model = assets.find((asset) => asset.kind === "voice_model" && asset.legacy_id === modelId);
+  if (!model) return { state: "unknown" };
+  const clipsBy = (key: "voice_model" | "g2p_model") =>
+    assets.filter((asset) => asset.kind === "audio_clip" && asset.provenance?.[key] === model.uid);
+  if (model.honesty?.claims?.includes("g2p_only")) {
+    return { state: "g2p", clips: clipsBy("g2p_model").map((clip) => ({ clipId: clip.legacy_id ?? "", clipTitle: clip.display.title })) };
+  }
+  const rows: ModelCubeRow[] = [];
+  for (const clip of clipsBy("voice_model")) {
+    const cube = assets.find((asset) => asset.kind === "cube_ihdr" && asset.src.length === 1 && asset.src[0] === clip.uid);
+    if (!cube) continue;
+    const shape = cube.body?.cube_shape_f_t;
+    rows.push({
+      clipId: clip.legacy_id ?? "",
+      clipTitle: clip.display.title,
+      cubeUid: cube.uid,
+      revision: num(cube.fields.cube_revision),
+      shape: Array.isArray(shape) && shape.length === 2 && shape.every((n) => typeof n === "number") ? [shape[0], shape[1]] : null,
+      invHdr: num(cube.body?.inv_hdr),
+      layerScore: num(cube.body?.layer_score),
+      layerMethod: typeof cube.provenance?.layer_method === "string" ? cube.provenance.layer_method : null,
+      jsonUrl: mediaUrl(cube, "cube_json") ?? "",
+    });
+  }
+  const unavailable = model.status === "unavailable";
+  if (rows.length) return { state: "cubes", offline: unavailable, rows };
+  if (unavailable) {
+    const availability = model.body?.availability as { reason?: unknown } | undefined;
+    return { state: "unavailable", reason: typeof availability?.reason === "string" ? availability.reason : "pending" };
+  }
+  return { state: "none" };
 }
 
 export interface LibraryCatalog {
   byUid: Map<string, AssetEnvelope>;
+  assets: readonly AssetEnvelope[];
+  modelCubes(modelId: string): ModelCubes;
   clipForTile(tileId: string): AssetEnvelope | null;
   derivedFrom(clipUid: string, kind: "spectrogram_2d" | "cube_ihdr"): AssetEnvelope | null;
   cubeForUrl(url: string): AssetEnvelope | null;
@@ -61,6 +130,8 @@ export function loadLibraryCatalog(extraAssets: Promise<unknown[]> = Promise.res
       const byUid = new Map(assets.map((asset) => [asset.uid, asset]));
       return {
         byUid,
+        assets,
+        modelCubes: (modelId) => modelCubes(assets, modelId),
         clipForTile: (tileId) => assets.find((asset) => asset.kind === "audio_clip" && asset.legacy_id === tileId) ?? null,
         derivedFrom: (clipUid, kind) => assets.find((asset) => asset.kind === kind && asset.src.length === 1 && asset.src[0] === clipUid) ?? null,
         cubeForUrl: (url) => assets.find((asset) => asset.kind === "cube_ihdr" && mediaUrl(asset, "cube_json") === url) ?? null,

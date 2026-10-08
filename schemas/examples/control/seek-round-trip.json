@@ -1,0 +1,23 @@
+{
+  "description": "One MCP seek, both halves of the contract. agentSeek is what an agent posts; desktopReport is the exact body the window posts after its seek (seq 1 stands for the bus seq the server assigned); agentResult is what ui_playback then returns. apps/desktop/tests/play-control.test.ts and crates/gen-audio-mcp/src/lib.rs both load this file.",
+  "agentSeek": {
+    "jsonrpc": "2.0",
+    "id": 7,
+    "method": "tools/call",
+    "params": {
+      "name": "ui_playback",
+      "arguments": { "tileId": "lib-bitdot-braille-vibevoice", "action": "seek", "seconds": 61.5, "waitMs": 5000 }
+    }
+  },
+  "landing": { "ok": true, "actual": 61.5004, "status": "seeked to 1:01" },
+  "desktopReport": {
+    "jsonrpc": "2.0",
+    "id": 1,
+    "method": "tools/call",
+    "params": {
+      "name": "ui_seek_report",
+      "arguments": { "seq": 1, "requested_t": 61.5, "landed_t": 61.5, "ok": true, "reason": "seeked to 1:01" }
+    }
+  },
+  "agentResult": { "requested_t": 61.5, "landed_t": 61.5, "ok": true, "reason": "seeked to 1:01" }
+}

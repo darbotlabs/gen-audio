@@ -9,6 +9,11 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          # Cube identity is generator_sha256 and needs no history; full
+          # history only lets tests/test_cube_layers.py check that each
+          # informational manifest generator_commit holds those bytes.
+          fetch-depth: 0
       - uses: actions/setup-python@v5
         with:
           python-version: "3.14"
@@ -16,6 +21,10 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y libsndfile1
       - run: python -m pip install -e ".[dev]"
       - run: pytest
+      - name: Regen gate (manifest cube mirror, synth sidecar paths)
+        run: |
+          python scripts/cube_revision.py manifest
+          git diff --exit-code -- apps/desktop/public/library/manifest.json 'apps/desktop/public/library/*.synth.json'
 
   python-vibevoice:
     # The locked `vibevoice` extra (torch 2.14.1+cpu, transformers 4.51.3,
@@ -51,6 +60,21 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y libwebkit2gtk-4.1-dev libgtk-3-dev libayatana-appindicator3-dev librsvg2-dev patchelf libssl-dev pkg-config
       - run: cargo test --workspace --exclude gen-audio-desktop
+      # PR #5 verification E2. The library WAVs are gitignored, so CI takes
+      # their identity from schemas/asset-object/media.lock.json; build_assets
+      # fails (never skips) when a WAV is neither on disk nor locked, when a
+      # cube JSON's source_sha256 is not its clip's WAV, or when a cube file's
+      # bytes differ from the sha256 media.lock.json "cubes" pins.
+      - name: Regen gate (asset catalog, vectors)
+        run: |
+          cargo run -p gen-audio-core --example build_assets -- --from-lock
+          cargo run -p gen-audio-core --example asset_vectors
+          git diff --exit-code -- apps/desktop/public/library schemas
+      # `cargo test` builds gen-audio-mcp's test harness, not the binary, so
+      # target/debug/gen-audio-mcp does not exist until it is built here (debug
+      # profile, the path the cp below reads).
+      - name: Build MCP sidecar binary (debug)
+        run: cargo build -p gen-audio-mcp
       - name: Stage MCP sidecar so desktop config can see externalBin
         run: |
           triple="$(rustc -vV | sed -n 's/^host: //p')"
@@ -85,8 +109,9 @@ jobs:
 
   windows-scripts:
     # PSScriptAnalyzer (pinned 1.24.0, any finding fails), the script-sprawl
-    # gate and the regen check (asset_vectors -> v1.json must match; the
-    # library WAVs are gitignored, so build_assets reports SKIPPED here),
+    # gate and the regen check (build_assets -FromLock: the library WAVs are
+    # gitignored, so their identity comes from media.lock.json; then
+    # asset_vectors, the manifest cube mirror and git diff --exit-code),
     # under both PowerShell 7 and Windows PowerShell 5.1.
     runs-on: windows-latest
     steps:
@@ -102,7 +127,7 @@ jobs:
           Install-Module PSScriptAnalyzer -RequiredVersion 1.24.0 -Scope CurrentUser -Force
       - name: PSSA + sprawl gate + regen (pwsh 7)
         shell: pwsh
-        run: ./scripts/test.ps1 -Tag ci-pwsh -Skip Cargo,Npm,Python
+        run: ./scripts/test.ps1 -Tag ci-pwsh -FromLock -Skip Cargo,Npm,Python
       - name: PSSA + sprawl gate + regen (Windows PowerShell 5.1)
         shell: powershell
-        run: .\scripts\test.ps1 -Tag ci-winps -Skip Cargo,Npm,Python
+        run: .\scripts\test.ps1 -Tag ci-winps -FromLock -Skip Cargo,Npm,Python

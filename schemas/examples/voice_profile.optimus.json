@@ -14,10 +14,9 @@
     "cube:library_cube_explainer",
     "clip:lib-cube-explainer"
   ],
-  "spectrogram2d": "browser-profile-map",
-  "spectrogram3d": "library-cube-hook",
-  "cubeJsonUrl": "/library/library_cube_explainer_kokoro_onnx_cube3d.json",
+  "spectrogram2d": "none",
+  "spectrogram3d": "none",
   "notPodcast": true,
   "synthesizedSpeech": false,
-  "disclaimer": "Profile for persona Optimus Timelarp. Voice model is kokoro-onnx. Cube refs are library spatial analysis, not a podcast render of this persona."
+  "disclaimer": "Persona config for Optimus Timelarp on voice model kokoro-onnx. No audio of this persona yet; not a podcast render."
 }

@@ -6,7 +6,8 @@
 
 use std::collections::{BTreeMap, VecDeque};
 use std::path::{Path, PathBuf};
-use std::sync::Mutex;
+use std::sync::{Condvar, Mutex};
+use std::time::{Duration, Instant};
 
 use gen_audio_core::asset_catalog;
 use gen_audio_core::catalog::{self, MAX_AGENTS_PER_TRACK};
@@ -30,6 +31,50 @@ static BUS: Mutex<Bus> = Mutex::new(Bus {
 });
 
 static ATTACHED_REFS: Mutex<BTreeMap<String, Vec<String>>> = Mutex::new(BTreeMap::new());
+
+/// Seek landings the desktop window reported (`ui_seek_report`), by bus seq.
+static SEEK_REPORTS: Mutex<BTreeMap<u64, Value>> = Mutex::new(BTreeMap::new());
+static SEEK_REPORTED: Condvar = Condvar::new();
+/// How long `ui_playback` seek waits for the window's landing by default.
+pub const SEEK_WAIT_DEFAULT_MS: u64 = 2000;
+const SEEK_WAIT_MAX_MS: u64 = 10_000;
+const SEEK_REASON_MAX: usize = 240;
+
+/// The seconds a queued `playback` seek event asked for, if `seq` is one.
+fn queued_seek_seconds(seq: u64) -> Option<f64> {
+    let bus = BUS.lock().expect("control bus");
+    let event = bus.events.iter().find(|event| event.seq == seq)?;
+    let body = &event.body;
+    if body["op"] != "playback" || body["args"]["action"] != "seek" {
+        return None;
+    }
+    body["args"]["seconds"].as_f64()
+}
+
+/// Wait up to `wait_ms` for the window to report where seek `seq` landed.
+fn await_seek_landing(seq: u64, requested: f64, wait_ms: u64) -> Value {
+    let deadline = Instant::now() + Duration::from_millis(wait_ms);
+    let mut reports = SEEK_REPORTS.lock().expect("seek reports");
+    loop {
+        if let Some(report) = reports.get(&seq) {
+            return report.clone();
+        }
+        let now = Instant::now();
+        if now >= deadline {
+            break;
+        }
+        reports = SEEK_REPORTED
+            .wait_timeout(reports, deadline - now)
+            .expect("seek reports")
+            .0;
+    }
+    json!({
+        "requested_t": requested,
+        "landed_t": null,
+        "ok": false,
+        "reason": format!("no window reported where seek {seq} landed within {wait_ms} ms (it stays queued)")
+    })
+}
 
 pub fn publish(op: &str, args: &Value) -> u64 {
     let mut bus = BUS.lock().expect("control bus");
@@ -171,9 +216,14 @@ pub fn resolve_slide(reference: &str) -> Result<(&str, bool), (i32, String)> {
         None => (reference, true),
     };
     if !catalog::SLIDES.contains(&slug) {
-        return Err((-32602, format!("unknown slide {reference}; use slide:<slug>, one of {}", catalog::SLIDES.join(", "))));
+        return Err((-32602, format!("unknown slide {reference:?}; valid slides: {}", valid_slides())));
     }
     Ok((slug, deprecated))
+}
+
+/// Every valid `ui_navigate` slide id, `slide:<slug>`, comma-separated.
+fn valid_slides() -> String {
+    catalog::SLIDES.iter().map(|slug| format!("slide:{slug}")).collect::<Vec<_>>().join(", ")
 }
 
 pub fn ui_navigate(args: &Value) -> Result<Value, (i32, String)> {
@@ -181,7 +231,7 @@ pub fn ui_navigate(args: &Value) -> Result<Value, (i32, String)> {
     let reference = args
         .get("slide")
         .and_then(Value::as_str)
-        .ok_or((-32602, "ui_navigate needs slide (slide:<slug>)".to_string()))?
+        .ok_or_else(|| (-32602, format!("ui_navigate needs slide; valid slides: {}", valid_slides())))?
         .to_string();
     let (slug, deprecated) = resolve_slide(&reference)?;
     let slug = slug.to_string();
@@ -246,7 +296,20 @@ pub fn ui_playback(args: &Value) -> Result<Value, (i32, String)> {
     } else if args.get("origin").is_some() {
         return Err((-32602, "origin applies to action play only".into()));
     }
+    // A seek waits for the window's landing report (ui_seek_report); waitMs
+    // bounds it and never reaches the bus.
+    let mut wait_ms = None;
+    if let Some(raw) = args.as_object_mut().and_then(|obj| obj.remove("waitMs")) {
+        if action != "seek" {
+            return Err((-32602, "waitMs applies to action seek only".into()));
+        }
+        match raw.as_u64() {
+            Some(ms) if ms <= SEEK_WAIT_MAX_MS => wait_ms = Some(ms),
+            _ => return Err((-32602, format!("waitMs must be an integer 0..={SEEK_WAIT_MAX_MS}"))),
+        }
+    }
     let args = &args;
+    let mut requested = None;
     if action == "seek" {
         let seconds = args
             .get("seconds")
@@ -255,6 +318,7 @@ pub fn ui_playback(args: &Value) -> Result<Value, (i32, String)> {
         if !(0.0..=86_400.0).contains(&seconds) {
             return Err((-32602, "seconds out of range".into()));
         }
+        requested = Some(seconds);
     }
     let clip = catalog::library_clip(tile);
     let has_wav = clip.and_then(|item| item.wav_url).is_some();
@@ -265,7 +329,66 @@ pub fn ui_playback(args: &Value) -> Result<Value, (i32, String)> {
     );
     payload["catalogWav"] = json!(has_wav);
     payload["openedFile"] = json!(false);
+    if let Some(requested) = requested {
+        // The seek result is where the window's clock landed, not the request.
+        let seq = payload["seq"].as_u64().unwrap_or(0);
+        let landing = await_seek_landing(seq, requested, wait_ms.unwrap_or(SEEK_WAIT_DEFAULT_MS));
+        payload["queued"] = json!(true);
+        for key in ["requested_t", "landed_t", "ok", "reason"] {
+            payload[key] = landing[key].clone();
+        }
+    }
     Ok(payload)
+}
+
+/// The window reports where an MCP seek (bus event `seq`) landed. Invalid
+/// reports are -32602 and record nothing.
+pub fn ui_seek_report(args: &Value) -> Result<Value, (i32, String)> {
+    let seq = args
+        .get("seq")
+        .and_then(Value::as_u64)
+        .ok_or((-32602, "ui_seek_report needs seq".to_string()))?;
+    let requested = args
+        .get("requested_t")
+        .and_then(Value::as_f64)
+        .ok_or((-32602, "ui_seek_report needs requested_t".to_string()))?;
+    let queued = queued_seek_seconds(seq).ok_or((-32602, format!("seq {seq} is not a queued seek")))?;
+    if (queued - requested).abs() > 1e-9 {
+        return Err((-32602, format!("requested_t {requested} does not match seek {seq} ({queued})")));
+    }
+    let landed = match args.get("landed_t") {
+        None | Some(Value::Null) => None,
+        Some(value) => match value.as_f64() {
+            Some(t) if t.is_finite() && t >= 0.0 => Some(t),
+            _ => return Err((-32602, "landed_t must be a non-negative number or null".into())),
+        },
+    };
+    let ok = args
+        .get("ok")
+        .and_then(Value::as_bool)
+        .ok_or((-32602, "ui_seek_report needs ok".to_string()))?;
+    if ok && landed.is_none() {
+        return Err((-32602, "ok needs landed_t".into()));
+    }
+    let reason = args
+        .get("reason")
+        .and_then(Value::as_str)
+        .ok_or((-32602, "ui_seek_report needs reason".to_string()))?;
+    if reason.chars().count() > SEEK_REASON_MAX {
+        return Err((-32602, format!("reason is over {SEEK_REASON_MAX} characters")));
+    }
+    let report = json!({"requested_t": requested, "landed_t": landed, "ok": ok, "reason": reason});
+    let mut reports = SEEK_REPORTS.lock().expect("seek reports");
+    if reports.contains_key(&seq) {
+        return Err((-32602, format!("seek {seq} already reported")));
+    }
+    reports.insert(seq, report.clone());
+    while reports.len() > CAP {
+        reports.pop_first();
+    }
+    drop(reports);
+    SEEK_REPORTED.notify_all();
+    Ok(json!({"recorded": true, "seekSeq": seq, "report": report, "synthesizedSpeech": false}))
 }
 
 pub fn ui_flip(args: &Value) -> Result<Value, (i32, String)> {
@@ -656,6 +779,17 @@ mod tests {
         assert_eq!(ui_navigate(&json!({"slide": "slide:nope"})).unwrap_err().0, -32602);
         assert_eq!(ui_navigate(&json!({"slide": "slide:"})).unwrap_err().0, -32602);
         assert_eq!(resolve_slide("slide:spatial").unwrap(), ("spatial", false));
+    }
+
+    #[test]
+    fn unknown_or_missing_slide_lists_every_valid_slide_id() {
+        for args in [json!({"slide": "slide:nope"}), json!({"slide": "nope"}), json!({})] {
+            let (code, message) = ui_navigate(&args).unwrap_err();
+            assert_eq!(code, -32602, "{args}");
+            for slug in catalog::SLIDES {
+                assert!(message.contains(&format!("slide:{slug}")), "{args}: {message} lacks slide:{slug}");
+            }
+        }
     }
 
     #[test]

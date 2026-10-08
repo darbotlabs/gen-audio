@@ -237,9 +237,73 @@ fn tail(text: &str) -> String {
     }
 }
 
+/// The env vars a real synth reads.
+#[cfg(any(test, feature = "test-support"))]
+pub const KOKORO_ENV: [&str; 2] = ["GEN_AUDIO_KOKORO_MODEL", "GEN_AUDIO_KOKORO_VOICES"];
+#[cfg(any(test, feature = "test-support"))]
+static KOKORO_ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+/// Test support only: clears the `GEN_AUDIO_KOKORO_*` vars for one test and
+/// puts them back on drop, so a developer shell with real models set cannot
+/// start a real synth from a unit test (PR #5 review fix 6; verification E3).
+/// One process-wide lock, so every crate's tests in a binary share it.
+///
+/// Compiled only under `cfg(test)` or the `test-support` feature, which
+/// gen-audio-mcp and gen-audio-acp enable in their `[dev-dependencies]`.
+/// Release and normal builds of every crate never contain it (resolver 2
+/// keeps dev-dependency features out of normal builds).
+#[cfg(any(test, feature = "test-support"))]
+pub struct NoKokoroEnv {
+    saved: Vec<(&'static str, Option<std::ffi::OsString>)>,
+    _lock: std::sync::MutexGuard<'static, ()>,
+}
+
+#[cfg(any(test, feature = "test-support"))]
+impl NoKokoroEnv {
+    #[allow(clippy::new_without_default)]
+    pub fn new() -> Self {
+        let lock = KOKORO_ENV_LOCK.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+        let saved = KOKORO_ENV.iter().map(|name| (*name, std::env::var_os(name))).collect();
+        for name in KOKORO_ENV {
+            std::env::remove_var(name);
+        }
+        Self { saved, _lock: lock }
+    }
+}
+
+#[cfg(any(test, feature = "test-support"))]
+impl Drop for NoKokoroEnv {
+    fn drop(&mut self) {
+        for (name, value) in &self.saved {
+            match value {
+                Some(value) => std::env::set_var(name, value),
+                None => std::env::remove_var(name),
+            }
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// G: NoKokoroEnv and its env list exist only for tests (cfg(test) or the
+    /// test-support feature), and no crate enables that feature outside
+    /// [dev-dependencies].
+    #[test]
+    fn no_kokoro_env_is_test_support_only() {
+        let source = include_str!("bridge.rs");
+        let gate = "#[cfg(any(test, feature = \"test-support\"))]\n";
+        for item in ["pub const KOKORO_ENV", "static KOKORO_ENV_LOCK", "pub struct NoKokoroEnv", "impl NoKokoroEnv", "impl Drop for NoKokoroEnv"] {
+            let at = source.find(&format!("\n{item}")).unwrap_or_else(|| panic!("{item} not found"));
+            assert!(source[..at + 1].ends_with(gate), "{item} must sit right under {gate}");
+        }
+        for manifest in [include_str!("../../gen-audio-mcp/Cargo.toml"), include_str!("../../gen-audio-acp/Cargo.toml")] {
+            let (normal, dev) = manifest.split_once("[dev-dependencies]").expect("a [dev-dependencies] table");
+            assert!(!normal.contains("test-support"), "test-support enabled outside [dev-dependencies]");
+            assert!(dev.contains("features = [\"test-support\"]"));
+        }
+    }
     use crate::fixture::write_fixture_tone;
     use serde_json::json;
 
@@ -285,8 +349,7 @@ mod tests {
             .join("../..")
             .canonicalize()
             .unwrap();
-        std::env::remove_var("GEN_AUDIO_KOKORO_MODEL");
-        std::env::remove_var("GEN_AUDIO_KOKORO_VOICES");
+        let _env = NoKokoroEnv::new();
         let err = plan(
             PythonTool::Synth,
             &repo,

@@ -3,26 +3,55 @@
 Run every Gen-Audio check from one entry point and exit non-zero on any failure.
 
 .DESCRIPTION
+Preflight (always first, cannot be skipped): git ls-files --eol. A tracked
+file whose .gitattributes rule says eol=lf but whose working copy has CRLF
+(or mixed) line endings fails the run before any step: byte-equality tests
+and media sha256 would otherwise fail later for a checkout reason. It lists
+the files and prints the fix; it never rewrites anything itself.
+
 Steps, in order (skip any with -Skip):
+  Wavs    -WithWav only: every WAV in schemas/asset-object/media.lock.json is
+          staged in apps/desktop/public/library and its sha256 equals the lock.
   Pssa    PSScriptAnalyzer over scripts/ with ./PSScriptAnalyzerSettings.psd1; any finding fails.
   Sprawl  the script-sprawl gate (see Invoke-SprawlGate below).
   Regen   rerun the committed-output generators and fail on any drift:
-          cargo run -p gen-audio-core --example build_assets   (assets*.json,
-            fixtures_v1.json, viewport.example/release.json)
+          cargo run -p gen-audio-core --example build_assets   (assets.json,
+            assets.dev.json, fixtures_v1.json, viewport.example/release.json,
+            media.lock.json)
           cargo run -p gen-audio-core --example asset_vectors  (v1.json)
-          then git diff --exit-code over those files. build_assets hashes the
-          library WAVs into clip uids, and the WAVs are gitignored, so it runs
-          only when every WAV that assets.json names is on disk (otherwise the
-          step says SKIPPED build_assets and still checks v1.json).
+          python scripts/cube_revision.py manifest             (manifest.json
+            cube mirror, from the cube JSON; *.synth.json outside-repo labels)
+          then git diff --exit-code over those files, the same set CI's
+          Regen gate diffs. build_assets hashes the
+          gitignored library WAVs into clip uids: a missing WAV FAILS the step
+          (never a skip). -FromLock (CI, which has no WAVs) takes their facts
+          from schemas/asset-object/media.lock.json instead, still checks
+          each cube JSON's source_sha256 against them, and checks every cube
+          file (JSON and PNG) byte for byte against media.lock.json "cubes".
           PNGs (*_spec2d.png, cube PNGs) are not byte-diffed: CPython on
           Windows ships zlib-ng, so the same pixels compress to different bytes.
           tests/test_spectrogram_strip.py regenerates each strip and compares
-          decoded pixels, and tests/test_cube_layers.py regenerates the
-          four-layer cube JSON byte for byte (both skip without the WAV).
+          decoded pixels, and tests/test_cube_layers.py regenerates all five
+          rev 3 cube JSON files byte for byte (both need the WAVs).
   Cargo   cargo test --workspace (Windows; elsewhere the Tauri crate is excluded,
           the same as the Linux CI job, because it needs the GTK/WebKit libs).
   Npm     apps/desktop: npm test, then tsc --noEmit.
   Python  pytest over tests/ (covers src/gen_audio and the scripts/*.py shims).
+
+Modes:
+  default   Regen needs the library WAVs on disk; a missing one FAILS Regen.
+  -FromLock CI, no WAVs: Regen takes WAV facts from media.lock.json. It ties
+            each cube JSON to its WAV sha256, and (since M8) checks every cube
+            file's sha256 and size against media.lock.json "cubes", so a
+            hand-edited cube fails it, naming the file.
+  -WithWav  the merge check (SMAX before review, Optimus before stamping; the
+            PR template asks for it). Adds the Wavs step, runs Regen in the
+            default mode, and sets GEN_AUDIO_REQUIRE_WAVS=1 so pytest FAILS
+            any test that would skip for a missing WAV (tests/conftest.py):
+            the byte-for-byte cube regeneration, inv_hdr and strip tests
+            must run. Stage the WAVs first (from SMAX D:\gen-audio\artifacts\library
+            or another verified copy); the Wavs step proves they are the
+            locked bytes.
 
 The sprawl gate scans the working tree on disk, including untracked and
 gitignored files (artifacts/ counts), because one-off scripts hide in ignored
@@ -34,6 +63,8 @@ Works on Windows PowerShell 5.1 and PowerShell 7.
 
 .EXAMPLE
 pwsh -NoProfile -File scripts/test.ps1 -Tag pr5
+pwsh -NoProfile -File scripts/test.ps1 -Tag ci -FromLock -Skip Cargo,Npm,Python
+pwsh -NoProfile -File scripts/test.ps1 -Tag merge-check -WithWav
 powershell -NoProfile -ExecutionPolicy Bypass -File scripts\test.ps1 -Skip Cargo,Npm,Python
 #>
 [CmdletBinding()]
@@ -42,7 +73,11 @@ param(
     # Pssa, Sprawl, Regen, Cargo, Npm, Python. Comma-separated also works with -File.
     [string[]]$Skip = @(),
     [string[]]$SprawlExclude = @(),
-    [string]$Python = ''
+    [string]$Python = '',
+    # CI only: library WAV identity from media.lock.json (build_assets --from-lock).
+    [switch]$FromLock,
+    # Merge check: staged WAVs must match media.lock.json and no WAV test may skip.
+    [switch]$WithWav
 )
 
 $ErrorActionPreference = 'Stop'
@@ -58,9 +93,13 @@ foreach ($name in $script:skipSteps) {
 }
 $script:sprawlExcludes = @($SprawlExclude | ForEach-Object { $_ -split ',' } | ForEach-Object { $_.Trim() } | Where-Object { $_ })
 $script:pythonExe = $Python
+$script:fromLock = [bool]$FromLock
+$script:withWav = [bool]$WithWav
+if ($script:fromLock -and $script:withWav) { throw '-FromLock and -WithWav exclude each other: -WithWav needs the staged WAVs, -FromLock is for runs without them' }
 $logDir = Join-Path $root ("artifacts\test-logs\{0}-{1}" -f (Get-Date -Format 'yyyyMMdd-HHmmss'), ($Tag -replace '[^A-Za-z0-9_.-]', '_'))
 New-Item -ItemType Directory -Force -Path $logDir | Out-Null
 $results = New-Object System.Collections.Generic.List[object]
+$script:skipDetail = '-Skip'
 
 function Add-LogLine {
     # Append lines to a log as UTF-8 and pass them on. (Tee-Object -Append
@@ -83,10 +122,37 @@ function Invoke-Logged {
     return $LASTEXITCODE
 }
 
+function Get-EolMismatch {
+    # `git ls-files --eol` rows ("i/lf  w/crlf  attr/text eol=lf<TAB>path")
+    # whose attribute says eol=lf while the working copy is CRLF or mixed.
+    # Typical cause: core.autocrlf=true and a checkout made before
+    # .gitattributes existed. Emits objects with Path and Index (lf/crlf/...).
+    param([Parameter(Mandatory = $true)][string]$Root)
+    $rows = @(& git -C $Root -c core.quotepath=off ls-files --eol 2>&1)
+    if ($LASTEXITCODE -ne 0) { throw "git ls-files --eol failed: $($rows -join ' ')" }
+    foreach ($row in $rows) {
+        $parts = "$row" -split "`t", 2
+        if ($parts.Count -ne 2) { continue }
+        $info = $parts[0]
+        if ($info -match '\bw/(crlf|mixed)\b' -and $info -match 'attr/.*\beol=lf\b') {
+            $index = if ($info -match '\bi/(\S+)') { $Matches[1] } else { '' }
+            [pscustomobject]@{ Path = $parts[1]; Index = $index }
+        }
+    }
+}
+
+function Get-PythonExe {
+    # -Python, then GEN_AUDIO_PYTHON, then python / python3 on PATH.
+    if ($script:pythonExe) { return $script:pythonExe }
+    if ($env:GEN_AUDIO_PYTHON) { return $env:GEN_AUDIO_PYTHON }
+    if (Test-IsWindowsHost) { return 'python' }
+    return 'python3'
+}
+
 function Invoke-Step {
     param([Parameter(Mandatory = $true)][string]$Name, [Parameter(Mandatory = $true)][scriptblock]$Body)
     if ($script:skipSteps -contains $Name) {
-        $results.Add([pscustomobject]@{ Step = $Name; Result = 'SKIP'; Seconds = 0; Detail = '-Skip' })
+        $results.Add([pscustomobject]@{ Step = $Name; Result = 'SKIP'; Seconds = 0; Detail = $script:skipDetail })
         return
     }
     Write-Step "== $Name"
@@ -105,15 +171,29 @@ function Invoke-Step {
     Write-Step "== $Name $result $detail"
 }
 
+function Test-Shebang {
+    # True when the file starts with "#!/" or "#! /" (a Rust "#![attr]" does not).
+    param([Parameter(Mandatory = $true)][string]$Path)
+    $buffer = New-Object byte[] 3
+    try {
+        $stream = [System.IO.File]::OpenRead($Path)
+        try { $read = $stream.Read($buffer, 0, 3) } finally { $stream.Dispose() }
+    } catch { return $false }
+    return ($read -ge 3 -and $buffer[0] -eq 0x23 -and $buffer[1] -eq 0x21 -and ($buffer[2] -eq 0x2F -or $buffer[2] -eq 0x20))
+}
+
 function Get-ScriptFile {
     # Walk the tree on disk (tracked, untracked and ignored files alike).
+    # A script is any file with an executable script extension (PowerShell,
+    # cmd, Python, POSIX shells, NSIS, Node, VBScript) or, whatever its name,
+    # a first line that is a shebang ("#!/..." or "#! /...").
     # Prunes dependency and build caches that never hold authored scripts:
     # .git, node_modules, target, Python caches, virtualenvs (any folder with
     # pyvenv.cfg), and generated app output (apps/desktop/dist, src-tauri/gen).
     param([Parameter(Mandatory = $true)][string]$Root, [string[]]$Exclude = @())
     $pruneNames = @('.git', 'node_modules', 'target', '__pycache__', '.pytest_cache', '.mypy_cache', '.ruff_cache', '.venv', 'venv')
     $prunePaths = @('apps/desktop/dist', 'apps/desktop/src-tauri/gen') + @($Exclude | ForEach-Object { ($_ -replace '\\', '/').Trim('/') })
-    $extensions = @('.ps1', '.psm1', '.bat', '.cmd', '.py')
+    $extensions = @('.ps1', '.psm1', '.bat', '.cmd', '.py', '.sh', '.bash', '.zsh', '.ksh', '.fish', '.nsh', '.js', '.mjs', '.cjs', '.mts', '.cts', '.vbs')
     $stack = New-Object System.Collections.Generic.Stack[string]
     $stack.Push($Root)
     while ($stack.Count -gt 0) {
@@ -124,7 +204,7 @@ function Get-ScriptFile {
                 if ($pruneNames -contains $entry.Name -or $entry.Name -like '*.egg-info' -or $prunePaths -contains $rel) { continue }
                 if (Test-Path -LiteralPath (Join-Path $entry.FullName 'pyvenv.cfg')) { continue }
                 $stack.Push($entry.FullName)
-            } elseif ($extensions -contains $entry.Extension.ToLowerInvariant() -or ($entry.Name -eq 'manifest.json' -and $rel -match '(^|/)library/manifest\.json$')) {
+            } elseif ($extensions -contains $entry.Extension.ToLowerInvariant() -or ($entry.Name -eq 'manifest.json' -and $rel -match '(^|/)library/manifest\.json$') -or (Test-Shebang -Path $entry.FullName)) {
                 [pscustomobject]@{ Rel = $rel; Full = $entry.FullName }
             }
         }
@@ -134,9 +214,12 @@ function Get-ScriptFile {
 function Invoke-SprawlGate {
     <#
     Fails on any finding:
-      outside-allowlist  a *.ps1/*.psm1/*.bat/*.cmd/*.py outside the allowlist:
+      outside-allowlist  a script (see Get-ScriptFile: any executable script
+                         extension, .sh included, or a shebang) outside the allowlist:
                          scripts/{build-tauri-windows,test,mcp-call,ui-shot}.ps1,
-                         scripts/lib/*.ps1, scripts/*.py, tests/**/*.py, src/**/*.py
+                         scripts/lib/*.ps1, scripts/*.py, tests/**/*.py, src/**/*.py,
+                         the NSIS installer hook apps/desktop/src-tauri/windows/hooks.nsh
+                         (tauri.conf.json installerHooks), apps/desktop/validate.check.mts
       thick-shim         a scripts/*.py that is not a thin CLI shim into gen_audio.cli
                          (over 20 lines or no `from gen_audio.cli` import)
       vcvars             a script other than scripts/lib/devenv.ps1 sources vcvars/VsDevCmd
@@ -147,7 +230,8 @@ function Invoke-SprawlGate {
     This file defines the patterns, so it is not content-scanned itself.
     #>
     param([Parameter(Mandatory = $true)][string]$Root, [string[]]$Exclude = @())
-    $entryPoints = @('scripts/build-tauri-windows.ps1', 'scripts/test.ps1', 'scripts/mcp-call.ps1', 'scripts/ui-shot.ps1')
+    $entryPoints = @('scripts/build-tauri-windows.ps1', 'scripts/test.ps1', 'scripts/mcp-call.ps1', 'scripts/ui-shot.ps1',
+        'apps/desktop/src-tauri/windows/hooks.nsh', 'apps/desktop/validate.check.mts')
     $self = 'scripts/test.ps1'
     $vcvarsOwner = 'scripts/lib/devenv.ps1'
     $tauriOwner = 'scripts/build-tauri-windows.ps1'
@@ -192,6 +276,53 @@ function Invoke-SprawlGate {
 Write-Step "scripts/test.ps1 -Tag $Tag (PowerShell $($PSVersionTable.PSVersion)); logs in $logDir"
 if (Test-IsWindowsHost) { Import-VsDevEnv }
 
+Invoke-Step 'Eol' {
+    param($log)
+    $bad = @(Get-EolMismatch -Root $root)
+    if ($bad.Count -eq 0) { return 'git ls-files --eol: no CRLF working copies under an eol=lf rule' }
+    $lines = @("EOL_PREFLIGHT FAIL: $($bad.Count) tracked file(s) have eol=lf in .gitattributes but CRLF in the working copy:")
+    $lines += @($bad | ForEach-Object { "  EOL_CRLF $($_.Path) (index $($_.Index))" })
+    $lines += 'Fix it yourself (this check never rewrites files). The commands touch only the listed files:'
+    $crlfIndex = @($bad | Where-Object { $_.Index -ne 'lf' } | ForEach-Object { $_.Path })
+    $lfIndex = @($bad | Where-Object { $_.Index -eq 'lf' } | ForEach-Object { $_.Path })
+    if ($crlfIndex.Count -gt 0) {
+        $lines += '  The index (and HEAD) hold CRLF too: renormalize and commit them, then rewrite the working copies from that commit:'
+        $lines += "    git add --renormalize -- $($crlfIndex -join ' ')"
+        $lines += "    git commit -m 'Renormalize line endings' -- $($crlfIndex -join ' ')"
+        $lines += "    git rm -q --cached -- $($crlfIndex -join ' ')"
+        $lines += "    git restore --source=HEAD --staged --worktree -- $($crlfIndex -join ' ')"
+    }
+    if ($lfIndex.Count -gt 0) {
+        # Not `git add --renormalize` first: it marks the CRLF file up to date,
+        # and a restore after it leaves the CRLF bytes in place.
+        $lines += '  The index is already LF, only the working copy is CRLF: rewrite just these files from HEAD'
+        $lines += '  (that drops uncommitted edits to them, so commit or stash those first):'
+        $lines += "    git rm -q --cached -- $($lfIndex -join ' ')"
+        $lines += "    git restore --source=HEAD --staged --worktree -- $($lfIndex -join ' ')"
+    }
+    $lines | Add-LogLine -Log $log | Out-Host
+    throw "$($bad.Count) CRLF working file(s) under eol=lf: $(@($bad | ForEach-Object { $_.Path }) -join ', ')"
+}
+if (@($results | Where-Object { $_.Step -eq 'Eol' -and $_.Result -eq 'FAIL' }).Count -gt 0) {
+    # Every later step would fail or mislead on these bytes; stop here.
+    $script:skipSteps = @('Wavs', 'Pssa', 'Sprawl', 'Regen', 'Cargo', 'Npm', 'Python')
+    $script:skipDetail = 'Eol preflight failed'
+}
+
+if ($script:withWav) {
+    Invoke-Step 'Wavs' {
+        param($log)
+        $bad = @(Get-LibraryWavProblem -Root $root)
+        $lock = Get-Content -LiteralPath (Join-Path $root 'schemas\asset-object\media.lock.json') -Raw | ConvertFrom-Json
+        $total = @($lock.media.PSObject.Properties).Count
+        if ($bad.Count -gt 0) {
+            $bad | Add-LogLine -Log $log | Out-Host
+            throw "$($bad.Count) of $total locked WAV(s) missing or not the locked bytes: $(@($bad | ForEach-Object { ($_ -split ' ')[1] }) -join ', ')"
+        }
+        "$total/$total staged WAVs match media.lock.json sha256"
+    }
+}
+
 Invoke-Step 'Pssa' {
     param($log)
     $module = Get-Module -ListAvailable -Name PSScriptAnalyzer | Where-Object { $_.Version -eq [version]'1.24.0' } | Select-Object -First 1
@@ -221,30 +352,25 @@ Invoke-Step 'Sprawl' {
 Invoke-Step 'Regen' {
     param($log)
     $library = 'apps/desktop/public/library'
-    $generated = @("$library/assets.json", "$library/assets.dev.json", 'schemas/asset-object/vectors/fixtures_v1.json',
-        'schemas/asset-object/vectors/v1.json', 'schemas/examples/viewport.example.json', 'schemas/examples/viewport.release.json')
+    $generated = @("$library/assets.json", "$library/manifest.json", 'schemas/asset-object/fixtures/assets.dev.json',
+        'schemas/asset-object/media.lock.json', 'schemas/asset-object/vectors/fixtures_v1.json',
+        'schemas/asset-object/vectors/v1.json', 'schemas/examples/viewport.example.json', 'schemas/examples/viewport.release.json',
+        "$library/*.synth.json")
     # Start from the committed bytes, or the diff below would blame the generators for hand edits.
     $dirty = @(& git status --porcelain -- @generated)
     if ($LASTEXITCODE -ne 0) { throw 'git status failed' }
     if ($dirty.Count -gt 0) { throw "generated files already differ from HEAD (commit or restore them first): $($dirty -join '; ')" }
-    $wavs = @()
-    foreach ($asset in @((Get-Content -LiteralPath (Join-Path $root "$library/assets.json") -Raw | ConvertFrom-Json).assets)) {
-        if (-not ($asset.PSObject.Properties.Name -contains 'media')) { continue }
-        foreach ($media in @($asset.media)) { if ($media.role -eq 'wav') { $wavs += [string]$media.path } }
-    }
-    $missing = @($wavs | Sort-Object -Unique | Where-Object { -not (Test-Path -LiteralPath (Join-Path $root "$library/$_")) })
-    $ran = @()
-    if ($missing.Count -eq 0) {
-        if ((Invoke-Logged -Log $log -File 'cargo' -Arguments @('run', '-q', '-p', 'gen-audio-core', '--example', 'build_assets')) -ne 0) { throw 'build_assets failed' }
-        $ran += 'build_assets'
-    } else {
-        "SKIPPED build_assets: library WAVs not on disk ($($missing -join ', ')); assets*.json, fixtures_v1.json and viewport.*.json not regenerated" | Add-LogLine -Log $log | Out-Host
+    # build_assets names any missing WAV and exits 1; there is no skip path.
+    $buildArgs = @('run', '-q', '-p', 'gen-audio-core', '--example', 'build_assets')
+    if ($script:fromLock) { $buildArgs += @('--', '--from-lock') }
+    if ((Invoke-Logged -Log $log -File 'cargo' -Arguments $buildArgs) -ne 0) {
+        throw "build_assets failed$(if (-not $script:fromLock) { ' (a missing library WAV fails here; stage the WAVs, or -FromLock in CI)' })"
     }
     if ((Invoke-Logged -Log $log -File 'cargo' -Arguments @('run', '-q', '-p', 'gen-audio-core', '--example', 'asset_vectors')) -ne 0) { throw 'asset_vectors failed' }
-    $ran += 'asset_vectors'
+    if ((Invoke-Logged -Log $log -File (Get-PythonExe) -Arguments @('scripts/cube_revision.py', 'manifest')) -ne 0) { throw 'cube_revision.py manifest failed' }
     $code = Invoke-Logged -Log $log -File 'git' -Arguments (@('diff', '--exit-code', '--stat', '--') + $generated)
-    if ($code -ne 0) { throw "generated files drifted after $($ran -join ' + '); see git diff (exit $code)" }
-    "$($ran -join ' + ') reproduce the committed files$(if ($missing.Count) { "; build_assets SKIPPED ($($missing.Count) WAVs absent)" })"
+    if ($code -ne 0) { throw "generated files drifted after build_assets + asset_vectors + manifest sync; see git diff (exit $code)" }
+    "build_assets$(if ($script:fromLock) { ' --from-lock' } else { ' (WAVs on disk)' }) + asset_vectors + manifest sync reproduce the committed files"
 }
 
 Invoke-Step 'Cargo' {
@@ -289,20 +415,21 @@ Invoke-Step 'Npm' {
 
 Invoke-Step 'Python' {
     param($log)
-    $py = $script:pythonExe
-    if (-not $py) { $py = $env:GEN_AUDIO_PYTHON }
-    if (-not $py) { $py = $(if (Test-IsWindowsHost) { 'python' } else { 'python3' }) }
+    $py = Get-PythonExe
     $sep = [System.IO.Path]::PathSeparator
     $saved = $env:PYTHONPATH
     $env:PYTHONPATH = (Join-Path $root 'src') + $(if ($saved) { "$sep$saved" } else { '' })
+    $savedRequire = $env:GEN_AUDIO_REQUIRE_WAVS
+    if ($script:withWav) { $env:GEN_AUDIO_REQUIRE_WAVS = '1' }
     try {
         $code = Invoke-Logged -Log $log -File $py -Arguments @('-m', 'pytest', 'tests')
     } finally {
         $env:PYTHONPATH = $saved
+        $env:GEN_AUDIO_REQUIRE_WAVS = $savedRequire
     }
     if ($code -ne 0) { throw "pytest exit $code" }
     $summary = Select-String -LiteralPath $log -Pattern '\d+ passed' | Select-Object -Last 1
-    "pytest: $(if ($summary) { $summary.Line.Trim() })"
+    "pytest: $(if ($summary) { $summary.Line.Trim() })$(if ($script:withWav) { ' (GEN_AUDIO_REQUIRE_WAVS=1: no WAV skips)' })"
 }
 
 $failed = @($results | Where-Object { $_.Result -eq 'FAIL' })

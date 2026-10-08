@@ -1,0 +1,82 @@
+{
+  "cubes": {
+    "bitdot_braille_vibevoice_cube3d.png": {
+      "bytes": 1124509,
+      "sha256": "1ea85c43b0d04aa43bab466be3c5adb7e5fc8579da78cd7fd52f1dc2e01ec57c"
+    },
+    "genaid_full_misaki_kokoro_cube3d.png": {
+      "bytes": 1206082,
+      "sha256": "d21e741825dff7f955b49617246d6331ba0c4161af1e8b1b52fd94c459805533"
+    },
+    "library_bitdot_braille_vibevoice_cube3d.json": {
+      "bytes": 294618,
+      "sha256": "db383ad7a31dd2c34f7c72f546508c5d5fd3f899e1267806f1aced8ef676924e"
+    },
+    "library_cube_explainer_kokoro_onnx_cube3d.json": {
+      "bytes": 295214,
+      "sha256": "2536728879d069d96fc14e7c3eac515631dfedcc5cba7ce2f789d3a2d35798d6"
+    },
+    "library_cube_explainer_kokoro_onnx_cube3d.png": {
+      "bytes": 1232624,
+      "sha256": "b410800589bc706ef7c03af9ed14fac5d1f61403b53ba8e28261fcaa29e01d74"
+    },
+    "library_genaid_full_misaki_kokoro_cube3d.json": {
+      "bytes": 295385,
+      "sha256": "995ff66a4e251c912dc69c1068fbbbea613131c8bdfcaf46381f4a7f8b62ebec"
+    },
+    "library_kokoro_cube3d.json": {
+      "bytes": 294733,
+      "sha256": "8fb7a7041c23b67f7a6cfa51e94886e59d44956b134e160fc104096774a6dcd1"
+    },
+    "library_kokoro_cube3d.png": {
+      "bytes": 1183578,
+      "sha256": "817f85e3075199a34c2c0b8f6f17bea95d8131d41607ef935641fc9a06d5f495"
+    },
+    "library_kokoro_onnx_cube3d.json": {
+      "bytes": 292987,
+      "sha256": "0ddf8f6cb7a3616202eb126a94106a23d03f170d558d8fe1ec4bc9d118216789"
+    },
+    "library_kokoro_onnx_cube3d.png": {
+      "bytes": 1143876,
+      "sha256": "d423f12eadb42646b49e89e6b7430ca5ec667ae2b68dd50a2a6d592b34e0e926"
+    }
+  },
+  "media": {
+    "bitdot_braille_vibevoice.wav": {
+      "bytes": 11859244,
+      "channels": 1,
+      "frames": 5929600,
+      "sample_rate": 24000,
+      "sha256": "63490e16e5841d4e7db6db5a5800f64c0fabdc76a2544997694708c03726439f"
+    },
+    "genaid_full_misaki_kokoro.wav": {
+      "bytes": 6690044,
+      "channels": 1,
+      "frames": 3345000,
+      "sample_rate": 24000,
+      "sha256": "61b8ca26b3f4759ce643738e2afbc80f7bf2a5eb554c5fedbfbdc2d9bfad3d38"
+    },
+    "library_cube_explainer_kokoro_onnx.wav": {
+      "bytes": 15084944,
+      "channels": 1,
+      "frames": 3771216,
+      "sample_rate": 24000,
+      "sha256": "fefaaf94378f87717a05c7ad97630a3ee527bf37ecfe37f27d8e67913e1473b9"
+    },
+    "library_kokoro.wav": {
+      "bytes": 18030044,
+      "channels": 1,
+      "frames": 9015000,
+      "sample_rate": 24000,
+      "sha256": "8c12bc70c2a2e4ec19c431210b25ad3e9e18cab61a6f0af5774b5027d6d1c462"
+    },
+    "library_kokoro_onnx.wav": {
+      "bytes": 17988808,
+      "channels": 1,
+      "frames": 8994382,
+      "sample_rate": 24000,
+      "sha256": "0c8390299ad40f7d9eea753614f0293630f2c48769e4672ac2472101eb03b25a"
+    }
+  },
+  "note": "Identity facts of the gitignored library WAVs, and the sha256 of every cube file made from them, written by build_assets when every WAV is on disk. CI has no WAVs and runs build_assets --from-lock, which takes these facts for a missing WAV, checks each cube JSON's source_sha256 against them, and fails when a cube file's bytes differ from \"cubes\"."
+}

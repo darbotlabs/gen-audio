@@ -1,5 +1,6 @@
 import { getCubeMeta, setCubeScrub, startLiveCubeClock, stopLiveCubeClock } from "./cubeview";
 import type { PlayOrigin } from "./play-control";
+import { Seeker, type MediaLike, type SeekResult } from "./seek";
 export type { PlayOrigin };
 /** What a play listener learns: who started it. Focus is not decided here (C1: Rust reducer, PR #4). */
 export interface PlayInfo {
@@ -8,6 +9,9 @@ export interface PlayInfo {
 /** HTML audio transport for library tiles. Missing files stay missing. */
 
 const players = new Map<string, HTMLAudioElement>();
+/** The source each clip's transport was rendered with (before any blob swap). */
+const playerSources = new Map<string, string>();
+
 
 let activeId: string | null = null;
 /** The clip the cube is showing. The cube clock follows only this clip, not the last one played. */
@@ -24,9 +28,58 @@ export function setUserPlayReporter(report: (clipId: string) => void): void {
   reportUserPlay = report;
 }
 
+/** One seeker for every library transport (deferred, verified seeks; see seek.ts). */
+let seeker = new Seeker();
+
+/** Test seam: swap the seeker (fake source ops, no settle delay). */
+export function setSeeker(next: Seeker): void {
+  seeker.releaseAll();
+  seeker = next;
+}
+
+/** Seek an element and keep the cube and floater on the clock it actually reached. */
+async function seekTo(clipId: string, audio: HTMLAudioElement, seconds: number): Promise<SeekResult> {
+  activeId = clipId;
+  // One cached blob URL per clip (seek.ts); the clip id keys it.
+  const outcome = await seeker.seek(audio as unknown as MediaLike, seconds, clipId);
+  if (outcome.status !== "superseded" && drivesCube(clipId)) {
+    // ONE clock: the cube shows where the audio is, not where we asked it to go.
+    const fraction = cubeFractionAt(outcome.ok ? outcome.actual : audio.currentTime, audio.duration);
+    if (fraction !== null) setCubeScrub(fraction, { silent: true });
+  }
+  syncFloater(clipId);
+  return outcome;
+}
+
 /** Test seam: register a transport element without building the tile DOM. */
 export function registerPlayer(clipId: string, audio: HTMLAudioElement): void {
+  const source = audio.src;
+  const prior = playerSources.get(clipId);
+  // Same clip, new source: its cached blob copies the old file, so revoke it.
+  if (prior !== undefined && prior !== source) seeker.release(clipId);
+  playerSources.set(clipId, source);
   players.set(clipId, audio);
+}
+
+/**
+ * Drop transports whose element left the document (a re-render removed the
+ * tile) and revoke their cached blob URLs. main.ts calls it after each render.
+ */
+export function releaseDetachedTransports(): string[] {
+  const released: string[] = [];
+  for (const [clipId, audio] of players) {
+    if (audio.isConnected !== false) continue;
+    players.delete(clipId);
+    playerSources.delete(clipId);
+    seeker.release(clipId);
+    released.push(clipId);
+  }
+  return released;
+}
+
+/** Revoke every cached blob URL (page teardown). */
+export function releaseAllSeekBlobs(): void {
+  seeker.releaseAll();
 }
 
 export function setCubeClockClip(clipId: string | null, uid: string | null = null): void {
@@ -155,7 +208,7 @@ export function renderTransport(clipId: string, wavUrl: string | undefined, dura
   scrub.addEventListener("input", () => {
     const duration = audio.duration || durationHint || 0;
     if (duration > 0 && wrap.dataset.missing !== "1") {
-      audio.currentTime = (Number(scrub.value) / 1000) * duration;
+      void seekTo(clipId, audio, (Number(scrub.value) / 1000) * duration);
     }
   });
 
@@ -203,41 +256,40 @@ export function pauseClip(clipId: string): string {
   return "paused";
 }
 
-export function seekClip(clipId: string, seconds: number): string {
-  const audio = player(clipId);
-  if (!audio || !audio.src) return "no wav";
-  if (!Number.isFinite(seconds) || seconds < 0) return "bad seek";
-  const duration = audio.duration;
-  if (Number.isFinite(duration) && seconds > duration) return "past end";
-  audio.currentTime = seconds;
-  activeId = clipId;
-  // Keep ONE clock: MCP/UI seek must slice bitdot layers + floating scrub together,
-  // but only for the clip the cube is showing.
-  if (drivesCube(clipId)) {
-    // Before metadata loads, audio.duration is NaN; the cube JSON carries the same WAV duration.
-    const fraction = cubeFractionAt(seconds, duration);
-    if (fraction !== null) setCubeScrub(fraction, { silent: true });
-  }
-  syncFloater(clipId);
-  if (audio.readyState > 0 && audio.seekable.length === 0) {
-    return `cube at ${formatTime(seconds)}; this WAV source does not support seeking`;
-  }
-  return "seeked";
+/**
+ * Seek a library clip (MCP ui_playback seek, unified transport). Waits for
+ * metadata, makes the source seekable if it is not, and reports "seeked"
+ * only when currentTime actually landed (seek.ts).
+ */
+export async function seekClip(clipId: string, seconds: number): Promise<string> {
+  return (await seekClipOutcome(clipId, seconds)).status;
 }
 
+/** Where a seek landed: what the window reports back for an MCP seek (ui_seek_report). */
+export interface SeekOutcome {
+  ok: boolean;
+  /** currentTime after the attempt; null when there is no element or no number. */
+  actual: number | null;
+  status: string;
+}
+
+export async function seekClipOutcome(clipId: string, seconds: number): Promise<SeekOutcome> {
+  const audio = player(clipId);
+  if (!audio || !audio.src) return { ok: false, actual: null, status: "no wav" };
+  const outcome = await seekTo(clipId, audio, seconds);
+  return { ok: outcome.ok, actual: Number.isFinite(outcome.actual) ? outcome.actual : null, status: outcome.status };
+}
 
 /** Seek a specific library clip by shared-clock fraction 0..1 (the clip bound to the cube). */
-export function seekClipFraction(clipId: string, fraction: number): string {
+export async function seekClipFraction(clipId: string, fraction: number): Promise<string> {
   const audio = player(clipId);
   if (!audio || !audio.src) return "no wav";
   const duration = audio.duration;
   if (!Number.isFinite(duration) || duration <= 0) return "no duration";
-  activeId = clipId;
   // The scrub fraction is on the cube's clock (its WAV duration); convert to seconds on this clip.
   const clock = drivesCube(clipId) ? getCubeMeta()?.durationS ?? duration : duration;
-  audio.currentTime = Math.min(duration, Math.max(0, Math.min(1, fraction)) * clock);
-  syncFloater(clipId);
-  return `seeked ${clipId}`;
+  const outcome = await seekTo(clipId, audio, Math.min(duration, Math.max(0, Math.min(1, fraction)) * clock));
+  return outcome.ok ? `seeked ${clipId}` : outcome.status;
 }
 
 export function isClipPlaying(clipId: string): boolean {
@@ -250,7 +302,7 @@ export function getActiveClipId(): string | null {
 }
 
 /** Seek the active library clip by shared-clock fraction 0..1. */
-export function seekActiveFraction(fraction: number): string {
+export async function seekActiveFraction(fraction: number): Promise<string> {
   if (!activeId) {
     // Prefer first available player with a WAV.
     for (const [id, audio] of players) {
@@ -261,14 +313,13 @@ export function seekActiveFraction(fraction: number): string {
     }
   }
   if (!activeId) return "no player";
-  const audio = player(activeId);
+  const clipId = activeId;
+  const audio = player(clipId);
   if (!audio || !audio.src) return "no wav";
   const duration = audio.duration;
   if (!Number.isFinite(duration) || duration <= 0) return "no duration";
-  const clamped = Math.max(0, Math.min(1, fraction));
-  audio.currentTime = clamped * duration;
-  syncFloater(activeId);
-  return `seeked ${activeId}`;
+  const outcome = await seekTo(clipId, audio, Math.max(0, Math.min(1, fraction)) * duration);
+  return outcome.ok ? `seeked ${clipId}` : outcome.status;
 }
 
 /** Floating transport + viewport playing chrome. */
@@ -332,9 +383,7 @@ export function bindFloatingPlayback(): void {
     const audio = player(activeId);
     if (!audio || !audio.duration) return;
     const fraction = Number(ui.scrub.value) / 1000;
-    audio.currentTime = fraction * audio.duration;
-    if (drivesCube(activeId)) setCubeScrub(fraction);
-    syncFloater(activeId);
+    void seekTo(activeId, audio, fraction * audio.duration);
   });
   for (const [clipId, audio] of players) {
     audio.addEventListener("play", () => {
@@ -362,8 +411,7 @@ export function bindFloatingPlayback(): void {
       if (activeId === clipId) {
         syncFloater(clipId);
         const duration = audio.duration;
-        // Only a playing clip drives the cube here. A paused seek already set the cube;
-        // a source without range support snaps currentTime back to 0 and must not undo it.
+        // Only a playing clip drives the cube here; a paused seek already set it.
         if (!audio.paused && drivesCube(clipId)) {
           const fraction = cubeFractionAt(audio.currentTime, duration);
           if (fraction !== null) setCubeScrub(fraction, { silent: true });

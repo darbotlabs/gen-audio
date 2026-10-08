@@ -230,7 +230,6 @@ button:focus-visible, .card:focus-visible, .slide-dot:focus-visible {
 .profile-schema { display: grid; grid-template-columns: 5.5rem minmax(0, 1fr); gap: 0.1rem 0.35rem; margin: 0.2rem 0; font-size: 0.68rem; }
 .profile-schema dt { color: var(--muted); }
 .profile-schema dd { margin: 0; }
-.profile-back canvas { width: 100%; height: auto; margin-top: 0.25rem; }
 .rename-block { display: grid; gap: 0.25rem; margin-top: 0.35rem; }
 .rename-block input { width: 100%; background: #0b1824; color: var(--text); border: 1px solid #3d6f90; border-radius: 8px; padding: 0.22rem 0.35rem; font-size: 0.72rem; }
 .card.is-selected { outline: 2px solid #c97bff; outline-offset: 2px; }
@@ -919,3 +918,13 @@ th, td { text-align: left; padding: 0.12rem 0.25rem; border-bottom: 1px solid va
 .spec-strip.is-beyond .spec-strip-label { color: #ff8a3d; }
 /* The live strip replaces the static cube thumbnail on the tile; the cube itself is on the Cube tab. */
 .library-tile .spec-strip[data-state="ready"] ~ .cube-thumb { display: none; }
+
+/* Voice model card back: Status / Cube tabs (E4). */
+.back-tabs { display: flex; gap: 0.25rem; flex: 0 0 auto; margin-bottom: 0.25rem; }
+.back-tabs [role="tab"] { padding: 0.12rem 0.5rem; font-size: 0.68rem; }
+.back-tabs [role="tab"][aria-selected="true"] { background: #143528; border-color: var(--accent); color: var(--accent); }
+.engine-back [role="tabpanel"][hidden] { display: none; }
+.model-cubes { overflow: auto; min-height: 0; }
+.model-cube-table { font-size: 0.64rem; }
+.model-cube-table .mono { font-family: ui-monospace, "Cascadia Mono", Consolas, monospace; word-break: break-all; }
+.model-cube-table button { padding: 0.08rem 0.4rem; font-size: 0.64rem; }

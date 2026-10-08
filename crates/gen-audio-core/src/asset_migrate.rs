@@ -99,12 +99,18 @@ pub fn migrate_v0_to_v1(bundle: &Value) -> Result<Value, AssetError> {
             ("unavailable", json!(unavailable)),
             ("note", model["note"].clone()),
         ]);
+        let offline_reason = model["offlineReason"].as_str();
         if let Some(clip) = clips.iter().find(|clip| clip["engineId"] == id.as_str() && clip["status"] != "ok") {
             body.insert(
                 "availability".into(),
                 json!({"status": clip["status"], "reason": clip["reason"], "legacy_clip_id": clip["id"]}),
             );
+        } else if let Some(reason) = offline_reason {
+            // The VibeVoice honesty contract for a model with offline clips only.
+            body.insert("availability".into(), json!({"status": "offline_only", "reason": reason}));
         }
+        // Status ok only for a model Generate can produce in this app.
+        let producible = model["synthAdapter"].as_bool().unwrap_or(false) && !unavailable;
         let mut claims = vec![];
         if unavailable {
             claims.push("engine_unavailable");
@@ -117,7 +123,7 @@ pub fn migrate_v0_to_v1(bundle: &Value) -> Result<Value, AssetError> {
             legacy_id: Some(id.clone()),
             title: model["label"].as_str().unwrap_or(&id).to_string(),
             summary: None,
-            status: if unavailable { "unavailable" } else { "ok" },
+            status: if producible { "ok" } else { "unavailable" },
             fields: json!({"model_id": id, "waveform": waveform}),
             media: vec![],
             src: vec![],
@@ -133,7 +139,6 @@ pub fn migrate_v0_to_v1(bundle: &Value) -> Result<Value, AssetError> {
     // Audio clips, cubes and layers.
     let mut clip_uid: BTreeMap<String, String> = BTreeMap::new();
     let mut clip_wav_sha: BTreeMap<String, String> = BTreeMap::new();
-    let mut cube_uid_by_json: BTreeMap<String, String> = BTreeMap::new();
     for clip in &clips {
         if clip["status"] != "ok" {
             continue;
@@ -252,6 +257,36 @@ pub fn migrate_v0_to_v1(bundle: &Value) -> Result<Value, AssetError> {
         if let Some(hop) = hop {
             fields["hop_frames"] = json!(hop);
         }
+        // Cube identity (item 2): what made the cube is the generator's
+        // content hash and layer method. A commit SHA never enters fields.
+        for key in ["generator_sha256", "layer_method"] {
+            if let Some(value) = cube_doc.pointer(&format!("/provenance/{key}")).and_then(Value::as_str) {
+                fields[key] = json!(value);
+            }
+        }
+        // E4: a cube JSON that names its WAV's sha256 must name this clip's WAV.
+        if let Some(cube_source) = cube_doc["source_sha256"].as_str() {
+            if cube_source != sha {
+                return fail(
+                    "cube_source_mismatch",
+                    format!("v0 clip {id}: cube JSON {json_path} was made from WAV sha256 {cube_source}, not {sha}; regenerate the cube"),
+                );
+            }
+        }
+        // Provenance comes from the cube JSON (gen_audio.cube_layers writes the
+        // generator path, generator_sha256, layer_method and params), plus the
+        // manifest cube block's generator_commit: information only, unhashed,
+        // so a rebase or squash never changes the uid.
+        let mut cube_provenance = match cube_doc.get("provenance").and_then(Value::as_object) {
+            Some(recorded) => recorded.clone(),
+            None => obj(vec![("generator", json!("retired library cube generator (before gen_audio.cube_layers)"))]),
+        };
+        if let Some(commit) = cube["generator_commit"].as_str() {
+            cube_provenance.insert("generator_commit".into(), json!(commit));
+        }
+        let mut params = cube_provenance.get("params").and_then(Value::as_object).cloned().unwrap_or_default();
+        params.insert("bins_inferred_from_shape".into(), json!(inferred));
+        cube_provenance.insert("params".into(), Value::Object(params));
         let mut cube_media = Vec::new();
         cube_media.extend(media_ref(&media, "cube_json", &json_path, "application/json"));
         cube_media.extend(media_ref(&media, "cube_png", &png_path, "image/png"));
@@ -266,12 +301,10 @@ pub fn migrate_v0_to_v1(bundle: &Value) -> Result<Value, AssetError> {
             src: vec![uid.clone()],
             relations: Map::new(),
             honesty: honesty(false, false, &["library_cube"]),
-            provenance: obj(vec![
-                ("generator", json!("scripts/cube_spectrogram_3d.py (inverse-HDR bitdot cube)")),
-                ("params", json!({"bins_inferred_from_shape": inferred})),
-            ]),
+            provenance: cube_provenance,
             body: json!({
                 "inv_hdr": inv_hdr,
+                "layer_score": cube_doc["layer_score"],
                 "duration_s": cube_duration_s,
                 "bin_seconds": bin_frames as f64 / cube_sr.max(1) as f64,
                 "cube_covers_s": covers_ms as f64 / 1000.0,
@@ -281,7 +314,6 @@ pub fn migrate_v0_to_v1(bundle: &Value) -> Result<Value, AssetError> {
             }),
         })?;
         let cube_uid = remember(&mut assets, cube_envelope);
-        cube_uid_by_json.insert(format!("/library/{json_path}"), cube_uid.clone());
         for (layer_index, name) in crate::asset::LAYER_NAMES.iter().enumerate() {
             let Some(stats) = cube_doc.pointer(&format!("/layers/{name}")) else { continue };
             let mut relations = Map::new();
@@ -345,10 +377,11 @@ pub fn migrate_v0_to_v1(bundle: &Value) -> Result<Value, AssetError> {
         let Some(voice_uid) = model_uid.get(model) else {
             return fail("bad_voice_ref", format!("profile {persona}: voiceModel {model:?} is not a catalog voice model"));
         };
-        let mut relations = Map::new();
-        if let Some(cube) = profile["cubeJsonUrl"].as_str().and_then(|url| cube_uid_by_json.get(url)) {
-            relations.insert("bound_to".into(), json!([cube]));
-        }
+        // A persona is config (name, tone, purpose, voice model), not audio. Its
+        // honest link is fields.voice_model; that engine's clips and cubes hang
+        // off the voice model. No bound_to to a cube whose speakers are not this
+        // persona (H b): a v0 cubeJsonUrl on a profile never becomes a relation.
+        let relations = Map::new();
         let mut profile_media = Vec::new();
         if let Some(path) = entry["path"].as_str() {
             profile_media.extend(media_ref(&media, "profile_json", path, "application/json"));
@@ -372,7 +405,7 @@ pub fn migrate_v0_to_v1(bundle: &Value) -> Result<Value, AssetError> {
             media: profile_media,
             src: vec![],
             relations,
-            honesty: json!({"synthesized_speech": false, "fixture": false, "not_podcast": true, "claims": ["profile_preview", "not_a_podcast_render"]}),
+            honesty: json!({"synthesized_speech": false, "fixture": false, "not_podcast": true, "claims": ["persona_config", "not_a_podcast_render"]}),
             provenance: obj(vec![("generator", json!("VoiceProfile (v0)"))]),
             body: profile.clone(),
         })?;
@@ -398,9 +431,13 @@ pub fn migrate_v0_to_v1(bundle: &Value) -> Result<Value, AssetError> {
         let fixture = body_in["source"] == "fixture-tone";
         let claims: &[&str] = match view.as_str() {
             _ if fixture => &["fixture_tone"],
+            // PR #5 verification E1: sample scripts and never-probed placeholder
+            // endpoints are not product content; they ship in dev only.
+            "PodcastCast" if body_in["sampleScript"] == true => &["sample_content"],
+            "ServeHealth" if body_in["probed"] != true => &["status_only", "sample_content"],
             "EngineStatus" | "ServeHealth" | "ConnectorStatus" => &["status_only"],
             "BenchmarkCompare" => &["reference_only"],
-            "VoiceProfile" => &["profile_preview", "not_a_podcast_render"],
+            "VoiceProfile" => &["persona_config", "not_a_podcast_render"],
             "LibraryClip" if body_in["status"] == "ok" => &["real_wav"],
             "LibraryClip" => &["engine_unavailable"],
             _ => &[],
@@ -433,4 +470,35 @@ pub fn migrate_v0_to_v1(bundle: &Value) -> Result<Value, AssetError> {
         "assets": assets,
         "legacy_index": index,
     }))
+}
+
+/// build_assets --from-lock cannot regenerate a cube (no WAVs), so it verifies
+/// what the WAV-backed regen made: `locked` is media.lock.json "cubes" and
+/// `actual` the on-disk facts of every cube file the manifest names, both
+/// `path -> {"sha256", "bytes"}`. Every cube file must match its lock entry,
+/// and every lock entry must name a cube file still in use. Returns one line
+/// per problem.
+pub fn verify_cube_lock(locked: &Map<String, Value>, actual: &Map<String, Value>) -> Result<(), Vec<String>> {
+    let mut errors = Vec::new();
+    for (path, facts) in actual {
+        match locked.get(path) {
+            None => errors.push(format!("{path} is not pinned in media.lock.json \"cubes\"; rerun the WAV-backed build_assets")),
+            Some(lock) if lock["sha256"] != facts["sha256"] || lock["bytes"] != facts["bytes"] => errors.push(format!(
+                "{path} is sha256 {} ({} bytes) but media.lock.json pins {} ({} bytes); a cube is regenerated with cube_revision.py layers, never hand-edited",
+                facts["sha256"].as_str().unwrap_or("?"),
+                facts["bytes"],
+                lock["sha256"].as_str().unwrap_or("?"),
+                lock["bytes"]
+            )),
+            Some(_) => {}
+        }
+    }
+    for path in locked.keys().filter(|path| !actual.contains_key(*path)) {
+        errors.push(format!("media.lock.json pins {path}, which no clip uses"));
+    }
+    if errors.is_empty() {
+        Ok(())
+    } else {
+        Err(errors)
+    }
 }
