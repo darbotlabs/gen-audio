@@ -8,6 +8,7 @@ use std::collections::{BTreeMap, VecDeque};
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
+use gen_audio_core::asset_catalog;
 use gen_audio_core::catalog::{self, MAX_AGENTS_PER_TRACK};
 use serde_json::{json, Value};
 
@@ -82,6 +83,27 @@ fn id_ok(value: &str) -> bool {
             .all(|ch| ch.is_ascii_alphanumeric() || ch == '-' || ch == '_')
 }
 
+/// UI tools accept an optional asset `uid`. It must resolve in the library
+/// catalog, and when `tileId` is also given both must name the same tile.
+fn with_uid_tile(args: &Value) -> Result<Value, (i32, String)> {
+    let Some(uid) = args.get("uid") else {
+        return Ok(args.clone());
+    };
+    let uid = uid.as_str().ok_or((-32602, "uid must be a string".to_string()))?;
+    let asset = asset_catalog::require(uid).map_err(asset_catalog::CatalogError::rpc)?;
+    let tile = asset_catalog::tile_id_for(asset)
+        .ok_or((-32602, format!("{uid} is not shown as a tile")))?;
+    let mut out = args.clone();
+    match args.get("tileId").and_then(Value::as_str) {
+        Some(given) if given != tile => {
+            return Err((-32602, format!("uid {uid} names tile {tile}, not {given}")));
+        }
+        Some(_) => {}
+        None => out["tileId"] = json!(tile),
+    }
+    Ok(out)
+}
+
 pub fn note_progress(voice: &str, phase: &str, detail: &str, synthesized: bool) -> Value {
     let phase = if synthesized {
         "ok"
@@ -140,6 +162,7 @@ pub fn validate_track(agents: &[Value], voice: &str) -> Result<(), (i32, String)
 }
 
 pub fn ui_navigate(args: &Value) -> Result<Value, (i32, String)> {
+    let args = &with_uid_tile(args)?;
     let slide = args
         .get("slide")
         .and_then(Value::as_str)
@@ -160,10 +183,11 @@ pub fn ui_navigate(args: &Value) -> Result<Value, (i32, String)> {
 }
 
 pub fn ui_select_tile(args: &Value) -> Result<Value, (i32, String)> {
+    let args = &with_uid_tile(args)?;
     let tile = args
         .get("tileId")
         .and_then(Value::as_str)
-        .ok_or((-32602, "ui_select_tile needs tileId".to_string()))?;
+        .ok_or((-32602, "ui_select_tile needs tileId or uid".to_string()))?;
     if !id_ok(tile) {
         return Err((-32602, "tileId is invalid".into()));
     }
@@ -175,10 +199,11 @@ pub fn ui_select_tile(args: &Value) -> Result<Value, (i32, String)> {
 }
 
 pub fn ui_playback(args: &Value) -> Result<Value, (i32, String)> {
+    let args = &with_uid_tile(args)?;
     let tile = args
         .get("tileId")
         .and_then(Value::as_str)
-        .ok_or((-32602, "ui_playback needs tileId".to_string()))?;
+        .ok_or((-32602, "ui_playback needs tileId or uid".to_string()))?;
     if !id_ok(tile) {
         return Err((-32602, "tileId is invalid".into()));
     }
@@ -211,10 +236,11 @@ pub fn ui_playback(args: &Value) -> Result<Value, (i32, String)> {
 }
 
 pub fn ui_flip(args: &Value) -> Result<Value, (i32, String)> {
+    let args = &with_uid_tile(args)?;
     let tile = args
         .get("tileId")
         .and_then(Value::as_str)
-        .ok_or((-32602, "ui_flip needs tileId".to_string()))?;
+        .ok_or((-32602, "ui_flip needs tileId or uid".to_string()))?;
     if !id_ok(tile) {
         return Err((-32602, "tileId is invalid".into()));
     }

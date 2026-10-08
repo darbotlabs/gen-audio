@@ -83,6 +83,9 @@ pub fn smoke() -> Result<String, String> {
         "voice_profile_list",
         "ui_flip",
         "cube_layers",
+        "asset_resolve",
+        "asset_list",
+        "asset_glyph",
     ] {
         if !names.contains(&required) {
             return Err(format!("missing tool {required}"));
@@ -175,8 +178,15 @@ fn tool_defs() -> Vec<Value> {
         tool("voice_profile_get", "Return one persona profile: tone, purpose, domain, accent, traits, refs. Not audio."),
         tool("voice_profile_list", "List personas and TTS voice models. LLM ids are connectors, not agents."),
         tool("cube_layers", "Read signal, tonality, confidence, and quality summaries from an allowlisted library cube JSON. Omits point clouds and absolute paths."),
+        tool("asset_resolve", "Resolve a ga1 asset uid (or a ga:<kind>: prefix of 8+ chars) from the library catalog. Media come back as /library URLs plus sha256."),
+        tool("asset_list", "Page through library assets in uid order. Optional kind; limit 1 to 100 (default 50); cursor is the last uid returned."),
+        tool("asset_glyph", "Braille glyph, dot pattern, kind hue class and aria label for a ga1 uid. Visual hint only; resolve by uid."),
     ]
 }
+
+static UID_PROP: std::sync::LazyLock<Value> = std::sync::LazyLock::new(|| {
+    json!({"type": "string", "description": "ga1 asset uid, ga:<kind>:<26 base32>", "maxLength": 44})
+});
 
 fn tool(name: &str, description: &str) -> Value {
     let (properties, required) = match name {
@@ -186,10 +196,12 @@ fn tool(name: &str, description: &str) -> Value {
         "spectrogram" => (json!({"before": {"type": "string"}, "after": {"type": "string"}}), json!(["before"])),
         "serve_health" => (json!({"host": {"type": "string"}, "port": {"type": "integer"}, "probe": {"type": "boolean"}}), json!([])),
         "connector_health" => (json!({"id": {"type": "string"}}), json!([])),
-        "ui_navigate" => (json!({"slide": {"type": "string"}, "tileId": {"type": "string"}}), json!(["slide"])),
-        "ui_select_tile" => (json!({"tileId": {"type": "string"}}), json!(["tileId"])),
-        "ui_flip" => (json!({"tileId": {"type": "string"}, "flipped": {"type": "boolean"}, "personaId": {"type": "string"}}), json!(["tileId"])),
-        "ui_playback" => (json!({"tileId": {"type": "string"}, "action": {"type": "string"}, "seconds": {"type": "number"}}), json!(["tileId", "action"])),
+        "ui_navigate" => (json!({"slide": {"type": "string"}, "tileId": {"type": "string"}, "uid": UID_PROP.clone()}), json!(["slide"])),
+        "ui_select_tile" => (json!({"tileId": {"type": "string"}, "uid": UID_PROP.clone()}), json!([])),
+        "ui_flip" => (json!({"tileId": {"type": "string"}, "uid": UID_PROP.clone(), "flipped": {"type": "boolean"}, "personaId": {"type": "string"}}), json!([])),
+        "ui_playback" => (json!({"tileId": {"type": "string"}, "uid": UID_PROP.clone(), "action": {"type": "string"}, "seconds": {"type": "number"}}), json!(["action"])),
+        "asset_resolve" | "asset_glyph" => (json!({"uid": UID_PROP.clone()}), json!(["uid"])),
+        "asset_list" => (json!({"kind": {"type": "string"}, "cursor": {"type": "string"}, "limit": {"type": "integer", "minimum": 1, "maximum": 100}}), json!([])),
         "ui_set_sidepane" | "ui_generate" => (
             json!({"agents": {"type": "array"}, "voice": {"type": "string"}, "durationMin": {"type": "integer"}, "promptNote": {"type": "string"}}),
             json!(["agents", "voice"]),
@@ -243,6 +255,9 @@ pub fn call_tool(server: &Server, params: &Value) -> Result<Value, (i32, String)
         "cube_layers" => control::cube_layers(server.repo.as_deref(), &args)?,
         "voice_profile_get" => control::voice_profile_get(&args)?,
         "voice_profile_list" => control::voice_profile_list(),
+        "asset_resolve" => assets::asset_resolve(&args)?,
+        "asset_list" => assets::asset_list(&args)?,
+        "asset_glyph" => assets::asset_glyph(&args)?,
         _ => return Err((-32602, format!("unknown tool {name}"))),
     };
     Ok(json!({
@@ -260,10 +275,12 @@ fn known_arguments(name: &str, args: &Value) -> Result<(), (i32, String)> {
         "serve_health" => &["host", "port", "probe"],
         "connector_health" => &["id"],
         "list_connectors" | "list_engines" | "fixture_tone" | "benchmark_reference" | "harness_plan" | "library_list" | "voice_profile_list" => &[],
-        "ui_navigate" => &["slide", "tileId"],
-        "ui_select_tile" => &["tileId"],
-        "ui_flip" => &["tileId", "flipped", "personaId"],
-        "ui_playback" => &["tileId", "action", "seconds"],
+        "ui_navigate" => &["slide", "tileId", "uid"],
+        "ui_select_tile" => &["tileId", "uid"],
+        "ui_flip" => &["tileId", "uid", "flipped", "personaId"],
+        "ui_playback" => &["tileId", "uid", "action", "seconds"],
+        "asset_resolve" | "asset_glyph" => &["uid"],
+        "asset_list" => &["kind", "cursor", "limit"],
         "ui_set_sidepane" | "ui_generate" => &["agents", "voice", "durationMin", "promptNote"],
         "library_rename" => &["clipId", "semanticName", "faceName"],
         "library_harvest" => &["clipId", "personaId", "apply"],
@@ -486,6 +503,7 @@ pub fn stdio_loop(server: &Server) {
     }
 }
 
+pub mod assets;
 pub mod control;
 pub mod http;
 
