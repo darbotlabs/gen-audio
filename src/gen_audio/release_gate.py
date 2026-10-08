@@ -160,6 +160,26 @@ _STUB_CARD_IDS = {
     "cast-sample",
 }
 _DIST_SUFFIXES = {".js", ".html", ".css", ".mjs", ".json"}
+_TITLE_KEYS = {"title", "label"}
+
+
+def catalog_title_hits(document: object, label: str) -> list[str]:
+    """Bare stub words in catalog titles and labels. Existing phrase checks stay."""
+    hits: list[str] = []
+
+    def walk(value: object, key: str | None = None) -> None:
+        if isinstance(value, dict):
+            for child_key, item in value.items():
+                walk(item, str(child_key))
+        elif isinstance(value, list):
+            for item in value:
+                walk(item, key)
+        elif isinstance(value, str) and key in _TITLE_KEYS:
+            for match in _FORBIDDEN.finditer(value):
+                hits.append(f"{label}: {key} {match.group(0).lower()}")
+
+    walk(document)
+    return hits
 
 
 def _asset_stub_hits(asset: object, label: str) -> list[str]:
@@ -197,6 +217,7 @@ def json_document_hits(document: object, label: str) -> list[str]:
     if not isinstance(document, dict):
         return []
     hits: list[str] = []
+    hits.extend(catalog_title_hits(document, label))
     assets = document.get("assets")
     if isinstance(assets, list):
         for asset in assets:
@@ -226,6 +247,8 @@ def dist_hits(dist: Path) -> list[str]:
         for needle in _DIST_NEEDLES:
             if needle in text:
                 hits.append(f"{path.name}: {needle}")
+        if "PLACEHOLDER" in text and path.suffix != ".json":
+            hits.append(f"{path.name}: PLACEHOLDER")
         if path.suffix != ".json":
             continue
         try:

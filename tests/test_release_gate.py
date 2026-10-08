@@ -151,3 +151,58 @@ def test_dist_scan_fails_on_a_stub_phrase(tmp_path):
     )
     assert dist_hits(bundle) == []
     assert dist_hits(tmp_path / "missing") == [f"dist bundle is missing: {tmp_path / 'missing'}"]
+
+
+def test_dist_scan_fails_on_a_planted_catalog_title(tmp_path):
+    """AP-OPT-1: a bare stub word in a catalog title or a JS string fails the gate."""
+    bundle = tmp_path / "dist"
+    library = bundle / "library"
+    assets = bundle / "assets"
+    library.mkdir(parents=True)
+    assets.mkdir()
+    (bundle / "index.html").write_text("<p>ok</p>", encoding="utf-8")
+    (assets / "app.js").write_text('const title = "PLACEHOLDER clip";', encoding="utf-8")
+    (library / "assets.json").write_text(
+        json.dumps(
+            {
+                "assets": [
+                    {
+                        "legacy_id": "engine-pocket",
+                        "honesty": {"fixture": False},
+                        "display": {"title": "PLACEHOLDER clip", "label": "Pocket"},
+                        "body": {
+                            "id": "engine-pocket",
+                            "kind": "EngineStatus",
+                            "body": {"summary": "No adapter in this app."},
+                        },
+                    }
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+    hits = dist_hits(bundle)
+    blob = " ".join(hits)
+    assert "assets.json" in blob and "placeholder" in blob.lower(), hits
+    assert "app.js" in blob and "PLACEHOLDER" in blob, hits
+    (assets / "app.js").write_text("const title = 'Pocket TTS';", encoding="utf-8")
+    (library / "assets.json").write_text(
+        json.dumps(
+            {
+                "assets": [
+                    {
+                        "legacy_id": "engine-pocket",
+                        "honesty": {"fixture": False},
+                        "display": {"title": "Pocket TTS", "label": "Pocket"},
+                        "body": {
+                            "id": "engine-pocket",
+                            "kind": "EngineStatus",
+                            "body": {"summary": "No adapter in this app."},
+                        },
+                    }
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+    assert dist_hits(bundle) == []
