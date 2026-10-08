@@ -1,10 +1,10 @@
 {
   "engine": "kokoro_onnx",
-  "model": "../genaid-podcast-compare/forks/kokoro-onnx/models/kokoro-v1.0.onnx",
-  "voices_bin": "../genaid-podcast-compare/forks/kokoro-onnx/models/voices-v1.0.bin",
-  "source": "../gen-audio-library/out/script.txt",
-  "cast_map": "../genaid-podcast-compare/voices/cast_map.json",
-  "out": "../gen-audio-library/out/library_kokoro_onnx.wav",
+  "model": "<outside-repo>/genaid-podcast-compare/forks/kokoro-onnx/models/kokoro-v1.0.onnx",
+  "voices_bin": "<outside-repo>/genaid-podcast-compare/forks/kokoro-onnx/models/voices-v1.0.bin",
+  "source": "<outside-repo>/gen-audio-library/out/script.txt",
+  "cast_map": "<outside-repo>/genaid-podcast-compare/voices/cast_map.json",
+  "out": "<outside-repo>/gen-audio-library/out/library_kokoro_onnx.wav",
   "sample_rate": 24000,
   "turn_gap_s": 0.35,
   "speed": 1.0,
@@ -158,5 +158,27 @@
       "words": 52,
       "duration_s": 22.169333333333334
     }
-  ]
+  ],
+  "outside_repo": {
+    "<outside-repo>/gen-audio-library/out/library_kokoro_onnx.wav": {
+      "sha256": "0c8390299ad40f7d9eea753614f0293630f2c48769e4672ac2472101eb03b25a",
+      "bytes": 17988808
+    },
+    "<outside-repo>/gen-audio-library/out/script.txt": {
+      "sha256": "3fa4d39a2dfd8e694a166999481dbec882b48cd96a685b30349045bd9308ac8a",
+      "bytes": 5411
+    },
+    "<outside-repo>/genaid-podcast-compare/forks/kokoro-onnx/models/kokoro-v1.0.onnx": {
+      "sha256": "beb0d1848dee9a49da392cc3df26958d46cfa35d321edf434f52949153f0df3a",
+      "bytes": 325505369
+    },
+    "<outside-repo>/genaid-podcast-compare/forks/kokoro-onnx/models/voices-v1.0.bin": {
+      "sha256": "bca610b8308e8d99f32e6fe4197e7ec01679264efed0cac9140fe9c29f1fbf7d",
+      "bytes": 28214398
+    },
+    "<outside-repo>/genaid-podcast-compare/voices/cast_map.json": {
+      "sha256": "d4277793d47f3800748e64ec909c3f37ed074945dadd6fe3090945fb8982b543",
+      "bytes": 1332
+    }
+  }
 }
