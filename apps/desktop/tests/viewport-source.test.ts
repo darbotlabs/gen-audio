@@ -122,6 +122,31 @@ test("E1 addendum: release Tauri builds do not register the fixture commands", (
   assert.ok(!/generate_handler!\[[^\]]*run_fixture_improve/.test(lib.replace(/#\[cfg\(debug_assertions\)\][^]*?\n}\n/g, "")));
 });
 
+// E: status ok only for engines Generate can produce; every voice model with
+// no in-app adapter is offline_only or unavailable, with a reason.
+test("E: every engine with no in-app adapter is offline_only or unavailable", async () => {
+  const { VOICE_MODELS } = await import("../src/catalog.ts");
+  const assets: AssetEnvelope[] = load("apps/desktop/public/library/assets.json").assets;
+  for (const voice of VOICE_MODELS) {
+    const model = assets.find((asset) => asset.kind === "voice_model" && asset.legacy_id === voice.id);
+    assert.ok(model, voice.id);
+    const availability = model.body?.availability as { status?: string; reason?: string } | undefined;
+    if (voice.synthAdapter) {
+      assert.equal(model.status, "ok", voice.id);
+      continue;
+    }
+    assert.equal(model.status, "unavailable", `${voice.id}: Generate cannot produce it`);
+    assert.ok(availability?.status === "offline_only" || availability?.status === "unavailable", `${voice.id}: ${availability?.status}`);
+    assert.ok(availability?.reason, `${voice.id}: needs a reason`);
+    if (availability?.status === "offline_only") assert.equal(availability.reason, voice.offlineReason, `${voice.id}: TS and Rust catalogs agree`);
+  }
+  const kokoro = assets.find((asset) => asset.kind === "voice_model" && asset.legacy_id === "kokoro_dayour");
+  assert.equal((kokoro?.body?.availability as { status?: string }).status, "offline_only");
+  for (const clip of assets.filter((asset) => asset.kind === "audio_clip" && asset.provenance?.voice_model === kokoro?.uid)) {
+    assert.match(String(clip.provenance?.generator), /offline run/, String(clip.legacy_id));
+  }
+});
+
 // E4: the voice model cards' Cube tabs, from the real release catalog.
 test("E4: each voice model's Cube tab lists that engine's real rev 3 cubes", () => {
   const assets: AssetEnvelope[] = load("apps/desktop/public/library/assets.json").assets;
@@ -132,6 +157,7 @@ test("E4: each voice model's Cube tab lists that engine's real rev 3 cubes", () 
   assert.equal(onnx.state === "cubes" && onnx.offline, false);
   const dayour = modelCubes(assets, "kokoro_dayour");
   assert.deepEqual(titles(dayour), ["dayour/kokoro", "misaki\u2192kokoro"]);
+  assert.equal(dayour.state === "cubes" && dayour.offline, true, "dayour/kokoro's cubes are offline runs (E)");
   const vibe = modelCubes(assets, "vibevoice");
   assert.deepEqual(titles(vibe), ["Bitdot braille (VibeVoice-1.5B)"]);
   assert.equal(vibe.state === "cubes" && vibe.offline, true, "VibeVoice's bitdot cube is an offline run");

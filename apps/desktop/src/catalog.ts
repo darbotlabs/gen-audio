@@ -21,6 +21,8 @@ export interface VoiceModel {
   waveform: boolean;
   synthAdapter: boolean;
   unavailable: boolean;
+  /** No in-app adapter; library clips were rendered elsewhere (availability offline_only). */
+  offlineReason?: string;
   note: string;
 }
 
@@ -146,11 +148,12 @@ export const VOICE_MODELS: VoiceModel[] = [
   },
   {
     id: "kokoro_dayour",
-    label: "dayour/kokoro",
+    label: "dayour/kokoro (offline only)",
     waveform: true,
     synthAdapter: false,
-    unavailable: false,
-    note: "dayour/kokoro torch runtime. Not vendored here. A library WAV may exist; this repo has no synth adapter.",
+    unavailable: true,
+    note: "dayour/kokoro torch runtime. Not vendored here. Its library WAVs are offline runs; this repo has no synth adapter.",
+    offlineReason: "offline runs only: rendered with the dayour/kokoro torch runtime outside this app; no in-app adapter, so Generate cannot produce it",
   },
   {
     id: "misaki",
@@ -159,6 +162,7 @@ export const VOICE_MODELS: VoiceModel[] = [
     synthAdapter: false,
     unavailable: false,
     note: "Grapheme-to-phoneme for Kokoro. It does not emit a waveform by itself.",
+    offlineReason: "G2P only, used offline for the misaki\u2192kokoro clip; no in-app adapter",
   },
   {
     id: "vibevoice",

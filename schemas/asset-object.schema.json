@@ -1452,6 +1452,7 @@
             "status": {
               "enum": [
                 "unavailable",
+                "offline_only",
                 "weights_absent",
                 "external",
                 "running"

@@ -99,12 +99,18 @@ pub fn migrate_v0_to_v1(bundle: &Value) -> Result<Value, AssetError> {
             ("unavailable", json!(unavailable)),
             ("note", model["note"].clone()),
         ]);
+        let offline_reason = model["offlineReason"].as_str();
         if let Some(clip) = clips.iter().find(|clip| clip["engineId"] == id.as_str() && clip["status"] != "ok") {
             body.insert(
                 "availability".into(),
                 json!({"status": clip["status"], "reason": clip["reason"], "legacy_clip_id": clip["id"]}),
             );
+        } else if let Some(reason) = offline_reason {
+            // The VibeVoice honesty contract for a model with offline clips only.
+            body.insert("availability".into(), json!({"status": "offline_only", "reason": reason}));
         }
+        // Status ok only for a model Generate can produce in this app.
+        let producible = model["synthAdapter"].as_bool().unwrap_or(false) && !unavailable;
         let mut claims = vec![];
         if unavailable {
             claims.push("engine_unavailable");
@@ -117,7 +123,7 @@ pub fn migrate_v0_to_v1(bundle: &Value) -> Result<Value, AssetError> {
             legacy_id: Some(id.clone()),
             title: model["label"].as_str().unwrap_or(&id).to_string(),
             summary: None,
-            status: if unavailable { "unavailable" } else { "ok" },
+            status: if producible { "ok" } else { "unavailable" },
             fields: json!({"model_id": id, "waveform": waveform}),
             media: vec![],
             src: vec![],

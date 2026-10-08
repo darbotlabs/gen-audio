@@ -288,3 +288,49 @@ fn cube_uid_is_generator_content_and_a_commit_is_provenance_only() {
         assert_ne!(gen_audio_core::asset::envelope_identity(&edited).unwrap(), gen_audio_core::asset::envelope_identity(cube).unwrap(), "{id}");
     }
 }
+
+/// E (Optimus, F5): status ok only for voice models Generate can produce in
+/// this app. Every model with no in-app adapter is offline_only (clips were
+/// rendered elsewhere, the VibeVoice honesty contract) or unavailable, with a
+/// reason; and its clips' provenance says "offline run".
+#[test]
+fn every_engine_without_an_in_app_adapter_is_offline_only_or_unavailable() {
+    let assets: Value = serde_json::from_str(ASSETS).unwrap();
+    let assets = assets["assets"].as_array().unwrap();
+    let models: Vec<&Value> = assets.iter().filter(|asset| asset["kind"] == "voice_model").collect();
+    assert_eq!(models.len(), gen_audio_core::catalog::voice_models().len());
+    for model in &models {
+        let id = model["legacy_id"].as_str().unwrap();
+        let adapter = model["body"]["synth_adapter"].as_bool().unwrap();
+        let spec = gen_audio_core::catalog::voice_model(id).unwrap();
+        assert_eq!(adapter, spec.synth_adapter, "{id}");
+        if adapter {
+            assert_eq!(model["status"], "ok", "{id} has an adapter");
+            assert!(model["body"].get("availability").is_none(), "{id}");
+            continue;
+        }
+        assert_eq!(model["status"], "unavailable", "{id}: no in-app adapter, so Generate cannot produce it");
+        let availability = &model["body"]["availability"];
+        let status = availability["status"].as_str().unwrap_or_else(|| panic!("{id}: no availability"));
+        assert!(matches!(status, "offline_only" | "unavailable"), "{id}: {status}");
+        assert!(!availability["reason"].as_str().unwrap_or("").is_empty(), "{id}: availability needs a reason");
+        // A model whose clips exist here only as offline renders says so on each clip.
+        for clip in assets.iter().filter(|asset| {
+            asset["kind"] == "audio_clip" && asset["provenance"]["voice_model"] == model["uid"]
+        }) {
+            let generator = clip["provenance"]["generator"].as_str().unwrap_or("");
+            assert!(generator.contains("offline run"), "{id}: clip {} provenance {generator}", clip["legacy_id"]);
+        }
+    }
+    let status = |id: &str| models.iter().find(|model| model["legacy_id"] == id).unwrap()["body"]["availability"]["status"].clone();
+    assert_eq!(status("kokoro_dayour"), "offline_only");
+    assert_eq!(status("misaki"), "offline_only");
+    assert_eq!(status("vibevoice"), "unavailable");
+    // The engine list agrees: only the implemented engine is producible.
+    for engine in gen_audio_core::engines::engines() {
+        let implemented = engine.status == gen_audio_core::engines::EngineStatus::Implemented;
+        if let Some(spec) = gen_audio_core::catalog::voice_model(engine.id) {
+            assert_eq!(implemented, spec.synth_adapter, "{}", engine.id);
+        }
+    }
+}

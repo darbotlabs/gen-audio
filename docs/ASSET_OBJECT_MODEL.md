@@ -274,6 +274,12 @@ through `src`.
   - Unavailable "clips" (Magpie, VibeVoice, Pocket) are **not** audio_clips:
     they fold into `voice_model.body.availability`, so "no fake audio" is
     structural.
+  - A voice model is `status: ok` only when Generate can produce it here
+    (`synth_adapter`, today only `kokoro_onnx`). A model with no in-app
+    adapter whose clips were rendered elsewhere (`kokoro_dayour`, and the G2P
+    `misaki`) gets `availability {status: "offline_only", reason}` and status
+    `unavailable`; its clips' provenance says "offline run" and its cubes show
+    as offline runs. Tested in `asset_v1.rs` and the npm E test.
   - VoiceProfile → `voice_profile`:
     - `fields` hold the persona text plus the voice_model uid.
     - `body` is the VoiceProfile document itself.
@@ -331,7 +337,8 @@ produce (migration and `build_assets`), and the UI derives its badge text from
 | audio_clip, synthesized, wav sha known but file absent here | `missing` | true | false | `real_wav`, `synthesized_speech` | real synthesis, not on this machine |
 | audio_clip, not synthesized (recording/import) | `ok` / `missing` | false | false | `real_wav` | real audio, no synthesis claim |
 | audio_clip | `unavailable` | — | — | — | **invalid** (`bad_status`): an unavailable engine has no clip; it is a voice_model |
-| voice_model, engine present | `ok` | false | false | `[]` or `g2p_only` | engine listed |
+| voice_model, Generate can produce it (adapter) | `ok` | false | false | `[]` | engine listed |
+| voice_model, no adapter, offline clips only | `unavailable` (`availability.status: offline_only`) | false | false | `engine_unavailable` or `g2p_only` | offline runs, never generated here |
 | voice_model, engine unavailable | `unavailable` | false | false | `engine_unavailable` (+ `g2p_only`) | greyed engine, never playable |
 | voice_profile | `ok` | **false** (enforced) | false | `profile_preview`, `not_a_podcast_render`; `not_podcast:true` (enforced) | persona preview, not a render |
 | cube_ihdr / layer | `ok` | false | false | `library_cube` | analysis of a real clip |

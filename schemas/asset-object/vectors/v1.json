@@ -84,7 +84,7 @@
         },
         "display": {
           "glyph": "⢬⣭",
-          "summary": "Real misaki→kokoro WAV (genaid_full_misaki_kokoro). synthesizedSpeech true.",
+          "summary": "Real misaki→kokoro WAV (genaid_full_misaki_kokoro). Offline run: dayour/misaki G2P + dayour/kokoro torch outside this app; no in-app adapter. synthesizedSpeech true.",
           "title": "misaki→kokoro"
         },
         "fields": {
@@ -113,9 +113,21 @@
           }
         ],
         "provenance": {
-          "engine": "misaki_kokoro",
+          "engine": "dayour/misaki+kokoro(phoneme)",
           "g2p_model": "ga:voice_model:og5tdvy6ofx7hm37rwq6dtab3e",
-          "generator": "manifest.json clip (v0)",
+          "generator": "genaid-podcast-compare scripts/synth_genaid_kokoro.py --mode misaki (offline run; dayour/misaki G2P + dayour/kokoro torch outside this app)",
+          "params": {
+            "device": "cpu",
+            "n_turns": 9,
+            "output_sha256": "61b8ca26b3f4759ce643738e2afbc80f7bf2a5eb554c5fedbfbdc2d9bfad3d38",
+            "sample_rate": 24000,
+            "synth_record": "genaid_full_misaki_kokoro.synth.json (on the box that rendered it; not shipped)",
+            "voices": {
+              "Speaker 1": "af_heart",
+              "Speaker 2": "am_michael"
+            },
+            "wall_time_s": 26.69
+          },
           "voice_model": "ga:voice_model:25q3qpvjdhltosj3w5sgtxdatm"
         },
         "relations": {},
@@ -448,22 +460,28 @@
     {
       "envelope": {
         "body": {
-          "label": "dayour/kokoro",
-          "note": "dayour/kokoro torch runtime. Not vendored here. A library WAV may exist; this repo has no synth adapter.",
+          "availability": {
+            "reason": "offline runs only: rendered with the dayour/kokoro torch runtime outside this app; no in-app adapter, so Generate cannot produce it",
+            "status": "offline_only"
+          },
+          "label": "dayour/kokoro (offline only)",
+          "note": "dayour/kokoro torch runtime. Not vendored here. Its library WAVs are offline runs; this repo has no synth adapter.",
           "synth_adapter": false,
-          "unavailable": false,
+          "unavailable": true,
           "waveform": true
         },
         "display": {
           "glyph": "⣗⡡",
-          "title": "dayour/kokoro"
+          "title": "dayour/kokoro (offline only)"
         },
         "fields": {
           "model_id": "kokoro_dayour",
           "waveform": true
         },
         "honesty": {
-          "claims": [],
+          "claims": [
+            "engine_unavailable"
+          ],
           "fixture": true,
           "synthesized_speech": true
         },
@@ -476,7 +494,7 @@
         "relations": {},
         "schema_version": "1.0.0",
         "src": [],
-        "status": "ok",
+        "status": "unavailable",
         "uid": "ga:voice_model:25q3qpvjdhltosj3w5sgtxdatm",
         "uid_scheme": "ga1"
       },
@@ -1178,15 +1196,19 @@
     {
       "envelope": {
         "body": {
-          "label": "dayour/kokoro",
-          "note": "dayour/kokoro torch runtime. Not vendored here. A library WAV may exist; this repo has no synth adapter.",
+          "availability": {
+            "reason": "offline runs only: rendered with the dayour/kokoro torch runtime outside this app; no in-app adapter, so Generate cannot produce it",
+            "status": "offline_only"
+          },
+          "label": "dayour/kokoro (offline only)",
+          "note": "dayour/kokoro torch runtime. Not vendored here. Its library WAVs are offline runs; this repo has no synth adapter.",
           "synth_adapter": false,
-          "unavailable": false,
+          "unavailable": true,
           "waveform": true
         },
         "display": {
           "glyph": "⣗⡡",
-          "title": "dayour/kokoro"
+          "title": "dayour/kokoro (offline only)"
         },
         "fields": {
           "model_id": "kokoro_dayour",
@@ -1208,7 +1230,7 @@
         "relations": {},
         "schema_version": "1.0.0",
         "src": [],
-        "status": "ok",
+        "status": "unavailable",
         "uid": "ga:voice_model:25q3qpvjdhltosj3w5sgtxdatm",
         "uid_scheme": "ga1"
       },
@@ -1219,22 +1241,28 @@
     {
       "envelope": {
         "body": {
-          "label": "dayour/kokoro",
-          "note": "dayour/kokoro torch runtime. Not vendored here. A library WAV may exist; this repo has no synth adapter.",
+          "availability": {
+            "reason": "offline runs only: rendered with the dayour/kokoro torch runtime outside this app; no in-app adapter, so Generate cannot produce it",
+            "status": "offline_only"
+          },
+          "label": "dayour/kokoro (offline only)",
+          "note": "dayour/kokoro torch runtime. Not vendored here. Its library WAVs are offline runs; this repo has no synth adapter.",
           "synth_adapter": false,
-          "unavailable": false,
+          "unavailable": true,
           "waveform": true
         },
         "display": {
           "glyph": "⣗⡡",
-          "title": "dayour/kokoro"
+          "title": "dayour/kokoro (offline only)"
         },
         "fields": {
           "model_id": "kokoro_dayour",
           "waveform": true
         },
         "honesty": {
-          "claims": [],
+          "claims": [
+            "engine_unavailable"
+          ],
           "fixture": false,
           "synthesized_speech": false
         },
@@ -1247,7 +1275,7 @@
         "relations": {},
         "schema_version": "2.0.0",
         "src": [],
-        "status": "ok",
+        "status": "unavailable",
         "uid": "ga:voice_model:25q3qpvjdhltosj3w5sgtxdatm",
         "uid_scheme": "ga1"
       },
@@ -1531,7 +1559,7 @@
         },
         "display": {
           "glyph": "⢬⣭",
-          "summary": "Real misaki→kokoro WAV (genaid_full_misaki_kokoro). synthesizedSpeech true.",
+          "summary": "Real misaki→kokoro WAV (genaid_full_misaki_kokoro). Offline run: dayour/misaki G2P + dayour/kokoro torch outside this app; no in-app adapter. synthesizedSpeech true.",
           "title": "misaki→kokoro"
         },
         "fields": {
@@ -1560,9 +1588,21 @@
           }
         ],
         "provenance": {
-          "engine": "misaki_kokoro",
+          "engine": "dayour/misaki+kokoro(phoneme)",
           "g2p_model": "ga:voice_model:og5tdvy6ofx7hm37rwq6dtab3e",
-          "generator": "manifest.json clip (v0)",
+          "generator": "genaid-podcast-compare scripts/synth_genaid_kokoro.py --mode misaki (offline run; dayour/misaki G2P + dayour/kokoro torch outside this app)",
+          "params": {
+            "device": "cpu",
+            "n_turns": 9,
+            "output_sha256": "61b8ca26b3f4759ce643738e2afbc80f7bf2a5eb554c5fedbfbdc2d9bfad3d38",
+            "sample_rate": 24000,
+            "synth_record": "genaid_full_misaki_kokoro.synth.json (on the box that rendered it; not shipped)",
+            "voices": {
+              "Speaker 1": "af_heart",
+              "Speaker 2": "am_michael"
+            },
+            "wall_time_s": 26.69
+          },
           "voice_model": "ga:voice_model:25q3qpvjdhltosj3w5sgtxdatm"
         },
         "relations": {},
@@ -3029,9 +3069,21 @@
           }
         ],
         "provenance": {
-          "engine": "misaki_kokoro",
+          "engine": "dayour/misaki+kokoro(phoneme)",
           "g2p_model": "ga:voice_model:og5tdvy6ofx7hm37rwq6dtab3e",
-          "generator": "manifest.json clip (v0)",
+          "generator": "genaid-podcast-compare scripts/synth_genaid_kokoro.py --mode misaki (offline run; dayour/misaki G2P + dayour/kokoro torch outside this app)",
+          "params": {
+            "device": "cpu",
+            "n_turns": 9,
+            "output_sha256": "61b8ca26b3f4759ce643738e2afbc80f7bf2a5eb554c5fedbfbdc2d9bfad3d38",
+            "sample_rate": 24000,
+            "synth_record": "genaid_full_misaki_kokoro.synth.json (on the box that rendered it; not shipped)",
+            "voices": {
+              "Speaker 1": "af_heart",
+              "Speaker 2": "am_michael"
+            },
+            "wall_time_s": 26.69
+          },
           "voice_model": "ga:voice_model:25q3qpvjdhltosj3w5sgtxdatm"
         },
         "relations": {},
@@ -3077,9 +3129,21 @@
           }
         ],
         "provenance": {
-          "engine": "misaki_kokoro",
+          "engine": "dayour/misaki+kokoro(phoneme)",
           "g2p_model": "ga:voice_model:og5tdvy6ofx7hm37rwq6dtab3e",
-          "generator": "manifest.json clip (v0)",
+          "generator": "genaid-podcast-compare scripts/synth_genaid_kokoro.py --mode misaki (offline run; dayour/misaki G2P + dayour/kokoro torch outside this app)",
+          "params": {
+            "device": "cpu",
+            "n_turns": 9,
+            "output_sha256": "61b8ca26b3f4759ce643738e2afbc80f7bf2a5eb554c5fedbfbdc2d9bfad3d38",
+            "sample_rate": 24000,
+            "synth_record": "genaid_full_misaki_kokoro.synth.json (on the box that rendered it; not shipped)",
+            "voices": {
+              "Speaker 1": "af_heart",
+              "Speaker 2": "am_michael"
+            },
+            "wall_time_s": 26.69
+          },
           "voice_model": "ga:voice_model:25q3qpvjdhltosj3w5sgtxdatm"
         },
         "relations": {},
@@ -3102,7 +3166,7 @@
         },
         "display": {
           "glyph": "⢬⣭",
-          "summary": "Real misaki→kokoro WAV (genaid_full_misaki_kokoro). synthesizedSpeech true.",
+          "summary": "Real misaki→kokoro WAV (genaid_full_misaki_kokoro). Offline run: dayour/misaki G2P + dayour/kokoro torch outside this app; no in-app adapter. synthesizedSpeech true.",
           "title": "misaki→kokoro"
         },
         "fields": {
@@ -3131,9 +3195,21 @@
           }
         ],
         "provenance": {
-          "engine": "misaki_kokoro",
+          "engine": "dayour/misaki+kokoro(phoneme)",
           "g2p_model": "ga:voice_model:og5tdvy6ofx7hm37rwq6dtab3e",
-          "generator": "manifest.json clip (v0)",
+          "generator": "genaid-podcast-compare scripts/synth_genaid_kokoro.py --mode misaki (offline run; dayour/misaki G2P + dayour/kokoro torch outside this app)",
+          "params": {
+            "device": "cpu",
+            "n_turns": 9,
+            "output_sha256": "61b8ca26b3f4759ce643738e2afbc80f7bf2a5eb554c5fedbfbdc2d9bfad3d38",
+            "sample_rate": 24000,
+            "synth_record": "genaid_full_misaki_kokoro.synth.json (on the box that rendered it; not shipped)",
+            "voices": {
+              "Speaker 1": "af_heart",
+              "Speaker 2": "am_michael"
+            },
+            "wall_time_s": 26.69
+          },
           "voice_model": "ga:voice_model:25q3qpvjdhltosj3w5sgtxdatm"
         },
         "relations": {},
@@ -3156,7 +3232,7 @@
         },
         "display": {
           "glyph": "⢬⣭",
-          "summary": "Real misaki→kokoro WAV (genaid_full_misaki_kokoro). synthesizedSpeech true.",
+          "summary": "Real misaki→kokoro WAV (genaid_full_misaki_kokoro). Offline run: dayour/misaki G2P + dayour/kokoro torch outside this app; no in-app adapter. synthesizedSpeech true.",
           "title": "misaki→kokoro"
         },
         "fields": {
@@ -3185,9 +3261,21 @@
           }
         ],
         "provenance": {
-          "engine": "misaki_kokoro",
+          "engine": "dayour/misaki+kokoro(phoneme)",
           "g2p_model": "ga:voice_model:og5tdvy6ofx7hm37rwq6dtab3e",
-          "generator": "manifest.json clip (v0)",
+          "generator": "genaid-podcast-compare scripts/synth_genaid_kokoro.py --mode misaki (offline run; dayour/misaki G2P + dayour/kokoro torch outside this app)",
+          "params": {
+            "device": "cpu",
+            "n_turns": 9,
+            "output_sha256": "61b8ca26b3f4759ce643738e2afbc80f7bf2a5eb554c5fedbfbdc2d9bfad3d38",
+            "sample_rate": 24000,
+            "synth_record": "genaid_full_misaki_kokoro.synth.json (on the box that rendered it; not shipped)",
+            "voices": {
+              "Speaker 1": "af_heart",
+              "Speaker 2": "am_michael"
+            },
+            "wall_time_s": 26.69
+          },
           "voice_model": "ga:voice_model:25q3qpvjdhltosj3w5sgtxdatm"
         },
         "relations": {},
@@ -3210,7 +3298,7 @@
         },
         "display": {
           "glyph": "⢬⣭",
-          "summary": "Real misaki→kokoro WAV (genaid_full_misaki_kokoro). synthesizedSpeech true.",
+          "summary": "Real misaki→kokoro WAV (genaid_full_misaki_kokoro). Offline run: dayour/misaki G2P + dayour/kokoro torch outside this app; no in-app adapter. synthesizedSpeech true.",
           "title": "misaki→kokoro"
         },
         "fields": {
@@ -3239,9 +3327,21 @@
           }
         ],
         "provenance": {
-          "engine": "misaki_kokoro",
+          "engine": "dayour/misaki+kokoro(phoneme)",
           "g2p_model": "ga:voice_model:og5tdvy6ofx7hm37rwq6dtab3e",
-          "generator": "manifest.json clip (v0)",
+          "generator": "genaid-podcast-compare scripts/synth_genaid_kokoro.py --mode misaki (offline run; dayour/misaki G2P + dayour/kokoro torch outside this app)",
+          "params": {
+            "device": "cpu",
+            "n_turns": 9,
+            "output_sha256": "61b8ca26b3f4759ce643738e2afbc80f7bf2a5eb554c5fedbfbdc2d9bfad3d38",
+            "sample_rate": 24000,
+            "synth_record": "genaid_full_misaki_kokoro.synth.json (on the box that rendered it; not shipped)",
+            "voices": {
+              "Speaker 1": "af_heart",
+              "Speaker 2": "am_michael"
+            },
+            "wall_time_s": 26.69
+          },
           "voice_model": "ga:voice_model:25q3qpvjdhltosj3w5sgtxdatm"
         },
         "relations": {},
@@ -3264,7 +3364,7 @@
         },
         "display": {
           "glyph": "⢬⣭",
-          "summary": "Real misaki→kokoro WAV (genaid_full_misaki_kokoro). synthesizedSpeech true.",
+          "summary": "Real misaki→kokoro WAV (genaid_full_misaki_kokoro). Offline run: dayour/misaki G2P + dayour/kokoro torch outside this app; no in-app adapter. synthesizedSpeech true.",
           "title": "misaki→kokoro"
         },
         "fields": {
@@ -3293,9 +3393,21 @@
           }
         ],
         "provenance": {
-          "engine": "misaki_kokoro",
+          "engine": "dayour/misaki+kokoro(phoneme)",
           "g2p_model": "ga:voice_model:og5tdvy6ofx7hm37rwq6dtab3e",
-          "generator": "manifest.json clip (v0)",
+          "generator": "genaid-podcast-compare scripts/synth_genaid_kokoro.py --mode misaki (offline run; dayour/misaki G2P + dayour/kokoro torch outside this app)",
+          "params": {
+            "device": "cpu",
+            "n_turns": 9,
+            "output_sha256": "61b8ca26b3f4759ce643738e2afbc80f7bf2a5eb554c5fedbfbdc2d9bfad3d38",
+            "sample_rate": 24000,
+            "synth_record": "genaid_full_misaki_kokoro.synth.json (on the box that rendered it; not shipped)",
+            "voices": {
+              "Speaker 1": "af_heart",
+              "Speaker 2": "am_michael"
+            },
+            "wall_time_s": 26.69
+          },
           "voice_model": "ga:voice_model:25q3qpvjdhltosj3w5sgtxdatm"
         },
         "relations": {},
@@ -4524,22 +4636,28 @@
       "members": [
         {
           "body": {
-            "label": "dayour/kokoro",
-            "note": "dayour/kokoro torch runtime. Not vendored here. A library WAV may exist; this repo has no synth adapter.",
+            "availability": {
+              "reason": "offline runs only: rendered with the dayour/kokoro torch runtime outside this app; no in-app adapter, so Generate cannot produce it",
+              "status": "offline_only"
+            },
+            "label": "dayour/kokoro (offline only)",
+            "note": "dayour/kokoro torch runtime. Not vendored here. Its library WAVs are offline runs; this repo has no synth adapter.",
             "synth_adapter": false,
-            "unavailable": false,
+            "unavailable": true,
             "waveform": true
           },
           "display": {
             "glyph": "⣗⡡",
-            "title": "dayour/kokoro"
+            "title": "dayour/kokoro (offline only)"
           },
           "fields": {
             "model_id": "kokoro_dayour",
             "waveform": true
           },
           "honesty": {
-            "claims": [],
+            "claims": [
+              "engine_unavailable"
+            ],
             "fixture": false,
             "synthesized_speech": false
           },
@@ -4552,12 +4670,16 @@
           "relations": {},
           "schema_version": "1.0.0",
           "src": [],
-          "status": "ok",
+          "status": "unavailable",
           "uid": "ga:voice_model:25q3qpvjdhltosj3w5sgtxdatm",
           "uid_scheme": "ga1"
         },
         {
           "body": {
+            "availability": {
+              "reason": "G2P only, used offline for the misaki→kokoro clip; no in-app adapter",
+              "status": "offline_only"
+            },
             "label": "misaki (G2P, not a waveform)",
             "note": "Grapheme-to-phoneme for Kokoro. It does not emit a waveform by itself.",
             "synth_adapter": false,
@@ -4588,7 +4710,7 @@
           "relations": {},
           "schema_version": "1.0.0",
           "src": [],
-          "status": "ok",
+          "status": "unavailable",
           "uid": "ga:voice_model:og5tdvy6ofx7hm37rwq6dtab3e",
           "uid_scheme": "ga1"
         },
@@ -4600,7 +4722,7 @@
           },
           "display": {
             "glyph": "⢬⣭",
-            "summary": "Real misaki→kokoro WAV (genaid_full_misaki_kokoro). synthesizedSpeech true.",
+            "summary": "Real misaki→kokoro WAV (genaid_full_misaki_kokoro). Offline run: dayour/misaki G2P + dayour/kokoro torch outside this app; no in-app adapter. synthesizedSpeech true.",
             "title": "misaki→kokoro"
           },
           "fields": {
@@ -4629,9 +4751,21 @@
             }
           ],
           "provenance": {
-            "engine": "misaki_kokoro",
+            "engine": "dayour/misaki+kokoro(phoneme)",
             "g2p_model": "ga:voice_model:og5tdvy6ofx7hm37rwq6dtab3e",
-            "generator": "manifest.json clip (v0)",
+            "generator": "genaid-podcast-compare scripts/synth_genaid_kokoro.py --mode misaki (offline run; dayour/misaki G2P + dayour/kokoro torch outside this app)",
+            "params": {
+              "device": "cpu",
+              "n_turns": 9,
+              "output_sha256": "61b8ca26b3f4759ce643738e2afbc80f7bf2a5eb554c5fedbfbdc2d9bfad3d38",
+              "sample_rate": 24000,
+              "synth_record": "genaid_full_misaki_kokoro.synth.json (on the box that rendered it; not shipped)",
+              "voices": {
+                "Speaker 1": "af_heart",
+                "Speaker 2": "am_michael"
+              },
+              "wall_time_s": 26.69
+            },
             "voice_model": "ga:voice_model:25q3qpvjdhltosj3w5sgtxdatm"
           },
           "relations": {},
@@ -4777,22 +4911,28 @@
       "members": [
         {
           "body": {
-            "label": "dayour/kokoro",
-            "note": "dayour/kokoro torch runtime. Not vendored here. A library WAV may exist; this repo has no synth adapter.",
+            "availability": {
+              "reason": "offline runs only: rendered with the dayour/kokoro torch runtime outside this app; no in-app adapter, so Generate cannot produce it",
+              "status": "offline_only"
+            },
+            "label": "dayour/kokoro (offline only)",
+            "note": "dayour/kokoro torch runtime. Not vendored here. Its library WAVs are offline runs; this repo has no synth adapter.",
             "synth_adapter": false,
-            "unavailable": false,
+            "unavailable": true,
             "waveform": true
           },
           "display": {
             "glyph": "⣗⡡",
-            "title": "dayour/kokoro"
+            "title": "dayour/kokoro (offline only)"
           },
           "fields": {
             "model_id": "kokoro_dayour",
             "waveform": true
           },
           "honesty": {
-            "claims": [],
+            "claims": [
+              "engine_unavailable"
+            ],
             "fixture": false,
             "synthesized_speech": false
           },
@@ -4805,12 +4945,16 @@
           "relations": {},
           "schema_version": "1.0.0",
           "src": [],
-          "status": "ok",
+          "status": "unavailable",
           "uid": "ga:voice_model:25q3qpvjdhltosj3w5sgtxdatm",
           "uid_scheme": "ga1"
         },
         {
           "body": {
+            "availability": {
+              "reason": "G2P only, used offline for the misaki→kokoro clip; no in-app adapter",
+              "status": "offline_only"
+            },
             "label": "misaki (G2P, not a waveform)",
             "note": "Grapheme-to-phoneme for Kokoro. It does not emit a waveform by itself.",
             "synth_adapter": false,
@@ -4841,7 +4985,7 @@
           "relations": {},
           "schema_version": "1.0.0",
           "src": [],
-          "status": "ok",
+          "status": "unavailable",
           "uid": "ga:voice_model:og5tdvy6ofx7hm37rwq6dtab3e",
           "uid_scheme": "ga1"
         },
@@ -4853,7 +4997,7 @@
           },
           "display": {
             "glyph": "⢬⣭",
-            "summary": "Real misaki→kokoro WAV (genaid_full_misaki_kokoro). synthesizedSpeech true.",
+            "summary": "Real misaki→kokoro WAV (genaid_full_misaki_kokoro). Offline run: dayour/misaki G2P + dayour/kokoro torch outside this app; no in-app adapter. synthesizedSpeech true.",
             "title": "misaki→kokoro"
           },
           "fields": {
@@ -4882,9 +5026,21 @@
             }
           ],
           "provenance": {
-            "engine": "misaki_kokoro",
+            "engine": "dayour/misaki+kokoro(phoneme)",
             "g2p_model": "ga:voice_model:og5tdvy6ofx7hm37rwq6dtab3e",
-            "generator": "manifest.json clip (v0)",
+            "generator": "genaid-podcast-compare scripts/synth_genaid_kokoro.py --mode misaki (offline run; dayour/misaki G2P + dayour/kokoro torch outside this app)",
+            "params": {
+              "device": "cpu",
+              "n_turns": 9,
+              "output_sha256": "61b8ca26b3f4759ce643738e2afbc80f7bf2a5eb554c5fedbfbdc2d9bfad3d38",
+              "sample_rate": 24000,
+              "synth_record": "genaid_full_misaki_kokoro.synth.json (on the box that rendered it; not shipped)",
+              "voices": {
+                "Speaker 1": "af_heart",
+                "Speaker 2": "am_michael"
+              },
+              "wall_time_s": 26.69
+            },
             "voice_model": "ga:voice_model:25q3qpvjdhltosj3w5sgtxdatm"
           },
           "relations": {},
@@ -4956,22 +5112,28 @@
       "members": [
         {
           "body": {
-            "label": "dayour/kokoro",
-            "note": "dayour/kokoro torch runtime. Not vendored here. A library WAV may exist; this repo has no synth adapter.",
+            "availability": {
+              "reason": "offline runs only: rendered with the dayour/kokoro torch runtime outside this app; no in-app adapter, so Generate cannot produce it",
+              "status": "offline_only"
+            },
+            "label": "dayour/kokoro (offline only)",
+            "note": "dayour/kokoro torch runtime. Not vendored here. Its library WAVs are offline runs; this repo has no synth adapter.",
             "synth_adapter": false,
-            "unavailable": false,
+            "unavailable": true,
             "waveform": true
           },
           "display": {
             "glyph": "⣗⡡",
-            "title": "dayour/kokoro"
+            "title": "dayour/kokoro (offline only)"
           },
           "fields": {
             "model_id": "kokoro_dayour",
             "waveform": true
           },
           "honesty": {
-            "claims": [],
+            "claims": [
+              "engine_unavailable"
+            ],
             "fixture": false,
             "synthesized_speech": false
           },
@@ -4984,12 +5146,16 @@
           "relations": {},
           "schema_version": "1.0.0",
           "src": [],
-          "status": "ok",
+          "status": "unavailable",
           "uid": "ga:voice_model:25q3qpvjdhltosj3w5sgtxdatm",
           "uid_scheme": "ga1"
         },
         {
           "body": {
+            "availability": {
+              "reason": "G2P only, used offline for the misaki→kokoro clip; no in-app adapter",
+              "status": "offline_only"
+            },
             "label": "misaki (G2P, not a waveform)",
             "note": "Grapheme-to-phoneme for Kokoro. It does not emit a waveform by itself.",
             "synth_adapter": false,
@@ -5020,7 +5186,7 @@
           "relations": {},
           "schema_version": "1.0.0",
           "src": [],
-          "status": "ok",
+          "status": "unavailable",
           "uid": "ga:voice_model:og5tdvy6ofx7hm37rwq6dtab3e",
           "uid_scheme": "ga1"
         },
@@ -5032,7 +5198,7 @@
           },
           "display": {
             "glyph": "⢬⣭",
-            "summary": "Real misaki→kokoro WAV (genaid_full_misaki_kokoro). synthesizedSpeech true.",
+            "summary": "Real misaki→kokoro WAV (genaid_full_misaki_kokoro). Offline run: dayour/misaki G2P + dayour/kokoro torch outside this app; no in-app adapter. synthesizedSpeech true.",
             "title": "misaki→kokoro"
           },
           "fields": {
@@ -5061,9 +5227,21 @@
             }
           ],
           "provenance": {
-            "engine": "misaki_kokoro",
+            "engine": "dayour/misaki+kokoro(phoneme)",
             "g2p_model": "ga:voice_model:og5tdvy6ofx7hm37rwq6dtab3e",
-            "generator": "manifest.json clip (v0)",
+            "generator": "genaid-podcast-compare scripts/synth_genaid_kokoro.py --mode misaki (offline run; dayour/misaki G2P + dayour/kokoro torch outside this app)",
+            "params": {
+              "device": "cpu",
+              "n_turns": 9,
+              "output_sha256": "61b8ca26b3f4759ce643738e2afbc80f7bf2a5eb554c5fedbfbdc2d9bfad3d38",
+              "sample_rate": 24000,
+              "synth_record": "genaid_full_misaki_kokoro.synth.json (on the box that rendered it; not shipped)",
+              "voices": {
+                "Speaker 1": "af_heart",
+                "Speaker 2": "am_michael"
+              },
+              "wall_time_s": 26.69
+            },
             "voice_model": "ga:voice_model:25q3qpvjdhltosj3w5sgtxdatm"
           },
           "relations": {},
