@@ -63,6 +63,6 @@ test -f apps/desktop/dist/index.html
 echo "frontend dist ok apps/desktop/dist/index.html"
 
 echo "package deb (tauri build embeds frontendDist; do not cargo-build the desktop first)"
-(cd apps/desktop/src-tauri && npx --yes @tauri-apps/cli build --bundles deb)
+(cd apps/desktop/src-tauri && npx --yes @tauri-apps/cli@2.12.1 build --bundles deb)
 
 echo "build-tauri.sh finished"
