@@ -7,6 +7,7 @@
 use std::cell::RefCell;
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::sync::Mutex;
 
 use serde_json::{json, Value};
 
@@ -418,6 +419,11 @@ fn baked_assets() -> Vec<Value> {
 }
 
 fn upsert(root: &Path, incoming: Vec<Value>) -> Result<(), String> {
+    // One lock covers the read, merge, and rename. The rename is already
+    // atomic; without this, two generate jobs each read the old catalog and
+    // the second rename drops the first job's envelopes.
+    static CATALOG: Mutex<()> = Mutex::new(());
+    let _guard = CATALOG.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
     let mut assets = runtime_assets();
     for env in incoming {
         let uid = env
@@ -870,5 +876,43 @@ mod tests {
         set_root_override_for_test(None);
         let _ = fs::remove_dir_all(&root);
         let _ = fs::remove_dir_all(&work);
+    }
+
+    #[test]
+    fn concurrent_upserts_keep_every_uid() {
+        let root = std::env::temp_dir().join(format!(
+            "ga-lib-race-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|elapsed| elapsed.as_nanos())
+                .unwrap_or(0)
+        ));
+        let _ = fs::remove_dir_all(&root);
+        fs::create_dir_all(&root).unwrap();
+        let barrier = std::sync::Arc::new(std::sync::Barrier::new(8));
+        let mut handles = Vec::new();
+        for index in 0..8 {
+            let root = root.clone();
+            let barrier = barrier.clone();
+            handles.push(std::thread::spawn(move || {
+                set_root_override_for_test(Some(root.clone()));
+                barrier.wait();
+                let env = json!({
+                    "uid": format!("ga:audio_clip:concurrent{index:02}"),
+                    "kind": "audio_clip"
+                });
+                upsert(&root, vec![env]).expect("upsert");
+                set_root_override_for_test(None);
+            }));
+        }
+        for handle in handles {
+            handle.join().expect("upsert thread");
+        }
+        set_root_override_for_test(Some(root.clone()));
+        let assets = runtime_assets();
+        set_root_override_for_test(None);
+        let _ = fs::remove_dir_all(&root);
+        assert_eq!(assets.len(), 8, "{assets:?}");
     }
 }

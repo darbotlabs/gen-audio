@@ -99,17 +99,14 @@ def test_pipeline_on_a_tone_locks_duration_and_measures_wer(tmp_path):
     script = tmp_path / "script.txt"
     script.write_text("Speaker 1: hello\n", encoding="utf-8")
     script_asset = asset_object(script, kind="script", derived_from=[])
-    try:
-        manifest = run_pipeline(
-            raw,
-            out_dir=tmp_path,
-            engine="tone",
-            reference_text="hello",
-            duration_target_s=1.2,
-            script_asset=script_asset,
-        )
-    except AsrError as exc:
-        pytest.skip(str(exc))
+    manifest = run_pipeline(
+        raw,
+        out_dir=tmp_path,
+        engine="tone",
+        reference_text="hello",
+        duration_target_s=1.2,
+        script_asset=script_asset,
+    )
     duration = manifest["duration_s"]
     assert abs(duration - 1.2) < 0.05
     spec = (tmp_path / "spectrogram.json").read_text(encoding="utf-8")

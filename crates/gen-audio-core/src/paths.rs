@@ -161,7 +161,34 @@ pub fn write_mcp_addr(addr: &str) -> Result<(), String> {
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent).map_err(|err| err.to_string())?;
     }
+    arm_mcp_addr_signals();
     fs::write(&path, format!("{addr}\n{}\n", std::process::id())).map_err(|err| err.to_string())
+}
+
+/// Remove `mcp.addr` when this process receives SIGINT or SIGTERM.
+/// [`reap_stale_mcp_addr`] still drops a file whose pid is already dead,
+/// which covers SIGKILL and a handler that never ran.
+pub fn arm_mcp_addr_signals() {
+    #[cfg(unix)]
+    {
+        use std::sync::Once;
+        static ONCE: Once = Once::new();
+        ONCE.call_once(|| unsafe {
+            signal(2, on_mcp_stop as *const std::ffi::c_void);
+            signal(15, on_mcp_stop as *const std::ffi::c_void);
+        });
+    }
+}
+
+#[cfg(unix)]
+extern "C" {
+    fn signal(sig: i32, handler: *const std::ffi::c_void) -> *const std::ffi::c_void;
+}
+
+#[cfg(unix)]
+extern "C" fn on_mcp_stop(_sig: i32) {
+    let _ = fs::remove_file(mcp_addr_path());
+    std::process::exit(0);
 }
 
 pub fn delete_mcp_addr() {
@@ -432,5 +459,72 @@ mod tests {
         fs::write(work.join("out.wav"), b"RIFFdemo").unwrap();
         assert!(scratch.open_input("out.wav").is_ok());
         let _ = fs::remove_dir_all(&work);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn sigterm_and_sigint_remove_mcp_addr() {
+        for (signal, name) in [(15, "TERM"), (2, "INT")] {
+            let path = std::env::temp_dir().join(format!(
+                "gen-audio-mcp-addr-signal-{}-{}-{}",
+                name,
+                std::process::id(),
+                std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .map(|elapsed| elapsed.as_nanos())
+                    .unwrap_or(0)
+            ));
+            let _ = fs::remove_file(&path);
+            let exe = std::env::current_exe().expect("test exe");
+            let mut child = std::process::Command::new(&exe)
+                .arg("mcp_addr_sleeps_until_signalled")
+                .arg("--test-threads=1")
+                .env("GEN_AUDIO_MCP_ADDR_HOLD", "1")
+                .env("GEN_AUDIO_MCP_ADDR_FILE", &path)
+                .stdin(std::process::Stdio::null())
+                .stdout(std::process::Stdio::null())
+                .stderr(std::process::Stdio::null())
+                .spawn()
+                .expect("spawn addr holder");
+            let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+            while !path.exists() {
+                if std::time::Instant::now() > deadline {
+                    let _ = child.kill();
+                    let _ = child.wait();
+                    panic!("{name}: mcp.addr was not written");
+                }
+                if child.try_wait().ok().flatten().is_some() {
+                    panic!("{name}: holder exited before writing mcp.addr");
+                }
+                std::thread::sleep(std::time::Duration::from_millis(30));
+            }
+            let killed = std::process::Command::new("kill")
+                .args([&format!("-{signal}"), &child.id().to_string()])
+                .status()
+                .expect("kill");
+            assert!(killed.success(), "{name}: kill failed");
+            let started = std::time::Instant::now();
+            loop {
+                if child.try_wait().ok().flatten().is_some() {
+                    break;
+                }
+                if started.elapsed() > std::time::Duration::from_secs(5) {
+                    let _ = child.kill();
+                    let _ = child.wait();
+                    panic!("{name}: process ignored the signal");
+                }
+                std::thread::sleep(std::time::Duration::from_millis(20));
+            }
+            assert!(!path.exists(), "{name} must remove mcp.addr");
+        }
+    }
+
+    #[test]
+    fn mcp_addr_sleeps_until_signalled() {
+        if std::env::var("GEN_AUDIO_MCP_ADDR_HOLD").ok().as_deref() != Some("1") {
+            return;
+        }
+        write_mcp_addr("127.0.0.1:9").expect("write mcp.addr");
+        std::thread::sleep(std::time::Duration::from_secs(30));
     }
 }

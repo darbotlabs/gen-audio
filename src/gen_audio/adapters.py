@@ -264,7 +264,7 @@ def _synth_pocket(turns: list[Turn], cast: CastMap, output: Path) -> dict:
         voice = resolve_turn(turn, cast)
         state = _pocket_voice_state(model, voice.voice)
         audio = model.generate_audio(state, turn.text)
-        samples = _as_float_mono(audio)
+        samples = _as_float_mono("pocket_tts", audio)
         pieces.append(samples)
         gap = int(0.15 * sample_rate)
         if gap:
@@ -328,7 +328,7 @@ def _synth_vibevoice(turns: list[Turn], cast: CastMap, output: Path) -> dict:
         with torch.no_grad():
             generated = model.generate(**moved)
         speech = generated.speech_outputs[0]
-        audio = _as_float_mono(speech)
+        audio = _as_float_mono("vibevoice", speech)
         rate = int(getattr(model, "sampling_rate", 24000) or 24000)
         write_wav(output, audio, rate, subtype="FLOAT")
     except EngineRefusal:
@@ -355,7 +355,7 @@ def _synth_magpie(turns: list[Turn], cast: CastMap, output: Path) -> dict:
             for turn in turns:
                 voice = resolve_turn(turn, cast)
                 audio, rate = model.synthesize(turn.text, voice=voice.voice)
-                pieces.append(_as_float_mono(audio))
+                pieces.append(_as_float_mono("magpie", audio))
             joined = np.concatenate(pieces)
             write_wav(output, joined, int(rate), subtype="FLOAT")
             return {"engine": "magpie", "sample_rate": int(rate), "samples": int(joined.size), "turns": len(turns)}
@@ -367,7 +367,7 @@ def _synth_magpie(turns: list[Turn], cast: CastMap, output: Path) -> dict:
         for turn in turns:
             voice = resolve_turn(turn, cast)
             audio, rate = model.do_tts(turn.text, speaker=voice.voice)
-            pieces.append(_as_float_mono(audio))
+            pieces.append(_as_float_mono("magpie", audio))
         joined = np.concatenate(pieces)
         write_wav(output, joined, int(rate), subtype="FLOAT")
         return {"engine": "magpie", "sample_rate": int(rate), "samples": int(joined.size), "turns": len(turns)}
@@ -377,10 +377,10 @@ def _synth_magpie(turns: list[Turn], cast: CastMap, output: Path) -> dict:
         raise EngineRefusal("magpie", [f"Magpie TTS failed to synthesize: {exc}"]) from exc
 
 
-def _as_float_mono(audio) -> np.ndarray:
+def _as_float_mono(engine: str, audio) -> np.ndarray:
     if hasattr(audio, "detach"):
         audio = audio.detach().cpu().numpy()
     values = np.asarray(audio, dtype=np.float32).reshape(-1)
     if values.size == 0:
-        raise EngineRefusal("pocket_tts", ["Pocket TTS returned an empty buffer"])
+        raise EngineRefusal(engine, [f"{engine} returned an empty buffer"])
     return np.nan_to_num(values, nan=0.0, posinf=0.0, neginf=0.0)
