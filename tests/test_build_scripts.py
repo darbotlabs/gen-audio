@@ -9,6 +9,8 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
+import re
 import shutil
 import subprocess
 from pathlib import Path
@@ -138,3 +140,40 @@ def test_build_script_judges_the_sidecar_by_cargo_and_hash_not_mtime():
     assert "Invoke-CargoBinBuild -Package gen-audio-mcp -Bin gen-audio-mcp" in block
     assert "Assert-Fresh" not in block and "LastWriteTime" not in block
     assert "$stagedHash -ne $sidecarHash" in block
+
+
+# --- B4: every build run leaves its full log in target/logs -------------------
+
+@needs_shell
+@pytest.mark.skipif(shutil.which("git") is None or os.name == "nt", reason="needs git; on Windows this would start a real build")
+def test_build_script_saves_its_transcript_even_when_it_throws(tmp_path):
+    root = tmp_path / "repo"
+    (root / "scripts" / "lib").mkdir(parents=True)
+    shutil.copy2(BUILD, root / "scripts" / BUILD.name)
+    shutil.copy2(DEVENV, root / "scripts" / "lib" / DEVENV.name)
+    git = ["git", "-c", "user.name=t", "-c", "user.email=t@example.invalid"]
+    subprocess.run([*git, "init", "-q"], cwd=root, check=True)
+    subprocess.run([*git, "add", "."], cwd=root, check=True)
+    subprocess.run([*git, "commit", "-q", "-m", "seed"], cwd=root, check=True)
+    sha = subprocess.run(["git", "rev-parse", "--short=12", "HEAD"], cwd=root, check=True, capture_output=True, text=True).stdout.strip()
+    # Off Windows the script throws right after it starts; the log must still be written and closed.
+    run = subprocess.run([SHELL, "-NoProfile", "-File", str(root / "scripts" / BUILD.name), "-Mode", "NoBundle"], cwd=root,
+                         capture_output=True, text=True, timeout=120)
+    out = run.stdout + run.stderr
+    assert run.returncode != 0 and "run it on Windows" in out, out
+    logs = sorted((root / "target" / "logs").glob(f"build-{sha}-*.log"))
+    assert len(logs) == 1, (out, list((root / "target").rglob("*")) if (root / "target").exists() else "no target/")
+    assert re.fullmatch(rf"build-{sha}-\d{{8}}-\d{{6}}\.log", logs[0].name), logs[0].name
+    text = logs[0].read_text(encoding="utf-8-sig")
+    assert "build-tauri-windows.ps1 -Mode NoBundle" in text and "run it on Windows" in text
+    assert "PowerShell transcript end" in text, "Stop-Transcript runs in finally, even on a throw"
+    assert f"BUILD_LOG {logs[0]}" in out or f"BUILD_LOG {logs[0].as_posix()}" in out, out
+
+
+def test_build_ok_names_the_log_and_the_transcript_stops_in_finally():
+    text = BUILD.read_text(encoding="utf-8")
+    assert re.search(r'Write-Output "BUILD_OK [^"]*log=\$buildLog', text), "BUILD_OK carries the log path"
+    start = text.index("Start-Transcript")
+    body = text[start:]
+    assert re.search(r"\}\s*finally\s*\{\s*Stop-Transcript", body), "the transcript stops in a finally block"
+    assert text.index("Write-Step \"build-tauri-windows.ps1 -Mode") > start, "the whole run is inside the transcript"
