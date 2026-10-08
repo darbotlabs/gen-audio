@@ -293,6 +293,177 @@ pub fn ui_flip(args: &Value) -> Result<Value, (i32, String)> {
     ))
 }
 
+/// Cube tab mode (rule 5: UI state lives in app state, readable and drivable
+/// over MCP). `None` is single; `Some` is Compare: the clip's Library cube
+/// (library_r3) beside the same WAV's comparison cube (e.g. pipeline_r2), one
+/// playback slice. The desktop Compare button posts `ui_cube` too, so this is
+/// the only place the mode changes, and `viewport_get` reads it from here.
+///
+/// The field is `cube_compare`, not `compare`: PR #4's viewport snapshot
+/// already uses `compare` for its list of compared clip uids.
+#[derive(Clone, Debug, PartialEq)]
+pub struct CubeCompare {
+    pub tile_id: String,
+    pub clip_uid: String,
+    pub left_method: String,
+    pub right_method: String,
+    pub left_cube_uid: String,
+    pub right_cube_uid: String,
+}
+
+struct CubeMode {
+    compare: Option<CubeCompare>,
+    seq: u64,
+}
+
+static CUBE_MODE: Mutex<CubeMode> = Mutex::new(CubeMode { compare: None, seq: 0 });
+
+pub const CUBE_MODES: &[&str] = &["single", "compare"];
+
+/// The state object: `ui_cube` queues it on the bus as the `cube` op's args,
+/// and `viewport_get` returns the same fields.
+pub fn cube_state_value(compare: Option<&CubeCompare>) -> Value {
+    match compare {
+        None => json!({"cube_mode": "single", "cube_compare": null}),
+        Some(pair) => json!({
+            "cube_mode": "compare",
+            "cube_compare": {
+                "tileId": pair.tile_id,
+                "clip_uid": pair.clip_uid,
+                "left_method": pair.left_method,
+                "right_method": pair.right_method,
+                "left_cube_uid": pair.left_cube_uid,
+                "right_cube_uid": pair.right_cube_uid
+            }
+        }),
+    }
+}
+
+/// THE setter for the Cube tab mode. Stores the state and publishes it on the
+/// bus under one lock, so the store and the event stream never disagree.
+fn set_cube_mode(next: Option<CubeCompare>) -> (u64, Value) {
+    let mut mode = CUBE_MODE.lock().expect("cube mode");
+    let state = cube_state_value(next.as_ref());
+    let seq = publish("cube", &state);
+    mode.compare = next;
+    mode.seq = seq;
+    (seq, state)
+}
+
+fn cube_method(asset: &Value) -> &str {
+    asset
+        .pointer("/provenance/params/layer_method")
+        .and_then(Value::as_str)
+        .unwrap_or("library_r3")
+}
+
+fn sha256_field(asset: &Value) -> Option<&str> {
+    asset
+        .pointer("/fields/source_sha256")
+        .and_then(Value::as_str)
+        .filter(|sha| sha.len() == 64 && sha.bytes().all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b)))
+}
+
+/// The clip's Library cube and its comparison cube from assets.json, or why
+/// Compare cannot be entered. Same rules the window applies before drawing:
+/// both are cube_ihdr envelopes of this clip only, the methods differ, and
+/// their source_sha256 agree (same WAV). No stand-in cube.
+pub fn compare_pair(tile: &str, clip_uid: &str) -> Result<CubeCompare, String> {
+    let cubes: Vec<&Value> = asset_catalog::assets()
+        .iter()
+        .filter(|asset| asset.get("kind").and_then(Value::as_str) == Some("cube_ihdr"))
+        .filter(|asset| {
+            asset.get("src").and_then(Value::as_array).is_some_and(|src| src.len() == 1 && src[0].as_str() == Some(clip_uid))
+        })
+        .collect();
+    let library = cubes
+        .iter()
+        .find(|asset| cube_method(asset) == "library_r3")
+        .ok_or_else(|| format!("{tile} has no library_r3 cube in assets.json; Compare needs one"))?;
+    let other = cubes
+        .iter()
+        .find(|asset| cube_method(asset) != "library_r3")
+        .ok_or_else(|| format!("no comparison cube for {tile} in assets.json (only clips with a pipeline_r2 cube can enter Compare)"))?;
+    match (sha256_field(library), sha256_field(other)) {
+        (Some(left), Some(right)) if left == right => {}
+        _ => return Err(format!("refusing Compare for {tile}: the two cubes do not record the same source_sha256")),
+    }
+    let uid = |asset: &Value| asset.get("uid").and_then(Value::as_str).unwrap_or_default().to_string();
+    Ok(CubeCompare {
+        tile_id: tile.to_string(),
+        clip_uid: clip_uid.to_string(),
+        left_method: "library_r3".into(),
+        right_method: cube_method(other).to_string(),
+        left_cube_uid: uid(library),
+        right_cube_uid: uid(other),
+    })
+}
+
+/// `ui_cube {mode: "single"|"compare", tileId?, uid?}`. Compare names the clip
+/// by tileId or uid (a clip uid, or either cube's uid); without one it keeps
+/// the clip already in Compare. Unknown modes, clips without a comparison
+/// cube, and uid/tileId clashes are rejected with -32602.
+pub fn ui_cube(args: &Value) -> Result<Value, (i32, String)> {
+    let mode = args
+        .get("mode")
+        .ok_or((-32602, "ui_cube needs mode (single or compare)".to_string()))?
+        .as_str()
+        .ok_or((-32602, "mode must be a string: single or compare".to_string()))?;
+    if !CUBE_MODES.contains(&mode) {
+        return Err((-32602, format!("unknown mode {mode:?}; mode must be single or compare")));
+    }
+    let args = with_uid_tile(args)?;
+    let tile = match args.get("tileId") {
+        None => None,
+        Some(value) => {
+            let tile = value.as_str().ok_or((-32602, "tileId must be a string".to_string()))?;
+            if !id_ok(tile) {
+                return Err((-32602, "tileId is invalid".into()));
+            }
+            Some(tile.to_string())
+        }
+    };
+    let next = if mode == "single" {
+        None
+    } else {
+        let tile = match tile {
+            Some(tile) => tile,
+            None => CUBE_MODE
+                .lock()
+                .expect("cube mode")
+                .compare
+                .as_ref()
+                .map(|pair| pair.tile_id.clone())
+                .ok_or((-32602, "ui_cube mode compare needs tileId or uid (no clip is in Compare yet)".to_string()))?,
+        };
+        let clip_uid = asset_catalog::uid_for_legacy("audio_clip", &tile)
+            .ok_or((-32602, format!("{tile} is not a library audio clip in assets.json")))?;
+        Some(compare_pair(&tile, clip_uid).map_err(|reason| (-32602, reason))?)
+    };
+    let (seq, state) = set_cube_mode(next);
+    Ok(json!({
+        "ok": true,
+        "synthesizedSpeech": false,
+        "op": "cube",
+        "seq": seq,
+        "args": state,
+        "note": "Set the Cube tab mode. viewport_get reads the same state. This does not render audio.",
+        "stream": {"path": "/control/stream", "transport": "sse", "stateless": true}
+    }))
+}
+
+/// Read-only view of the UI state this process owns: the Cube tab mode.
+pub fn viewport_get() -> Value {
+    let mode = CUBE_MODE.lock().expect("cube mode");
+    let mut out = cube_state_value(mode.compare.as_ref());
+    out["ok"] = json!(true);
+    out["synthesizedSpeech"] = json!(false);
+    out["cube_seq"] = json!(mode.seq);
+    out["cube_modes"] = json!(CUBE_MODES);
+    out["note"] = json!("Cube tab mode as set by ui_cube (the desktop Compare button posts ui_cube too). cube_seq is the control-bus seq of the last change; 0 means never set.");
+    out
+}
+
 pub fn ui_set_sidepane(args: &Value) -> Result<Value, (i32, String)> {
     let agents = args
         .get("agents")
@@ -669,5 +840,41 @@ mod tests {
         assert_eq!(ui_playback(&json!({"tileId": "lib-kokoro", "action": "play", "origin": "mcp"})).unwrap_err().0, -32602);
         assert_eq!(ui_playback(&json!({"tileId": "lib-kokoro", "action": "pause", "origin": "user"})).unwrap_err().0, -32602);
         assert!(ui_playback(&json!({"tileId": "lib-kokoro", "action": "pause"})).unwrap()["args"].get("origin").is_none());
+    }
+
+    /// Stateless half of the ui_cube contract (the stateful round trip, with
+    /// viewport_get, is one test in lib.rs so parallel tests cannot race it).
+    #[test]
+    fn ui_cube_rejects_unknown_modes_and_clips_without_a_comparison_cube() {
+        let err = |args: Value| ui_cube(&args).unwrap_err();
+        assert_eq!(err(json!({})), (-32602, "ui_cube needs mode (single or compare)".to_string()));
+        assert_eq!(err(json!({"mode": 1})).0, -32602);
+        let unknown = err(json!({"mode": "side-by-side", "tileId": "lib-misaki-kokoro"}));
+        assert_eq!(unknown.0, -32602);
+        assert!(unknown.1.contains("single or compare"), "{}", unknown.1);
+        assert!(err(json!({"mode": "Compare", "tileId": "lib-misaki-kokoro"})).1.contains("unknown mode"), "modes are case-sensitive");
+        // kokoro-onnx has a Library cube but no pipeline_r2 cube: no stand-in.
+        let lonely = err(json!({"mode": "compare", "tileId": "lib-kokoro-onnx"}));
+        assert!(lonely.1.contains("no comparison cube for lib-kokoro-onnx"), "{}", lonely.1);
+        assert!(err(json!({"mode": "compare", "tileId": "lib-magpie"})).1.contains("not a library audio clip"));
+        assert_eq!(err(json!({"mode": "compare", "tileId": "../etc"})).1, "tileId is invalid");
+        let misaki = asset_catalog::uid_for_legacy("audio_clip", "lib-misaki-kokoro").unwrap();
+        let clash = err(json!({"mode": "compare", "tileId": "lib-kokoro", "uid": misaki}));
+        assert!(clash.1.contains("not lib-kokoro"), "{}", clash.1);
+        assert_eq!(err(json!({"mode": "compare", "uid": "ga:cube_ihdr:aaaaaaaaaaaaaaaaaaaaaaaaaa"})).0, -32602);
+    }
+
+    #[test]
+    fn compare_pair_reads_both_cubes_of_one_wav_from_assets_json() {
+        let contract: Value = serde_json::from_str(include_str!("../../../schemas/examples/ui_cube.contract.json")).unwrap();
+        let want = &contract["enter"]["state"]["cube_compare"];
+        let clip = asset_catalog::uid_for_legacy("audio_clip", "lib-misaki-kokoro").unwrap();
+        let pair = compare_pair("lib-misaki-kokoro", clip).unwrap();
+        assert_eq!(cube_state_value(Some(&pair))["cube_compare"], *want);
+        assert_eq!(cube_state_value(None), contract["exit"]["state"]);
+        let bitdot = asset_catalog::uid_for_legacy("audio_clip", "lib-bitdot-braille-vibevoice").unwrap();
+        let pair = compare_pair("lib-bitdot-braille-vibevoice", bitdot).unwrap();
+        assert_eq!((pair.left_method.as_str(), pair.right_method.as_str()), ("library_r3", "pipeline_r2"));
+        assert_ne!(pair.left_cube_uid, pair.right_cube_uid);
     }
 }

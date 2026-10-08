@@ -1,0 +1,22 @@
+{
+  "about": "Cube tab mode over MCP (rule 5). The desktop Compare button posts exactly these tools/call arguments; ui_cube queues `state` as the `cube` control op's args; viewport_get returns the same cube_mode and cube_compare. Checked by crates/gen-audio-mcp control tests and apps/desktop/tests/cube-mode.test.ts.",
+  "enter": {
+    "call": {"name": "ui_cube", "arguments": {"mode": "compare", "tileId": "lib-misaki-kokoro"}},
+    "state": {
+      "cube_mode": "compare",
+      "cube_compare": {
+        "tileId": "lib-misaki-kokoro",
+        "clip_uid": "ga:audio_clip:vtwxksrsuci7zygslimzfy7kdy",
+        "left_method": "library_r3",
+        "right_method": "pipeline_r2",
+        "left_cube_uid": "ga:cube_ihdr:6aq6vmw7tnmvlfddf53q27ttc4",
+        "right_cube_uid": "ga:cube_ihdr:qkqbteb54y64j4xkahvo65d5re"
+      }
+    }
+  },
+  "exit": {
+    "call": {"name": "ui_cube", "arguments": {"mode": "single"}},
+    "state": {"cube_mode": "single", "cube_compare": null}
+  },
+  "read": {"call": {"name": "viewport_get", "arguments": {}}}
+}
