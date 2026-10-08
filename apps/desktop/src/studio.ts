@@ -167,9 +167,13 @@ export function describeRequest(): string {
   );
 }
 
-export function promptNote(): string {
+export function promptText(): string {
   const node = document.querySelector<HTMLTextAreaElement>("#prompt");
-  return (node?.value ?? "").slice(0, 200);
+  return node?.value ?? "";
+}
+
+export function promptNote(): string {
+  return promptText().slice(0, 200);
 }
 
 function renderAgents(ids: string[]): void {

@@ -71,16 +71,6 @@ export function profilePreview(selection: VoiceSelection): ProfilePreview {
   };
 }
 
-export function profileForPersona(personaId: string, voiceId: string): ProfilePreview {
-  return profilePreview({
-    engineId: voiceId,
-    engineTitle: voiceById(voiceId)?.label ?? voiceId,
-    agents: [personaId],
-    voice: voiceId,
-    durationMin: 3,
-  });
-}
-
 function layersFor(
   primaryPersona: Persona,
   extras: Persona[],

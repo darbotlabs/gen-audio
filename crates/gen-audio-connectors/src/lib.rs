@@ -4,6 +4,10 @@
 //! stay in mock mode unless a credential is set AND `GEN_AUDIO_CONNECTOR_LIVE=1`.
 //! Mock completions do not call the network and are not model output.
 
+#[cfg(test)]
+use std::cell::RefCell;
+#[cfg(test)]
+use std::collections::BTreeMap;
 use std::net::ToSocketAddrs;
 use std::time::Duration;
 
@@ -210,14 +214,14 @@ impl Connector for ClaudeConnector {
         if claude_bin().is_some() {
             detail.push_str(" claude binary is on PATH.");
         }
-        vendor_health("claude", std::env::var("ANTHROPIC_API_KEY").is_ok(), &detail)
+        vendor_health("claude", env_var("ANTHROPIC_API_KEY").is_ok(), &detail)
     }
     fn complete(&self, prompt: &str) -> Result<Completion, ConnectorError> {
         check_prompt(prompt)?;
-        if std::env::var("GEN_AUDIO_CLAUDE_CODE_CLI").ok().as_deref() == Some("1") {
+        if env_var("GEN_AUDIO_CLAUDE_CODE_CLI").ok().as_deref() == Some("1") {
             return run_claude_code(prompt);
         }
-        let Some(key) = std::env::var("ANTHROPIC_API_KEY").ok() else {
+        let Some(key) = env_var("ANTHROPIC_API_KEY").ok() else {
             return Ok(mock_completion("claude", "claude-api", prompt));
         };
         if !live_enabled() {
@@ -254,13 +258,13 @@ impl Connector for GptConnector {
     fn health(&self) -> HealthReport {
         vendor_health(
             "gpt",
-            std::env::var("OPENAI_API_KEY").is_ok(),
+            env_var("OPENAI_API_KEY").is_ok(),
             "OpenAI chat completions. Base URL must be https, or http loopback.",
         )
     }
     fn complete(&self, prompt: &str) -> Result<Completion, ConnectorError> {
         check_prompt(prompt)?;
-        let Some(key) = std::env::var("OPENAI_API_KEY").ok() else {
+        let Some(key) = env_var("OPENAI_API_KEY").ok() else {
             return Ok(mock_completion("gpt", "openai", prompt));
         };
         if !live_enabled() {
@@ -292,15 +296,15 @@ impl Connector for GeminiConnector {
     fn health(&self) -> HealthReport {
         vendor_health(
             "gemini",
-            std::env::var("GEMINI_API_KEY").is_ok() || std::env::var("GOOGLE_API_KEY").is_ok(),
+            env_var("GEMINI_API_KEY").is_ok() || env_var("GOOGLE_API_KEY").is_ok(),
             "Gemini generateContent. The key is sent as the x-goog-api-key header, not the query string.",
         )
     }
     fn complete(&self, prompt: &str) -> Result<Completion, ConnectorError> {
         check_prompt(prompt)?;
-        let key = std::env::var("GEMINI_API_KEY")
+        let key = env_var("GEMINI_API_KEY")
             .ok()
-            .or_else(|| std::env::var("GOOGLE_API_KEY").ok());
+            .or_else(|| env_var("GOOGLE_API_KEY").ok());
         let Some(key) = key else {
             return Ok(mock_completion("gemini", "gemini", prompt));
         };
@@ -458,17 +462,64 @@ fn mock_completion(id: &str, model: &str, prompt: &str) -> Completion {
     }
 }
 
+// The process environment is one table. Tests that need a credential present
+// or absent install an overlay for this thread instead of `set_var`, so a
+// neighbour cannot observe the mutation. Unlisted keys still read the process.
+#[cfg(test)]
+thread_local! {
+    static ENV_OVERLAY: RefCell<Option<BTreeMap<String, Option<String>>>> = const { RefCell::new(None) };
+}
+
+#[cfg(test)]
+struct EnvGuard {
+    previous: Option<BTreeMap<String, Option<String>>>,
+}
+
+#[cfg(test)]
+impl Drop for EnvGuard {
+    fn drop(&mut self) {
+        let previous = self.previous.take();
+        ENV_OVERLAY.with(|slot| *slot.borrow_mut() = previous);
+    }
+}
+
+#[cfg(test)]
+fn bind_env(values: BTreeMap<String, Option<String>>) -> EnvGuard {
+    ENV_OVERLAY.with(|slot| {
+        let previous = slot.borrow_mut().replace(values);
+        EnvGuard { previous }
+    })
+}
+
+fn env_var(name: &str) -> Result<String, std::env::VarError> {
+    #[cfg(test)]
+    {
+        let over = ENV_OVERLAY.with(|slot| {
+            slot.borrow()
+                .as_ref()
+                .and_then(|map| map.get(name).cloned())
+        });
+        if let Some(value) = over {
+            return match value {
+                Some(text) => Ok(text),
+                None => Err(std::env::VarError::NotPresent),
+            };
+        }
+    }
+    std::env::var(name)
+}
+
 fn live_enabled() -> bool {
-    std::env::var("GEN_AUDIO_CONNECTOR_LIVE").ok().as_deref() == Some("1")
+    env_var("GEN_AUDIO_CONNECTOR_LIVE").ok().as_deref() == Some("1")
 }
 
 fn token_present(names: &[&str]) -> bool {
-    names.iter().any(|name| std::env::var(name).ok().filter(|v| !v.is_empty()).is_some())
+    names.iter().any(|name| env_var(name).ok().filter(|v| !v.is_empty()).is_some())
 }
 
 fn first_env(names: &[&str]) -> Option<String> {
     names.iter().find_map(|name| {
-        std::env::var(name).ok().filter(|value| !value.is_empty())
+        env_var(name).ok().filter(|value| !value.is_empty())
     })
 }
 
@@ -679,25 +730,30 @@ fn tail(text: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::collections::BTreeMap;
+
+    fn credentials_absent() -> BTreeMap<String, Option<String>> {
+        [
+            "COPILOT_GITHUB_TOKEN",
+            "GITHUB_TOKEN",
+            "GH_TOKEN",
+            "ANTHROPIC_API_KEY",
+            "OPENAI_API_KEY",
+            "GEMINI_API_KEY",
+            "GOOGLE_API_KEY",
+            "GEN_AUDIO_CONNECTOR_LIVE",
+            "GEN_AUDIO_CLAUDE_CODE_CLI",
+        ]
+        .into_iter()
+        .map(|name| (name.to_string(), None))
+        .collect()
+    }
 
     #[test]
     fn seven_connectors_and_vendor_mocks_do_not_pretend_to_be_models() {
         let reports = health_all();
         assert_eq!(reports.len(), 7);
-        for id in ["copilot", "claude", "gpt", "gemini"] {
-            std::env::remove_var(match id {
-                "copilot" => "GITHUB_TOKEN",
-                "claude" => "ANTHROPIC_API_KEY",
-                "gpt" => "OPENAI_API_KEY",
-                "gemini" => "GEMINI_API_KEY",
-                _ => "UNUSED",
-            });
-        }
-        std::env::remove_var("COPILOT_GITHUB_TOKEN");
-        std::env::remove_var("GH_TOKEN");
-        std::env::remove_var("GOOGLE_API_KEY");
-        std::env::remove_var("GEN_AUDIO_CONNECTOR_LIVE");
-        std::env::remove_var("GEN_AUDIO_CLAUDE_CODE_CLI");
+        let _env = bind_env(credentials_absent());
         for id in ["copilot", "claude", "gpt", "gemini"] {
             let health = health_one(id).unwrap();
             assert_eq!(health.mode, Mode::Mock);
@@ -709,16 +765,31 @@ mod tests {
     }
 
     #[test]
+    fn empty_overlay_matches_a_real_empty_environment_variable() {
+        // std::env::var returns Ok("") for a variable that is set and empty.
+        // gpt health uses that is_ok() check, so an empty key is TokenPresent
+        // and live stays off. Treating "" as absent would prove the wrong thing.
+        let mut env = credentials_absent();
+        env.insert("OPENAI_API_KEY".into(), Some(String::new()));
+        let _env = bind_env(env);
+        let health = health_one("gpt").unwrap();
+        assert_eq!(health.mode, Mode::TokenPresent);
+        assert!(!health.authenticated);
+        let done = complete_one("gpt", "hello").unwrap();
+        assert!(done.mock);
+    }
+
+    #[test]
     fn token_present_does_not_send() {
-        std::env::set_var("OPENAI_API_KEY", "sk-testtoken123456");
-        std::env::remove_var("GEN_AUDIO_CONNECTOR_LIVE");
+        let mut env = credentials_absent();
+        env.insert("OPENAI_API_KEY".into(), Some("sk-testtoken123456".into()));
+        let _env = bind_env(env);
         let health = health_one("gpt").unwrap();
         assert_eq!(health.mode, Mode::TokenPresent);
         assert!(!health.authenticated);
         let done = complete_one("gpt", "hello").unwrap();
         assert!(done.mock);
         assert!(!done.text.contains("sk-test"));
-        std::env::remove_var("OPENAI_API_KEY");
     }
 
     #[test]

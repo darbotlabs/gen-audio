@@ -164,7 +164,55 @@ pub fn plan(
     })
 }
 
-pub fn run_plan(plan: &PythonPlan) -> Result<Value, String> {
+/// Argv for `gen_audio.cli.generate` via the trusted shim. The prompt stays in the work file.
+pub fn plan_generate(
+    repo: &Path,
+    work: &Path,
+    personas: &[String],
+    engine: &str,
+    duration_s: f64,
+) -> Result<PythonPlan, String> {
+    let script = read_trusted_script(repo, "scripts/generate.py")?;
+    if personas.is_empty() || personas.len() > 8 {
+        return Err("personas must be 1 to 8 ids".into());
+    }
+    for id in personas {
+        if id.len() > 32 || !id.chars().all(|ch| ch.is_ascii_lowercase() || ch.is_ascii_digit() || ch == '_') {
+            return Err("persona id is invalid".into());
+        }
+    }
+    if engine.len() > 32 || !engine.chars().all(|ch| ch.is_ascii_lowercase() || ch.is_ascii_digit() || ch == '_') {
+        return Err("engine id must be a short lowercase slug".into());
+    }
+    if !(0.5..=1800.0).contains(&duration_s) {
+        return Err("duration must be from 0.5 to 1800 seconds".into());
+    }
+    let prompt = work.join("scripts").join("prompt.txt");
+    let prompt = prompt.canonicalize().map_err(|err| format!("prompt file: {err}"))?;
+    let work_canon = work.canonicalize().map_err(|err| format!("work directory: {err}"))?;
+    if !prompt.starts_with(&work_canon) {
+        return Err("prompt file is outside the work directory".into());
+    }
+    Ok(PythonPlan {
+        program: python_program()?,
+        args: vec![
+            script.to_string_lossy().to_string(),
+            "--prompt-file".into(),
+            prompt.to_string_lossy().to_string(),
+            "--personas".into(),
+            personas.join(","),
+            "--engine".into(),
+            engine.to_string(),
+            "--duration-s".into(),
+            format!("{duration_s}"),
+            "--out-dir".into(),
+            work_canon.to_string_lossy().to_string(),
+        ],
+        cwd: repo.to_path_buf(),
+    })
+}
+
+fn command(plan: &PythonPlan) -> Command {
     let mut command = Command::new(&plan.program);
     command.args(&plan.args).current_dir(&plan.cwd);
     for key in [
@@ -178,7 +226,29 @@ pub fn run_plan(plan: &PythonPlan) -> Result<Value, String> {
     ] {
         command.env_remove(key);
     }
-    let output = command
+    command
+}
+
+pub fn start_plan(plan: &PythonPlan) -> Result<std::process::Child, String> {
+    let mut command = command(plan);
+    command
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped());
+    // Own process group so a timeout or cancel can signal the python child
+    // and anything it spawned.
+    #[cfg(unix)]
+    {
+        use std::os::unix::process::CommandExt;
+        command.process_group(0);
+    }
+    command
+        .spawn()
+        .map_err(|err| format!("failed to start python: {err}"))
+}
+
+pub fn run_plan(plan: &PythonPlan) -> Result<Value, String> {
+    let output = command(plan)
         .output()
         .map_err(|err| format!("failed to start python: {err}"))?;
     let stdout = redact_secrets(&String::from_utf8_lossy(&output.stdout));
@@ -237,9 +307,94 @@ fn tail(text: &str) -> String {
     }
 }
 
+/// The env vars a real synth reads.
+#[cfg(any(test, feature = "test-support"))]
+pub const KOKORO_ENV: [&str; 2] = ["GEN_AUDIO_KOKORO_MODEL", "GEN_AUDIO_KOKORO_VOICES"];
+#[cfg(any(test, feature = "test-support"))]
+static KOKORO_ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+/// Test support only: clears the `GEN_AUDIO_KOKORO_*` vars for one test and
+/// puts them back on drop, so a developer shell with real models set cannot
+/// start a real synth from a unit test (PR #5 review fix 6; verification E3).
+/// One process-wide lock, so every crate's tests in a binary share it.
+///
+/// Compiled only under `cfg(test)` or the `test-support` feature, which
+/// gen-audio-mcp and gen-audio-acp enable in their `[dev-dependencies]`.
+/// Release and normal builds of every crate never contain it (resolver 2
+/// keeps dev-dependency features out of normal builds).
+#[cfg(any(test, feature = "test-support"))]
+pub struct NoKokoroEnv {
+    saved: Vec<(&'static str, Option<std::ffi::OsString>)>,
+    _lock: std::sync::MutexGuard<'static, ()>,
+}
+
+#[cfg(any(test, feature = "test-support"))]
+impl NoKokoroEnv {
+    #[allow(clippy::new_without_default)]
+    pub fn new() -> Self {
+        let lock = KOKORO_ENV_LOCK.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+        let saved = KOKORO_ENV.iter().map(|name| (*name, std::env::var_os(name))).collect();
+        for name in KOKORO_ENV {
+            std::env::remove_var(name);
+        }
+        Self { saved, _lock: lock }
+    }
+}
+
+#[cfg(any(test, feature = "test-support"))]
+impl Drop for NoKokoroEnv {
+    fn drop(&mut self) {
+        for (name, value) in &self.saved {
+            match value {
+                Some(value) => std::env::set_var(name, value),
+                None => std::env::remove_var(name),
+            }
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// G: NoKokoroEnv and its env list exist only for tests (cfg(test) or the
+    /// test-support feature), and no crate enables that feature outside
+    /// [dev-dependencies].
+    #[test]
+    fn no_kokoro_env_is_test_support_only() {
+        let source = include_str!("bridge.rs");
+        let gate = "#[cfg(any(test, feature = \"test-support\"))]\n";
+        for item in ["pub const KOKORO_ENV", "static KOKORO_ENV_LOCK", "pub struct NoKokoroEnv", "impl NoKokoroEnv", "impl Drop for NoKokoroEnv"] {
+            let at = source.find(&format!("\n{item}")).unwrap_or_else(|| panic!("{item} not found"));
+            assert!(source[..at + 1].ends_with(gate), "{item} must sit right under {gate}");
+        }
+        for manifest in [include_str!("../../gen-audio-mcp/Cargo.toml"), include_str!("../../gen-audio-acp/Cargo.toml")] {
+            let (normal, dev) = manifest.split_once("[dev-dependencies]").expect("a [dev-dependencies] table");
+            assert!(!normal.contains("test-support"), "test-support enabled outside [dev-dependencies]");
+            assert!(dev.contains("features = [\"test-support\"]"));
+        }
+    }
+
+    /// Viewport binding and the library-root override are the same kind of seam
+    /// as NoKokoroEnv: other crates' tests reach them through `test-support`,
+    /// and a release build of this crate does not export them.
+    #[test]
+    fn viewport_and_library_test_seams_are_test_support_only() {
+        let gate = "#[cfg(any(test, feature = \"test-support\"))]\n";
+        let files = [
+            (include_str!("viewport.rs"), &["pub struct ViewportHandle", "pub struct ViewportGuard", "pub fn bind_viewport", "thread_local!"][..]),
+            (include_str!("library_store.rs"), &["pub fn set_root_override_for_test", "thread_local!"][..]),
+        ];
+        for (source, items) in files {
+            for item in items {
+                let at = source.find(&format!("\n{item}")).unwrap_or_else(|| panic!("{item} not found"));
+                assert!(
+                    source[..at + 1].ends_with(gate),
+                    "{item} must sit right under the test-support gate"
+                );
+            }
+        }
+    }
     use crate::fixture::write_fixture_tone;
     use serde_json::json;
 
@@ -285,8 +440,7 @@ mod tests {
             .join("../..")
             .canonicalize()
             .unwrap();
-        std::env::remove_var("GEN_AUDIO_KOKORO_MODEL");
-        std::env::remove_var("GEN_AUDIO_KOKORO_VOICES");
+        let _env = NoKokoroEnv::new();
         let err = plan(
             PythonTool::Synth,
             &repo,

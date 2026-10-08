@@ -1,0 +1,23 @@
+{
+  "clip_id": "lib-cube-explainer",
+  "path": "library_cube_explainer_kokoro_onnx_spec2d.png",
+  "fields": {
+    "sample_rate_hz": 24000,
+    "n_fft": 2048,
+    "hop_frames": 2400,
+    "n_bands": 64,
+    "width_px": 1571,
+    "height_px": 64,
+    "duration_ms": 157134,
+    "covers_ms": 157100,
+    "db_floor": -80,
+    "colormap": "ga-ember"
+  },
+  "params": {
+    "f_min_hz": 60.0,
+    "f_max_hz": 8000.0,
+    "band_spacing": "geometric",
+    "seconds_per_px": 0.1,
+    "window": "hann"
+  }
+}

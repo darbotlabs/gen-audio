@@ -1,4 +1,4 @@
-import example from "../../../schemas/examples/viewport.example.json";
+import releaseDoc from "../../../schemas/examples/viewport.release.json";
 import {
   bindCube,
   boundCubeUrl,
@@ -13,23 +13,46 @@ import {
 } from "./cubeview";
 import { isClipPlaying, seekActiveFraction, seekClipFraction, setCubeClockClip } from "./playback";
 import { applyClipNames, harvestNames } from "./library-meta";
-import { bindFloatingPlayback, pauseClip, playClip, seekClip } from "./playback";
+import { bindFloatingPlayback, pauseClip, playClip, releaseAllSeekBlobs, releaseDetachedTransports, renderTransport, seekClipOutcome, setUserPlayReporter } from "./playback";
+import {
+  assetResolveFailure,
+  controlPlayOrigin,
+  controlBackoffMs,
+  controlDisconnectedNotice,
+  fetchLibraryBlob,
+  McpFailureCounter,
+  mcpOriginFromStatus,
+  noteAssetResolveFailure,
+  noteMcpLookupError,
+  postMcp,
+  reportAsync,
+  seekReportControl,
+  setReportSink,
+  surfaceUiError,
+  userPlayControl,
+} from "./play-control";
+import { selectViewport } from "./viewport-source";
+import { glyphBadge } from "./glyph";
+import { loadLibraryCatalog, type LibraryCatalog } from "./library-assets";
+import { decorateLibraryTiles } from "./livestrip";
 import { profilePreview, type ProfilePreview, type VoiceSelection } from "./profiles";
 import {
+  announceCopy,
+  fillModelCubes,
   bindSlideScroll,
   goToSlide,
   goToSlideId,
+  isSnapping,
   moveFocus,
   moveSlide,
-  paintProfileCanvases,
   renderBoard,
   setCardFlip,
   showRejected,
   slides,
 } from "./render";
-import { applySidepane, bindStudio, promptNote, readSelection, type StudioSelection } from "./studio";
+import { slideKey } from "./snap";
+import { applySidepane, bindStudio, promptNote, promptText, readSelection, type StudioSelection } from "./studio";
 import { drawCube, drawSpectrogram, makeFixture, play } from "./signal";
-import { voiceById } from "./catalog";
 import { CONNECTOR_MODES, validateViewport, type ViewportDocument } from "./validate";
 
 function required(id: string): HTMLElement {
@@ -38,9 +61,43 @@ function required(id: string): HTMLElement {
   return node;
 }
 
+/**
+ * Release builds boot the real Library deck (viewport.release.json) and serve
+ * an assets.json without the dev fixtures and stand-in cards (spec-fixture,
+ * cube-fixture, bench-ref, cast-sample, serve-node, serve-gateway).
+ * VITE_GEN_AUDIO_FIXTURES=1 (dev/test only) loads the example deck and the
+ * dev assets instead; both stay out of the release bundle's main chunk
+ * (dynamic import). The Vite build fails if a stand-in is still in the
+ * release deck or catalog.
+ */
+const fixtureFlag: string | undefined = import.meta.env.VITE_GEN_AUDIO_FIXTURES;
+const loadExampleDocument: () => Promise<ViewportDocument> =
+  import.meta.env.VITE_GEN_AUDIO_FIXTURES === "1"
+    ? async () => (await import("../../../schemas/examples/viewport.example.json")).default as ViewportDocument
+    : async () => releaseDoc as ViewportDocument;
+const loadShippedDocument: () => Promise<ViewportDocument> = selectViewport(
+  fixtureFlag,
+  async () => releaseDoc as ViewportDocument,
+  loadExampleDocument,
+);
+const loadDevAssets = async (): Promise<unknown[]> =>
+  import.meta.env.VITE_GEN_AUDIO_FIXTURES === "1"
+    ? (await import("../../../schemas/asset-object/fixtures/assets.dev.json")).default.assets
+    : [];
+
 const board = required("#board");
 const empty = required("#empty");
 const status = required("#status");
+setReportSink((message) => {
+  status.textContent = message;
+});
+// Window->MCP failures are counted on McpFailureCounter and mirrored to
+// <html data-mcp-failures>. viewport_get (resyncViewport) is the MCP-readable
+// status. A failed address lookup, library fetch, or asset_resolve is counted
+// and shown; none of those failures is swallowed.
+const mcpFailures = new McpFailureCounter(undefined, (snapshot) => {
+  document.documentElement.dataset.mcpFailures = JSON.stringify(snapshot);
+});
 const fixture = makeFixture();
 let selection: VoiceSelection = {
   engineId: "",
@@ -52,6 +109,74 @@ let selection: VoiceSelection = {
 let activePreview: ProfilePreview = profilePreview(selection);
 let controlCursor = 0;
 const seenControl = new Set<number>();
+let libraryCatalog: LibraryCatalog | null = null;
+let mcpOrigin = "http://127.0.0.1:8765";
+let controlAttempt = 0;
+
+function failUi(error: unknown, where: string): void {
+  status.textContent = surfaceUiError(error, where);
+}
+
+/** The gap listener and a skipped control seq both resync through this. */
+let controlResync: () => Promise<unknown> = () => resyncViewport();
+
+function onControlGap(): Promise<unknown> {
+  return reportAsync(controlResync(), "viewport");
+}
+
+/** Test seam. Production leaves the real viewport_get resync in place. */
+export function setControlResyncForTest(work: (() => Promise<unknown>) | null): void {
+  controlResync = work ?? (() => resyncViewport());
+}
+
+/**
+ * Paint a catalog load. The rejection lands here: loadLibraryCatalog does not
+ * swallow it, so removing this catch leaves the failure unlogged.
+ */
+export function presentLibraryCatalog(work: Promise<LibraryCatalog | null>): void {
+  void work
+    .then((catalog) => {
+      libraryCatalog = catalog;
+      decorateLibraryTiles(board, catalog, (uid) => glyphBadge(uid, { role: "clip", onCopy: announceCopy }));
+      fillModelCubes(board, catalog, {
+        openCube: (url, source) => reportAsync(openCube(url, source), "cube"),
+        selectTile,
+      });
+      syncCubeChrome();
+    })
+    .catch((error: unknown) => failUi(error, "library catalog"));
+}
+
+/** One control-stream frame. A bad frame is counted and shown; the stream stays up. */
+export function acceptControlFrame(data: string): void {
+  try {
+    const parsed = JSON.parse(data) as { seq?: number; op?: string; args?: Record<string, unknown> };
+    if (typeof parsed.seq === "number" && parsed.seq > controlCursor + 1) {
+      void onControlGap();
+      return;
+    }
+    applyControl(parsed);
+  } catch (error) {
+    // Keep the stream. One bad frame must not look like a disconnect.
+    mcpFailures.note("control_stream", "malformed");
+    failUi(error, "control event");
+  }
+}
+
+export async function discoverMcp(): Promise<string> {
+  try {
+    const { invoke } = await import("@tauri-apps/api/core");
+    const reported = await invoke<{ addr?: string; handshake_ok?: boolean }>("mcp_status");
+    const found = mcpOriginFromStatus(reported, mcpOrigin, mcpFailures);
+    mcpOrigin = found.origin;
+    if (found.notice) status.textContent = found.notice;
+  } catch (error) {
+    status.textContent = noteMcpLookupError(error, mcpOrigin, mcpFailures);
+  }
+  return mcpOrigin;
+}
+
+const mcpReady = discoverMcp();
 
 bindSlideScroll(board);
 
@@ -61,7 +186,10 @@ bindStudio(board, status, (next: StudioSelection) => {
 });
 
 function show(documentIn: unknown): void {
-  const error = validateViewport(documentIn);
+  const error = validateViewport(
+    documentIn,
+    import.meta.env.VITE_GEN_AUDIO_FIXTURES === "1" ? "allowed" : "release",
+  );
   if (error) {
     status.textContent = `Viewport rejected: ${error}`;
     showRejected(board, empty, error);
@@ -69,14 +197,18 @@ function show(documentIn: unknown): void {
   }
   const doc = documentIn as ViewportDocument;
   renderBoard(board, empty, doc);
+  // D: tiles this render removed give back their cached seek blob URLs.
+  releaseDetachedTransports();
   paintProfile();
-  paintProfileCanvases();
   bindCubeCanvas();
   bindRename();
-  void harvestLibrary();
+  reportAsync(harvestLibrary(), "library harvest");
   bindFloatingPlayback();
+  presentLibraryCatalog(loadLibraryCatalog(loadDevAssets()));
   const n = slides(board).length;
-  status.textContent = `${doc.cards.length} cards · ${n} snap slides · spectrogram follows side pane (preview, not speech)`;
+  if (status.dataset.control !== "disconnected") {
+    status.textContent = `${doc.cards.length} cards · ${n} snap slides · spectrogram follows side pane`;
+  }
   requestAnimationFrame(() => goToSlide(board, 0));
 }
 
@@ -101,9 +233,9 @@ function paintProfile(): boolean {
     node.textContent = activePreview.caption;
   });
   if (panel) panel.dataset.profileKey = activePreview.key;
-  if (cube && cube.dataset.painted !== "fixture") {
+  if (cube && cube.dataset.painted !== "tone") {
     drawCube(cube, fixture);
-    cube.dataset.painted = "fixture";
+    cube.dataset.painted = "tone";
   }
   board.querySelectorAll<HTMLButtonElement>("[data-action='play-profile']").forEach((node) => {
     node.onclick = () => play(activePreview.before);
@@ -114,6 +246,17 @@ function paintProfile(): boolean {
 /** Default Cube-tab binding: the misaki\u2192kokoro Inverse-HDR cube (real WAV + cube JSON). */
 const DEFAULT_CUBE_CLIP = "lib-misaki-kokoro";
 let cubeClipId = "";
+/** Set when focus binds the Cube tab to a clip that has no cube: the tab says so and borrows nothing. */
+let noCubeClipId = "";
+let cubeBindSeq = 0;
+
+function clipUid(clipId: string): string | null {
+  return libraryCatalog?.clipForTile(clipId)?.uid ?? null;
+}
+
+function tileTitle(clipId: string): string {
+  return libraryTile(clipId)?.querySelector("h2")?.textContent?.trim() || clipId;
+}
 
 function cubeSources(): Array<{ clipId: string; url: string; label: string }> {
   return Array.from(board.querySelectorAll<HTMLElement>(".library-tile[data-cube-json]"))
@@ -128,7 +271,20 @@ function cubeSources(): Array<{ clipId: string; url: string; label: string }> {
 function syncCubeChrome(): void {
   const meta = getCubeMeta();
   const title = document.querySelector<HTMLElement>("#cube-title");
-  if (title) title.textContent = meta ? meta.title : "Inverse-HDR bitdot cube \u2014 nothing bound";
+  if (title) {
+    title.textContent = meta
+      ? meta.title
+      : noCubeClipId
+        ? `No cube for this clip — ${tileTitle(noCubeClipId)}`
+        : "Inverse-HDR cube \u2014 nothing bound";
+  }
+  const glyphSlot = document.querySelector<HTMLElement>("#cube-glyph");
+  if (glyphSlot) {
+    const cube = meta && libraryCatalog ? libraryCatalog.cubeForUrl(meta.url) : null;
+    const badge = cube ? glyphBadge(cube.uid, { role: "cube", onCopy: announceCopy }) : null;
+    if (badge) glyphSlot.replaceChildren(badge);
+    else glyphSlot.replaceChildren();
+  }
   const select = document.querySelector<HTMLSelectElement>("#cube-source");
   if (select && cubeClipId) select.value = cubeClipId;
   const play = document.querySelector<HTMLButtonElement>("#cube-play");
@@ -141,23 +297,73 @@ function syncCubeChrome(): void {
 
 /** When the Cube tab opens with nothing bound, bind the default library cube. */
 function ensureDefaultCube(): void {
-  if (boundCubeUrl()) return;
+  if (boundCubeUrl() || noCubeClipId) return;
   const sources = cubeSources();
   const preferred = sources.find((item) => item.clipId === DEFAULT_CUBE_CLIP) ?? sources[0];
   if (!preferred) {
     clearCube("No library clip has cube JSON yet. Nothing is drawn.");
     return;
   }
-  void bindCubeSource(preferred.clipId, preferred.url, "default");
+  reportAsync(bindCubeSource(preferred.clipId, preferred.url, "default"), "cube");
 }
 
 async function bindCubeSource(clipId: string, url: string, source: string): Promise<void> {
+  const seq = ++cubeBindSeq;
   cubeClipId = clipId;
-  setCubeClockClip(clipId);
+  noCubeClipId = "";
+  setCubeClockClip(clipId, clipUid(clipId));
   const caption = document.querySelector<HTMLElement>("#cube-caption");
   const message = await loadCube(url);
+  if (seq !== cubeBindSeq) return; // a newer binding won
   if (caption) caption.textContent = source === "default" ? message : `${source}: ${message}`;
   syncCubeChrome();
+}
+
+/**
+ * Play origin (Optimus ruling on PR #5, C1): TS never rebinds the Cube tab or
+ * the shared clock on Play. A UI Play click plays locally and posts
+ * `ui_playback {action:"play", origin:"user"}` on the control bus; focus and
+ * rebind belong to the Rust viewport reducer (PR #4), not to this file.
+ * Autoplay and other non-user starts use `playClip(..., "auto")` and change
+ * nothing but the audio.
+ */
+window.addEventListener("pagehide", () => releaseAllSeekBlobs());
+
+setUserPlayReporter((clipId) => {
+  const request = userPlayControl(clipId);
+  reportAsync(mcpCall(request.name, request.args), "play");
+});
+
+function libraryTile(clipId: string): HTMLElement | null {
+  const escaped = CSS.escape(clipId);
+  return (
+    board.querySelector<HTMLElement>(`.library-tile[data-id="${escaped}"]`) ??
+    board.querySelector<HTMLElement>(`.library-tile[data-uid="${escaped}"]`)
+  );
+}
+
+function bindCubeToPlayingClip(clipId: string): void {
+  const tile = libraryTile(clipId);
+  if (!tile) return;
+  const url = tile.dataset.cubeJson || "";
+  if (url) {
+    if (cubeClipId !== clipId || boundCubeUrl() !== url) reportAsync(bindCubeSource(clipId, url, "focus"), "cube");
+    return;
+  }
+  cubeBindSeq += 1;
+  cubeClipId = clipId;
+  noCubeClipId = clipId;
+  setCubeClockClip(clipId, clipUid(clipId));
+  clearCube(`No cube for this clip (${tileTitle(clipId)}). Nothing is drawn; another clip's cube is not borrowed.`);
+  syncCubeChrome();
+}
+
+/** Mark the focused clip without scrolling the deck (the user is already looking at it, or asked over MCP). */
+function focusClipTile(clipId: string): void {
+  const tile = libraryTile(clipId);
+  if (!tile) return;
+  board.querySelectorAll<HTMLElement>(".card.is-selected").forEach((node) => node.classList.remove("is-selected"));
+  tile.classList.add("is-selected");
 }
 
 function bindCubeCanvas(): void {
@@ -182,7 +388,7 @@ function bindCubeCanvas(): void {
     }
     select.addEventListener("change", () => {
       const option = select.selectedOptions[0];
-      if (option?.dataset.cubeJson) void bindCubeSource(option.value, option.dataset.cubeJson, option.value);
+      if (option?.dataset.cubeJson) reportAsync(bindCubeSource(option.value, option.dataset.cubeJson, option.value), "cube");
     });
   }
   const layersToggle = document.querySelector<HTMLButtonElement>("#cube-matrix-toggle");
@@ -198,18 +404,25 @@ function bindCubeCanvas(): void {
       syncCubeChrome();
       return;
     }
-    void playClip(cubeClipId).then((result) => {
-      status.textContent = result === "playing" ? `Cube live clock follows ${cubeClipId}` : result;
-      syncCubeChrome();
-    });
+    const request = userPlayControl(cubeClipId);
+    reportAsync(mcpCall(request.name, request.args), "play");
+    void playClip(cubeClipId, "user")
+      .then((result) => {
+        status.textContent = result === "playing" ? `Cube live clock follows ${cubeClipId}` : result;
+        syncCubeChrome();
+      })
+      .catch((error: unknown) => failUi(error, "play"));
   });
   document.querySelector("#cube-scrub")?.addEventListener("input", (event) => {
     const input = event.target as HTMLInputElement;
     const fraction = Number(input.value) / 1000;
     // ONE clock: scrubber seeks library audio AND slices cube layers.
     setCubeScrub(fraction);
-    const seeked = cubeClipId ? seekClipFraction(cubeClipId, fraction) : seekActiveFraction(fraction);
-    if (seeked !== "no player") status.textContent = `Shared clock ${Math.round(fraction * 100)}% \u00b7 ${seeked}`;
+    void (cubeClipId ? seekClipFraction(cubeClipId, fraction) : seekActiveFraction(fraction))
+      .then((seeked) => {
+        if (seeked !== "no player" && seeked !== "superseded") status.textContent = `Shared clock ${Math.round(fraction * 100)}% \u00b7 ${seeked}`;
+      })
+      .catch((error: unknown) => failUi(error, "seek"));
   });
   onCubeClock((fraction) => {
     const fp = document.querySelector<HTMLInputElement>("#fp-scrub");
@@ -229,7 +442,7 @@ function bindCubeCanvas(): void {
   }
   // Re-render keeps the bound cube; first render binds the default cube.
   const already = boundCubeUrl();
-  if (already) void bindCubeSource(cubeClipId || DEFAULT_CUBE_CLIP, already, "default");
+  if (already) reportAsync(bindCubeSource(cubeClipId || DEFAULT_CUBE_CLIP, already, "default"), "cube");
   else ensureDefaultCube();
 }
 
@@ -244,7 +457,7 @@ function bindRename(): void {
       const face = tile.querySelector<HTMLInputElement>("[data-field='face']")?.value ?? "";
       applyClipNames(tile, semantic, face);
       status.textContent = `Renamed ${id} in this window. The WAV file was not rewritten.`;
-      void mcpCall("library_rename", { clipId: id, semanticName: semantic, faceName: face });
+      reportAsync(mcpCall("library_rename", { clipId: id, semanticName: semantic, faceName: face }), "library rename");
     });
   });
   board.querySelectorAll<HTMLButtonElement>("[data-action='attach-profile']").forEach((node) => {
@@ -261,23 +474,19 @@ function bindRename(): void {
       const semantic = tile.querySelector<HTMLInputElement>("[data-field='semantic']")?.value ?? "";
       const face = tile.querySelector<HTMLInputElement>("[data-field='face']")?.value ?? "";
       applyClipNames(tile, semantic, face);
-      void mcpCall("library_harvest", { clipId: id, personaId, apply: true }).then((payload) => {
-        const body = toolBody(payload);
-        if (!body) {
-          status.textContent = `Names stay on ${id}. MCP is not listening, so the profile ref was not written.`;
-          return;
-        }
-        status.textContent = `Attached clip:${id} to persona ${personaId}. Audio was not decoded. synthesizedSpeech is false.`;
-        if (body.profile && typeof body.profile === "object") {
-          applyFlipcard(body.profile as Record<string, unknown>);
-        }
-      });
-    });
-  });
-  board.querySelectorAll<HTMLButtonElement>("[data-action='open-cube']").forEach((node) => {
-    node.addEventListener("click", (event) => {
-      event.stopPropagation();
-      void openCube(node.dataset.cubeJson || "", "profile");
+      void mcpCall("library_harvest", { clipId: id, personaId, apply: true })
+        .then((payload) => {
+          const body = toolBody(payload);
+          if (!body) {
+            status.textContent = `Names stay on ${id}. MCP is not listening, so the profile ref was not written.`;
+            return;
+          }
+          status.textContent = `Attached clip:${id} to persona ${personaId}. Audio was not decoded. synthesizedSpeech is false.`;
+          if (body.profile && typeof body.profile === "object") {
+            applyFlipcard(body.profile as Record<string, unknown>);
+          }
+        })
+        .catch((error: unknown) => failUi(error, "library harvest"));
     });
   });
 }
@@ -306,18 +515,18 @@ async function openCube(url: string, source: string): Promise<void> {
   if (!url) {
     cubeClipId = "";
     setCubeClockClip(null);
-    clearCube("This tile has no cube JSON. Magpie, VibeVoice, and Pocket do not get a stand-in cloud.");
+    clearCube("This tile has no cube JSON. Magpie, VibeVoice, and Pocket do not get a substitute cloud.");
     return;
   }
   const owner = board.querySelector<HTMLElement>(`.library-tile[data-cube-json="${CSS.escape(url)}"]`);
+  cubeBindSeq += 1;
   cubeClipId = owner?.dataset.id ?? "";
-  setCubeClockClip(cubeClipId || null);
+  noCubeClipId = "";
+  setCubeClockClip(cubeClipId || null, cubeClipId ? clipUid(cubeClipId) : null);
   const message = await loadCube(url);
   if (caption) caption.textContent = `${source}: ${message}`;
   syncCubeChrome();
-  // The Pipeline cube-fixture card keeps its FIXTURE mark: its canvas still paints the
-  // fixture tone. Only the Cube tab stage (badge "Library ...") draws the library cube.
-  status.textContent = `Cube tab bound (${source}). The Pipeline cube card stays FIXTURE.`;
+  status.textContent = `Cube tab bound (${source}).`;
 }
 
 function selectTile(id: string): void {
@@ -332,7 +541,7 @@ function selectTile(id: string): void {
   if (slide?.dataset.slide) goToSlideId(board, slide.dataset.slide);
   tile.focus({ preventScroll: true });
   const cube = tile.dataset.cubeJson;
-  if (cube) void openCube(cube, id);
+  if (cube) reportAsync(openCube(cube, id), "cube");
 }
 
 async function refreshConnectors(doc: ViewportDocument): Promise<ViewportDocument> {
@@ -354,30 +563,52 @@ async function refreshConnectors(doc: ViewportDocument): Promise<ViewportDocumen
       card.body.detail = report.detail;
     }
     return next;
-  } catch {
+  } catch (error) {
+    failUi(error, "connector status");
     return doc;
   }
 }
 
-document.querySelector("#show-example")?.addEventListener("click", () => {
-  void refreshConnectors(example as ViewportDocument).then(show);
-});
 document.querySelector("#show-empty")?.addEventListener("click", () => {
   show({ version: "1.0", title: "Darbot Gen-Audio", columns: 3, cards: [] });
 });
-document.querySelector("#run-improve")?.addEventListener("click", async () => {
-  try {
-    const { invoke } = await import("@tauri-apps/api/core");
-    const result = await invoke<Record<string, unknown>>("run_fixture_improve");
-    status.textContent = result.ok
-      ? "Python improve finished on the fixture tone (fixture only — not podcast speech)."
-      : `Python improve did not finish: ${JSON.stringify(result)}`;
-  } catch (error) {
-    status.textContent = `Python improve needs the desktop shell. ${String(error)}`;
-  }
-});
+// E1 addendum: the fixture controls exist only in dev/test builds. The check is
+// a literal import.meta.env comparison so Vite replaces it at build time and
+// the release bundle drops this block, labels and command name included
+// (apps/desktop/tests/viewport-source.test.ts greps dist for them).
+if (import.meta.env.VITE_GEN_AUDIO_FIXTURES === "1") {
+  const toolbar = document.querySelector(".ga-header-toolbar .toolbar");
+  const showExample = document.createElement("button");
+  showExample.type = "button";
+  showExample.id = "show-example";
+  showExample.textContent = "Load labeled example";
+  showExample.addEventListener("click", () => {
+    void loadShippedDocument()
+      .then(refreshConnectors)
+      .then(show)
+      .catch((error: unknown) => failUi(error, "viewport"));
+  });
+  const runImprove = document.createElement("button");
+  runImprove.type = "button";
+  runImprove.id = "run-improve";
+  runImprove.textContent = "Run Python improve on fixture";
+  runImprove.addEventListener("click", async () => {
+    try {
+      const { invoke } = await import("@tauri-apps/api/core");
+      const result = await invoke<Record<string, unknown>>("run_fixture_improve");
+      status.textContent = result.ok
+        ? "Python improve finished on the fixture tone (fixture only — not podcast speech)."
+        : `Python improve did not finish: ${JSON.stringify(result)}`;
+    } catch (error) {
+      surfaceUiError(error, "python improve");
+      status.textContent = `Python improve needs a debug desktop shell. ${String(error)}`;
+    }
+  });
+  toolbar?.prepend(showExample);
+  toolbar?.append(runImprove);
+}
 document.querySelector("#generate-podcast")?.addEventListener("click", () => {
-  void submitGenerate();
+  reportAsync(submitGenerate(), "generate");
 });
 
 document.querySelectorAll<HTMLButtonElement>("#layer-switch [data-layer]").forEach((button) => {
@@ -404,24 +635,11 @@ board.addEventListener("click", (event) => {
 document.addEventListener("keydown", (event) => {
   const target = event.target as HTMLElement | null;
   if (target && ["INPUT", "TEXTAREA", "SELECT", "BUTTON", "A"].includes(target.tagName)) return;
-  if (event.key === "PageDown" || event.key === "ArrowDown") {
+  const move = slideKey(event.key);
+  if (move) {
     event.preventDefault();
-    moveSlide(board, 1);
-    return;
-  }
-  if (event.key === "PageUp" || event.key === "ArrowUp") {
-    event.preventDefault();
-    moveSlide(board, -1);
-    return;
-  }
-  if (event.key === "Home") {
-    event.preventDefault();
-    moveSlide(board, "home");
-    return;
-  }
-  if (event.key === "End") {
-    event.preventDefault();
-    moveSlide(board, "end");
+    // Exactly one slide per press; auto-repeat while a glide runs is dropped.
+    if (!event.repeat || !isSnapping(board)) moveSlide(board, move);
     return;
   }
   if (event.key === "ArrowRight") {
@@ -435,33 +653,22 @@ document.addEventListener("keydown", (event) => {
 
 async function submitGenerate(): Promise<void> {
   const selectionNow = readSelection();
-  const voice = voiceById(selectionNow.voice);
-  showRun(selectionNow.voice, voice?.synthAdapter ? "running" : "unavailable", "waiting for MCP", false);
   const recorded = await mcpCall("ui_generate", {
     agents: selectionNow.agents,
     voice: selectionNow.voice,
     durationMin: selectionNow.durationMin,
+    duration_s: selectionNow.durationMin * 60,
+    prompt: promptText(),
     promptNote: promptNote(),
   });
   if (!recorded) {
-    showRun(selectionNow.voice, "unavailable", "MCP is not listening on 127.0.0.1:8765", false);
+    showRun(selectionNow.voice, "unavailable", `MCP is not listening on ${mcpOrigin}`, false);
     return;
   }
-  if (voice?.synthAdapter) {
-    const synth = await mcpCall("synth", {
-      output: "request.wav",
-      script: "examples/podcast_script_sample.txt",
-    });
-    const speech = toolClaimsSpeech(synth);
-    showRun(
-      selectionNow.voice,
-      speech ? "ok" : "refused",
-      "sample script, not the pasted prompt",
-      speech,
-    );
-    return;
-  }
-  showRun(selectionNow.voice, "unavailable", `No synth adapter for ${voice?.label ?? selectionNow.voice}`, false);
+  const body = toolBody(recorded);
+  const phase = String(body?.phase ?? "refused");
+  const detail = String(body?.note ?? "");
+  showRun(selectionNow.voice, phase, detail, body?.synthesizedSpeech === true);
 }
 
 function toolBody(payload: unknown): Record<string, unknown> | null {
@@ -471,14 +678,10 @@ function toolBody(payload: unknown): Record<string, unknown> | null {
   try {
     const body = JSON.parse(text) as unknown;
     return body && typeof body === "object" ? (body as Record<string, unknown>) : null;
-  } catch {
+  } catch (error) {
+    failUi(error, "tool result");
     return null;
   }
-}
-
-function toolClaimsSpeech(payload: unknown): boolean {
-  const body = toolBody(payload);
-  return body?.synthesizedSpeech === true;
 }
 
 function showRun(voice: string, phase: string, detail: string, speech: boolean): void {
@@ -512,24 +715,10 @@ function applyFlipcard(profile: Record<string, unknown>): void {
 }
 
 async function mcpCall(name: string, args: Record<string, unknown>): Promise<unknown | null> {
-  try {
-    const response = await fetch("http://127.0.0.1:8765/mcp", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({
-        jsonrpc: "2.0",
-        id: 1,
-        method: "tools/call",
-        params: { name, arguments: args },
-      }),
-    });
-    if (!response.ok) return null;
-    const payload: unknown = await response.json();
-    noteControlSeq(payload);
-    return payload;
-  } catch {
-    return null;
-  }
+  const origin = await mcpReady;
+  const payload = await postMcp(fetch, `${origin}/mcp`, name, args, mcpFailures);
+  if (payload !== null) noteControlSeq(payload);
+  return payload;
 }
 
 function noteControlSeq(payload: unknown): void {
@@ -541,20 +730,23 @@ function noteControlSeq(payload: unknown): void {
     if (typeof body.seq === "number") seenControl.add(body.seq);
     if (typeof body.sidepane?.seq === "number") seenControl.add(body.sidepane.seq);
   } catch {
-    /* tool text is not a control envelope */
+    // Tool text is often a generate result, not a control envelope. A parse
+    // failure here means "no seq to remember", which is not a stream error.
   }
 }
 
 function applyControl(event: { seq?: number; op?: string; args?: Record<string, unknown> }): void {
   if (typeof event.seq === "number") {
+    controlCursor = Math.max(controlCursor, event.seq);
     if (seenControl.has(event.seq)) return;
     seenControl.add(event.seq);
-    controlCursor = Math.max(controlCursor, event.seq);
   }
   const args = event.args ?? {};
   if (event.op === "navigate" && typeof args.slide === "string") {
-    goToSlideId(board, args.slide);
-    if (args.slide === "spatial") {
+    // C5: MCP sends the canonical "slide:<slug>"; a bare slug is the deprecated alias.
+    const slug = args.slide.startsWith("slide:") ? args.slide.slice("slide:".length) : args.slide;
+    goToSlideId(board, slug);
+    if (slug === "spatial") {
       ensureDefaultCube();
       syncCubeChrome();
     }
@@ -568,13 +760,40 @@ function applyControl(event: { seq?: number; op?: string; args?: Record<string, 
     applyFlipcard(args.profile as Record<string, unknown>);
   } else if (event.op === "progress" && typeof args.voice === "string") {
     showRun(args.voice, String(args.phase ?? "unavailable"), String(args.detail ?? ""), args.synthesizedSpeech === true);
+  } else if (event.op === "focus" && typeof args.uid === "string") {
+    focusClipTile(args.uid);
+    bindCubeToPlayingClip(args.uid);
+  } else if (event.op === "play" && typeof args.playing === "string") {
+    const origin = args.origin === "user" ? "user" : "auto";
+    void playClip(args.playing, origin)
+      .then((result) => {
+        status.textContent = result === "playing" ? `Playing ${args.playing}` : result;
+        syncCubeChrome();
+      })
+      .catch((error: unknown) => failUi(error, "play"));
   } else if (event.op === "playback" && typeof args.tileId === "string") {
     const action = String(args.action ?? "");
-    if (action === "play") void playClip(args.tileId).then((result) => {
-      status.textContent = result === "playing" ? `Playing ${args.tileId}` : result;
-    });
+    if (action === "play") {
+      void playClip(args.tileId, controlPlayOrigin(args))
+        .then((result) => {
+          status.textContent = result === "playing" ? `Playing ${args.tileId}` : result;
+        })
+        .catch((error: unknown) => failUi(error, "play"));
+    }
     else if (action === "pause") status.textContent = pauseClip(args.tileId);
-    else if (action === "seek") status.textContent = seekClip(args.tileId, Number(args.seconds));
+    else if (action === "seek") {
+      const requested = Number(args.seconds);
+      void seekClipOutcome(args.tileId, requested)
+        .then((landing) => {
+          if (landing.status !== "superseded") status.textContent = landing.status;
+          // Tell MCP where it landed: ui_playback answers the agent with {requested_t, landed_t, ok, reason}.
+          if (typeof event.seq === "number") {
+            const report = seekReportControl(event.seq, requested, landing);
+            reportAsync(mcpCall(report.name, report.args), "seek report");
+          }
+        })
+        .catch((error: unknown) => failUi(error, "seek"));
+    }
   } else if (event.op === "sidepane") {
     applySidepane({
       agents: Array.isArray(args.agents) ? args.agents.map(String) : undefined,
@@ -587,7 +806,8 @@ function applyControl(event: { seq?: number; op?: string; args?: Record<string, 
       voice: typeof args.voice === "string" ? args.voice : undefined,
       durationMin: typeof args.durationMin === "number" ? args.durationMin : undefined,
     });
-    status.textContent = "Remote generate request recorded. synthesizedSpeech is false.";
+  } else if (event.op === "job") {
+    reportAsync(applyJob(args), "job");
   } else if (event.op === "rename" && typeof args.clipId === "string") {
     const tile = board.querySelector<HTMLElement>(`.card[data-id="${CSS.escape(args.clipId)}"]`);
     if (!tile) return;
@@ -603,30 +823,215 @@ function applyControl(event: { seq?: number; op?: string; args?: Record<string, 
   }
 }
 
-function connectControl(): void {
-  let source: EventSource;
-  try {
-    source = new EventSource(`http://127.0.0.1:8765/control/stream?after=${controlCursor}&wait=2000`);
-  } catch {
-    return;
-  }
-  source.addEventListener("control", (event) => {
-    try {
-      applyControl(JSON.parse((event as MessageEvent).data) as { seq?: number; op?: string; args?: Record<string, unknown> });
-    } catch {
-      /* ignore malformed events */
-    }
-  });
-  source.onerror = () => {
-    source.close();
-    window.setTimeout(connectControl, 50);
-  };
+function honestyOf(value: unknown): string {
+  if (!value || typeof value !== "object") return "";
+  const honesty = (value as { honesty?: unknown }).honesty;
+  return typeof honesty === "string" ? honesty : "";
 }
 
-void refreshConnectors(example as ViewportDocument).then(show);
-// Test hook: scrubs the cube and ONLY the clip the cube is bound to (never whatever played last).
-(window as unknown as { __genAudioScrub?: (f: number) => string }).__genAudioScrub = (fraction: number) => {
-  setCubeScrub(fraction, { silent: true });
-  return cubeClipId ? seekClipFraction(cubeClipId, fraction) : "no cube clip";
-};
+function setDerived(parentUid: string, role: string, honesty: string): void {
+  if (!parentUid || !honesty) return;
+  const node = libraryTile(parentUid)?.querySelector<HTMLElement>(`[data-derived="${role}"]`);
+  if (node) node.textContent = `${role}: ${honesty}`;
+}
+
+export async function mediaBlob(urlPath: string): Promise<string | null> {
+  const blob = await fetchLibraryBlob(fetch, await mcpReady, urlPath, mcpFailures);
+  return blob ? URL.createObjectURL(blob) : null;
+}
+
+async function mountGeneratedVideo(urlPath: string): Promise<void> {
+  const section = board.querySelector<HTMLElement>('[data-slide="video"]');
+  if (!section) return;
+  const blob = await mediaBlob(urlPath);
+  if (!blob) return;
+  const status = section.querySelector<HTMLElement>("[data-video-status]");
+  if (status) status.textContent = "Generated clip.";
+  const slot = section.querySelector<HTMLElement>("[data-video-slot]") ?? section;
+  let video = slot.querySelector("video");
+  if (!video) {
+    video = document.createElement("video");
+    video.controls = true;
+    video.dataset.generated = "1";
+    slot.append(video);
+  }
+  video.src = blob;
+}
+
+export async function insertGeneratedTile(uid: string, args: Record<string, unknown>): Promise<void> {
+  const slide = board.querySelector<HTMLElement>('[data-slide="library"]');
+  if (!slide) return;
+  const resolved = toolBody(await mcpCall("asset_resolve", { uid }));
+  const resolveError = assetResolveFailure(resolved);
+  if (resolveError || !resolved) {
+    const message = noteAssetResolveFailure(uid, resolveError ?? "asset_resolve failed", mcpFailures);
+    let tile = libraryTile(uid);
+    if (!tile) {
+      tile = document.createElement("article");
+      tile.className = "card livetile library-tile";
+      tile.tabIndex = -1;
+      slide.append(tile);
+    }
+    tile.dataset.uid = uid;
+    tile.dataset.kind = "LibraryClip";
+    tile.dataset.resolve = "failed";
+    let node = tile.querySelector<HTMLElement>(".resolve-error");
+    if (!node) {
+      node = document.createElement("p");
+      node.className = "resolve-error";
+      tile.append(node);
+    }
+    node.textContent = message;
+    status.textContent = message;
+    return;
+  }
+  const legacy = String(resolved.tileId ?? args.legacyId ?? uid);
+  const asset = (resolved.asset && typeof resolved.asset === "object" ? resolved.asset : {}) as Record<string, unknown>;
+  const display = (asset.display && typeof asset.display === "object" ? asset.display : {}) as Record<string, unknown>;
+  const title = String(display.title ?? "Generated clip");
+  let tile = libraryTile(uid) ?? libraryTile(legacy);
+  if (!tile) {
+    tile = document.createElement("article");
+    tile.className = "card livetile library-tile";
+    tile.tabIndex = -1;
+    const heading = document.createElement("h2");
+    heading.textContent = title;
+    const spec = document.createElement("p");
+    spec.dataset.derived = "spectrogram";
+    const cube = document.createElement("p");
+    cube.dataset.derived = "cube";
+    tile.append(heading, spec, cube);
+    slide.append(tile);
+  }
+  tile.dataset.id = legacy;
+  tile.dataset.uid = uid;
+  tile.dataset.kind = "LibraryClip";
+  const wavPath = typeof args.wavUrl === "string" ? args.wavUrl : "";
+  if (wavPath && !tile.querySelector("audio")) {
+    const blob = await mediaBlob(wavPath);
+    if (blob) {
+      tile.dataset.wavUrl = blob;
+      tile.dataset.hasWav = "1";
+      tile.append(renderTransport(legacy, blob));
+    }
+  }
+  if (typeof args.cubeUrl === "string" && args.cubeUrl.startsWith("/library/")) {
+    const origin = await mcpReady;
+    tile.dataset.cubeJson = `${origin}${args.cubeUrl}`;
+  }
+  setDerived(uid, "spectrogram", honestyOf(args.spectrogram) || "pending");
+  setDerived(uid, "cube", honestyOf(args.cube) || "pending");
+  if (typeof args.videoUrl === "string") await mountGeneratedVideo(args.videoUrl);
+}
+
+async function applyJob(args: Record<string, unknown>): Promise<void> {
+  const phase = String(args.phase ?? "");
+  const voice = typeof args.voice === "string" ? args.voice : "";
+  if (phase === "running") {
+    if (voice) showRun(voice, "running", "generating", false);
+    return;
+  }
+  const target = typeof args.target === "string" ? args.target : "";
+  if (phase === "done" && target.startsWith("ga:audio_clip:")) await insertGeneratedTile(target, args);
+  if (phase === "done" && target.endsWith(":spectrogram")) {
+    setDerived(target.slice(0, -":spectrogram".length), "spectrogram", String(args.honesty ?? "real"));
+  }
+  if (phase === "done" && target.endsWith(":cube")) {
+    setDerived(target.slice(0, -":cube".length), "cube", String(args.honesty ?? "real"));
+  }
+  if (typeof args.videoUrl === "string") await mountGeneratedVideo(args.videoUrl);
+}
+
+async function resyncViewport(): Promise<void> {
+  const payload = await mcpCall("viewport_get", {});
+  const body = toolBody(payload);
+  if (!body) return;
+  if (typeof body.cursor === "number") controlCursor = body.cursor;
+  const ui = body.ui;
+  if (ui && typeof ui === "object") {
+    const record = ui as { slide?: unknown; focus?: unknown; flipped?: unknown; compare?: unknown };
+    if (typeof record.slide === "string") goToSlideId(board, record.slide);
+    if (typeof record.focus === "string") {
+      focusClipTile(record.focus);
+      bindCubeToPlayingClip(record.focus);
+      setCubeClockClip(record.focus, clipUid(record.focus));
+    } else if (record.focus === null) {
+      setCubeClockClip(null);
+    }
+    if (record.flipped && typeof record.flipped === "object") {
+      for (const [view, state] of Object.entries(record.flipped as Record<string, { face?: string }>)) {
+        const tileId = view.startsWith("view:") ? view.slice("view:".length) : view;
+        setCardFlip(board, tileId, state?.face === "back");
+      }
+    }
+    board.querySelectorAll<HTMLElement>(".card.is-compare").forEach((node) => node.classList.remove("is-compare"));
+    if (Array.isArray(record.compare)) {
+      for (const uid of record.compare) {
+        if (typeof uid !== "string") continue;
+        board.querySelector<HTMLElement>(`.card[data-id="${CSS.escape(uid)}"]`)?.classList.add("is-compare");
+      }
+    }
+  }
+  if (Array.isArray(body.jobs)) {
+    for (const job of body.jobs) {
+      if (!job || typeof job !== "object") continue;
+      const record = job as { voice?: unknown; phase?: unknown; reason?: unknown; synthesized?: unknown };
+      if (typeof record.voice === "string" && record.voice) {
+        showRun(record.voice, String(record.phase ?? "unavailable"), String(record.reason ?? ""), record.synthesized === true);
+      }
+    }
+  }
+}
+
+void loadShippedDocument()
+  .then(refreshConnectors)
+  .then(show)
+  .catch((error: unknown) => failUi(error, "viewport"));
+
+function markControlDown(): void {
+  status.dataset.control = "disconnected";
+  status.textContent = controlDisconnectedNotice(controlAttempt);
+  const wait = controlBackoffMs(controlAttempt);
+  controlAttempt += 1;
+  window.setTimeout(connectControl, wait);
+}
+
+function markControlUp(): void {
+  controlAttempt = 0;
+  if (status.dataset.control === "disconnected") delete status.dataset.control;
+}
+
+export function connectControl(): void {
+  void mcpReady
+    .then((origin) => {
+      let source: EventSource;
+      try {
+        source = new EventSource(`${origin}/control/stream?after=${controlCursor}&wait=2000`);
+      } catch (error) {
+        failUi(error, "control stream");
+        markControlDown();
+        return;
+      }
+      source.onopen = () => markControlUp();
+      source.addEventListener("gap", () => onControlGap());
+      source.addEventListener("control", (event) => {
+        acceptControlFrame(String((event as MessageEvent).data));
+      });
+      source.onerror = () => {
+        source.close();
+        markControlDown();
+      };
+    })
+    .catch((error: unknown) => {
+      failUi(error, "control stream");
+      markControlDown();
+    });
+}
+// Test hook (dev/test builds only): scrubs the cube and ONLY the clip the cube is bound to.
+if (import.meta.env.VITE_GEN_AUDIO_FIXTURES === "1") {
+  (window as unknown as { __genAudioScrub?: (f: number) => Promise<string> }).__genAudioScrub = (fraction: number) => {
+    setCubeScrub(fraction, { silent: true });
+    return cubeClipId ? seekClipFraction(cubeClipId, fraction) : Promise.resolve("no cube clip");
+  };
+}
 connectControl();

@@ -17,6 +17,9 @@ struct Track {
     cwd: String,
     agents: Vec<String>,
     voice: String,
+    /// Library asset uids bound to this track (max 8). Uids only, never paths.
+    #[allow(dead_code)]
+    assets: Vec<String>,
 }
 
 pub struct Agent {
@@ -104,6 +107,7 @@ fn session_new(agent: &Agent, params: &Value) -> Result<Value, String> {
         gen_audio_mcp::control::validate_track(&agents, &voice).map_err(|(_, message)| message)?;
     }
     let agent_ids: Vec<String> = agents.iter().filter_map(|value| value.as_str().map(str::to_string)).collect();
+    let assets = session_assets(params.get("assets"))?;
     let mut next = agent.next.lock().expect("session counter");
     let id = format!("gen-audio-session-{next}");
     *next += 1;
@@ -114,9 +118,32 @@ fn session_new(agent: &Agent, params: &Value) -> Result<Value, String> {
             cwd: cwd.to_string(),
             agents: agent_ids.clone(),
             voice: voice.clone(),
+            assets: assets.clone(),
         },
     );
-    Ok(json!({"sessionId": id, "agents": agent_ids, "voice": voice}))
+    Ok(json!({"sessionId": id, "agents": agent_ids, "voice": voice, "assets": assets}))
+}
+
+/// `session/new` `assets`: up to 8 distinct ga1 uids that resolve in the library catalog.
+fn session_assets(value: Option<&Value>) -> Result<Vec<String>, String> {
+    use gen_audio_core::asset_catalog::{require, MAX_SESSION_ASSETS};
+    let Some(value) = value else {
+        return Ok(Vec::new());
+    };
+    let items = value.as_array().ok_or("assets must be an array of asset uids")?;
+    if items.len() > MAX_SESSION_ASSETS {
+        return Err(format!("assets is capped at {MAX_SESSION_ASSETS} uids"));
+    }
+    let mut out: Vec<String> = Vec::new();
+    for item in items {
+        let uid = item.as_str().ok_or("asset uid must be a string")?;
+        require(uid).map_err(|error| error.rpc().1)?;
+        if out.iter().any(|seen| seen == uid) {
+            return Err(format!("duplicate asset {uid}"));
+        }
+        out.push(uid.to_string());
+    }
+    Ok(out)
 }
 
 fn session_prompt(agent: &Agent, params: &Value) -> Result<(Value, Vec<Value>), String> {
@@ -245,12 +272,102 @@ fn session_prompt(agent: &Agent, params: &Value) -> Result<(Value, Vec<Value>), 
     Ok((json!({"stopReason": "end_turn"}), notes))
 }
 
+fn control_tool(name: &str) -> bool {
+    matches!(
+        name,
+        "ui_navigate"
+            | "ui_select_tile"
+            | "ui_flip"
+            | "ui_playback"
+            | "ui_set_sidepane"
+            | "ui_generate"
+            | "ui_compare"
+            | "library_rename"
+            | "viewport_get"
+            | "card_export"
+    )
+}
+
+fn desktop_addr() -> Result<Option<String>, String> {
+    let raw = raw_desktop_addr();
+    let Some(addr) = raw else {
+        return Ok(None);
+    };
+    ensure_loopback_target(&addr)?;
+    Ok(Some(addr))
+}
+
+fn read_configured_addr() -> Option<String> {
+    if let Ok(addr) = std::env::var("GEN_AUDIO_MCP_ADDR") {
+        let addr = addr.trim();
+        if !addr.is_empty() {
+            return Some(addr.to_string());
+        }
+    }
+    gen_audio_core::paths::read_mcp_addr()
+}
+
+fn raw_desktop_addr() -> Option<String> {
+    #[cfg(test)]
+    {
+        let overridden = DESKTOP_ADDR.with(|slot| slot.borrow().clone());
+        if overridden.is_some() {
+            return overridden;
+        }
+        // GEN_AUDIO_MCP_ADDR is process-global. Tests that swap it hold this
+        // lock across the swap and the read, so a parallel test cannot observe
+        // the temporary non-loopback value.
+        let _guard = mcp_addr_env_lock();
+        return read_configured_addr();
+    }
+    #[cfg(not(test))]
+    read_configured_addr()
+}
+
+#[cfg(test)]
+fn mcp_addr_env_lock() -> std::sync::MutexGuard<'static, ()> {
+    static LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+    LOCK.lock().unwrap_or_else(|poison| poison.into_inner())
+}
+
+fn ensure_loopback_target(addr: &str) -> Result<(), String> {
+    gen_audio_mcp::http::ensure_bind_allowed(addr).map_err(|err| err.to_string())?;
+    let socket: std::net::SocketAddr = addr
+        .parse()
+        .map_err(|err| format!("desktop address is not a socket address: {err}"))?;
+    if !socket.ip().is_loopback() {
+        return Err("ACP refuses a non-loopback desktop address".into());
+    }
+    Ok(())
+}
+
+/// UI actions go to the desktop's bound MCP listener.
+/// An in-process server has a different control bus, so it is not a fallback.
 fn mcp_tool(name: &str, args: Value) -> Result<Value, String> {
+    if let Some(addr) = desktop_addr()? {
+        return gen_audio_mcp::http::tools_call(&addr, name, &args);
+    }
+    if control_tool(name) {
+        return Err(
+            "desktop control endpoint is not bound; refusing to apply this action on an isolated bus"
+                .into(),
+        );
+    }
     let server = gen_audio_mcp::Server::boot();
     let result = gen_audio_mcp::call_tool(&server, &json!({"name": name, "arguments": args}))
-        .map_err(|(_, message)| message);
+        .map_err(|err| err.message);
     let _ = std::fs::remove_dir_all(&server.scratch.dir);
     result
+}
+
+#[cfg(test)]
+thread_local! {
+    static DESKTOP_ADDR: std::cell::RefCell<Option<String>> = const { std::cell::RefCell::new(None) };
+}
+
+#[cfg(test)]
+fn bind_desktop_for_test(addr: Option<String>) {
+    DESKTOP_ADDR.with(|slot| *slot.borrow_mut() = addr);
 }
 
 fn is_verb(token: &str) -> bool {
@@ -588,6 +705,8 @@ use std::io::{BufRead, Write};
 mod tests {
     use super::*;
 
+    use gen_audio_core::bridge::NoKokoroEnv;
+
     #[test]
     fn handshake_smoke() {
         assert_eq!(smoke().unwrap(), "acp smoke ok");
@@ -648,6 +767,7 @@ mod tests {
 
     #[test]
     fn session_persona_generate_calls_synth_and_does_not_invent_speech() {
+        let _env = NoKokoroEnv::new();
         let agent = Agent::new();
         let created = handle(
             &agent,
@@ -682,6 +802,7 @@ mod tests {
         assert!(blob.contains("No speech was invented"), "{blob}");
         assert!(blob.contains("tool_call"), "{blob}");
         assert!(!blob.contains("\"synthesizedSpeech\":true"), "{blob}");
+        assert!(blob.contains("GEN_AUDIO_KOKORO_MODEL and GEN_AUDIO_KOKORO_VOICES are unset"), "{blob}");
         let rejected = handle(
             &agent,
             json!({
@@ -693,5 +814,101 @@ mod tests {
         )
         .unwrap_err();
         assert!(rejected.contains("connector") || rejected.contains("af_heart"), "{rejected}");
+    }
+
+    #[test]
+    fn desktop_target_must_be_loopback() {
+        bind_desktop_for_test(None);
+        let _guard = mcp_addr_env_lock();
+        let saved = std::env::var("GEN_AUDIO_MCP_ADDR").ok();
+        std::env::set_var("GEN_AUDIO_MCP_ADDR", "10.1.8.70:8765");
+        let err = ensure_loopback_target(&read_configured_addr().expect("env addr")).unwrap_err();
+        assert!(err.contains("loopback") || err.contains("non-loopback"), "{err}");
+        match saved {
+            Some(value) => std::env::set_var("GEN_AUDIO_MCP_ADDR", value),
+            None => std::env::remove_var("GEN_AUDIO_MCP_ADDR"),
+        }
+    }
+
+    #[test]
+    fn session_new_binds_library_asset_uids() {
+        let agent = Agent::new();
+        let clip = gen_audio_core::asset_catalog::uid_for_legacy("audio_clip", "lib-misaki-kokoro").unwrap();
+        let out = handle(
+            &agent,
+            json!({"jsonrpc":"2.0","id":1,"method":"session/new","params":{"cwd":".","assets":[clip, "ga:cube_ihdr:biaxxmnibxtcur7nxdu3ffvna4"]}}),
+        )
+        .unwrap();
+        let result = &out.response.unwrap()["result"];
+        assert_eq!(result["assets"][0], clip);
+        let session = result["sessionId"].as_str().unwrap();
+        assert_eq!(agent.sessions.lock().unwrap()[session].assets.len(), 2);
+        for bad in [
+            json!(["ga:cube_ihdr:aaaaaaaaaaaaaaaaaaaaaaaaaa"]),
+            json!(["lib-misaki-kokoro"]),
+            json!([clip, clip]),
+            json!(vec![clip; 9]),
+            json!("ga:cube_ihdr:biaxxmnibxtcur7nxdu3ffvna4"),
+        ] {
+            let err = handle(&agent, json!({"jsonrpc":"2.0","id":2,"method":"session/new","params":{"cwd":".","assets":bad}}));
+            assert!(err.is_err(), "{bad} should be rejected");
+        }
+    }
+
+    #[test]
+    fn t14_navigate_reaches_the_bound_desktop_bus() {
+        let addr = gen_audio_mcp::http::spawn_loopback("127.0.0.1:0").unwrap();
+        let addr = addr.to_string();
+        bind_desktop_for_test(Some(addr.clone()));
+        let before = gen_audio_mcp::http::get_control(&addr, 0).unwrap();
+        let cursor = before["cursor"].as_u64().unwrap_or(0);
+        let agent = Agent::new();
+        let created = handle(
+            &agent,
+            json!({"jsonrpc":"2.0","id":1,"method":"session/new","params":{"cwd":"."}}),
+        )
+        .unwrap();
+        let session_id = created.response.unwrap()["result"]["sessionId"].as_str().unwrap().to_string();
+        let prompted = handle(
+            &agent,
+            json!({
+                "jsonrpc": "2.0",
+                "id": 2,
+                "method": "session/prompt",
+                "params": {
+                    "sessionId": session_id,
+                    "prompt": [{"type": "text", "text": "navigate spatial"}]
+                }
+            }),
+        )
+        .unwrap();
+        bind_desktop_for_test(None);
+        let blob = serde_json::to_string(&prompted.notifications).unwrap();
+        assert!(blob.contains("ui_navigate"), "{blob}");
+        assert!(!blob.contains("isolated bus"), "{blob}");
+        let after = gen_audio_mcp::http::get_control(&addr, cursor).unwrap();
+        let events = after["events"].as_array().cloned().unwrap_or_default();
+        assert!(
+            events.iter().any(|event| {
+                event["op"] == "navigate"
+                    && event["args"]["slide"] == "slide:spatial"
+            }),
+            "{after}"
+        );
+        let view = gen_audio_mcp::http::tools_call(&addr, "viewport_get", &json!({})).unwrap();
+        assert_eq!(view["ui"]["slide"], "slide:spatial");
+    }
+
+    #[test]
+    fn ui_navigate_without_a_desktop_does_not_touch_an_isolated_bus() {
+        bind_desktop_for_test(None);
+        let marker = format!("isolated-{}", std::process::id());
+        let err = mcp_tool("ui_navigate", json!({"slide": "spatial", "tileId": marker})).unwrap_err();
+        assert!(err.contains("not bound"), "{err}");
+        let delta = gen_audio_mcp::control::since(0);
+        assert!(
+            delta.events.iter().all(|event| event["args"]["tileId"] != marker),
+            "isolated ACP published onto the local bus"
+        );
     }
 }

@@ -39,7 +39,39 @@ class ImproveResult:
     input_seconds: float
     output_seconds: float
     peak: float
+    trim_start: int = 0
+    trimmed_samples: int = 0
     stages: dict[str, float] = field(default_factory=dict)
+
+
+def trim_bounds(
+    audio: np.ndarray,
+    sample_rate: int,
+    *,
+    threshold_db: float = TRIM_THRESHOLD_DB,
+    pad_ms: float = TRIM_PAD_MS,
+) -> tuple[int, int]:
+    """Sample span kept by :func:`trim_silence`, as ``[start, end)``.
+
+    ``start`` is the first sample that survives the cut, so a later stage can
+    remap speaker cursors by subtracting it. An all-silent buffer returns
+    ``(0, 0)``.
+    """
+    values = as_mono(audio)
+    if values.size == 0:
+        return 0, 0
+    peak = float(np.max(np.abs(values)))
+    if peak == 0.0:
+        return 0, 0
+    threshold = peak * (10.0 ** (float(threshold_db) / 20.0))
+    loud = np.abs(values) >= threshold
+    if not np.any(loud):
+        return 0, 0
+    indices = np.flatnonzero(loud)
+    pad = int(round(sample_rate * (float(pad_ms) / 1000.0)))
+    start = max(0, int(indices[0]) - pad)
+    end = min(values.size, int(indices[-1]) + 1 + pad)
+    return start, end
 
 
 def trim_silence(
@@ -56,19 +88,7 @@ def trim_silence(
     kept. ``pad_ms`` samples are restored on each cut edge when they exist.
     """
     values = as_mono(audio)
-    if values.size == 0:
-        return values
-    peak = float(np.max(np.abs(values)))
-    if peak == 0.0:
-        return values[:0]
-    threshold = peak * (10.0 ** (float(threshold_db) / 20.0))
-    loud = np.abs(values) >= threshold
-    if not np.any(loud):
-        return values[:0]
-    indices = np.flatnonzero(loud)
-    pad = int(round(sample_rate * (float(pad_ms) / 1000.0)))
-    start = max(0, int(indices[0]) - pad)
-    end = min(values.size, int(indices[-1]) + 1 + pad)
+    start, end = trim_bounds(values, sample_rate, threshold_db=threshold_db, pad_ms=pad_ms)
     return values[start:end]
 
 
@@ -149,7 +169,8 @@ def improve(
         raise ValueError("audio is empty")
     input_seconds = float(original.size) / float(source_rate)
 
-    trimmed = trim_silence(original, source_rate, threshold_db=threshold_db, pad_ms=pad_ms)
+    trim_start, trim_end = trim_bounds(original, source_rate, threshold_db=threshold_db, pad_ms=pad_ms)
+    trimmed = original[trim_start:trim_end]
     if trimmed.size == 0:
         raise ValueError("audio is silence at the trim threshold; nothing to publish")
     filtered = highpass(trimmed, source_rate, cutoff_hz=hp_hz)
@@ -165,6 +186,8 @@ def improve(
         input_seconds=input_seconds,
         output_seconds=output_seconds,
         peak=peak,
+        trim_start=int(trim_start),
+        trimmed_samples=int(trimmed.size),
         stages={
             "trim_threshold_db": float(threshold_db),
             "trim_pad_ms": float(pad_ms),

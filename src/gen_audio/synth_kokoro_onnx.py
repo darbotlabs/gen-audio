@@ -30,6 +30,7 @@ from gen_audio.guards import (
     verify_model_checksums,
 )
 from gen_audio.improve import improve, resample_audio
+from gen_audio.speakers import SpeechSegment, concatenate_turns, published_segments, remap_through_improve, roster
 
 # One generate at a time. Unload and disk IO stay off this lock's caller thread
 # by running through ``run_blocking`` in ``gen_audio.gateway``.
@@ -61,6 +62,8 @@ class SynthResult:
     turns: list[SynthTurn] = field(default_factory=list)
     gap_s: float = DEFAULT_TURN_GAP_S
     improved: bool = False
+    speakers: list[dict] = field(default_factory=list)
+    segments: list[SpeechSegment] = field(default_factory=list)
 
     def manifest(self) -> dict:
         return {
@@ -70,6 +73,8 @@ class SynthResult:
             "seconds": (float(self.audio.size) / float(self.sample_rate)) if self.sample_rate else 0.0,
             "gap_s": self.gap_s,
             "improved": self.improved,
+            "speakers": list(self.speakers),
+            "segments": published_segments(self.segments, self.sample_rate),
             "turns": [
                 {
                     "speaker_id": turn.speaker_id,
@@ -167,10 +172,11 @@ class KokoroOnnxSynthesizer:
         gap_s: float,
         improve_publish: bool,
     ) -> SynthResult:
-        pieces: list[np.ndarray] = []
+        speakers, index_of = roster(turns, cast)
+        pieces: list[tuple[int, np.ndarray]] = []
         rendered: list[SynthTurn] = []
         sample_rate: int | None = None
-        for index, turn in enumerate(turns):
+        for turn in turns:
             assignment = resolve_turn(turn, cast)
             try:
                 raw_audio, raw_rate = self._kokoro.create(
@@ -192,9 +198,7 @@ class KokoroOnnxSynthesizer:
                 rate = sample_rate
             if audio.ndim != 1:
                 raise ValueError(f"expected mono samples from kokoro-onnx, got shape {audio.shape}")
-            if index and gap_s > 0.0:
-                pieces.append(np.zeros(int(round(sample_rate * gap_s)), dtype=np.float32))
-            pieces.append(audio)
+            pieces.append((index_of[turn.speaker_id], audio))
             rendered.append(
                 SynthTurn(
                     speaker_id=turn.speaker_id,
@@ -209,17 +213,26 @@ class KokoroOnnxSynthesizer:
             )
         if sample_rate is None or not pieces:
             raise ValueError("kokoro-onnx produced no audio")
-        mixed = np.concatenate(pieces).astype(np.float32)
-        improved = False
+        gap = np.zeros(int(round(sample_rate * gap_s)), dtype=np.float32) if gap_s > 0.0 else np.zeros(0, dtype=np.float32)
+        mixed, segments = concatenate_turns(pieces, sample_rate, gap)
+        improved_flag = False
         if improve_publish:
             published = improve(mixed, sample_rate)
+            segments = remap_through_improve(
+                segments,
+                trim_start=published.trim_start,
+                trimmed_len=published.trimmed_samples,
+                published_len=int(published.audio.size),
+            )
             mixed = published.audio
             sample_rate = published.sample_rate
-            improved = True
+            improved_flag = True
         return SynthResult(
             audio=mixed,
             sample_rate=sample_rate,
             turns=rendered,
             gap_s=float(gap_s),
-            improved=improved,
+            improved=improved_flag,
+            speakers=speakers,
+            segments=segments,
         )

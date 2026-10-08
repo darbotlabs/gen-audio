@@ -3,12 +3,12 @@ use std::process::{Child, Command, Stdio};
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
-use gen_audio_core::bridge::{self, PythonTool};
-use gen_audio_core::fixture::write_fixture_tone;
 use gen_audio_mcp::http;
-use gen_audio_mcp::Server;
+
+pub mod sidecar_log;
 use serde::Serialize;
-use serde_json::{json, Value};
+#[cfg(debug_assertions)]
+use serde_json::Value;
 use tauri::menu::{Menu, MenuItem};
 use tauri::tray::TrayIconBuilder;
 use tauri::{Manager, WindowEvent};
@@ -35,15 +35,28 @@ fn connector_statuses() -> Vec<gen_audio_connectors::HealthReport> {
     gen_audio_connectors::health_all()
 }
 
+/// Dev/test-only commands (E1 addendum): they serve the labeled fixture deck
+/// and run Python improve on the fixture tone. Compiled, and so registered,
+/// only under debug_assertions; the release exe that `tauri build` makes has
+/// neither (see `invoke_handler`).
+pub const DEV_ONLY_COMMANDS: [&str; 2] = ["viewport_example", "run_fixture_improve"];
+
+#[cfg(debug_assertions)]
 #[tauri::command]
 fn viewport_example() -> Value {
-    serde_json::from_str(include_str!("../../../../schemas/examples/viewport.example.json"))
-        .expect("example viewport is valid json")
+    serde_json::from_str(include_str!(
+        "../../../../schemas/examples/viewport.example.json"
+    ))
+    .expect("example viewport is valid json")
 }
 
+#[cfg(debug_assertions)]
 #[tauri::command]
 fn run_fixture_improve() -> Result<Value, String> {
-    let server = Server::boot();
+    use gen_audio_core::bridge::{self, PythonTool};
+    use gen_audio_core::fixture::write_fixture_tone;
+    use serde_json::json;
+    let server = gen_audio_mcp::Server::boot();
     write_fixture_tone(&server.scratch)?;
     let repo = server.repo.ok_or("repository root not found")?;
     let plan = bridge::plan(
@@ -102,20 +115,40 @@ fn wait_for_handshake(addr: &str) -> bool {
     false
 }
 
-fn spawn_hidden(mut cmd: Command) -> std::io::Result<Child> {
-    cmd.stdin(Stdio::null())
-        .stdout(Stdio::null())
-        .stderr(Stdio::null());
+fn hide_console(cmd: &mut Command) {
     #[cfg(windows)]
     {
         cmd.creation_flags(CREATE_NO_WINDOW);
     }
+    let _ = cmd;
+}
+
+/// Hidden helper process with every stdio stream closed (reg add).
+#[cfg(windows)]
+fn spawn_hidden(mut cmd: Command) -> std::io::Result<Child> {
+    cmd.stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::null());
+    hide_console(&mut cmd);
     cmd.spawn()
 }
 
-fn boot_mcp() -> (McpRuntime, Option<Child>) {
+/// The MCP sidecar, hidden, with its stderr (one line per rejected request,
+/// startup errors) drained into the rotating gen-audio-mcp.log in the app log
+/// dir instead of thrown away (see sidecar_log).
+fn spawn_sidecar(mut cmd: Command, log_dir: Option<PathBuf>) -> std::io::Result<Child> {
+    cmd.stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::piped());
+    hide_console(&mut cmd);
+    let mut child = cmd.spawn()?;
+    if let Some(stderr) = child.stderr.take() {
+        sidecar_log::spawn_pump(stderr, log_dir);
+    }
+    Ok(child)
+}
+
+fn boot_mcp(log_dir: Option<PathBuf>) -> (McpRuntime, Option<Child>) {
+    gen_audio_core::paths::reap_stale_mcp_addr();
     let addr = preferred_addr();
     if http::initialize_handshake(&addr).is_ok() {
+        let _ = gen_audio_core::paths::publish_mcp_addr(&addr);
         return (
             runtime(addr, true, "initialize ok (already listening)", "existing"),
             None,
@@ -124,9 +157,10 @@ fn boot_mcp() -> (McpRuntime, Option<Child>) {
     if let Some(bin) = sidecar_binary() {
         let mut cmd = Command::new(&bin);
         cmd.args(["--http", &addr]);
-        match spawn_hidden(cmd) {
+        match spawn_sidecar(cmd, log_dir) {
             Ok(child) => {
                 if wait_for_handshake(&addr) {
+                    let _ = gen_audio_core::paths::publish_mcp_addr(&addr);
                     register_login_autostart();
                     return (
                         runtime(addr, true, "initialize ok (sidecar)", "sidecar"),
@@ -137,17 +171,25 @@ fn boot_mcp() -> (McpRuntime, Option<Child>) {
                 let _ = child.kill();
                 let _ = child.wait();
             }
-            Err(_) => {}
+            Err(err) => {
+                // The in-process listener still starts below. The sidecar
+                // error has to be visible or a missing binary looks like a
+                // successful boot.
+                eprintln!("gen-audio: MCP sidecar failed to start: {err}");
+            }
         }
     }
-    match http::spawn_loopback(&addr).or_else(|_| http::spawn_loopback("127.0.0.1:0")) {
+    match bind_loopback_range(&addr) {
         Ok(bound) => {
             let text = bound.to_string();
+            let _ = gen_audio_core::paths::publish_mcp_addr(&text);
+            let detail = if text == addr {
+                "initialize ok (in-process)".to_string()
+            } else {
+                format!("{addr} was busy; bound {text}. Clients must use this address.")
+            };
             match http::initialize_handshake(&text) {
-                Ok(_) => (
-                    runtime(text, true, "initialize ok (in-process)", "in-process"),
-                    None,
-                ),
+                Ok(_) => (runtime(text, true, detail, "in-process"), None),
                 Err(err) => (runtime(text, false, err, "in-process"), None),
             }
         }
@@ -187,8 +229,29 @@ fn stop_sidecar(child: &mut Child) {
     let _ = child.wait();
 }
 
+fn bind_loopback_range(preferred: &str) -> std::io::Result<std::net::SocketAddr> {
+    let mut candidates = Vec::new();
+    if !preferred.is_empty() {
+        candidates.push(preferred.to_string());
+    }
+    for port in 8765u16..=8770 {
+        let addr = format!("127.0.0.1:{port}");
+        if !candidates.iter().any(|item| item == &addr) {
+            candidates.push(addr);
+        }
+    }
+    let mut last = std::io::Error::other("no loopback port in 8765-8770 was free");
+    for addr in candidates {
+        match http::spawn_loopback(&addr) {
+            Ok(bound) => return Ok(bound),
+            Err(err) => last = err,
+        }
+    }
+    Err(last)
+}
 
 fn request_quit(app: &tauri::AppHandle) {
+    gen_audio_core::paths::delete_mcp_addr();
     if let Some(state) = app.try_state::<SidecarChild>() {
         if let Ok(mut guard) = state.0.lock() {
             if let Some(child) = guard.as_mut() {
@@ -207,16 +270,28 @@ fn focus_main_window(app: &tauri::AppHandle) {
     }
 }
 
+/// The IPC commands this build registers. Debug builds add DEV_ONLY_COMMANDS;
+/// release builds cannot, because those functions are not compiled there.
+#[cfg(debug_assertions)]
+fn invoke_handler() -> impl Fn(tauri::ipc::Invoke) -> bool + Send + Sync + 'static {
+    tauri::generate_handler![
+        connector_statuses,
+        viewport_example,
+        run_fixture_improve,
+        mcp_status
+    ]
+}
+
+#[cfg(not(debug_assertions))]
+fn invoke_handler() -> impl Fn(tauri::ipc::Invoke) -> bool + Send + Sync + 'static {
+    tauri::generate_handler![connector_statuses, mcp_status]
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     // Placeholder until setup boots MCP (second instance exits in the plugin
     // before setup, so it never starts a second sidecar or tray).
-    let pending = runtime(
-        preferred_addr(),
-        false,
-        "starting",
-        "starting",
-    );
+    let pending = runtime(preferred_addr(), false, "starting", "starting");
 
     let mut builder = tauri::Builder::default();
 
@@ -237,14 +312,9 @@ pub fn run() {
     let app = builder
         .manage(Mutex::new(pending))
         .manage(SidecarChild(Mutex::new(None)))
-        .invoke_handler(tauri::generate_handler![
-            connector_statuses,
-            viewport_example,
-            run_fixture_improve,
-            mcp_status
-        ])
+        .invoke_handler(invoke_handler())
         .setup(move |app| {
-            let (mcp, child) = boot_mcp();
+            let (mcp, child) = boot_mcp(app.path().app_log_dir().ok());
             let tooltip = format!("Gen-Audio MCP {} ({})", mcp.addr, mcp.mode);
             if let Ok(mut guard) = app.state::<Mutex<McpRuntime>>().lock() {
                 *guard = mcp;
@@ -269,7 +339,7 @@ pub fn run() {
                     _ => {}
                 })
                 .build(app);
-            
+
             Ok(())
         })
         .on_window_event(|window, event| {
@@ -285,6 +355,7 @@ pub fn run() {
 
     app.run(|app, event| {
         if let tauri::RunEvent::Exit = event {
+            gen_audio_core::paths::delete_mcp_addr();
             if let Some(state) = app.try_state::<SidecarChild>() {
                 if let Ok(mut guard) = state.0.lock() {
                     if let Some(child) = guard.as_mut() {
@@ -294,6 +365,90 @@ pub fn run() {
             }
         }
     });
+}
+
+#[cfg(test)]
+mod sidecar_boot {
+    use super::boot_mcp;
+    use std::fs;
+    use std::path::PathBuf;
+    use std::process::Command;
+
+    const TEST_NAME: &str = "sidecar_boot::sidecar_spawn_failure_is_logged_and_boot_continues";
+
+    fn fake_sidecar_path() -> PathBuf {
+        std::env::current_exe()
+            .expect("current_exe")
+            .parent()
+            .expect("exe dir")
+            .join("gen-audio-mcp")
+    }
+
+    #[test]
+    fn sidecar_spawn_failure_is_logged_and_boot_continues() {
+        if std::env::var("GEN_AUDIO_DESKTOP_BOOT_MCP").ok().as_deref() == Some("1") {
+            let fake = fake_sidecar_path();
+            if fake.is_file() {
+                #[cfg(unix)]
+                {
+                    use std::os::unix::fs::PermissionsExt;
+                    let mode = fs::metadata(&fake).expect("fake meta").permissions().mode();
+                    if mode & 0o111 != 0 {
+                        eprintln!("gen-audio: refusing to replace executable {}", fake.display());
+                        std::process::exit(2);
+                    }
+                }
+                let _ = fs::remove_file(&fake);
+            }
+            fs::write(&fake, b"not an executable sidecar").expect("write fake sidecar");
+            let (runtime, child) = boot_mcp(None);
+            let _ = fs::remove_file(&fake);
+            println!("mode={}", runtime.mode);
+            println!("handshake={}", runtime.handshake_ok);
+            println!("child={}", child.is_some());
+            let _ = std::io::Write::flush(&mut std::io::stdout());
+            let ok = runtime.mode == "in-process" && child.is_none();
+            std::process::exit(if ok { 0 } else { 3 });
+        }
+
+        let work = std::env::temp_dir().join(format!("gen-audio-desktop-boot-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&work);
+        fs::create_dir_all(&work).expect("work dir");
+        let addr_file = work.join("mcp.addr");
+        let output = Command::new(std::env::current_exe().expect("current_exe"))
+            .args(["--exact", TEST_NAME, "--nocapture"])
+            .env("GEN_AUDIO_DESKTOP_BOOT_MCP", "1")
+            .env("GEN_AUDIO_MCP_ADDR", "127.0.0.1:0")
+            .env("GEN_AUDIO_WORK_DIR", &work)
+            .env("GEN_AUDIO_MCP_ADDR_FILE", &addr_file)
+            .output()
+            .expect("re-exec the desktop test harness");
+        let _ = fs::remove_file(fake_sidecar_path());
+        let _ = fs::remove_dir_all(&work);
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        assert!(
+            output.status.success(),
+            "child status {:?}\nstdout:\n{stdout}\nstderr:\n{stderr}",
+            output.status
+        );
+        assert!(
+            stderr.contains("gen-audio: MCP sidecar failed to start:"),
+            "spawn failure was not logged\nstderr:\n{stderr}"
+        );
+        assert!(
+            stdout.contains("mode=in-process"),
+            "boot did not continue in-process\nstdout:\n{stdout}\nstderr:\n{stderr}"
+        );
+        assert!(
+            stdout.contains("handshake=true"),
+            "in-process listener did not handshake\nstdout:\n{stdout}\nstderr:\n{stderr}"
+        );
+        assert!(
+            stdout.contains("child=false"),
+            "a failed spawn still returned a child\nstdout:\n{stdout}"
+        );
+    }
 }
 
 fn tray_rgba() -> tauri::image::Image<'static> {

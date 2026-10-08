@@ -1,5 +1,7 @@
 /** Filename and sidecar harvest. Renames stay in the window. */
 
+import { surfaceUiError } from "./play-control";
+
 export interface HarvestedNames {
   semantic: string;
   face: string;
@@ -26,7 +28,8 @@ export async function harvestNames(wavUrl: string, sidecarUrl?: string): Promise
           source = "sidecar";
         }
       }
-    } catch {
+    } catch (error) {
+      surfaceUiError(error, "sidecar harvest");
       source = "filename-only";
     }
   }

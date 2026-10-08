@@ -6,12 +6,15 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "test": "node --import tsx --test tests/*.test.ts src/clock-bind.test.ts"
   },
   "dependencies": {
     "@tauri-apps/api": "^2.1.1"
   },
   "devDependencies": {
+    "ajv": "^8.20.0",
+    "tsx": "^4.23.15",
     "typescript": "~5.6.3",
     "vite": "^6.0.7"
   }

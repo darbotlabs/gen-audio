@@ -4,12 +4,14 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 from pathlib import Path
 
 from gen_audio.artifacts import publish_copy
 from gen_audio.audio_io import write_wav
 from gen_audio.cast import load_cast_map, read_script
+from gen_audio.library_manifest import OUTSIDE, file_facts, label_work_dir_paths, outside_repo_label
 from gen_audio.synth_kokoro_onnx import KokoroOnnxSynthesizer, resolve_model_paths
 
 
@@ -35,6 +37,31 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
+# Default repo root for the sidecar's input paths: the checkout this module runs from.
+REPO_ROOT = Path(__file__).resolve().parents[3]
+
+
+def sidecar_payload(manifest: dict, subtype: str, inputs: dict[str, Path], repo_root: Path) -> dict:
+    """The JSON written next to the WAV: the synth result, the WAV subtype, and
+    the input files as provenance: repo-relative inside the repo, an
+    ``<outside-repo>/...`` label outside it (never ``../`` or absolute: the
+    sidecar can ship in dist), with each outside file's sha256 and size in
+    ``outside_repo``."""
+    payload = dict(manifest)
+    payload["wav_subtype"] = subtype
+    labels = {name: outside_repo_label(os.path.abspath(os.fspath(path)), os.path.abspath(os.fspath(repo_root))) for name, path in inputs.items()}
+    payload["inputs"] = labels
+    outside = {labels[name]: file_facts(Path(path)) for name, path in inputs.items() if labels[name].startswith(OUTSIDE + "/")}
+    if outside:
+        payload["outside_repo"] = dict(sorted(outside.items()))
+    # C1: the writer holds the same rule the sync does: every recorded path
+    # resolves from the repo root or is a label with facts.
+    problems = label_work_dir_paths(payload, Path(repo_root), None, {}, "sidecar")
+    if problems:
+        raise ValueError("; ".join(problems))
+    return payload
+
+
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     try:
@@ -49,8 +76,8 @@ def main(argv: list[str] | None = None) -> int:
         subtype = "PCM_16" if result.improved else "FLOAT"
         write_wav(args.output, result.audio, result.sample_rate, subtype=subtype)
         manifest_path = args.output.with_suffix(".json")
-        payload = result.manifest()
-        payload["wav_subtype"] = subtype
+        inputs = {"script": args.script, "cast_map": args.cast_map, "model": model_path, "voices": voices_path, "output": args.output}
+        payload = sidecar_payload(result.manifest(), subtype, inputs, REPO_ROOT)
         manifest_path.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
         durable_wav = publish_copy(args.output, args.artifact_dir)
         durable_manifest = publish_copy(manifest_path, args.artifact_dir)

@@ -1,0 +1,588 @@
+{
+  "cards": [
+    {
+      "adaptive": {
+        "$schema": "http://adaptivecards.io/schemas/adaptive-card.json",
+        "body": [
+          {
+            "text": "kokoro-onnx weights are not bundled.",
+            "type": "TextBlock",
+            "wrap": true
+          }
+        ],
+        "type": "AdaptiveCard",
+        "version": "1.5"
+      },
+      "body": {
+        "engineId": "kokoro_onnx",
+        "status": "weights_absent",
+        "summary": "The Python SDK can synthesize when GEN_AUDIO_KOKORO_MODEL and GEN_AUDIO_KOKORO_VOICES point at local files. Those weights are not in this repo."
+      },
+      "id": "engine-kokoro",
+      "kind": "EngineStatus",
+      "title": "kokoro-onnx",
+      "uid": "ga:card:wgi2proc543zzqzfa2ydlfbnl4"
+    },
+    {
+      "body": {
+        "engineId": "vibevoice",
+        "status": "external",
+        "summary": "Compare slot for VibeVoice 1.5B (Alice/Frank in the 2026-10-06 notes). No adapter and no weights in this app."
+      },
+      "id": "engine-vibevoice",
+      "kind": "EngineStatus",
+      "title": "VibeVoice",
+      "uid": "ga:card:bvm7yk6rqz5ir4ms5oej62rhra"
+    },
+    {
+      "body": {
+        "engineId": "magpie",
+        "status": "external",
+        "summary": "Compare slot for Magpie TTS (Sofia/Jason in the 2026-10-06 notes). No adapter and no weights in this app."
+      },
+      "id": "engine-magpie",
+      "kind": "EngineStatus",
+      "title": "Magpie",
+      "uid": "ga:card:fijqhsk7xhpcgehxdeexal6jnm"
+    },
+    {
+      "body": {
+        "engineId": "pocket_tts",
+        "status": "external",
+        "summary": "Kyutai Pocket TTS, used in place of PersonaPlex when its weights are unavailable. No adapter in this app."
+      },
+      "id": "engine-pocket",
+      "kind": "EngineStatus",
+      "title": "Pocket TTS",
+      "uid": "ga:card:nmfqip53e5thxk43egqjzl27da"
+    },
+    {
+      "body": {
+        "engineId": "kokoro_dayour",
+        "status": "library",
+        "summary": "dayour/kokoro torch runtime. Its real Library WAV and rev 3 cube ship here. Not vendored; this repo has no synth adapter."
+      },
+      "id": "engine-kokoro-dayour",
+      "kind": "EngineStatus",
+      "title": "dayour/kokoro",
+      "uid": "ga:card:zoap44kodcb55zvwsw5cld4qwm"
+    },
+    {
+      "body": {
+        "engineId": "misaki",
+        "status": "library",
+        "summary": "misaki is grapheme-to-phoneme for Kokoro. G2P only: it emits phonemes, not a waveform. Its audio is the misaki→kokoro clip."
+      },
+      "id": "engine-misaki",
+      "kind": "EngineStatus",
+      "title": "misaki",
+      "uid": "ga:card:axbliqbwn7uidcc4pjfbivmlli"
+    },
+    {
+      "body": {
+        "authenticated": false,
+        "connectorId": "mcp",
+        "detail": "Stateless tool server. No vendor credential.",
+        "mode": "local"
+      },
+      "id": "conn-mcp",
+      "kind": "ConnectorStatus",
+      "title": "MCP",
+      "uid": "ga:card:3hv5wsdt3mrcylczexvlnfk6li"
+    },
+    {
+      "body": {
+        "authenticated": false,
+        "connectorId": "acp",
+        "detail": "ACP agent. sessionId exists because the protocol requires it.",
+        "mode": "local"
+      },
+      "id": "conn-acp",
+      "kind": "ConnectorStatus",
+      "title": "ACP",
+      "uid": "ga:card:pwlbnygt4dzqdyvwc6fwj6basy"
+    },
+    {
+      "body": {
+        "authenticated": false,
+        "connectorId": "harness",
+        "detail": "Plans tools and writes a JSONL trace. Does not invent speech.",
+        "mode": "local"
+      },
+      "id": "conn-harness",
+      "kind": "ConnectorStatus",
+      "title": "Harness",
+      "uid": "ga:card:ihkozqfhv44hffgriz6cu2rqre"
+    },
+    {
+      "body": {
+        "authenticated": false,
+        "connectorId": "copilot",
+        "detail": "GitHub Models bridge. Mock until a token is set and GEN_AUDIO_CONNECTOR_LIVE=1.",
+        "mode": "mock"
+      },
+      "id": "conn-copilot",
+      "kind": "ConnectorStatus",
+      "title": "Copilot",
+      "uid": "ga:card:oxeufq3ckwj4dxcvnv2uyih7ce"
+    },
+    {
+      "body": {
+        "authenticated": false,
+        "connectorId": "claude",
+        "detail": "Anthropic Messages API. Claude Code CLI stays off unless GEN_AUDIO_CLAUDE_CODE_CLI=1.",
+        "mode": "mock"
+      },
+      "id": "conn-claude",
+      "kind": "ConnectorStatus",
+      "title": "Claude",
+      "uid": "ga:card:tg4uitpjeeazn7rnuxtxyxag2m"
+    },
+    {
+      "body": {
+        "authenticated": false,
+        "connectorId": "gpt",
+        "detail": "OpenAI chat completions. Mock without OPENAI_API_KEY.",
+        "mode": "mock"
+      },
+      "id": "conn-gpt",
+      "kind": "ConnectorStatus",
+      "title": "GPT",
+      "uid": "ga:card:vyjhtyqvyqntcapxjbpgdhdd7i"
+    },
+    {
+      "body": {
+        "authenticated": false,
+        "connectorId": "gemini",
+        "detail": "Gemini generateContent. Mock without an API key.",
+        "mode": "mock"
+      },
+      "id": "conn-gemini",
+      "kind": "ConnectorStatus",
+      "title": "Gemini",
+      "uid": "ga:card:yzvustpx2xm6tnm2skebvrr46i"
+    },
+    {
+      "body": {
+        "accent": "General American",
+        "agentName": "Anton",
+        "disclaimer": "Persona config for Anton on voice model kokoro-onnx. No audio of this persona yet; not a podcast render.",
+        "domain": "Desktop app and SDK layout",
+        "notPodcast": true,
+        "personaId": "anton",
+        "purpose": "Host a Gen-Audio briefing",
+        "refs": [
+          "persona:anton"
+        ],
+        "spectrogram2d": "none",
+        "spectrogram3d": "none",
+        "tone": "measured",
+        "traits": "Low-mid pitch, even pace, short pauses. Not a connector model.",
+        "voiceModel": "kokoro_onnx"
+      },
+      "id": "profile-anton",
+      "kind": "VoiceProfile",
+      "title": "Anton",
+      "uid": "ga:card:tpwzqqirpudx6ovxgar7wts2dy"
+    },
+    {
+      "body": {
+        "accent": "General American",
+        "agentName": "Alice",
+        "disclaimer": "Persona config for Alice on voice model kokoro-onnx. No audio of this persona yet; not a podcast render.",
+        "domain": "SDK onboarding",
+        "notPodcast": true,
+        "personaId": "alice",
+        "purpose": "Walk through a labeled example",
+        "refs": [
+          "kokoro-pack:af_heart",
+          "persona:alice"
+        ],
+        "spectrogram2d": "none",
+        "spectrogram3d": "none",
+        "tone": "warm",
+        "traits": "Persona Alice is the agent name. Kokoro pack id af_heart is a reference on this profile, not the Voice selector.",
+        "voiceModel": "kokoro_onnx"
+      },
+      "id": "profile-alice",
+      "kind": "VoiceProfile",
+      "title": "Alice",
+      "uid": "ga:card:qulz3iikyxho672tdit55u6zeu"
+    },
+    {
+      "body": {
+        "accent": "General American",
+        "agentName": "Khortana",
+        "disclaimer": "Persona config for Khortana on voice model kokoro-onnx. No audio of this persona yet; not a podcast render.",
+        "domain": "Product critique",
+        "notPodcast": true,
+        "personaId": "khortana",
+        "purpose": "Offer a contrasting take",
+        "refs": [
+          "persona:khortana"
+        ],
+        "spectrogram2d": "none",
+        "spectrogram3d": "none",
+        "tone": "bright",
+        "traits": "Higher placement and a quicker glide. Not a TTS model id.",
+        "voiceModel": "kokoro_onnx"
+      },
+      "id": "profile-khortana",
+      "kind": "VoiceProfile",
+      "title": "Khortana",
+      "uid": "ga:card:f34lg4dv277pdlfsede7sr7ulm"
+    },
+    {
+      "body": {
+        "accent": "General American",
+        "agentName": "Rocky",
+        "disclaimer": "Persona config for Rocky on voice model kokoro-onnx. No audio of this persona yet; not a podcast render.",
+        "domain": "Studio banter",
+        "notPodcast": true,
+        "personaId": "rocky",
+        "purpose": "Short reactions between turns",
+        "refs": [
+          "persona:rocky"
+        ],
+        "spectrogram2d": "none",
+        "spectrogram3d": "none",
+        "tone": "gravel",
+        "traits": "Low pitch and a narrow band. Not a TTS model id.",
+        "voiceModel": "kokoro_onnx"
+      },
+      "id": "profile-rocky",
+      "kind": "VoiceProfile",
+      "title": "Rocky",
+      "uid": "ga:card:pj4ogcnj42gzli7ql2daqz53em"
+    },
+    {
+      "adaptive": {
+        "body": [
+          {
+            "text": "Real synth: kokoro-onnx · 374.8s · cube attached",
+            "type": "TextBlock",
+            "wrap": true
+          },
+          {
+            "facts": [
+              {
+                "title": "Duration",
+                "value": "374.766 s"
+              },
+              {
+                "title": "SR",
+                "value": "24000"
+              },
+              {
+                "title": "inv-HDR",
+                "value": "0.097"
+              }
+            ],
+            "type": "FactSet"
+          }
+        ],
+        "type": "AdaptiveCard",
+        "version": "1.5"
+      },
+      "body": {
+        "cubeJsonUrl": "/library/library_kokoro_onnx_cube3d.json",
+        "cubePngUrl": "/library/library_kokoro_onnx_cube3d.png",
+        "duration_s": 374.766,
+        "engineId": "kokoro_onnx",
+        "inv_hdr": 0.09737,
+        "sample_rate": 24000,
+        "sidecarUrl": "/library/library_kokoro_onnx.synth.json",
+        "status": "ok",
+        "summary": "Real 6.2 min Gen-Audio briefing @ 24 kHz. 18 turns, 816 words. Not a fixture.",
+        "synthesizedSpeech": true,
+        "wavUrl": "/library/library_kokoro_onnx.wav"
+      },
+      "id": "lib-kokoro-onnx",
+      "kind": "LibraryClip",
+      "title": "kokoro-onnx",
+      "uid": "ga:card:mkkpjlcv232f4yyyzkolrvw3yu"
+    },
+    {
+      "adaptive": {
+        "body": [
+          {
+            "text": "Real synth: dayour/kokoro · 375.6s · cube attached",
+            "type": "TextBlock",
+            "wrap": true
+          },
+          {
+            "facts": [
+              {
+                "title": "Duration",
+                "value": "375.625 s"
+              },
+              {
+                "title": "SR",
+                "value": "24000"
+              },
+              {
+                "title": "inv-HDR",
+                "value": "0.065"
+              },
+              {
+                "title": "Cube points",
+                "value": "3600"
+              },
+              {
+                "title": "Cube",
+                "value": "rev 3 · 395 time bins · 0:00–6:15"
+              }
+            ],
+            "type": "FactSet"
+          }
+        ],
+        "type": "AdaptiveCard",
+        "version": "1.5"
+      },
+      "body": {
+        "cubeJsonUrl": "/library/library_kokoro_cube3d.json",
+        "cubePngUrl": "/library/library_kokoro_cube3d.png",
+        "duration_s": 375.625,
+        "engineId": "kokoro_dayour",
+        "inv_hdr": 0.06455033665251082,
+        "sample_rate": 24000,
+        "status": "ok",
+        "summary": "Real dayour/kokoro torch synth — 375.6s Gen-Audio briefing. Inverse-HDR cube attached. Not a fixture.",
+        "synthesizedSpeech": true,
+        "wavUrl": "/library/library_kokoro.wav"
+      },
+      "id": "lib-kokoro",
+      "kind": "LibraryClip",
+      "title": "dayour/kokoro",
+      "uid": "ga:card:a2ti6pijkx6p2qp46yrsaxvwve"
+    },
+    {
+      "adaptive": {
+        "body": [
+          {
+            "text": "Real synth: misaki→kokoro · 139.4s · cube attached",
+            "type": "TextBlock",
+            "wrap": true
+          },
+          {
+            "facts": [
+              {
+                "title": "Duration",
+                "value": "139.375 s"
+              },
+              {
+                "title": "SR",
+                "value": "24000"
+              },
+              {
+                "title": "inv-HDR",
+                "value": "0.070"
+              },
+              {
+                "title": "Cube points",
+                "value": "3600"
+              },
+              {
+                "title": "Cube",
+                "value": "rev 3 · 395 time bins · 0:00–2:19"
+              }
+            ],
+            "type": "FactSet"
+          }
+        ],
+        "type": "AdaptiveCard",
+        "version": "1.5"
+      },
+      "body": {
+        "cubeJsonUrl": "/library/library_genaid_full_misaki_kokoro_cube3d.json",
+        "cubePngUrl": "/library/genaid_full_misaki_kokoro_cube3d.png",
+        "duration_s": 139.375,
+        "engineId": "misaki_kokoro",
+        "inv_hdr": 0.07021075781225594,
+        "sample_rate": 24000,
+        "status": "ok",
+        "summary": "Real misaki→kokoro WAV · genaid_full_misaki_kokoro @ 24 kHz. Inverse-HDR cube attached. Not a fixture.",
+        "synthesizedSpeech": true,
+        "wavUrl": "/library/genaid_full_misaki_kokoro.wav"
+      },
+      "id": "lib-misaki-kokoro",
+      "kind": "LibraryClip",
+      "title": "misaki→kokoro",
+      "uid": "ga:card:n7xzajd6l6oxupq4n5yeh5v4h4"
+    },
+    {
+      "adaptive": {
+        "body": [
+          {
+            "text": "Real synth: VibeVoice-1.5B · Alice + Frank · 247.1s · cube attached",
+            "type": "TextBlock",
+            "wrap": true
+          },
+          {
+            "facts": [
+              {
+                "title": "Duration",
+                "value": "247.067 s"
+              },
+              {
+                "title": "SR",
+                "value": "24000"
+              },
+              {
+                "title": "Voices",
+                "value": "Alice, Frank"
+              },
+              {
+                "title": "inv-HDR",
+                "value": "0.067"
+              },
+              {
+                "title": "Cube points",
+                "value": "3600"
+              },
+              {
+                "title": "Cube",
+                "value": "rev 3 · 399 time bins · 0.619 s/bin · 0:00–4:06"
+              }
+            ],
+            "type": "FactSet"
+          }
+        ],
+        "type": "AdaptiveCard",
+        "version": "1.5"
+      },
+      "body": {
+        "cubeJsonUrl": "/library/library_bitdot_braille_vibevoice_cube3d.json",
+        "cubePngUrl": "/library/bitdot_braille_vibevoice_cube3d.png",
+        "duration_s": 247.0667,
+        "engineId": "vibevoice",
+        "inv_hdr": 0.0667773777452339,
+        "sample_rate": 24000,
+        "status": "ok",
+        "summary": "Real VibeVoice-1.5B podcast · Alice + Frank · bitdot braille @ 24 kHz. Inverse-HDR cube attached. Not a fixture.",
+        "synthesizedSpeech": true,
+        "wavUrl": "/library/bitdot_braille_vibevoice.wav"
+      },
+      "id": "lib-bitdot-braille-vibevoice",
+      "kind": "LibraryClip",
+      "title": "Bitdot braille (VibeVoice-1.5B)",
+      "uid": "ga:card:hf2ojkdfxizvznvyckuzxrgzay"
+    },
+    {
+      "body": {
+        "engineId": "magpie",
+        "status": "unavailable",
+        "summary": "GGUF weights exist on box; magpie-tts.cpp not built. No fake audio.",
+        "synthesizedSpeech": false
+      },
+      "id": "lib-magpie",
+      "kind": "LibraryClip",
+      "title": "Magpie",
+      "uid": "ga:card:z2ghwc3rentj2grxbsbp5najzy"
+    },
+    {
+      "body": {
+        "engineId": "vibevoice",
+        "status": "unavailable",
+        "summary": "1.5B safetensors present but no verified runnable synth harness this pass.",
+        "synthesizedSpeech": false
+      },
+      "id": "lib-vibevoice",
+      "kind": "LibraryClip",
+      "title": "VibeVoice",
+      "uid": "ga:card:hyvutp3odbc2myw6ej22ov2a2e"
+    },
+    {
+      "body": {
+        "engineId": "pocket_tts",
+        "status": "unavailable",
+        "summary": "pocket_tts not installed. Prior wrong-topic teaser not reused.",
+        "synthesizedSpeech": false
+      },
+      "id": "lib-pocket",
+      "kind": "LibraryClip",
+      "title": "Pocket TTS",
+      "uid": "ga:card:w4o2cnrusd3h5rqtjv7hs6jd5q"
+    },
+    {
+      "body": {
+        "accent": "General American",
+        "agentName": "Optimus Timelarp",
+        "disclaimer": "Persona config for Optimus Timelarp on voice model kokoro-onnx. No audio of this persona yet; not a podcast render.",
+        "domain": "Product / A-E stamps",
+        "notPodcast": true,
+        "personaId": "optimus",
+        "purpose": "Gate and harden product stamps",
+        "refs": [
+          "persona:optimus",
+          "tts:kokoro_onnx",
+          "cube:library_cube_explainer",
+          "clip:lib-cube-explainer"
+        ],
+        "spectrogram2d": "none",
+        "spectrogram3d": "none",
+        "synthesizedSpeech": false,
+        "tone": "assertive",
+        "traits": "Decisive, honest, screenshot-proof. AP-7 hard kill. Not a TTS model id.",
+        "voiceModel": "kokoro_onnx"
+      },
+      "id": "profile-optimus",
+      "kind": "VoiceProfile",
+      "title": "Optimus Timelarp",
+      "uid": "ga:card:4qprunbbtl3h3teawtaq5agmc4"
+    },
+    {
+      "adaptive": {
+        "body": [
+          {
+            "text": "Real synth: kokoro-onnx · 157.1s · cube attached",
+            "type": "TextBlock",
+            "wrap": true
+          },
+          {
+            "facts": [
+              {
+                "title": "Duration",
+                "value": "157.134 s"
+              },
+              {
+                "title": "SR",
+                "value": "24000"
+              },
+              {
+                "title": "inv-HDR",
+                "value": "0.070"
+              }
+            ],
+            "type": "FactSet"
+          }
+        ],
+        "type": "AdaptiveCard",
+        "version": "1.5"
+      },
+      "body": {
+        "cubeJsonUrl": "/library/library_cube_explainer_kokoro_onnx_cube3d.json",
+        "cubePngUrl": "/library/library_cube_explainer_kokoro_onnx_cube3d.png",
+        "duration_s": 157.134,
+        "engineId": "kokoro_onnx",
+        "faceName": "Cube explainer",
+        "inv_hdr": 0.06963625142871165,
+        "sample_rate": 24000,
+        "semanticName": "Spectrogram cube explainer · Optimus AgentVoice",
+        "sidecarUrl": "/library/library_cube_explainer_kokoro_onnx.synth.json",
+        "status": "ok",
+        "summary": "Real kokoro-onnx podcast explaining spectrogram cubes in Gen-Audio. Not a fixture.",
+        "synthesizedSpeech": true,
+        "title": "Cube explainer (kokoro-onnx)",
+        "wavUrl": "/library/library_cube_explainer_kokoro_onnx.wav"
+      },
+      "id": "lib-cube-explainer",
+      "kind": "LibraryClip",
+      "title": "Cube explainer",
+      "uid": "ga:card:72pxivh23dgi6hruzry7hzykbu"
+    }
+  ],
+  "columns": 3,
+  "title": "Darbot Gen-Audio",
+  "version": "1.0"
+}
