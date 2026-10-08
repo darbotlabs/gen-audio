@@ -113,15 +113,25 @@ await import("../src/main.ts");
 const render = await import("../src/render.ts");
 const { loadLibraryCatalog } = await import("../src/library-assets.ts");
 
+// N-M1: readiness waits poll against a wall-clock deadline (Date.now() is not
+// mocked; only setInterval/setTimeout are), as main-env-seam.test.ts does. A
+// fixed count of event-loop turns measures CPU luck: under load the dynamic
+// imports and fetch stubs resolve after the turns run out ("got 0").
+const READY_MS = 15_000;
+
 async function waitForCards(min = 1): Promise<HTMLElement> {
   const board = happy.document.querySelector("#board") as unknown as HTMLElement;
   assert.ok(board, "#board from index.html");
-  for (let i = 0; i < 400; i += 1) {
+  const started = Date.now();
+  const deadline = started + READY_MS;
+  let turns = 0;
+  while (Date.now() < deadline) {
     if (board.querySelectorAll(".card").length >= min) return board;
     await new Promise((r) => setImmediate(r));
-    if (i % 5 === 4) mock.timers.tick(1);
+    turns += 1;
+    if (turns % 5 === 0) mock.timers.tick(1);
   }
-  assert.fail(`main.ts never rendered ${min} cards (got ${board.querySelectorAll(".card").length})`);
+  assert.fail(`main.ts never rendered ${min} cards in ${Date.now() - started} ms / ${turns} turns (got ${board.querySelectorAll(".card").length})`);
 }
 
 function resetFaces(board: HTMLElement): void {
@@ -227,7 +237,8 @@ test("L2/B8: syncCubeChrome passes the bound cube uid into fillCubeGlyph (not nu
   assert.ok(tile?.dataset.cubeJson, "lib-misaki-kokoro has cubeJson after decorate");
   // Clicking the tile selects and opens the cube (main.ts selectTile → openCube → syncCubeChrome).
   click(tile!);
-  for (let i = 0; i < 40; i += 1) {
+  const deadline = Date.now() + READY_MS;
+  while (Date.now() < deadline) {
     await new Promise((r) => setImmediate(r));
     mock.timers.tick(5);
     const slot = happy.document.querySelector("#cube-glyph");
