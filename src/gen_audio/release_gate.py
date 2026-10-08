@@ -13,10 +13,11 @@ _FORBIDDEN = re.compile(
 _SKIP_KEYS = {"sample_rate", "samples", "n_samples"}
 # Stub words in shipped strings. Case-insensitive, so "FIXTURE", "placeholder",
 # "TODO stub" and "Sample clip (preview)" all fail the gate (AP-OPT-1).
-# Scanned inside quoted strings, not as a raw file substring: `placeholder=`
-# and `.placeholder` are attribute and property names, not stub copy.
+# Scanned inside quoted strings. A placeholder= attribute, a .placeholder
+# property and a ::placeholder selector are syntax, not stub copy, even when
+# a script quotes them.
 _STUB_TEXT = re.compile(
-    r"placeholder|\bfixture\b|todo stub|sample clip \(preview\)",
+    r"(?<![\w.:-])placeholder(?!\s*=)|\bfixture\b|todo stub|sample clip \(preview\)",
     re.IGNORECASE,
 )
 # Honest copy and ids. "Not a fixture." is the opposite of a stub label.

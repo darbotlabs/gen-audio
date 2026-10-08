@@ -280,3 +280,50 @@ def test_dist_scan_catches_stub_strings_in_any_case(tmp_path):
     )
     title_hits = dist_hits(bundle)
     assert any("todo stub" in hit.lower() for hit in title_hits), title_hits
+
+
+def test_dist_scan_allows_placeholder_syntax_and_rejects_stub_text(tmp_path):
+    """A quoted placeholder= attribute, .placeholder, and ::placeholder are not stubs.
+
+    Each row is one quoted string. The syntax rows must produce no hit. The
+    stub rows must. A pattern that matches every occurrence of "placeholder"
+    fails the three syntax rows.
+    """
+    bundle = tmp_path / "dist"
+    assets = bundle / "assets"
+    library = bundle / "library"
+    assets.mkdir(parents=True)
+    library.mkdir()
+    (bundle / "index.html").write_text("<p>ok</p>", encoding="utf-8")
+    (library / "assets.json").write_text(
+        json.dumps(
+            {
+                "assets": [
+                    {
+                        "legacy_id": "engine-pocket",
+                        "honesty": {"fixture": False},
+                        "display": {"title": "Pocket TTS", "label": "Pocket"},
+                        "body": {
+                            "id": "engine-pocket",
+                            "kind": "EngineStatus",
+                            "body": {"summary": "No adapter in this app."},
+                        },
+                    }
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+    rows = (
+        ('const html = \'<input placeholder="name">\';', False),
+        ('const prop = ".placeholder";', False),
+        ('const css = "input::placeholder { color: gray }";', False),
+        ('const title = "placeholder clip";', True),
+        ('const title = "FIXTURE";', True),
+        ('const title = "TODO stub";', True),
+        ('const title = "Sample clip (preview)";', True),
+    )
+    for source, stub in rows:
+        (assets / "app.js").write_text(source, encoding="utf-8")
+        hits = dist_hits(bundle)
+        assert bool(hits) is stub, f"{source!r} -> {hits}"
