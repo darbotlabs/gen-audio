@@ -645,7 +645,7 @@ pub fn ui_flip(args: &Value) -> Result<Value, (i32, String, Option<Value>)> {
             || (!has_face && has_flipped && args.get("flipped").and_then(Value::as_bool) == Some(true)));
     let (to, warning) = if bare_section || back_section {
         let section = section.unwrap();
-        let face = face_for_deprecated_section(section)?;
+        let face = face_for_deprecated_section(&view, section)?;
         let code = if bare_section {
             "deprecated_bare_section"
         } else {
@@ -706,21 +706,60 @@ pub fn ui_flip(args: &Value) -> Result<Value, (i32, String, Option<Value>)> {
     Ok(payload)
 }
 
-/// Q1: a deprecated `section` names the face that renders that section.
-fn face_for_deprecated_section(section: &str) -> Result<&str, (i32, String, Option<Value>)> {
-    match section {
-        "identity" | "honesty" | "clip" => Ok("clip"),
-        "cube" => Ok("cube"),
-        "layers" => Ok("layers"),
-        "spectrogram" => Ok("spectrogram"),
-        "relations" => Ok("relations"),
-        "model" => Ok("model"),
-        "cubes" | "model_cubes" => Ok("cubes"),
-        "connector" => Ok("connector"),
-        "profile" => Ok("profile"),
-        "persona" => Ok("persona"),
-        other => Err((-32602, format!("unknown section {other}"), None)),
+/// Q1: a deprecated `section` names the face on this view that renders it.
+/// The face id comes from the view's own applicable faces, not a fixed id.
+fn face_for_deprecated_section(
+    view: &str,
+    section: &str,
+) -> Result<String, (i32, String, Option<Value>)> {
+    let faces = applicable_face_ids(view);
+    if let Some(face) = faces.iter().find(|id| face_renders_section(id, section)) {
+        return Ok((*face).clone());
     }
+    // Contract §1: when `cubes` or `relations` is omitted, that section is
+    // rendered on the model face. Other kinds do not move an omitted section.
+    if faces.iter().any(|id| id == "model") {
+        let rendered_on_model = match section {
+            "cube" => !faces.iter().any(|id| id == "cubes"),
+            "relations" => !faces.iter().any(|id| id == "relations"),
+            _ => false,
+        };
+        if rendered_on_model {
+            return Ok("model".to_string());
+        }
+    }
+    Err((-32602, format!("unknown section {section}"), None))
+}
+
+fn applicable_face_ids(view: &str) -> Vec<String> {
+    viewport::snapshot_global()["views"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .find(|item| item["id"].as_str() == Some(view))
+        .and_then(|item| item["faces"].as_array().cloned())
+        .unwrap_or_default()
+        .iter()
+        .filter_map(|face| face["id"].as_str().map(str::to_string))
+        .collect()
+}
+
+/// Sections each face id renders (contract §1). A tile only uses the faces it has.
+fn face_renders_section(face_id: &str, section: &str) -> bool {
+    matches!(
+        (face_id, section),
+        ("clip", "identity" | "honesty" | "clip")
+            | ("cube", "cube" | "identity" | "honesty")
+            | ("layers", "layers")
+            | ("spectrogram", "spectrogram" | "identity" | "honesty")
+            | ("relations", "relations")
+            | ("model", "identity" | "honesty" | "model")
+            | ("cubes", "cubes" | "model_cubes")
+            | ("connector", "identity" | "honesty" | "connector")
+            | ("profile", "identity" | "honesty" | "profile")
+            | ("persona", "persona")
+            | ("video", "identity" | "honesty" | "video")
+    )
 }
 
 fn write_stderr_line(line: &str) {
@@ -2226,11 +2265,51 @@ mod tests {
         assert!(plain.get("warnings").is_none(), "{plain}");
     }
 
+    /// Q1. `section` selects the face that renders it on this tile, not a
+    /// hard-coded `clip`. Each row succeeds with one warning and one stderr line.
+    #[test]
+    fn deprecated_section_follows_the_face_that_renders_it() {
+        let _viewport = fresh_viewport();
+        let rows = [
+            ("lib-kokoro", "clip"),
+            ("lib-magpie", "clip"),
+            ("engine-kokoro", "model"),
+            ("engine-misaki", "model"),
+            ("conn-mcp", "connector"),
+            ("profile-anton", "profile"),
+        ];
+        for (tile, face) in rows {
+            let (bare, bare_err) = stderr_during(|| {
+                ui_flip(&json!({"tileId": tile, "section": "honesty"}))
+            });
+            let bare = bare.unwrap_or_else(|err| panic!("{tile} bare honesty: {err:?}"));
+            assert_eq!(bare["face_id"], face, "{tile} bare face");
+            assert_eq!(bare["warnings"].as_array().map(Vec::len), Some(1), "{tile} {bare}");
+            assert_eq!(bare["warnings"][0]["code"], "deprecated_bare_section", "{tile}");
+            let bare_lines = stderr_lines(&bare_err);
+            assert_eq!(bare_lines.len(), 1, "{tile} bare stderr: {bare_err:?}");
+            assert!(bare_lines[0].contains("deprecated_bare_section"), "{tile} {bare_err}");
+            assert!(!bare_err.contains("deprecated_back_section"), "{tile} {bare_err}");
+
+            let (backed, back_err) = stderr_during(|| {
+                ui_flip(&json!({"tileId": tile, "face": "back", "section": "honesty"}))
+            });
+            let backed = backed.unwrap_or_else(|err| panic!("{tile} back+honesty: {err:?}"));
+            assert_eq!(backed["face_id"], face, "{tile} back face");
+            assert_eq!(backed["warnings"].as_array().map(Vec::len), Some(1), "{tile} {backed}");
+            assert_eq!(backed["warnings"][0]["code"], "deprecated_back_section", "{tile}");
+            let back_lines = stderr_lines(&back_err);
+            assert_eq!(back_lines.len(), 1, "{tile} back stderr: {back_err:?}");
+            assert!(back_lines[0].contains("deprecated_back_section"), "{tile} {back_err}");
+            assert!(!back_err.contains("deprecated_bare_section"), "{tile} {back_err}");
+        }
+    }
+
     fn stderr_lines(text: &str) -> Vec<&str> {
         text.lines().filter(|line| !line.is_empty()).collect()
     }
 
-    fn stderr_during(f: impl FnOnce() -> Value) -> (Value, String) {
+    fn stderr_during<T>(f: impl FnOnce() -> T) -> (T, String) {
         use std::sync::Mutex;
         static LOCK: Mutex<()> = Mutex::new(());
         let _guard = LOCK.lock().unwrap_or_else(|poison| poison.into_inner());
