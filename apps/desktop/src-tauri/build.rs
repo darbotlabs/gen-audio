@@ -11,6 +11,10 @@ const DEBUG_COMMANDS: &[&str] = &[
 ];
 
 fn main() {
+    // Release embeds only capabilities/default.json. An empty capabilities
+    // list would embed every file in capabilities/, including dev.json and
+    // dev-fixtures.json. tauri.conf.json lists only "default". Debug builds
+    // merge the fixture capabilities; the handlers stay cfg(debug_assertions).
     let debug = std::env::var_os("CARGO_CFG_DEBUG_ASSERTIONS").is_some();
     let commands = if debug {
         DEBUG_COMMANDS
@@ -19,8 +23,12 @@ fn main() {
     };
     let mut attributes = tauri_build::Attributes::new()
         .app_manifest(tauri_build::AppManifest::new().commands(commands));
-    if !debug {
-        // capabilities/dev-fixtures.json grants the debug-only commands.
+    if debug {
+        std::env::set_var(
+            "TAURI_CONFIG",
+            r#"{"app":{"security":{"capabilities":["default","dev","dev-fixtures"]}}}"#,
+        );
+    } else {
         attributes = attributes.capabilities_path_pattern("./capabilities/default.json");
     }
     tauri_build::try_build(attributes).expect("failed to run tauri-build");

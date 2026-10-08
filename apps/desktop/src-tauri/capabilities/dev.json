@@ -1,0 +1,6 @@
+{
+  "identifier": "dev",
+  "description": "Debug-only fixture improve. Release builds do not embed this capability.",
+  "windows": ["main"],
+  "permissions": ["allow-run-fixture-improve"]
+}
