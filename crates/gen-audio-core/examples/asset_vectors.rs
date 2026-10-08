@@ -491,7 +491,12 @@ fn main() {
     let mut retitled_v0 = v0.clone();
     retitled_v0["manifest"]["clips"][0]["title"] = json!("Renamed golden clip");
     let retitled_after = migrate_to_v1(&retitled_v0).expect("retitled migration");
+    // E4: a cube JSON that records the sha256 of a different WAV is refused.
+    let mut foreign_cube = v0.clone();
+    foreign_cube["manifest"]["clips"][0]["cube"] = json!({"jsonUrl": "/library/golden_cube3d.json", "pngUrl": "/library/golden_cube3d.png"});
+    foreign_cube["cube_docs"] = json!({"golden_cube3d.json": {"source_sha256": "0".repeat(64), "cube_revision": 3, "sample_rate": 24000, "duration_s": 1.0}});
     let migrations = vec![
+        json!({"name": "cube_made_from_another_wav", "before": foreign_cube, "after": null, "error": code(migrate_to_v1(&foreign_cube))}),
         json!({"name": "v0_manifest_clip_to_v1", "synthetic_media": "golden.wav = 1.000 s 24 kHz mono 16-bit silent PCM WAV (48044 bytes, all-zero samples)", "before": v0, "after": after, "error": null}),
         json!({"name": "v0_rename_keeps_uid", "before": retitled_v0, "after": retitled_after, "error": null}),
         json!({"name": "unknown_major_rejected", "before": {"schema_version": "2.0.0", "assets": []}, "after": null, "error": code(migrate_to_v1(&json!({"schema_version": "2.0.0", "assets": []})))}),

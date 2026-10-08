@@ -18,6 +18,7 @@ const ASSETS: &str = include_str!("../../../apps/desktop/public/library/assets.j
 const VIEWPORT: &str = include_str!("../../../schemas/examples/viewport.example.json");
 const RELEASE_VIEWPORT: &str = include_str!("../../../schemas/examples/viewport.release.json");
 const DEV_ASSETS: &str = include_str!("../../../schemas/asset-object/fixtures/assets.dev.json");
+const MEDIA_LOCK: &str = include_str!("../../../schemas/asset-object/media.lock.json");
 
 fn json(text: &str) -> Value {
     serde_json::from_str(text).expect("json")
@@ -131,12 +132,12 @@ fn rounding_vectors_match() {
     // (3,771,216 / 96 = 39283.5) would round to 39284.
     assert_eq!(bin_frames_inferred(157.134, 24_000, 96).unwrap(), 39_283);
     assert_eq!((3_771_216u64 * 2 + 96) / (2 * 96), 39_284);
-    let fixtures = json(FIXTURES);
-    assert_eq!(
-        fixtures["legacy_index"]["cube_ihdr:lib-cube-explainer.cube"],
-        "ga:cube_ihdr:bcuw4m76pyqanslfiugnvlxnda",
-        "lib-cube-explainer cube uid is pinned by the B1' formula"
-    );
+    // E4: every Library cube is rev 3 with downsample_sf_st and a hop, so none
+    // takes the inferred branch any more; the formula stays pinned by the vectors.
+    let catalog = json(ASSETS);
+    for cube in catalog["assets"].as_array().unwrap().iter().filter(|asset| asset["kind"] == "cube_ihdr") {
+        assert_eq!(cube["provenance"]["params"]["bins_inferred_from_shape"], false, "{}", cube["legacy_id"]);
+    }
 }
 
 #[test]
@@ -209,7 +210,7 @@ fn release_catalog_and_deck_leave_out_dev_fixtures() {
     let mut dev_cards: Vec<String> =
         dev.iter().filter_map(|asset| asset.pointer("/fields/card_id").and_then(Value::as_str).map(str::to_string)).collect();
     dev_cards.sort_unstable();
-    assert_eq!(dev_cards, ["bench-ref", "cube-fixture", "spec-fixture"]);
+    assert_eq!(dev_cards, ["bench-ref", "cast-sample", "cube-fixture", "serve-gateway", "serve-node", "spec-fixture"]);
     // Dev + release is the full migrated set and is valid as one set.
     let mut all = release.clone();
     all.extend(dev);
@@ -243,4 +244,24 @@ fn library_media_hashes_verify_where_present() {
         eprintln!("skipped (not staged here): {missing:?}");
     }
     assert!(verified > 0);
+}
+
+/// E2: media.lock.json pins exactly the WAVs the release catalog hashes, so CI
+/// (no WAVs, build_assets --from-lock) mints the same clip uids.
+#[test]
+fn media_lock_pins_every_library_wav() {
+    let lock = json(MEDIA_LOCK)["media"].as_object().unwrap().clone();
+    let catalog = json(ASSETS);
+    let mut wavs = 0;
+    for asset in catalog["assets"].as_array().unwrap() {
+        for media in asset["media"].as_array().unwrap().iter().filter(|media| media["role"] == "wav") {
+            let path = media["path"].as_str().unwrap();
+            let locked = &lock[path];
+            assert_eq!(locked["sha256"], media["sha256"], "{path}");
+            assert_eq!(locked["bytes"], media["bytes"], "{path}");
+            assert!(locked["bytes"].as_u64().unwrap() < 25 * 1024 * 1024, "{path} is over 25 MB");
+            wavs += 1;
+        }
+    }
+    assert_eq!(wavs, lock.len(), "media.lock.json has entries no clip uses");
 }

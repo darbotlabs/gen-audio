@@ -22,6 +22,7 @@ import { decorateLibraryTiles } from "./livestrip";
 import { profilePreview, type ProfilePreview, type VoiceSelection } from "./profiles";
 import {
   announceCopy,
+  fillModelCubes,
   bindSlideScroll,
   goToSlide,
   goToSlideId,
@@ -102,6 +103,7 @@ function show(documentIn: unknown): void {
   void loadLibraryCatalog(loadDevAssets()).then((catalog) => {
     libraryCatalog = catalog;
     decorateLibraryTiles(board, catalog, (uid) => glyphBadge(uid, { role: "clip", onCopy: announceCopy }));
+    fillModelCubes(board, catalog, { openCube: (url, source) => void openCube(url, source), selectTile });
     syncCubeChrome();
   });
   const n = slides(board).length;
@@ -164,7 +166,7 @@ function syncCubeChrome(): void {
   const meta = getCubeMeta();
   const title = document.querySelector<HTMLElement>("#cube-title");
   if (title) {
-    title.textContent = meta ? meta.title : "Inverse-HDR bitdot cube \u2014 nothing bound";
+    title.textContent = meta ? meta.title : "Inverse-HDR cube \u2014 nothing bound";
   }
   const glyphSlot = document.querySelector<HTMLElement>("#cube-glyph");
   if (glyphSlot) {
@@ -269,8 +271,9 @@ function bindCubeCanvas(): void {
     const fraction = Number(input.value) / 1000;
     // ONE clock: scrubber seeks library audio AND slices cube layers.
     setCubeScrub(fraction);
-    const seeked = cubeClipId ? seekClipFraction(cubeClipId, fraction) : seekActiveFraction(fraction);
-    if (seeked !== "no player") status.textContent = `Shared clock ${Math.round(fraction * 100)}% \u00b7 ${seeked}`;
+    void (cubeClipId ? seekClipFraction(cubeClipId, fraction) : seekActiveFraction(fraction)).then((seeked) => {
+      if (seeked !== "no player" && seeked !== "superseded") status.textContent = `Shared clock ${Math.round(fraction * 100)}% \u00b7 ${seeked}`;
+    });
   });
   onCubeClock((fraction) => {
     const fp = document.querySelector<HTMLInputElement>("#fp-scrub");
@@ -628,7 +631,9 @@ function applyControl(event: { seq?: number; op?: string; args?: Record<string, 
       status.textContent = result === "playing" ? `Playing ${args.tileId}` : result;
     });
     else if (action === "pause") status.textContent = pauseClip(args.tileId);
-    else if (action === "seek") status.textContent = seekClip(args.tileId, Number(args.seconds));
+    else if (action === "seek") void seekClip(args.tileId, Number(args.seconds)).then((result) => {
+      if (result !== "superseded") status.textContent = result;
+    });
   } else if (event.op === "sidepane") {
     applySidepane({
       agents: Array.isArray(args.agents) ? args.agents.map(String) : undefined,
@@ -679,8 +684,8 @@ function connectControl(): void {
 
 void loadShippedDocument().then(refreshConnectors).then(show);
 // Test hook: scrubs the cube and ONLY the clip the cube is bound to (never whatever played last).
-(window as unknown as { __genAudioScrub?: (f: number) => string }).__genAudioScrub = (fraction: number) => {
+(window as unknown as { __genAudioScrub?: (f: number) => Promise<string> }).__genAudioScrub = (fraction: number) => {
   setCubeScrub(fraction, { silent: true });
-  return cubeClipId ? seekClipFraction(cubeClipId, fraction) : "no cube clip";
+  return cubeClipId ? seekClipFraction(cubeClipId, fraction) : Promise.resolve("no cube clip");
 };
 connectControl();

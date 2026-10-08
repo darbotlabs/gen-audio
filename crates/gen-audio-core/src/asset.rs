@@ -74,6 +74,7 @@ pub const CLAIMS: &[&str] = &[
     "engine_unavailable",
     "g2p_only",
     "status_only",
+    "sample_content",
 ];
 
 const BASE32: &[u8; 32] = b"abcdefghijklmnopqrstuvwxyz234567";
@@ -894,11 +895,13 @@ fn check_required_media(kind: &str, envelope: &Value) -> Result<(), AssetError> 
     Ok(())
 }
 
-/// Claims that mark dev/test-only assets (fixture tones, reference numbers).
-pub const DEV_FIXTURE_CLAIMS: [&str; 2] = ["fixture_tone", "reference_only"];
+/// Claims that mark dev/test-only assets: fixture tones, reference numbers,
+/// and sample content (a sample cast script, unprobed placeholder endpoints).
+pub const DEV_FIXTURE_CLAIMS: [&str; 3] = ["fixture_tone", "reference_only", "sample_content"];
 
-/// True for an asset that ships only in dev/test builds (the fixture cards
-/// `spec-fixture`, `cube-fixture` and `bench-ref` today): `honesty.fixture`
+/// True for an asset that ships only in dev/test builds (the cards
+/// `spec-fixture`, `cube-fixture`, `bench-ref`, `cast-sample`, `serve-node`
+/// and `serve-gateway` today): `honesty.fixture`
 /// is true or a claim is in `DEV_FIXTURE_CLAIMS`. Release `assets.json` and
 /// `viewport.release.json` leave these out (VITE_GEN_AUDIO_FIXTURES=1 brings
 /// the example deck back in dev).

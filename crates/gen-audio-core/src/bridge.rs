@@ -237,6 +237,43 @@ fn tail(text: &str) -> String {
     }
 }
 
+/// The env vars a real synth reads.
+pub const KOKORO_ENV: [&str; 2] = ["GEN_AUDIO_KOKORO_MODEL", "GEN_AUDIO_KOKORO_VOICES"];
+static KOKORO_ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+/// Test support: clears the `GEN_AUDIO_KOKORO_*` vars for one test and puts
+/// them back on drop, so a developer shell with real models set cannot start
+/// a real synth from a unit test (PR #5 review fix 6; verification E3). One
+/// process-wide lock, so every crate's tests in a binary share it.
+#[doc(hidden)]
+pub struct NoKokoroEnv {
+    saved: Vec<(&'static str, Option<std::ffi::OsString>)>,
+    _lock: std::sync::MutexGuard<'static, ()>,
+}
+
+impl NoKokoroEnv {
+    #[allow(clippy::new_without_default)]
+    pub fn new() -> Self {
+        let lock = KOKORO_ENV_LOCK.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+        let saved = KOKORO_ENV.iter().map(|name| (*name, std::env::var_os(name))).collect();
+        for name in KOKORO_ENV {
+            std::env::remove_var(name);
+        }
+        Self { saved, _lock: lock }
+    }
+}
+
+impl Drop for NoKokoroEnv {
+    fn drop(&mut self) {
+        for (name, value) in &self.saved {
+            match value {
+                Some(value) => std::env::set_var(name, value),
+                None => std::env::remove_var(name),
+            }
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -285,8 +322,7 @@ mod tests {
             .join("../..")
             .canonicalize()
             .unwrap();
-        std::env::remove_var("GEN_AUDIO_KOKORO_MODEL");
-        std::env::remove_var("GEN_AUDIO_KOKORO_VOICES");
+        let _env = NoKokoroEnv::new();
         let err = plan(
             PythonTool::Synth,
             &repo,

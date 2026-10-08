@@ -919,3 +919,13 @@ th, td { text-align: left; padding: 0.12rem 0.25rem; border-bottom: 1px solid va
 .spec-strip.is-beyond .spec-strip-label { color: #ff8a3d; }
 /* The live strip replaces the static cube thumbnail on the tile; the cube itself is on the Cube tab. */
 .library-tile .spec-strip[data-state="ready"] ~ .cube-thumb { display: none; }
+
+/* Voice model card back: Status / Cube tabs (E4). */
+.back-tabs { display: flex; gap: 0.25rem; flex: 0 0 auto; margin-bottom: 0.25rem; }
+.back-tabs [role="tab"] { padding: 0.12rem 0.5rem; font-size: 0.68rem; }
+.back-tabs [role="tab"][aria-selected="true"] { background: #143528; border-color: var(--accent); color: var(--accent); }
+.engine-back [role="tabpanel"][hidden] { display: none; }
+.model-cubes { overflow: auto; min-height: 0; }
+.model-cube-table { font-size: 0.64rem; }
+.model-cube-table .mono { font-family: ui-monospace, "Cascadia Mono", Consolas, monospace; word-break: break-all; }
+.model-cube-table button { padding: 0.08rem 0.4rem; font-size: 0.64rem; }

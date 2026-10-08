@@ -228,7 +228,7 @@ const LIBRARY: &[LibraryClipMeta] = &[
         status: "ok",
         synthesized_speech: true,
         wav_url: Some("/library/library_kokoro.wav"),
-        cube_json_url: None,
+        cube_json_url: Some("/library/library_kokoro_cube3d.json"),
         sidecar_url: None,
         summary: "Catalog says this clip is a real dayour/kokoro briefing. This process does not open the WAV. No synth adapter in this repo.",
     },

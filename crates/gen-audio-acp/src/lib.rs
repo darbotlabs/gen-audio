@@ -615,38 +615,7 @@ use std::io::{BufRead, Write};
 mod tests {
     use super::*;
 
-    const KOKORO_ENV: [&str; 2] = ["GEN_AUDIO_KOKORO_MODEL", "GEN_AUDIO_KOKORO_VOICES"];
-    static KOKORO_ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
-
-    /// Clears the GEN_AUDIO_KOKORO_* vars for one test and puts them back on
-    /// drop, so a developer shell with real models set cannot start a real
-    /// synth from a unit test (PR #5 review, fix 6).
-    struct NoKokoroEnv {
-        saved: Vec<(&'static str, Option<std::ffi::OsString>)>,
-        _lock: std::sync::MutexGuard<'static, ()>,
-    }
-
-    impl NoKokoroEnv {
-        fn new() -> Self {
-            let lock = KOKORO_ENV_LOCK.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
-            let saved = KOKORO_ENV.iter().map(|name| (*name, std::env::var_os(name))).collect();
-            for name in KOKORO_ENV {
-                std::env::remove_var(name);
-            }
-            Self { saved, _lock: lock }
-        }
-    }
-
-    impl Drop for NoKokoroEnv {
-        fn drop(&mut self) {
-            for (name, value) in &self.saved {
-                match value {
-                    Some(value) => std::env::set_var(name, value),
-                    None => std::env::remove_var(name),
-                }
-            }
-        }
-    }
+    use gen_audio_core::bridge::NoKokoroEnv;
 
     #[test]
     fn handshake_smoke() {
@@ -763,7 +732,7 @@ mod tests {
         let clip = gen_audio_core::asset_catalog::uid_for_legacy("audio_clip", "lib-misaki-kokoro").unwrap();
         let out = handle(
             &agent,
-            json!({"jsonrpc":"2.0","id":1,"method":"session/new","params":{"cwd":".","assets":[clip, "ga:cube_ihdr:6aq6vmw7tnmvlfddf53q27ttc4"]}}),
+            json!({"jsonrpc":"2.0","id":1,"method":"session/new","params":{"cwd":".","assets":[clip, "ga:cube_ihdr:himuxssd74afzm5eeqjfti5ple"]}}),
         )
         .unwrap();
         let result = &out.response.unwrap()["result"];
@@ -775,7 +744,7 @@ mod tests {
             json!(["lib-misaki-kokoro"]),
             json!([clip, clip]),
             json!(vec![clip; 9]),
-            json!("ga:cube_ihdr:6aq6vmw7tnmvlfddf53q27ttc4"),
+            json!("ga:cube_ihdr:himuxssd74afzm5eeqjfti5ple"),
         ] {
             let err = handle(&agent, json!({"jsonrpc":"2.0","id":2,"method":"session/new","params":{"cwd":".","assets":bad}}));
             assert!(err.is_err(), "{bad} should be rejected");

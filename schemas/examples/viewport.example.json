@@ -56,7 +56,29 @@
       "body": {
         "engineId": "pocket_tts",
         "status": "external",
-        "summary": "Kyutai Pocket TTS stand-in used when PersonaPlex weights are unavailable. No adapter in this app."
+        "summary": "Kyutai Pocket TTS, used in place of PersonaPlex when its weights are unavailable. No adapter in this app."
+      }
+    },
+    {
+      "id": "engine-kokoro-dayour",
+      "uid": "ga:card:zoap44kodcb55zvwsw5cld4qwm",
+      "kind": "EngineStatus",
+      "title": "dayour/kokoro",
+      "body": {
+        "engineId": "kokoro_dayour",
+        "status": "library",
+        "summary": "dayour/kokoro torch runtime. Its real Library WAV and rev 3 cube ship here. Not vendored; this repo has no synth adapter."
+      }
+    },
+    {
+      "id": "engine-misaki",
+      "uid": "ga:card:axbliqbwn7uidcc4pjfbivmlli",
+      "kind": "EngineStatus",
+      "title": "misaki",
+      "body": {
+        "engineId": "misaki",
+        "status": "library",
+        "summary": "misaki is grapheme-to-phoneme for Kokoro. G2P only: it emits phonemes, not a waveform. Its audio is the misaki→kokoro clip."
       }
     },
     {
@@ -382,7 +404,7 @@
         "body": [
           {
             "type": "TextBlock",
-            "text": "Real synth: kokoro-onnx \u00b7 374.8s \u00b7 cube attached",
+            "text": "Real synth: kokoro-onnx · 374.8s · cube attached",
             "wrap": true
           },
           {
@@ -417,7 +439,10 @@
         "wavUrl": "/library/library_kokoro.wav",
         "duration_s": 375.625,
         "sample_rate": 24000,
-        "summary": "Real dayour/kokoro torch synth \u2014 375.6s Gen-Audio briefing. Not a fixture."
+        "summary": "Real dayour/kokoro torch synth — 375.6s Gen-Audio briefing. Inverse-HDR cube attached. Not a fixture.",
+        "cubePngUrl": "/library/library_kokoro_cube3d.png",
+        "cubeJsonUrl": "/library/library_kokoro_cube3d.json",
+        "inv_hdr": 0.06455033665251082
       },
       "adaptive": {
         "type": "AdaptiveCard",
@@ -425,8 +450,33 @@
         "body": [
           {
             "type": "TextBlock",
-            "text": "Real synth: dayour/kokoro \u00b7 375.6s",
+            "text": "Real synth: dayour/kokoro · 375.6s · cube attached",
             "wrap": true
+          },
+          {
+            "type": "FactSet",
+            "facts": [
+              {
+                "title": "Duration",
+                "value": "375.625 s"
+              },
+              {
+                "title": "SR",
+                "value": "24000"
+              },
+              {
+                "title": "inv-HDR",
+                "value": "0.065"
+              },
+              {
+                "title": "Cube points",
+                "value": "3600"
+              },
+              {
+                "title": "Cube",
+                "value": "rev 3 · 395 time bins · 0:00–6:15"
+              }
+            ]
           }
         ]
       }
@@ -435,7 +485,7 @@
       "id": "lib-misaki-kokoro",
       "uid": "ga:card:n7xzajd6l6oxupq4n5yeh5v4h4",
       "kind": "LibraryClip",
-      "title": "misaki\u2192kokoro",
+      "title": "misaki→kokoro",
       "body": {
         "engineId": "misaki_kokoro",
         "status": "ok",
@@ -443,7 +493,7 @@
         "wavUrl": "/library/genaid_full_misaki_kokoro.wav",
         "duration_s": 139.375,
         "sample_rate": 24000,
-        "summary": "Real misaki\u2192kokoro WAV \u00b7 genaid_full_misaki_kokoro @ 24 kHz. Inverse-HDR cube attached. Not a fixture.",
+        "summary": "Real misaki→kokoro WAV · genaid_full_misaki_kokoro @ 24 kHz. Inverse-HDR cube attached. Not a fixture.",
         "cubePngUrl": "/library/genaid_full_misaki_kokoro_cube3d.png",
         "cubeJsonUrl": "/library/library_genaid_full_misaki_kokoro_cube3d.json",
         "inv_hdr": 0.07021075781225594
@@ -454,7 +504,7 @@
         "body": [
           {
             "type": "TextBlock",
-            "text": "Real synth: misaki\u2192kokoro \u00b7 139.4s \u00b7 cube attached",
+            "text": "Real synth: misaki→kokoro · 139.4s · cube attached",
             "wrap": true
           },
           {
@@ -470,7 +520,7 @@
               },
               {
                 "title": "inv-HDR",
-                "value": "0.239"
+                "value": "0.070"
               },
               {
                 "title": "Cube points",
@@ -478,7 +528,7 @@
               },
               {
                 "title": "Cube",
-                "value": "rev 2 \u00b7 395 time bins \u00b7 0:00\u20132:19"
+                "value": "rev 3 · 395 time bins · 0:00–2:19"
               }
             ]
           }
@@ -497,7 +547,7 @@
         "wavUrl": "/library/bitdot_braille_vibevoice.wav",
         "duration_s": 247.0667,
         "sample_rate": 24000,
-        "summary": "Real VibeVoice-1.5B podcast \u00b7 Alice + Frank \u00b7 bitdot braille @ 24 kHz. Inverse-HDR cube attached. Not a fixture.",
+        "summary": "Real VibeVoice-1.5B podcast · Alice + Frank · bitdot braille @ 24 kHz. Inverse-HDR cube attached. Not a fixture.",
         "cubePngUrl": "/library/bitdot_braille_vibevoice_cube3d.png",
         "cubeJsonUrl": "/library/library_bitdot_braille_vibevoice_cube3d.json",
         "inv_hdr": 0.0667773777452339
@@ -508,7 +558,7 @@
         "body": [
           {
             "type": "TextBlock",
-            "text": "Real synth: VibeVoice-1.5B \u00b7 Alice + Frank \u00b7 247.1s \u00b7 cube attached",
+            "text": "Real synth: VibeVoice-1.5B · Alice + Frank · 247.1s · cube attached",
             "wrap": true
           },
           {
@@ -528,7 +578,7 @@
               },
               {
                 "title": "inv-HDR",
-                "value": "0.187"
+                "value": "0.067"
               },
               {
                 "title": "Cube points",
@@ -536,7 +586,7 @@
               },
               {
                 "title": "Cube",
-                "value": "rev 1 \u00b7 399 time bins \u00b7 0.619 s/bin \u00b7 0:00\u20134:06"
+                "value": "rev 3 · 399 time bins · 0.619 s/bin · 0:00–4:06"
               }
             ]
           }
@@ -623,9 +673,9 @@
         "cubePngUrl": "/library/library_cube_explainer_kokoro_onnx_cube3d.png",
         "cubeJsonUrl": "/library/library_cube_explainer_kokoro_onnx_cube3d.json",
         "sidecarUrl": "/library/library_cube_explainer_kokoro_onnx.synth.json",
-        "inv_hdr": 0.06963625142864167,
+        "inv_hdr": 0.06963625142871165,
         "title": "Cube explainer (kokoro-onnx)",
-        "semanticName": "Spectrogram cube explainer \u00b7 Optimus AgentVoice",
+        "semanticName": "Spectrogram cube explainer · Optimus AgentVoice",
         "faceName": "Cube explainer"
       },
       "adaptive": {
@@ -634,7 +684,7 @@
         "body": [
           {
             "type": "TextBlock",
-            "text": "Real synth: kokoro-onnx \u00b7 157.1s \u00b7 cube attached",
+            "text": "Real synth: kokoro-onnx · 157.1s · cube attached",
             "wrap": true
           },
           {

@@ -335,7 +335,7 @@ mod tests {
         let raw = include_str!("../../../schemas/examples/viewport.release.json");
         let document: Value = serde_json::from_str(raw).unwrap();
         validate_viewport(&document).unwrap();
-        assert!(document["cards"].as_array().unwrap().iter().all(|card| !matches!(card["id"].as_str(), Some("spec-fixture" | "cube-fixture" | "bench-ref"))));
+        assert!(document["cards"].as_array().unwrap().iter().all(|card| !matches!(card["id"].as_str(), Some("spec-fixture" | "cube-fixture" | "bench-ref" | "cast-sample" | "serve-node" | "serve-gateway"))));
     }
 
     #[test]

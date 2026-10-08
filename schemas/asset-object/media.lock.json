@@ -1,0 +1,40 @@
+{
+  "media": {
+    "bitdot_braille_vibevoice.wav": {
+      "bytes": 11859244,
+      "channels": 1,
+      "frames": 5929600,
+      "sample_rate": 24000,
+      "sha256": "63490e16e5841d4e7db6db5a5800f64c0fabdc76a2544997694708c03726439f"
+    },
+    "genaid_full_misaki_kokoro.wav": {
+      "bytes": 6690044,
+      "channels": 1,
+      "frames": 3345000,
+      "sample_rate": 24000,
+      "sha256": "61b8ca26b3f4759ce643738e2afbc80f7bf2a5eb554c5fedbfbdc2d9bfad3d38"
+    },
+    "library_cube_explainer_kokoro_onnx.wav": {
+      "bytes": 15084944,
+      "channels": 1,
+      "frames": 3771216,
+      "sample_rate": 24000,
+      "sha256": "fefaaf94378f87717a05c7ad97630a3ee527bf37ecfe37f27d8e67913e1473b9"
+    },
+    "library_kokoro.wav": {
+      "bytes": 18030044,
+      "channels": 1,
+      "frames": 9015000,
+      "sample_rate": 24000,
+      "sha256": "8c12bc70c2a2e4ec19c431210b25ad3e9e18cab61a6f0af5774b5027d6d1c462"
+    },
+    "library_kokoro_onnx.wav": {
+      "bytes": 17988808,
+      "channels": 1,
+      "frames": 8994382,
+      "sample_rate": 24000,
+      "sha256": "0c8390299ad40f7d9eea753614f0293630f2c48769e4672ac2472101eb03b25a"
+    }
+  },
+  "note": "Identity facts of the gitignored library WAVs, written by build_assets when every WAV is on disk. CI has no WAVs and runs build_assets --from-lock, which takes these facts for a missing WAV and checks each cube JSON's source_sha256 against them."
+}

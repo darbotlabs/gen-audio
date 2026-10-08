@@ -654,6 +654,9 @@ mod tests {
 
     #[test]
     fn harvest_attaches_a_clip_ref_without_decoding_audio() {
+        // E3: hermetic. With GEN_AUDIO_KOKORO_* set, the synth call below
+        // would start a real synth and the refusal asserts would not hold.
+        let _env = gen_audio_core::bridge::NoKokoroEnv::new();
         let server = Server::boot();
         let harvested = handle(
             &server,
