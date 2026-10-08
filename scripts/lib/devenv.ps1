@@ -27,7 +27,10 @@ function Invoke-Checked {
     # Native stderr (cargo progress) must not become a terminating error
     # when a caller redirects it under $ErrorActionPreference = 'Stop'.
     $ErrorActionPreference = 'Continue'
-    & $file @commandArgs
+    # Through the host (stderr as plain text), so Start-Transcript records it:
+    # Windows PowerShell 5.1 does not transcribe native output written
+    # straight to the console.
+    & $file @commandArgs 2>&1 | ForEach-Object { "$_" } | Out-Host
     $code = $LASTEXITCODE
     if ($code -ne 0) {
         throw "$file $($commandArgs -join ' ') failed with exit $code"
@@ -118,10 +121,29 @@ function Invoke-CargoBinBuild {
     param([Parameter(Mandatory = $true)][string]$Package, [Parameter(Mandatory = $true)][string]$Bin, [string[]]$ExtraArgs = @())
     $cargoArgs = @('build', '-p', $Package, '--bin', $Bin, '--message-format=json-render-diagnostics') + $ExtraArgs
     $ErrorActionPreference = 'Continue'
-    $lines = @(& cargo @cargoArgs)
+    # stdout is cargo's JSON; stderr (diagnostics, progress) goes through the
+    # host as text so a build transcript records it.
+    $lines = New-Object System.Collections.Generic.List[string]
+    & cargo @cargoArgs 2>&1 | ForEach-Object {
+        if ($_ -is [System.Management.Automation.ErrorRecord]) { "$_" | Out-Host } else { $lines.Add([string]$_) }
+    }
     $code = $LASTEXITCODE
     if ($code -ne 0) { throw "cargo $($cargoArgs -join ' ') failed with exit $code" }
-    return Select-CargoBinArtifact -Line $lines -Bin $Bin
+    return Select-CargoBinArtifact -Line $lines.ToArray() -Bin $Bin
+}
+
+function Get-BuildLogPath {
+    # Where a build-tauri-windows.ps1 run saves its transcript:
+    # <Root>/target/logs/build-<12-char HEAD sha>-<yyyyMMdd-HHmmss>.log
+    # ("nogit" in place of the sha outside a git checkout).
+    [CmdletBinding()]
+    [OutputType([string])]
+    param([Parameter(Mandatory = $true)][string]$Root)
+    $ErrorActionPreference = 'Continue'
+    $sha = "$(& git -C $Root rev-parse --short=12 HEAD 2>$null)".Trim()
+    if ($LASTEXITCODE -ne 0 -or -not $sha) { $sha = 'nogit' }
+    $name = 'build-{0}-{1}.log' -f $sha, (Get-Date -Format 'yyyyMMdd-HHmmss')
+    return (Join-Path (Join-Path (Join-Path $Root 'target') 'logs') $name)
 }
 
 function Test-IsWindowsHost {
