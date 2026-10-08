@@ -852,7 +852,235 @@ pub fn validate_envelope(envelope: &Value) -> Result<Minted, AssetError> {
     }
     check_honesty(kind, envelope)?;
     check_required_media(kind, envelope)?;
+    check_speech_facts(kind, envelope)?;
     Ok(minted)
+}
+
+/// Speaker facts live in the unhashed body. Absent is valid (older envelopes).
+/// `"unresolved"` means the clip has no per-line script offsets and nothing was guessed.
+fn check_speech_facts(kind: &str, envelope: &Value) -> Result<(), AssetError> {
+    if kind != "audio_clip" && kind != "cube_ihdr" {
+        return Ok(());
+    }
+    let Some(body) = envelope.get("body").and_then(Value::as_object) else {
+        return Ok(());
+    };
+    let Some(speakers) = body.get("speakers") else {
+        if body.get("segments").is_some() || body.get("speaker_idx").is_some() {
+            return err("bad_speakers", "segments and speaker_idx require speakers");
+        }
+        return Ok(());
+    };
+    match speakers {
+        Value::String(text) if text == "unresolved" => {
+            let segments = body.get("segments").and_then(Value::as_array);
+            let bins = body.get("speaker_idx").and_then(Value::as_array);
+            if segments.is_some_and(|items| !items.is_empty())
+                || bins.is_some_and(|items| !items.is_empty())
+            {
+                return err(
+                    "speakers_unresolved",
+                    "unresolved speakers cannot carry segments or speaker_idx",
+                );
+            }
+            Ok(())
+        }
+        Value::Array(items) => {
+            if items.is_empty() {
+                return err(
+                    "bad_speakers",
+                    "speakers must be \"unresolved\" or a non-empty roster",
+                );
+            }
+            if items.len() > 8 {
+                return err(
+                    "too_many_speakers",
+                    format!("speakers has {} entries (max 8)", items.len()),
+                );
+            }
+            let mut roster = BTreeSet::new();
+            for (index, item) in items.iter().enumerate() {
+                let Some(obj) = item.as_object() else {
+                    return err(
+                        "bad_speakers",
+                        format!("speakers[{index}] must be an object"),
+                    );
+                };
+                if obj
+                    .keys()
+                    .any(|key| !matches!(key.as_str(), "idx" | "persona" | "voice" | "engine"))
+                {
+                    return err(
+                        "bad_speakers",
+                        format!("speakers[{index}] has an unknown field"),
+                    );
+                }
+                let Some(idx) = obj.get("idx").and_then(Value::as_u64) else {
+                    return err(
+                        "bad_speakers",
+                        format!("speakers[{index}].idx must be an integer 0..7"),
+                    );
+                };
+                if idx > 7 {
+                    return err(
+                        "bad_speakers",
+                        format!("speakers[{index}].idx {idx} is outside 0..7"),
+                    );
+                }
+                if !roster.insert(idx) {
+                    return err("bad_speakers", format!("speaker idx {idx} is duplicated"));
+                }
+                for key in ["persona", "voice", "engine"] {
+                    if !obj
+                        .get(key)
+                        .and_then(Value::as_str)
+                        .is_some_and(|text| !text.trim().is_empty())
+                    {
+                        return err(
+                            "bad_speakers",
+                            format!("speakers[{index}].{key} must be a non-empty string"),
+                        );
+                    }
+                }
+            }
+            let Some(segments) = body.get("segments").and_then(Value::as_array) else {
+                return err(
+                    "bad_segment",
+                    "a resolved speaker roster needs a segments array",
+                );
+            };
+            let duration = speech_duration_s(envelope).ok_or(AssetError {
+                code: "segment_exceeds_duration",
+                detail: "segments need body.duration_s or fields.duration_ms".into(),
+            })?;
+            let mut prev_start = f64::NEG_INFINITY;
+            let mut prev_end = f64::NEG_INFINITY;
+            for (index, item) in segments.iter().enumerate() {
+                let Some(obj) = item.as_object() else {
+                    return err(
+                        "bad_segment",
+                        format!("segments[{index}] must be an object"),
+                    );
+                };
+                if obj
+                    .keys()
+                    .any(|key| !matches!(key.as_str(), "speaker_idx" | "start_s" | "end_s"))
+                {
+                    return err(
+                        "bad_segment",
+                        format!("segments[{index}] has an unknown field"),
+                    );
+                }
+                let Some(speaker_idx) = obj.get("speaker_idx").and_then(Value::as_u64) else {
+                    return err(
+                        "bad_segment",
+                        format!("segments[{index}].speaker_idx must be an integer 0..7"),
+                    );
+                };
+                if !roster.contains(&speaker_idx) {
+                    return err(
+                        "bad_segment",
+                        format!("segments[{index}].speaker_idx {speaker_idx} is not in the roster"),
+                    );
+                }
+                let (Some(start), Some(end)) =
+                    (finite_f64(obj.get("start_s")), finite_f64(obj.get("end_s")))
+                else {
+                    return err(
+                        "bad_segment",
+                        format!("segments[{index}] start_s and end_s must be finite numbers"),
+                    );
+                };
+                if start < 0.0 || !(end > start) {
+                    return err(
+                        "bad_segment",
+                        format!("segments[{index}] must have 0 <= start_s < end_s"),
+                    );
+                }
+                if start + 1e-9 < prev_start {
+                    return err(
+                        "segments_unsorted",
+                        format!("segments[{index}] starts before the previous segment"),
+                    );
+                }
+                if start + 1e-9 < prev_end {
+                    return err(
+                        "segments_overlap",
+                        format!("segments[{index}] overlaps the previous segment"),
+                    );
+                }
+                if end > duration + 1e-6 {
+                    return err(
+                        "segment_exceeds_duration",
+                        format!("segments[{index}].end_s {end} exceeds clip duration {duration}"),
+                    );
+                }
+                prev_start = start;
+                prev_end = end;
+            }
+            if kind == "cube_ihdr" {
+                let Some(bins) = body.get("speaker_idx").and_then(Value::as_array) else {
+                    return err(
+                        "bad_speaker_idx",
+                        "a resolved cube needs speaker_idx aligned to time_bins",
+                    );
+                };
+                let time_bins = envelope
+                    .pointer("/fields/time_bins")
+                    .and_then(Value::as_u64)
+                    .unwrap_or(0) as usize;
+                if bins.len() != time_bins {
+                    return err(
+                        "bad_speaker_idx",
+                        format!(
+                            "speaker_idx has {} bins; time_bins is {time_bins}",
+                            bins.len()
+                        ),
+                    );
+                }
+                for (index, bin) in bins.iter().enumerate() {
+                    let Some(idx) = bin.as_u64() else {
+                        return err(
+                            "bad_speaker_idx",
+                            format!("speaker_idx[{index}] must be an integer"),
+                        );
+                    };
+                    if idx == 255 {
+                        continue;
+                    }
+                    if !roster.contains(&idx) {
+                        return err(
+                            "bad_speaker_idx",
+                            format!("speaker_idx[{index}] {idx} is not a roster speaker or 255"),
+                        );
+                    }
+                }
+            }
+            Ok(())
+        }
+        _ => err(
+            "bad_speakers",
+            "speakers must be \"unresolved\" or an array of at most 8",
+        ),
+    }
+}
+
+fn speech_duration_s(envelope: &Value) -> Option<f64> {
+    if let Some(duration) = finite_f64(envelope.pointer("/body/duration_s")) {
+        if duration >= 0.0 {
+            return Some(duration);
+        }
+    }
+    envelope
+        .pointer("/fields/duration_ms")
+        .and_then(Value::as_u64)
+        .map(|ms| ms as f64 / 1000.0)
+}
+
+fn finite_f64(value: Option<&Value>) -> Option<f64> {
+    value
+        .and_then(Value::as_f64)
+        .filter(|number| number.is_finite())
 }
 
 fn check_display(display: Option<&Value>, glyph: &str) -> Result<(), AssetError> {

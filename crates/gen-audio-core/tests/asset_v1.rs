@@ -7,7 +7,7 @@ use gen_audio_core::asset::{
     validate_set, verify_media, MediaCheck, MediaDigest,
 };
 use gen_audio_core::asset_migrate::migrate_to_v1;
-use serde_json::Value;
+use serde_json::{json, Value};
 
 const VECTORS: &str = include_str!("../../../schemas/asset-object/vectors/v1.json");
 const FIXTURES: &str = include_str!("../../../schemas/asset-object/vectors/fixtures_v1.json");
@@ -246,6 +246,7 @@ fn library_media_hashes_verify_where_present() {
     assert!(verified > 0);
 }
 
+<<<<<<< HEAD
 /// E2: media.lock.json pins exactly the WAVs the release catalog hashes, so CI
 /// (no WAVs, build_assets --from-lock) mints the same clip uids.
 #[test]
@@ -387,4 +388,79 @@ fn no_persona_is_bound_to_a_cube_it_does_not_speak_in() {
         assert!(card["body"].get("cubeJsonUrl").is_none(), "{}: persona card links a cube", card["id"]);
         assert_eq!(card["body"]["spectrogram3d"], "none", "{}", card["id"]);
     }
+=======
+fn speaker(idx: u64) -> Value {
+    json!({"idx": idx, "persona": format!("Persona {idx}"), "voice": "af_heart", "engine": "kokoro_onnx"})
+}
+
+#[test]
+fn speech_facts_reject_nine_speakers_overlap_and_overrun() {
+    let catalog = json(ASSETS);
+    let assets = catalog["assets"].as_array().unwrap();
+    let clip = assets
+        .iter()
+        .find(|asset| asset["kind"] == "audio_clip")
+        .unwrap();
+    assert_eq!(clip["body"]["speakers"], "unresolved");
+    validate_envelope(clip).expect("library clip with unresolved speakers");
+
+    let mut nine = clip.clone();
+    nine["body"]["speakers"] = Value::Array((0..9).map(speaker).collect());
+    nine["body"]["segments"] = json!([]);
+    assert_eq!(code(validate_envelope(&nine)), "too_many_speakers");
+
+    let mut overlap = clip.clone();
+    overlap["body"]["speakers"] = json!([speaker(0), speaker(1)]);
+    overlap["body"]["segments"] = json!([
+        {"speaker_idx": 0, "start_s": 0.0, "end_s": 1.0},
+        {"speaker_idx": 1, "start_s": 0.5, "end_s": 1.5}
+    ]);
+    assert_eq!(code(validate_envelope(&overlap)), "segments_overlap");
+
+    let mut unsorted = clip.clone();
+    unsorted["body"]["speakers"] = json!([speaker(0), speaker(1)]);
+    unsorted["body"]["segments"] = json!([
+        {"speaker_idx": 1, "start_s": 2.0, "end_s": 3.0},
+        {"speaker_idx": 0, "start_s": 0.0, "end_s": 1.0}
+    ]);
+    assert_eq!(code(validate_envelope(&unsorted)), "segments_unsorted");
+
+    let mut past = clip.clone();
+    past["body"]["speakers"] = json!([speaker(0)]);
+    past["body"]["segments"] = json!([{"speaker_idx": 0, "start_s": 0.0, "end_s": 1.0e6}]);
+    assert_eq!(code(validate_envelope(&past)), "segment_exceeds_duration");
+
+    let mut guessed = clip.clone();
+    guessed["body"]["segments"] = json!([{"speaker_idx": 0, "start_s": 0.0, "end_s": 1.0}]);
+    assert_eq!(code(validate_envelope(&guessed)), "speakers_unresolved");
+
+    let mut touching = clip.clone();
+    touching["body"]["speakers"] = json!([speaker(0), speaker(1)]);
+    touching["body"]["segments"] = json!([
+        {"speaker_idx": 0, "start_s": 0.0, "end_s": 1.0},
+        {"speaker_idx": 1, "start_s": 1.0, "end_s": 2.0}
+    ]);
+    validate_envelope(&touching).expect("touching segments fit the clip");
+
+    let cube = assets
+        .iter()
+        .find(|asset| asset["kind"] == "cube_ihdr")
+        .unwrap();
+    assert_eq!(cube["body"]["speakers"], "unresolved");
+    let time_bins = cube["fields"]["time_bins"].as_u64().unwrap() as usize;
+    let mut short = cube.clone();
+    short["body"]["speakers"] = json!([speaker(0)]);
+    short["body"]["segments"] = json!([]);
+    short["body"]["speaker_idx"] = Value::Array(vec![json!(255); time_bins - 1]);
+    assert_eq!(code(validate_envelope(&short)), "bad_speaker_idx");
+    short["body"]["speaker_idx"] = Value::Array(vec![json!(255); time_bins]);
+    validate_envelope(&short).expect("silence bins match time_bins");
+
+    let schema = validator();
+    assert!(!schema.is_valid(&nine), "schema allows a ninth speaker");
+    assert!(
+        schema.is_valid(&touching),
+        "schema rejects a 2-speaker clip"
+    );
+>>>>>>> 95f2687 (Unify cube layers with the library generator and record speaker offsets.)
 }

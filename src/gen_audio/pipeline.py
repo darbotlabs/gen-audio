@@ -15,14 +15,28 @@ import numpy as np
 from gen_audio.asr_wer import AsrError, transcribe, word_error_rate
 from gen_audio.assets import asset_object
 from gen_audio.audio_io import read_wav, write_wav
-from gen_audio.cube_layers import layer_score
+from gen_audio.cube_layers import (
+    LAYER_NAMES,
+    CubeParams,
+    compute_layers,
+    downsample_cube,
+    layer_score,
+    layers_to_points,
+    stft_mag,
+)
 from gen_audio.cube_revision import bandwidth_95, measure
 from gen_audio.identity import ms_from_frames, round_half_up
 from gen_audio.improve import improve
+from gen_audio.speakers import (
+    UNRESOLVED,
+    SpeechTimeline,
+    published_segments,
+    remap_through_improve,
+    scale_segments,
+    speaker_idx_bins,
+)
 from gen_audio.spectrogram_strip import colormap, strip, write_png
 from gen_audio.video_render import VideoError, render_clip_mp4
-
-LAYERS = ("signal", "tonality", "confidence", "quality")
 
 
 def duration_seconds(audio: np.ndarray, sample_rate: int) -> float:
@@ -52,6 +66,7 @@ def run_pipeline(
     reference_text: str,
     duration_target_s: float,
     script_asset: dict,
+    speech: SpeechTimeline | None = None,
 ) -> dict:
     """Run improve → spectrogram → cube → compare → video on one WAV."""
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -67,14 +82,25 @@ def run_pipeline(
     )
 
     improved = improve(raw_audio, raw_sr)
+    speech_timeline = _timeline_after_improve(speech, raw_sr, improved)
     speech_s = duration_seconds(improved.audio, improved.sample_rate)
     fitted, padded = fit_duration(improved.audio, improved.sample_rate, duration_target_s)
     duration_s = duration_seconds(fitted, improved.sample_rate)
     fitted_path = out_dir / "fitted.wav"
     write_wav(fitted_path, fitted, improved.sample_rate, subtype="PCM_16")
     # Re-read so the stored duration matches the file on disk, including PCM rounding.
+    written_len = int(fitted.size)
     fitted, fitted_sr = read_wav(fitted_path)
     duration_s = duration_seconds(fitted, fitted_sr)
+    if speech_timeline is not None:
+        segments = speech_timeline.segments
+        if int(fitted.size) != written_len:
+            segments = scale_segments(segments, written_len, int(fitted.size))
+        speech_timeline = SpeechTimeline(
+            speakers=speech_timeline.speakers,
+            segments=segments,
+            sample_rate=int(fitted_sr),
+        )
     wav_asset = asset_object(
         fitted_path,
         kind="wav",
@@ -134,6 +160,7 @@ def run_pipeline(
         engine=engine,
         derived_from=[wav_asset["uid"]],
         source_sha256=wav_asset["sha256"],
+        speech=speech_timeline,
     )
     cube_json_path = out_dir / "cube.json"
     cube_png = out_dir / "cube.png"
@@ -149,7 +176,10 @@ def run_pipeline(
         "time_bins": int(cube_doc["cube_shape_f_t"][1]),
         "freq_bins": int(cube_doc["cube_shape_f_t"][0]),
         "duration_ms": round_half_up(float(duration_s) * 1000.0),
-        "covers_ms": round_half_up(float(cube_doc["cube_covers_s"]) * 1000.0),
+        "covers_ms": min(
+            round_half_up(float(cube_doc["cube_covers_s"]) * 1000.0),
+            round_half_up(float(duration_s) * 1000.0),
+        ),
         "inv_hdr_ppm": round_half_up(float(cube_doc["inv_hdr"]) * 1_000_000.0),
         "cube_revision": 2,
         "n_points": int(cube_doc["n_points"]),
@@ -243,17 +273,16 @@ def run_pipeline(
     }
 
 
-# Library cube revision 2 (scripts/cube_spectrogram_3d.py geometry).
-# freq bins = (n_fft/2+1)//5, time bins = stft_frames//33,
-# bin_seconds = 33*hop/sample_rate, covers = time_bins * bin_seconds.
-# inv_hdr is rms/peak of these samples via cube_revision.measure.
+# Closed form of the long-clip downsample (max 128 x 400 at n_fft 1024 / hop 256).
+# A 3_345_000-sample 24 kHz clip lands on sf=5, st=33. Short clips use a smaller
+# time stride; cube_document asks cube_layers.downsample_cube for the real pair.
 CUBE_N_FFT = 1024
 CUBE_HOP = 256
 CUBE_DOWNSAMPLE = (5, 33)
 
 
 def cube_geometry(n_samples: int, sample_rate: int) -> dict:
-    """Revision-2 binning. ``cube_covers_s`` can be shorter than ``duration_s``."""
+    """Fixed (5, 33) binning used by the shipped long Library clips."""
     hop = CUBE_HOP
     sf, st = CUBE_DOWNSAMPLE
     stft_frames = 1 + int(n_samples) // hop
@@ -281,74 +310,126 @@ def cube_document(
     engine: str,
     derived_from: list[str],
     source_sha256: str = "",
+    speech: SpeechTimeline | None = None,
 ) -> dict:
-    """Inverse-HDR bitdot cube, revision 2, on the samples that were passed in."""
+    """Inverse-HDR bitdot cube on the samples that were passed in.
+
+    Signal, tonality, confidence, quality, the downsample, and ``layer_score``
+    come from :mod:`gen_audio.cube_layers`. ``inv_hdr`` stays
+    :func:`gen_audio.cube_revision.measure` (rms/peak).
+    """
     values = np.asarray(audio, dtype=np.float64).reshape(-1)
-    if values.size < CUBE_N_FFT:
+    rate = int(sample_rate)
+    if values.size == 0 or rate <= 0:
         raise ValueError("audio is too short for a cube")
-    metrics = measure(values, sample_rate)
-    geo = cube_geometry(int(values.size), int(sample_rate))
-    if geo["time_bins"] < 1:
-        raise ValueError("audio is too short for a revision-2 cube")
-    magnitude = _stft_magnitude(values, CUBE_N_FFT, CUBE_HOP)
-    sf, st = CUBE_DOWNSAMPLE
-    freq_bins, time_bins = geo["freq_bins"], geo["time_bins"]
-    cropped = magnitude[: freq_bins * sf, : time_bins * st]
-    grid = cropped.reshape(freq_bins, sf, time_bins, st).mean(axis=(1, 3))
-    signal_layer = _unit(grid)
-    flatness = _frame_flatness(grid)
-    tonality = (1.0 - flatness) * (signal_layer > 1e-4)
-    floor = float(np.percentile(grid, 70))
-    confidence = np.clip(grid / (grid + floor + 1e-12), 0.0, 1.0)
-    quality = 0.5 * signal_layer + 0.5 * np.clip(tonality, 0.0, 1.0)
-    matrices = {
-        "signal": signal_layer,
-        "tonality": np.clip(tonality, 0.0, 1.0),
-        "confidence": confidence,
-        "quality": np.clip(quality, 0.0, 1.0),
-    }
-    layers = {name: _layer_stats(matrices[name]) for name in LAYERS}
-    z_of = {"signal": 0.0, "tonality": 1.0 / 3.0, "confidence": 2.0 / 3.0, "quality": 1.0}
-    points: list[dict] = []
-    for name in LAYERS:
-        points.extend(_preview_points(matrices[name], name, z_of[name], limit=900))
-    source_cells = int(np.count_nonzero(signal_layer > 1e-6))
-    return {
+    params = CubeParams()
+    metrics = measure(values, rate)
+    magnitude = stft_mag(values, n_fft=params.n_fft, hop=params.hop)
+    full = compute_layers(magnitude, rate, params.n_fft)
+    down, sf, st = downsample_cube(full, max_f=params.max_f, max_t=params.max_t)
+    cloud = layers_to_points(down, thresh=params.thresh)
+    x, yy, _z, _rgba, vals, lids = cloud
+    nf, nt = next(iter(down.values())).shape
+    if nf < 1 or nt < 1:
+        raise ValueError("audio is too short for a cube")
+    bin_s = st * params.hop / rate
+    points, stats, counts = [], {}, {}
+    for li, name in enumerate(LAYER_NAMES):
+        mask = lids == li
+        tx, fy, vv = x[mask], yy[mask], vals[mask]
+        counts[name] = int(mask.sum())
+        order = np.argsort(-vv, kind="stable")[: params.per_layer]
+        if len(order):
+            sel = vv[order]
+            lo, hi = float(sel.min()), float(sel.max())
+        for i in order:
+            v = 1.0 if hi <= lo else (float(vv[i]) - lo) / (hi - lo)
+            points.append(
+                {
+                    "t": round(float(tx[i]) / max(nt - 1, 1), 5),
+                    "f": round(float(fy[i]) / max(nf - 1, 1), 5),
+                    "z": li / 3.0,
+                    "v": round(v, 5),
+                    "layer": name,
+                }
+            )
+        mat = full[name]
+        stats[name] = {
+            "mean": float(mat.mean()),
+            "std": float(mat.std()),
+            "p50": float(np.percentile(mat, 50)),
+            "p90": float(np.percentile(mat, 90)),
+            "active_frac": float((mat > 0.2).mean()),
+            "shape": [int(nf), int(nt)],
+        }
+    document = {
         "engine": engine,
         "duration_s": float(duration_s),
-        "sample_rate": int(sample_rate),
+        "sample_rate": rate,
         "inv_hdr": metrics.inv_hdr,
-        "layer_score": layer_score(matrices),
+        "layer_score": layer_score(full),
         "bw95_hz": metrics.bw95_hz,
-        "n_fft": CUBE_N_FFT,
-        "hop": CUBE_HOP,
-        "downsample_sf_st": [sf, st],
-        "stft_frames": geo["stft_frames"],
-        "bin_seconds": geo["bin_seconds"],
-        "cube_shape_f_t": [freq_bins, time_bins],
-        "cube_covers_s": geo["cube_covers_s"],
+        "n_fft": params.n_fft,
+        "hop": params.hop,
+        "downsample_sf_st": [int(sf), int(st)],
+        "stft_frames": int(magnitude.shape[1]),
+        "bin_seconds": bin_s,
+        "cube_shape_f_t": [int(nf), int(nt)],
+        "cube_covers_s": nt * bin_s,
         "cube_revision": 2,
         "n_points": len(points),
-        "n_points_source": source_cells * len(LAYERS),
+        "n_points_source": int(len(x)),
+        "n_points_source_per_layer": counts,
         "source_sha256": source_sha256,
         "axes": {"x": "time bin", "y": "freq bin", "z": "layer (+value)"},
         "legend": {"signal": "blue", "tonality": "green", "confidence": "orange", "quality": "pink"},
-        "layers": layers,
+        "layers": stats,
         "points_preview": points,
         "derived_from": list(derived_from),
     }
+    document.update(_speech_facts(speech, rate, n_bins=int(nt), bin_seconds=bin_s, n_samples=int(values.size)))
+    return document
 
 
-def _stft_magnitude(samples: np.ndarray, n_fft: int, hop: int) -> np.ndarray:
-    """Centered Hann STFT. Frame count is ``1 + n_samples // hop``."""
-    frames = 1 + int(samples.size) // hop
-    padded = np.pad(samples, (n_fft // 2, n_fft // 2 + hop))
-    window = np.hanning(n_fft)
-    shape = (frames, n_fft)
-    strides = (padded.strides[0] * hop, padded.strides[0])
-    view = np.lib.stride_tricks.as_strided(padded, shape=shape, strides=strides)
-    spectrum = np.fft.rfft(view * window, axis=1)
-    return np.abs(spectrum).T
+def _timeline_after_improve(speech: SpeechTimeline | None, raw_sr: int, improved) -> SpeechTimeline | None:
+    """Move concatenation cursors through the publish chain. Pad-at-end comes later."""
+    if speech is None:
+        return None
+    if int(speech.sample_rate) != int(raw_sr):
+        raise ValueError("speech timeline sample rate does not match the raw wav")
+    remapped = remap_through_improve(
+        speech.segments,
+        trim_start=int(improved.trim_start),
+        trimmed_len=int(improved.trimmed_samples),
+        published_len=int(improved.audio.size),
+    )
+    return SpeechTimeline(speakers=list(speech.speakers), segments=remapped, sample_rate=int(improved.sample_rate))
+
+
+def _speech_facts(
+    speech: SpeechTimeline | None,
+    sample_rate: int,
+    *,
+    n_bins: int,
+    bin_seconds: float,
+    n_samples: int,
+) -> dict:
+    """Speakers are unresolved unless a per-line timeline was recorded."""
+    if speech is None:
+        return {"speakers": UNRESOLVED}
+    if int(speech.sample_rate) != int(sample_rate):
+        raise ValueError("speech timeline sample rate does not match the cube wav")
+    return {
+        "speakers": list(speech.speakers),
+        "segments": published_segments(speech.segments, sample_rate),
+        "speaker_idx": speaker_idx_bins(
+            speech.segments,
+            n_bins=n_bins,
+            bin_seconds=bin_seconds,
+            sample_rate=sample_rate,
+            n_samples=n_samples,
+        ),
+    }
 
 
 def compare_clip(
@@ -380,50 +461,6 @@ def compare_clip(
         "duration_s": float(duration_s),
         "derived_from": list(derived_from),
     }
-
-
-def _frame_flatness(grid: np.ndarray) -> np.ndarray:
-    power = np.maximum(grid, 1e-12)
-    geometric = np.exp(np.mean(np.log(power), axis=0))
-    arithmetic = np.mean(power, axis=0)
-    return np.clip(geometric / np.maximum(arithmetic, 1e-12), 0.0, 1.0)
-
-
-def _unit(grid: np.ndarray) -> np.ndarray:
-    peak = float(np.max(grid)) if grid.size else 0.0
-    if peak <= 1e-12:
-        return np.zeros_like(grid)
-    return grid / peak
-
-
-def _layer_stats(grid: np.ndarray) -> dict:
-    flat = grid.reshape(-1)
-    return {
-        "mean": float(np.mean(flat)),
-        "std": float(np.std(flat)),
-        "p50": float(np.percentile(flat, 50)),
-        "p90": float(np.percentile(flat, 90)),
-        "active_frac": float(np.mean(flat > 0.2)),
-        "shape": [int(grid.shape[0]), int(grid.shape[1])],
-    }
-
-
-def _preview_points(grid: np.ndarray, layer: str, z: float, limit: int = 80) -> list[dict]:
-    freq_bins, time_bins = grid.shape
-    coords = [(i, j, float(grid[i, j])) for i in range(freq_bins) for j in range(time_bins)]
-    coords.sort(key=lambda item: item[2], reverse=True)
-    points = []
-    for freq_index, time_index, value in coords[:limit]:
-        points.append(
-            {
-                "t": 0.0 if time_bins <= 1 else time_index / float(time_bins - 1),
-                "f": 0.0 if freq_bins <= 1 else freq_index / float(freq_bins - 1),
-                "z": z,
-                "v": value,
-                "layer": layer,
-            }
-        )
-    return points
 
 
 def _write_cube_png(path: Path, document: dict) -> None:

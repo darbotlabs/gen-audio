@@ -1468,6 +1468,67 @@
         }
       }
     },
+    "speaker_ref": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["idx", "persona", "voice", "engine"],
+      "properties": {
+        "idx": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 7
+        },
+        "persona": {
+          "type": "string",
+          "minLength": 1
+        },
+        "voice": {
+          "type": "string",
+          "minLength": 1
+        },
+        "engine": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "speech_segment": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["speaker_idx", "start_s", "end_s"],
+      "properties": {
+        "speaker_idx": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 7
+        },
+        "start_s": {
+          "type": "number",
+          "minimum": 0
+        },
+        "end_s": {
+          "type": "number",
+          "minimum": 0
+        }
+      }
+    },
+    "speakers_field": {
+      "description": "Resolved per-line speakers, or unresolved when the clip has no script offsets. Never guessed.",
+      "oneOf": [
+        {
+          "type": "string",
+          "enum": ["unresolved"]
+        },
+        {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 8,
+          "items": {
+            "$ref": "#/$defs/speaker_ref"
+          }
+        }
+      ]
+    },
     "audio_clip_body": {
       "type": "object",
       "additionalProperties": false,
@@ -1477,6 +1538,15 @@
         },
         "sample_rate": {
           "type": "integer"
+        },
+        "speakers": {
+          "$ref": "#/$defs/speakers_field"
+        },
+        "segments": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/speech_segment"
+          }
         },
         "wav_url": {
           "type": "string",
@@ -1507,6 +1577,24 @@
         },
         "duration_s": {
           "type": "number"
+        },
+        "speakers": {
+          "$ref": "#/$defs/speakers_field"
+        },
+        "segments": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/speech_segment"
+          }
+        },
+        "speaker_idx": {
+          "type": "array",
+          "description": "One speaker per cube time bin. 255 is silence or a gap. Aligned to bin_seconds.",
+          "items": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 255
+          }
         },
         "bin_seconds": {
           "type": "number"

@@ -144,6 +144,10 @@ pub fn import_pipeline(work: &Path, manifest: &Value) -> Result<Imported, String
         copy_from_work(work, "scripts/script.txt", &folder, "script.txt")?;
     }
 
+    let cube_doc = fs::read_to_string(folder.join("cube.json"))
+        .ok()
+        .and_then(|text| serde_json::from_str::<Value>(&text).ok())
+        .unwrap_or(Value::Null);
     let prefix = format!("generated/{legacy}");
     let engine = manifest
         .get("engine")
@@ -162,6 +166,7 @@ pub fn import_pipeline(work: &Path, manifest: &Value) -> Result<Imported, String
                 false,
                 None,
                 None,
+                &Value::Null,
             )?);
         }
     }
@@ -174,6 +179,7 @@ pub fn import_pipeline(work: &Path, manifest: &Value) -> Result<Imported, String
         true,
         Some(engine),
         voice_model.as_deref(),
+        &cube_doc,
     )?);
     let spec_uid = if let Some(spec) = assets.get("spectrogram") {
         let env = envelope(
@@ -185,6 +191,7 @@ pub fn import_pipeline(work: &Path, manifest: &Value) -> Result<Imported, String
             false,
             None,
             None,
+            &Value::Null,
         )?;
         let uid = env["uid"].as_str().unwrap_or("").to_string();
         envelopes.push(env);
@@ -202,6 +209,7 @@ pub fn import_pipeline(work: &Path, manifest: &Value) -> Result<Imported, String
             false,
             None,
             None,
+            &cube_doc,
         )?;
         let uid = env["uid"].as_str().unwrap_or("").to_string();
         envelopes.push(env);
@@ -215,10 +223,6 @@ pub fn import_pipeline(work: &Path, manifest: &Value) -> Result<Imported, String
     }
     upsert(&root, envelopes)?;
 
-    let cube_doc = fs::read_to_string(folder.join("cube.json"))
-        .ok()
-        .and_then(|text| serde_json::from_str::<Value>(&text).ok())
-        .unwrap_or(Value::Null);
     let wav_sha = wav.get("sha256").and_then(Value::as_str).unwrap_or("");
     let source_sha = cube_doc
         .get("source_sha256")
@@ -448,6 +452,26 @@ fn upsert(root: &Path, incoming: Vec<Value>) -> Result<(), String> {
     Ok(())
 }
 
+/// Copy recorded speaker facts from cube.json. Missing facts stay unresolved.
+fn apply_speech_facts(body: &mut Value, kind: &str, cube: &Value) {
+    let speakers = cube.get("speakers").cloned().unwrap_or(json!("unresolved"));
+    body["speakers"] = speakers.clone();
+    if speakers.as_str() == Some("unresolved") {
+        return;
+    }
+    if let Some(segments) = cube.get("segments") {
+        body["segments"] = segments.clone();
+    }
+    if kind == "cube_ihdr" {
+        if let Some(duration) = cube.get("duration_s") {
+            body["duration_s"] = duration.clone();
+        }
+        if let Some(bins) = cube.get("speaker_idx") {
+            body["speaker_idx"] = bins.clone();
+        }
+    }
+}
+
 fn envelope(
     asset: &Value,
     rel: &str,
@@ -457,6 +481,7 @@ fn envelope(
     synthesized: bool,
     engine: Option<&str>,
     voice_model: Option<&str>,
+    cube: &Value,
 ) -> Result<Value, String> {
     let uid = asset
         .get("uid")
@@ -518,6 +543,9 @@ fn envelope(
         if let Some(duration) = asset.get("duration_s") {
             body["duration_s"] = duration.clone();
         }
+    }
+    if kind == "audio_clip" || kind == "cube_ihdr" {
+        apply_speech_facts(&mut body, kind, cube);
     }
     Ok(json!({
         "schema_version": "1.0.0",

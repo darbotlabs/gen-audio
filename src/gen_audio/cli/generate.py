@@ -11,6 +11,7 @@ from gen_audio.assets import asset_object
 from gen_audio.cast import load_cast_map, read_script
 from gen_audio.pipeline import run_pipeline
 from gen_audio.prompt_script import PromptError, prepare_prompt, write_prepared
+from gen_audio.speakers import SpeakerError, timeline_from_dict
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -43,7 +44,8 @@ def main(argv: list[str] | None = None) -> int:
         turns = read_script(script_path)
         cast = load_cast_map(cast_path)
         raw_path = out_dir / "raw.wav"
-        synthesize(args.engine, turns, cast, raw_path)
+        rendered = synthesize(args.engine, turns, cast, raw_path)
+        speech = timeline_from_dict(rendered["speech"]) if isinstance(rendered, dict) and rendered.get("speech") else None
         manifest = run_pipeline(
             raw_path,
             out_dir=out_dir,
@@ -51,12 +53,13 @@ def main(argv: list[str] | None = None) -> int:
             reference_text=prepared.spoken_text,
             duration_target_s=prepared.duration_s,
             script_asset=script_asset,
+            speech=speech,
         )
         manifest["spokenText"] = prepared.spoken_text
         manifest["speed"] = prepared.speed
         manifest["castSource"] = "persona-voice-map"
         manifest["sampleScript"] = False
-    except (PromptError, EngineRefusal, OSError, ValueError, KeyError, RuntimeError) as exc:
+    except (PromptError, SpeakerError, EngineRefusal, OSError, ValueError, KeyError, RuntimeError) as exc:
         _emit(out_dir, {
             "ok": False,
             "synthesizedSpeech": False,

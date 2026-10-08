@@ -175,6 +175,18 @@ def _synth_kokoro(turns: list[Turn], cast: CastMap, output: Path) -> dict:
         "sample_rate": result.sample_rate,
         "samples": int(result.audio.size),
         "turns": len(result.turns),
+        "speech": {
+            "speakers": result.speakers,
+            "segments": [
+                {
+                    "speaker_idx": segment.speaker_idx,
+                    "start_sample": segment.start_sample,
+                    "end_sample": segment.end_sample,
+                }
+                for segment in result.segments
+            ],
+            "sample_rate": result.sample_rate,
+        },
     }
 
 

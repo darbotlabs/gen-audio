@@ -8,6 +8,7 @@ import pytest
 from gen_audio.asr_wer import AsrError, word_error_rate
 from gen_audio.assets import asset_object, sha256_file
 from gen_audio.audio_io import write_wav
+from gen_audio.cube_layers import library_cube
 from gen_audio.cube_revision import measure
 from gen_audio.identity import mint
 from gen_audio.pipeline import cube_document, cube_geometry, run_pipeline
@@ -28,11 +29,39 @@ def test_cube_duration_matches_the_buffer():
     assert document["inv_hdr"] == measure(audio, rate).inv_hdr
     assert 0.0 < document["layer_score"] < 1.0
     assert document["cube_shape_f_t"][0] == (1024 // 2 + 1) // 5
-    assert document["bin_seconds"] == pytest.approx(33 * 256 / rate)
+    # 1 s at 24 kHz is 94 STFT frames, so the shared downsample uses stride 1.
+    assert document["downsample_sf_st"] == [5, 1]
+    assert document["cube_shape_f_t"][1] == 94
+    assert document["bin_seconds"] == pytest.approx(256 / rate)
     assert document["cube_covers_s"] == pytest.approx(document["cube_shape_f_t"][1] * document["bin_seconds"])
-    assert document["cube_covers_s"] < duration
+    assert document["speakers"] == "unresolved"
+    assert "segments" not in document
+    assert "speaker_idx" not in document
     names = {point["layer"] for point in document["points_preview"]}
     assert names == {"signal", "tonality", "confidence", "quality"}
+
+
+def test_generated_cube_layers_match_library_cube():
+    rate = 24000
+    rng = np.random.default_rng(1)
+    samples = np.arange(rate * 2)
+    audio = (0.2 * np.sin(2 * np.pi * 220 * samples / rate)).astype(np.float64)
+    audio += rng.normal(0, 0.01, audio.size)
+    duration = audio.size / rate
+    generated = cube_document(audio, rate, duration_s=duration, engine="tone", derived_from=["asset-src"])
+    library, _cloud = library_cube(audio, rate, stem="tone", engine="tone", revision=2)
+    assert generated["layers"] == library["layers"]
+    assert generated["layer_score"] == library["layer_score"]
+    assert generated["inv_hdr"] == library["inv_hdr"]
+    assert generated["points_preview"] == library["points_preview"]
+    assert generated["cube_shape_f_t"] == library["cube_shape_f_t"]
+    assert generated["downsample_sf_st"] == library["downsample_sf_st"]
+    assert generated["bin_seconds"] == library["bin_seconds"]
+    assert generated["cube_covers_s"] == library["cube_covers_s"]
+    assert generated["stft_frames"] == library["stft_frames"]
+    assert generated["n_points"] == library["n_points"]
+    assert generated["n_points_source"] == library["n_points_source"]
+    assert generated["n_points_source_per_layer"] == library["n_points_source_per_layer"]
 
 
 def test_library_cube_geometry_matches_the_misaki_clip():
