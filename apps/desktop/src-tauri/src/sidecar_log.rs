@@ -43,9 +43,11 @@ pub fn log_path(dir: &Path, index: usize) -> PathBuf {
 /// `files * max_bytes` bytes on disk).
 ///
 /// A line that cannot be written (a rotation that fails, a closed file) is
-/// never lost silently: the first failure says so once on the desktop's own
-/// stderr, every lost line is counted, and the first write that succeeds
-/// again is preceded by one marker line with the count and the reason.
+/// never lost silently: the first failure of an outage says so once on the
+/// desktop's own stderr, every lost line is counted, and the first write that
+/// succeeds again is preceded by one marker line with the count and the
+/// reason. A failed rename names its paths; the reason is redacted like a log
+/// line, in the notice and in the marker.
 pub struct RotatingLog {
     dir: PathBuf,
     max_bytes: u64,
@@ -54,6 +56,8 @@ pub struct RotatingLog {
     size: u64,
     dropped: u64,
     drop_reason: String,
+    /// Where the one notice per outage goes: the desktop's own stderr.
+    notice: Box<dyn Write + Send>,
 }
 
 impl RotatingLog {
@@ -69,7 +73,14 @@ impl RotatingLog {
             size,
             dropped: 0,
             drop_reason: String::new(),
+            notice: Box::new(io::stderr()),
         })
+    }
+
+    /// Sends the one-time failure notice to `sink` instead of stderr.
+    pub fn notice_to(mut self, sink: impl Write + Send + 'static) -> Self {
+        self.notice = Box::new(sink);
+        self
     }
 
     /// Lines lost since the last successful write (0 once a marker reported them).
@@ -80,11 +91,14 @@ impl RotatingLog {
     pub fn write_line(&mut self, line: &str) -> io::Result<()> {
         let result = self.report_drops().and_then(|()| self.append(line));
         if let Err(err) = &result {
+            // The reason can name the log dir (a home path) and so goes
+            // through the same redactor as every log line, in the marker
+            // and in the notice alike.
+            self.drop_reason = redact(&err.to_string());
             if self.dropped == 0 {
-                eprintln!("gen-audio-desktop: sidecar log write failed ({err}); counting dropped lines until it recovers");
+                let _ = writeln!(self.notice, "gen-audio-desktop: sidecar log write failed ({}); counting dropped lines until it recovers", self.drop_reason);
             }
             self.dropped += 1;
-            self.drop_reason = redact(&err.to_string());
         }
         result
     }
@@ -123,8 +137,11 @@ impl RotatingLog {
         self.file = None;
         let _ = fs::remove_file(log_path(&self.dir, self.files - 1));
         for index in (0..self.files - 1).rev() {
-            match fs::rename(log_path(&self.dir, index), log_path(&self.dir, index + 1)) {
-                Err(err) if err.kind() != io::ErrorKind::NotFound => return Err(err),
+            let (from, to) = (log_path(&self.dir, index), log_path(&self.dir, index + 1));
+            match fs::rename(&from, &to) {
+                Err(err) if err.kind() != io::ErrorKind::NotFound => {
+                    return Err(io::Error::new(err.kind(), format!("rename {} -> {}: {err}", from.display(), to.display())));
+                }
                 _ => {}
             }
         }
@@ -458,6 +475,63 @@ mod tests {
         assert!(marker.contains("rotate failed"), "{marker}");
         assert!(current.ends_with("after recovery\n"), "{current:?}");
         let _ = fs::remove_dir_all(&dir);
+    }
+
+    /// A Write that tests can read back: the notice sink.
+    #[derive(Clone, Default)]
+    struct Captured(std::sync::Arc<std::sync::Mutex<Vec<u8>>>);
+
+    impl Write for Captured {
+        fn write(&mut self, bytes: &[u8]) -> io::Result<usize> {
+            self.0.lock().unwrap().extend_from_slice(bytes);
+            Ok(bytes.len())
+        }
+        fn flush(&mut self) -> io::Result<()> {
+            Ok(())
+        }
+    }
+
+    impl Captured {
+        fn text(&self) -> String {
+            String::from_utf8_lossy(&self.0.lock().unwrap()).into_owned()
+        }
+    }
+
+    /// B2, pinned: an outage says so on stderr exactly once, however many
+    /// lines it drops, and both that notice and the marker's reason go
+    /// through `redact` like any log line. The log dir here holds a home
+    /// path and a `token=` value, and the failed rotation names its paths.
+    #[test]
+    fn an_outage_is_noticed_once_and_its_reason_is_redacted() {
+        let secret = "Zk3Qx9Lm2R";
+        let dir = scratch("notice").join("Users").join("dayour").join(format!("token={secret}"));
+        let notices = Captured::default();
+        let mut log = RotatingLog::open(&dir, 256, FILES).unwrap().notice_to(notices.clone());
+        log.write_line(&format!("first line {}", "x".repeat(200))).unwrap();
+        fs::write(log_path(&dir, 1), "older\n").unwrap();
+        fs::create_dir_all(log_path(&dir, 2).join("blocker")).unwrap();
+        for i in 0..5 {
+            assert!(log.write_line(&format!("lost {i} {}", "y".repeat(100))).is_err(), "rotation should fail");
+        }
+        let said = notices.text();
+        assert_eq!(said.matches("sidecar log write failed").count(), 1, "one notice for 5 lost lines: {said:?}");
+        fs::remove_dir_all(log_path(&dir, 2)).unwrap();
+        log.write_line("after recovery").unwrap();
+        // All files: a long reason can rotate the marker into `.log.1`.
+        let current = log_text(&dir);
+        let marker = current.lines().find(|line| line.contains("sidecar log dropped 5 line(s)")).unwrap_or_else(|| panic!("no drop marker in {current:?}"));
+        for (what, text) in [("marker", marker), ("notice", said.as_str())] {
+            assert!(text.contains("rotate failed") && (text.contains("Users/<user>/token=<redacted>") || text.contains("Users\\<user>\\token=<redacted>")), "{what} names the redacted path: {text:?}");
+            assert!(!text.contains("dayour") && !text.contains(secret), "{what} leaks: {text:?}");
+        }
+        // A second outage is a new one: one more notice, not one per line.
+        let _ = fs::remove_file(log_path(&dir, 2));
+        fs::create_dir_all(log_path(&dir, 2).join("blocker")).unwrap();
+        for _ in 0..3 {
+            let _ = log.write_line(&"z".repeat(200));
+        }
+        assert_eq!(notices.text().matches("sidecar log write failed").count(), 2, "{:?}", notices.text());
+        let _ = fs::remove_dir_all(scratch("notice"));
     }
 
     /// Feeds `input` through `pump` into a fresh log and returns its lines,
