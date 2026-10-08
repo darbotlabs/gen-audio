@@ -49,12 +49,24 @@ $logDir = Join-Path $root ("artifacts\test-logs\{0}-{1}" -f (Get-Date -Format 'y
 New-Item -ItemType Directory -Force -Path $logDir | Out-Null
 $results = New-Object System.Collections.Generic.List[object]
 
+function Add-LogLine {
+    # Append lines to a log as UTF-8 and pass them on. (Tee-Object -Append
+    # writes UTF-16 on Windows PowerShell 5.1, which breaks Select-String.)
+    param([Parameter(Mandatory = $true)][string]$Log, [Parameter(ValueFromPipeline = $true)]$InputObject)
+    process {
+        # Native stderr arrives as ErrorRecords under 5.1; keep the text, not "RemoteException".
+        $line = if ($InputObject -is [System.Management.Automation.ErrorRecord] -and $InputObject.TargetObject -is [string]) { $InputObject.TargetObject } else { "$InputObject" }
+        [System.IO.File]::AppendAllText($Log, $line + [Environment]::NewLine, (New-Object System.Text.UTF8Encoding($false)))
+        $line
+    }
+}
+
 function Invoke-Logged {
     # Run a native command, tee its output to a log, return the exit code.
     param([Parameter(Mandatory = $true)][string]$Log, [Parameter(Mandatory = $true)][string]$File, [string[]]$Arguments = @())
-    "> $File $($Arguments -join ' ')" | Out-File -FilePath $Log -Append -Encoding utf8
+    "> $File $($Arguments -join ' ')" | Add-LogLine -Log $Log | Out-Null
     $ErrorActionPreference = 'Continue'
-    & $File @Arguments 2>&1 | ForEach-Object { "$_" } | Tee-Object -FilePath $Log -Append | Out-Host
+    & $File @Arguments 2>&1 | Add-LogLine -Log $Log | Out-Host
     return $LASTEXITCODE
 }
 
@@ -74,7 +86,7 @@ function Invoke-Step {
     } catch {
         $result = 'FAIL'
         $detail = $_.Exception.Message
-        $detail | Out-File -FilePath $log -Append -Encoding utf8
+        $detail | Add-LogLine -Log $log | Out-Null
     }
     $results.Add([pscustomobject]@{ Step = $Name; Result = $result; Seconds = [int]$watch.Elapsed.TotalSeconds; Detail = $detail })
     Write-Step "== $Name $result $detail"
@@ -177,10 +189,9 @@ Invoke-Step 'Pssa' {
         @(Invoke-ScriptAnalyzer -Path $settings -Settings $settings)
     foreach ($item in $found) {
         $line = '{0}:{1} {2} {3} {4}' -f $item.ScriptName, $item.Line, $item.Severity, $item.RuleName, $item.Message
-        $line | Out-File -FilePath $log -Append -Encoding utf8
-        $line | Out-Host
+        $line | Add-LogLine -Log $log | Out-Host
     }
-    "PSSA findings=$($found.Count)" | Out-File -FilePath $log -Append -Encoding utf8
+    "PSSA findings=$($found.Count)" | Add-LogLine -Log $log | Out-Null
     if ($found.Count -gt 0) { throw "PSScriptAnalyzer findings=$($found.Count)" }
     'findings=0'
 }
@@ -189,7 +200,7 @@ Invoke-Step 'Sprawl' {
     param($log)
     $lines = @(Invoke-SprawlGate -Root $root -Exclude $script:sprawlExcludes)
     $count = [int]$lines[-1]
-    $lines | Select-Object -SkipLast 1 | Tee-Object -FilePath $log -Append | Out-Host
+    $lines | Select-Object -SkipLast 1 | Add-LogLine -Log $log | Out-Host
     if ($count -gt 0) { throw "sprawl findings=$count" }
     'findings=0'
 }
