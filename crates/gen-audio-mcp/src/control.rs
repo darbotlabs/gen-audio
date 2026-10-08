@@ -636,27 +636,51 @@ pub fn ui_flip(args: &Value) -> Result<Value, (i32, String, Option<Value>)> {
             None,
         ));
     }
-    let to = if has_next {
+    let section = args.get("section").and_then(Value::as_str);
+    let bare_section = section.is_some() && !has_next && !has_face && !has_flipped;
+    let back_section = section.is_some()
+        && !bare_section
+        && !has_next
+        && ((has_face && args.get("face").and_then(Value::as_str) == Some("back"))
+            || (!has_face && has_flipped && args.get("flipped").and_then(Value::as_bool) == Some(true)));
+    let (to, warning) = if bare_section || back_section {
+        let section = section.unwrap();
+        let face = face_for_deprecated_section(section)?;
+        let code = if bare_section {
+            "deprecated_bare_section"
+        } else {
+            "deprecated_back_section"
+        };
+        let detail = if bare_section {
+            format!("section \"{section}\" without a face is deprecated; it selects face \"{face}\"")
+        } else {
+            format!("back plus section \"{section}\" is deprecated; it selects face \"{face}\"")
+        };
+        (FlipTo::Face(face.to_string()), Some((code, detail)))
+    } else if has_next {
         if args.get("next").and_then(Value::as_bool) != Some(true) {
             return Err((-32602, "next must be true".into(), None));
         }
-        FlipTo::Next
+        (FlipTo::Next, None)
     } else if let Some(face) = args.get("face").and_then(Value::as_str) {
-        FlipTo::Face(face.to_string())
+        (FlipTo::Face(face.to_string()), None)
     } else {
         let flipped = args.get("flipped").and_then(Value::as_bool).unwrap_or(true);
-        FlipTo::Face(if flipped { "back" } else { "front" }.into())
+        (
+            FlipTo::Face(if flipped { "back" } else { "front" }.into()),
+            None,
+        )
     };
-    let section = args
-        .get("section")
-        .and_then(Value::as_str)
-        .map(str::to_string);
     let mut event = viewport::apply_global(Action::Flip { view, to })
         .map_err(|err| (err.code, err.message, err.data))?;
     let tile = raw.strip_prefix("view:").unwrap_or(raw);
     event["tileId"] = json!(tile);
     if let Some(section) = section {
         event["section"] = json!(section);
+    }
+    if let Some((code, detail)) = &warning {
+        let line = format!("gen-audio-mcp: deprecation: {code}: {detail}");
+        write_stderr_line(&line);
     }
     if let Some(persona) = args.get("personaId").and_then(Value::as_str) {
         if catalog::persona(persona).is_none() {
@@ -676,7 +700,42 @@ pub fn ui_flip(args: &Value) -> Result<Value, (i32, String, Option<Value>)> {
             payload[key] = value.clone();
         }
     }
+    if let Some((code, detail)) = warning {
+        payload["warnings"] = json!([{"code": code, "detail": detail}]);
+    }
     Ok(payload)
+}
+
+/// Q1: a deprecated `section` names the face that renders that section.
+fn face_for_deprecated_section(section: &str) -> Result<&str, (i32, String, Option<Value>)> {
+    match section {
+        "identity" | "honesty" | "clip" => Ok("clip"),
+        "cube" => Ok("cube"),
+        "layers" => Ok("layers"),
+        "spectrogram" => Ok("spectrogram"),
+        "relations" => Ok("relations"),
+        "model" => Ok("model"),
+        "cubes" | "model_cubes" => Ok("cubes"),
+        "connector" => Ok("connector"),
+        "profile" => Ok("profile"),
+        "persona" => Ok("persona"),
+        other => Err((-32602, format!("unknown section {other}"), None)),
+    }
+}
+
+fn write_stderr_line(line: &str) {
+    let text = format!("{line}\n");
+    #[cfg(unix)]
+    {
+        extern "C" {
+            fn write(fd: i32, buf: *const std::ffi::c_void, count: usize) -> isize;
+        }
+        let _ = unsafe { write(2, text.as_ptr() as *const std::ffi::c_void, text.len()) };
+    }
+    #[cfg(not(unix))]
+    {
+        eprintln!("{line}");
+    }
 }
 
 pub fn ui_set_sidepane(args: &Value) -> Result<Value, (i32, String)> {
@@ -2060,5 +2119,101 @@ mod tests {
         assert!(!auto_ops.contains(&"focus"), "{auto_ops:?}");
         assert_eq!(viewport_get()["ui"]["focus"], "lib-kokoro-onnx");
         assert_eq!(viewport_get()["ui"]["clock"]["source"], "lib-kokoro-onnx");
+    }
+
+    /// T17 8b and 8c. Each deprecated call succeeds, carries one warning with
+    /// its own code, and writes one stderr line. The bare form does not also
+    /// report `deprecated_back_section`.
+    #[test]
+    fn t17_section_deprecations_warn_once_and_select_the_face() {
+        let _viewport = fresh_viewport();
+        let (bare, bare_err) = stderr_during(|| {
+            ui_flip(&json!({"tileId": "lib-misaki-kokoro", "section": "honesty"})).unwrap()
+        });
+        assert_eq!(stderr_lines(&bare_err).len(), 1, "{bare_err:?}");
+        assert!(
+            stderr_lines(&bare_err)[0].contains("deprecated_bare_section"),
+            "{bare_err}"
+        );
+        assert!(
+            !bare_err.contains("deprecated_back_section"),
+            "{bare_err}"
+        );
+        let warnings = bare["warnings"].as_array().expect(&bare.to_string());
+        assert_eq!(warnings.len(), 1, "{warnings:?}");
+        assert_eq!(warnings[0]["code"], "deprecated_bare_section");
+        assert!(warnings[0]["detail"].as_str().unwrap().contains("honesty"));
+        assert_eq!(bare["face_id"], "clip");
+        assert_eq!(bare["face_index"], 0);
+        assert_eq!(bare["face_count"], 5);
+        assert_eq!(
+            viewport_get()["ui"]["faces"]["view:lib-misaki-kokoro"]["face_id"],
+            "clip"
+        );
+
+        let (backed, back_err) = stderr_during(|| {
+            ui_flip(&json!({
+                "tileId": "lib-misaki-kokoro",
+                "face": "back",
+                "section": "honesty"
+            }))
+            .unwrap()
+        });
+        assert_eq!(stderr_lines(&back_err).len(), 1, "{back_err:?}");
+        assert!(
+            stderr_lines(&back_err)[0].contains("deprecated_back_section"),
+            "{back_err}"
+        );
+        assert!(
+            !back_err.contains("deprecated_bare_section"),
+            "{back_err}"
+        );
+        let back_warnings = backed["warnings"].as_array().expect(&backed.to_string());
+        assert_eq!(back_warnings.len(), 1, "{back_warnings:?}");
+        assert_eq!(back_warnings[0]["code"], "deprecated_back_section");
+        assert_eq!(backed["face_id"], "clip");
+        assert_eq!(backed["face_index"], 0);
+
+        let plain = ui_flip(&json!({"tileId": "lib-kokoro", "next": true})).unwrap();
+        assert!(plain.get("warnings").is_none(), "{plain}");
+    }
+
+    fn stderr_lines(text: &str) -> Vec<&str> {
+        text.lines().filter(|line| !line.is_empty()).collect()
+    }
+
+    fn stderr_during(f: impl FnOnce() -> Value) -> (Value, String) {
+        use std::sync::Mutex;
+        static LOCK: Mutex<()> = Mutex::new(());
+        let _guard = LOCK.lock().unwrap_or_else(|poison| poison.into_inner());
+        extern "C" {
+            fn pipe(fds: *mut i32) -> i32;
+            fn dup(fd: i32) -> i32;
+            fn dup2(old: i32, new: i32) -> i32;
+            fn close(fd: i32) -> i32;
+            fn read(fd: i32, buf: *mut std::ffi::c_void, count: usize) -> isize;
+        }
+        let mut fds = [0i32; 2];
+        assert_eq!(unsafe { pipe(fds.as_mut_ptr()) }, 0, "pipe");
+        let saved = unsafe { dup(2) };
+        assert!(saved >= 0, "dup");
+        assert_eq!(unsafe { dup2(fds[1], 2) }, 2, "dup2");
+        let value = f();
+        assert_eq!(unsafe { dup2(saved, 2) }, 2, "restore");
+        unsafe {
+            close(fds[1]);
+            close(saved);
+        }
+        let mut buf = Vec::new();
+        let mut tmp = [0u8; 1024];
+        loop {
+            let n = unsafe { read(fds[0], tmp.as_mut_ptr() as *mut std::ffi::c_void, tmp.len()) };
+            if n <= 0 {
+                break;
+            }
+            buf.extend_from_slice(&tmp[..n as usize]);
+        }
+        unsafe { close(fds[0]) };
+        (value, String::from_utf8_lossy(&buf).into_owned())
     }
 }
