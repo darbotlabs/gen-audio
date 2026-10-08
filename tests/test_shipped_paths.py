@@ -285,20 +285,16 @@ PATH_KEYS = frozenset({
     "model_path", "inference_code", "voices_bin", "source", "cast_map", "out",
     "raw_output", "output", "log", "prompt_wav", "script", "python",
 })
-# `model` is a path only when it looks like one (onnx/bin/wav/json/py, or an
-# absolute / ../ / <outside-repo> form). A hub id stays a hub id.
-PATH_EXTENSIONS = (".onnx", ".bin", ".wav", ".json", ".py", ".txt", ".log")
+# `model` is a path unless it is a hub id (exactly org/name, no file
+# extension, nothing by that name in the repo): the generator's own rule.
 
 
 def _is_path_valued(key: str, value: str) -> bool:
+    from gen_audio.library_manifest import model_is_hub_id
+
     if key in PATH_KEYS:
         return True
-    if key == "model" and (
-        value.startswith(("/", "<outside-repo>/", "../", "models/", "forks/"))
-        or value.lower().endswith(PATH_EXTENSIONS)
-    ):
-        return True
-    return False
+    return key == "model" and not model_is_hub_id(value, (REPO,))
 
 
 def _path_prefix(value: str) -> str:
@@ -549,4 +545,42 @@ def test_the_shipped_path_check_refuses_a_dotdot_escape(tmp_path):
         reason = _path_ok(form, {})
         assert reason and "leaves the repo root" in reason, (form, reason)
     assert _path_ok("scripts/../README.md", {}) is None
+
+
+@pytest.mark.parametrize("model", ["VibeVoice-1.5B/model.safetensors", "checkpoints/VibeVoice-1.5B/config.json", "models/demo/VibeVoice-1.5B"])
+def test_a_model_path_that_is_not_a_hub_id_must_resolve_or_be_labelled(tmp_path, model):
+    """C1 Low 2 (M4c and kin): `model` was simply not a path key, so any
+    relative model the run recorded was accepted and never relabelled. Only
+    an exact org/name hub id is exempt; these are paths, and none resolves."""
+    from gen_audio.cli.synth import sidecar_payload
+    from gen_audio.library_manifest import sync_manifest
+
+    repo, library = _work(tmp_path)
+    sidecar = library / "m.synth.json"
+    sidecar.write_text(json.dumps({"engine": "vibevoice", "model": model}, indent=2), encoding="utf-8")
+    with pytest.raises(ValueError, match=rf"m\.synth\.json: \$\.model {re.escape(repr(model))} does not resolve from the repo root"):
+        sync_manifest(library / "manifest.json")
+    with pytest.raises(ValueError, match=rf"\$\.model {re.escape(repr(model))} does not resolve"):
+        sidecar_payload({"engine": "vibevoice", "model": model}, "PCM_16", {}, repo)
+    assert any(key == "model" for _, key, _ in _path_fields({"model": model})), "the shipped check treats it as a path"
+
+
+def test_a_model_dir_in_the_work_dir_is_a_path_even_when_shaped_like_a_hub_id(tmp_path):
+    """M4b: `checkpoints/VibeVoice-1.5B` looks like org/name, but the run's
+    work dir holds a directory by that name, so it is the path the run used:
+    relabelled with its facts. A real hub id stays as written."""
+    from gen_audio.library_manifest import model_is_hub_id, sync_manifest
+
+    repo, library = _work(tmp_path)
+    work = repo.parent / "genaid-podcast-compare"
+    (work / "checkpoints" / "VibeVoice-1.5B").mkdir(parents=True)
+    sidecar = library / "m.synth.json"
+    sidecar.write_text(json.dumps({"engine": "vibevoice", "model": "checkpoints/VibeVoice-1.5B"}, indent=2), encoding="utf-8")
+    assert "m.synth.json" in sync_manifest(library / "manifest.json", work_dirs={"m.synth.json": work})
+    doc = json.loads(sidecar.read_text(encoding="utf-8"))
+    assert doc["model"] == "<outside-repo>/genaid-podcast-compare/checkpoints/VibeVoice-1.5B"
+    assert doc["outside_repo"] == {"<outside-repo>/genaid-podcast-compare/checkpoints/VibeVoice-1.5B": DIRECTORY}
+    assert model_is_hub_id("microsoft/VibeVoice-1.5B", (repo, work))
+    for not_hub in ["microsoft/VibeVoice-1.5B/x", "models\\VibeVoice", "~/m", "C:/m", "./m/x", "a/model.onnx", "<outside-repo>/m"]:
+        assert not model_is_hub_id(not_hub, (repo,)), not_hub
 

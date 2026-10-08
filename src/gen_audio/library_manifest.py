@@ -123,9 +123,8 @@ def _label_value(value, repo_root: Path, web_root: frozenset[str], found: dict[s
 
 # Sidecar keys whose string value is a recorded filesystem path (a trailing
 # " (note)" is allowed: `python: "venvs/x (CPython 3.14.8, ...)"`), plus
-# every value under `inputs`. `model` is not one: it may be a hub id
-# (microsoft/VibeVoice-1.5B); an absolute or ../ model path is still
-# labelled by the rule above, like any path in any string.
+# every value under `inputs`, plus `model` unless it is a hub id
+# (:func:`model_is_hub_id`).
 SIDECAR_PATH_KEYS = frozenset({
     "model_path", "inference_code", "voices_bin", "source", "cast_map", "out",
     "raw_output", "output", "log", "prompt_wav", "script", "python",
@@ -145,6 +144,25 @@ UNHASHED = {"transient": True, "unhashed": "not on this machine"}
 DIRECTORY = {"kind": "directory", "content_identity": "none"}
 
 
+# A model hub id is exactly `org/name`: one "/", no backslash, drive, "~",
+# "." start or label, and no file extension on the name. "1.5B" is a size,
+# not an extension, so the extensions are named.
+_HUB_ID = re.compile(r"[A-Za-z0-9][\w.-]*/[A-Za-z0-9][\w.-]*")
+_MODEL_FILE = re.compile(r"\.(onnx|bin|safetensors|pt|pth|ckpt|gguf|ggml|pkl|npz|npy|h5|tflite|json|wav|py|txt|log)$", re.IGNORECASE)
+
+
+def model_is_hub_id(value: str, roots=()) -> bool:
+    """C1 Low 2: `model` is exempt from the path rule only as a hub id
+    (`microsoft/VibeVoice-1.5B`): exactly org/name with no file extension,
+    and nothing by that name under any of ``roots`` (the repo root, the run's
+    work dir). Anything else (`models/VibeVoice-1.5B` when it is a directory
+    there, `VibeVoice-1.5B/model.safetensors`, an absolute or label form) is
+    a recorded path and follows the C1 rule."""
+    if not _HUB_ID.fullmatch(value) or _MODEL_FILE.search(value):
+        return False
+    return not any((Path(root) / value).exists() for root in roots if root is not None)
+
+
 def _path_part(value: str) -> tuple[str, str]:
     """``("venvs/x", " (CPython ...)")`` for a path with a trailing note."""
     if " (" in value and value.endswith(")"):
@@ -153,22 +171,23 @@ def _path_part(value: str) -> tuple[str, str]:
     return value, ""
 
 
-def _path_fields(doc, where: str = "$", under_inputs: bool = False):
-    """(container, key, where) for every recorded path field in a sidecar."""
+def _path_fields(doc, where: str = "$", under_inputs: bool = False, roots=()):
+    """(container, key, where) for every recorded path field in a sidecar;
+    ``roots`` are where a `model` value is looked up (:func:`model_is_hub_id`)."""
     if isinstance(doc, dict):
         for key, item in doc.items():
             if key == "outside_repo":
                 continue
-            if isinstance(item, str) and (under_inputs or key in SIDECAR_PATH_KEYS):
+            if isinstance(item, str) and (under_inputs or key in SIDECAR_PATH_KEYS or (key == "model" and not model_is_hub_id(item, roots))):
                 yield doc, key, f"{where}.{key}"
             else:
-                yield from _path_fields(item, f"{where}.{key}", key == "inputs")
+                yield from _path_fields(item, f"{where}.{key}", key == "inputs", roots)
     elif isinstance(doc, list):
         for index, item in enumerate(doc):
             if isinstance(item, str) and under_inputs:
                 yield doc, index, f"{where}[{index}]"
             else:
-                yield from _path_fields(item, f"{where}[{index}]", under_inputs)
+                yield from _path_fields(item, f"{where}[{index}]", under_inputs, roots)
 
 
 def _is_label(path: str) -> bool:
@@ -188,7 +207,7 @@ def label_work_dir_paths(doc: dict, repo_root: Path, work_dir: Path | None, foun
     relabelled from there (``found`` gets label -> file); without it, the
     returned problems name each one (no guessing a base)."""
     problems: list[str] = []
-    for container, key, where in list(_path_fields(doc)):
+    for container, key, where in list(_path_fields(doc, roots=(repo_root, work_dir))):
         path, note = _path_part(container[key])
         if not path or _is_label(path):
             continue
