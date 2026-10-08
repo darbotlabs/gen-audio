@@ -263,7 +263,10 @@ fn read_request(stream: &mut TcpStream) -> Result<(String, Vec<u8>), (u16, &'sta
     }
     let mut body = buf[pos + 4..].to_vec();
     let Some(length) = content_length(&head) else {
-        if body.is_empty() && head.lines().next().unwrap_or("").starts_with("GET ") {
+        // GET and OPTIONS carry no body. Chromium's CORS preflight sends no
+        // Content-Length, so OPTIONS must pass here or every window POST dies.
+        let request_line = head.lines().next().unwrap_or("");
+        if body.is_empty() && (request_line.starts_with("GET ") || request_line.starts_with("OPTIONS ")) {
             return Ok((head, body));
         }
         return Err((411, br#"{"error":"content-length required"}"#));
@@ -538,5 +541,23 @@ mod tests {
             "GET /control/stream?after=0&wait=0 HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\nOrigin: https://evil.example\r\nConnection: close\r\n\r\n"
         ));
         assert_eq!(status, 403, "ATTACK evil origin read the control stream: {}", text.lines().take(12).collect::<Vec<_>>().join(" | "));
+    }
+
+    /// The preflight WebView2/Chromium really sends (captured by CDP on SMAX,
+    /// diag-seek): no Content-Length. Invoke-WebRequest adds Content-Length: 0
+    /// itself, which is why PowerShell checks never saw the 411.
+    #[test]
+    fn chromium_preflight_without_content_length_is_2xx_with_cors() {
+        let (status, text) = roundtrip(|port| format!(
+            "OPTIONS /mcp HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\nConnection: keep-alive\r\nAccept: */*\r\nAccess-Control-Request-Method: POST\r\nAccess-Control-Request-Headers: content-type\r\nOrigin: http://tauri.localhost\r\nUser-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/154.0.0.0 Safari/537.36 Edg/154.0.0.0\r\nSec-Fetch-Mode: cors\r\nSec-Fetch-Site: cross-site\r\nSec-Fetch-Dest: empty\r\nReferer: http://tauri.localhost/\r\nAccept-Encoding: gzip, deflate, br, zstd\r\nAccept-Language: en-US,en;q=0.9\r\n\r\n"
+        ));
+        assert!((200..300).contains(&status), "{text}");
+        assert_eq!(response_header(&text, "access-control-allow-origin"), Some("http://tauri.localhost"), "{text}");
+        assert!(response_header(&text, "access-control-allow-headers").is_some_and(|v| v.contains("content-type")), "{text}");
+        // A POST without Content-Length still needs one.
+        let (status, text) = roundtrip(|port| format!(
+            "POST /mcp HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\nContent-Type: application/json\r\nConnection: close\r\n\r\n"
+        ));
+        assert_eq!(status, 411, "{text}");
     }
 }
