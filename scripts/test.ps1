@@ -278,14 +278,23 @@ Invoke-Step 'Eol' {
     if ($bad.Count -eq 0) { return 'git ls-files --eol: no CRLF working copies under an eol=lf rule' }
     $lines = @("EOL_PREFLIGHT FAIL: $($bad.Count) tracked file(s) have eol=lf in .gitattributes but CRLF in the working copy:")
     $lines += @($bad | ForEach-Object { "  EOL_CRLF $($_.Path) (index $($_.Index))" })
-    $lines += 'Fix it yourself (this check never rewrites files). Commit or stash your changes first.'
-    if (@($bad | Where-Object { $_.Index -ne 'lf' }).Count -gt 0) {
-        $lines += '  The index holds CRLF too: git add --renormalize . ; then commit the result.'
+    $lines += 'Fix it yourself (this check never rewrites files). The commands touch only the listed files:'
+    $crlfIndex = @($bad | Where-Object { $_.Index -ne 'lf' } | ForEach-Object { $_.Path })
+    $lfIndex = @($bad | Where-Object { $_.Index -eq 'lf' } | ForEach-Object { $_.Path })
+    if ($crlfIndex.Count -gt 0) {
+        $lines += '  The index (and HEAD) hold CRLF too: renormalize and commit them, then rewrite the working copies from that commit:'
+        $lines += "    git add --renormalize -- $($crlfIndex -join ' ')"
+        $lines += "    git commit -m 'Renormalize line endings' -- $($crlfIndex -join ' ')"
+        $lines += "    git rm -q --cached -- $($crlfIndex -join ' ')"
+        $lines += "    git restore --source=HEAD --staged --worktree -- $($crlfIndex -join ' ')"
     }
-    if (@($bad | Where-Object { $_.Index -eq 'lf' }).Count -gt 0) {
-        $lines += '  The index is already LF, only the working copy is CRLF: refresh the checkout with'
-        $lines += '    git rm --cached -r . ; git reset --hard'
-        $lines += '  WARNING: reset --hard discards uncommitted changes. Commit or stash first.'
+    if ($lfIndex.Count -gt 0) {
+        # Not `git add --renormalize` first: it marks the CRLF file up to date,
+        # and a restore after it leaves the CRLF bytes in place.
+        $lines += '  The index is already LF, only the working copy is CRLF: rewrite just these files from HEAD'
+        $lines += '  (that drops uncommitted edits to them, so commit or stash those first):'
+        $lines += "    git rm -q --cached -- $($lfIndex -join ' ')"
+        $lines += "    git restore --source=HEAD --staged --worktree -- $($lfIndex -join ' ')"
     }
     $lines | Add-LogLine -Log $log | Out-Host
     throw "$($bad.Count) CRLF working file(s) under eol=lf: $(@($bad | ForEach-Object { $_.Path }) -join ', ')"
