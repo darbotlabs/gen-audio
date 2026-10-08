@@ -596,8 +596,11 @@ def test_the_synth_writer_refuses_a_recorded_path_that_does_not_resolve(tmp_path
     repo = tmp_path / "work" / "gen-audio"
     repo.mkdir(parents=True)
     manifest = {"engine": "kokoro_onnx", "out": "out/x.wav"}
-    with pytest.raises(ValueError, match=r"sidecar: \$\.out 'out/x\.wav' does not resolve from the repo root"):
+    with pytest.raises(ValueError, match=r"sidecar: \$\.out 'out/x\.wav' does not resolve from the repo root") as refused:
         sidecar_payload(manifest, "PCM_16", {}, repo)
+    # Low 6: write-time advice (fix what is recorded), never "rerun the sync".
+    assert "record it as an absolute path" in str(refused.value), refused.value
+    assert "--work-dir" not in str(refused.value) and "cube_revision.py" not in str(refused.value), refused.value
     _file(repo / "out" / "x.wav", b"RIFF x")
     assert sidecar_payload(manifest, "PCM_16", {}, repo)["out"] == "out/x.wav"
 

@@ -201,11 +201,19 @@ def leaves_repo(path: str) -> bool:
     return posixpath.normpath(path.replace("\\", "/")).split("/", 1)[0] == ".."
 
 
-def label_work_dir_paths(doc: dict, repo_root: Path, work_dir: Path | None, found: dict[str, Path], name: str) -> list[str]:
+# What to do about a recorded path that does not resolve, by who meets it:
+# the sync (after the run, the work dir is known) or the writer (the run is
+# writing its own sidecar now, so the fix is in what it records).
+SYNC_HINT = "rerun `cube_revision.py manifest --work-dir {name}=<the dir it was recorded in>`"
+WRITE_HINT = ("record it as an absolute path (the writer labels it <outside-repo>/... with its sha256) "
+              "or as a path that resolves from the repo root")
+
+
+def label_work_dir_paths(doc: dict, repo_root: Path, work_dir: Path | None, found: dict[str, Path], name: str, hint: str = SYNC_HINT) -> list[str]:
     """C1: a recorded path that neither resolves from the repo root nor is a
     label was written relative to the run's work dir. With ``work_dir`` it is
     relabelled from there (``found`` gets label -> file); without it, the
-    returned problems name each one (no guessing a base)."""
+    returned problems name each one (no guessing a base), with ``hint``."""
     problems: list[str] = []
     for container, key, where in list(_path_fields(doc, roots=(repo_root, work_dir))):
         path, note = _path_part(container[key])
@@ -220,8 +228,7 @@ def label_work_dir_paths(doc: dict, repo_root: Path, work_dir: Path | None, foun
         if (repo_root / path).exists():
             continue
         if work_dir is None:
-            problems.append(f"{name}: {where} {path!r} does not resolve from the repo root; "
-                            f"rerun `cube_revision.py manifest --work-dir {name}=<the dir it was recorded in>`")
+            problems.append(f"{name}: {where} {path!r} does not resolve from the repo root; {hint.format(name=name)}")
             continue
         source = Path(os.path.abspath(os.path.join(os.fspath(work_dir), path)))
         label = outside_repo_label(os.fspath(source), os.path.abspath(os.fspath(repo_root)))
