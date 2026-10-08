@@ -54,6 +54,39 @@ function Get-Sha256 {
     return (($bytes | ForEach-Object { $_.ToString('x2') }) -join '')
 }
 
+function Get-LibraryWavProblem {
+    # The gitignored library WAVs against schemas/asset-object/media.lock.json:
+    # one line per WAV that is missing, has the wrong byte count, or the wrong
+    # sha256 (WAV_MISSING / WAV_BYTES / WAV_MISMATCH). No output means all
+    # match. Shared by build-tauri-windows.ps1 (a release must embed the real
+    # WAVs) and test.ps1 -WithWav. A gate that passes by skipping is not a gate,
+    # so an empty or unreadable lock is an error too.
+    [CmdletBinding()]
+    [OutputType([string])]
+    param([Parameter(Mandatory = $true)][string]$Root)
+    $lockPath = Join-Path $Root 'schemas\asset-object\media.lock.json'
+    if (-not (Test-Path -LiteralPath $lockPath -PathType Leaf)) { throw "media.lock.json is missing: $lockPath" }
+    $lock = Get-Content -LiteralPath $lockPath -Raw | ConvertFrom-Json
+    $names = @(if ($lock.PSObject.Properties['media']) { $lock.media.PSObject.Properties | ForEach-Object { $_.Name } })
+    if ($names.Count -eq 0) { throw "$lockPath lists no WAVs" }
+    $library = Join-Path $Root 'apps\desktop\public\library'
+    foreach ($name in $names) {
+        $entry = $lock.media.$name
+        $path = Join-Path $library $name
+        if (-not (Test-Path -LiteralPath $path -PathType Leaf)) {
+            "WAV_MISSING $name (stage it in apps/desktop/public/library; *.wav is gitignored)"
+            continue
+        }
+        $bytes = (Get-Item -LiteralPath $path).Length
+        if ($entry.PSObject.Properties['bytes'] -and [int64]$entry.bytes -ne $bytes) {
+            "WAV_BYTES $name has $bytes bytes, media.lock.json $($entry.bytes)"
+            continue
+        }
+        $got = Get-Sha256 -LiteralPath $path
+        if ($got -ne [string]$entry.sha256) { "WAV_MISMATCH $name sha256 $got, media.lock.json $($entry.sha256)" }
+    }
+}
+
 function Test-IsWindowsHost {
     [CmdletBinding()]
     [OutputType([bool])]
