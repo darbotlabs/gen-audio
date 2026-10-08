@@ -230,7 +230,6 @@ button:focus-visible, .card:focus-visible, .slide-dot:focus-visible {
 .profile-schema { display: grid; grid-template-columns: 5.5rem minmax(0, 1fr); gap: 0.1rem 0.35rem; margin: 0.2rem 0; font-size: 0.68rem; }
 .profile-schema dt { color: var(--muted); }
 .profile-schema dd { margin: 0; }
-.profile-back canvas { width: 100%; height: auto; margin-top: 0.25rem; }
 .rename-block { display: grid; gap: 0.25rem; margin-top: 0.35rem; }
 .rename-block input { width: 100%; background: #0b1824; color: var(--text); border: 1px solid #3d6f90; border-radius: 8px; padding: 0.22rem 0.35rem; font-size: 0.72rem; }
 .card.is-selected { outline: 2px solid #c97bff; outline-offset: 2px; }
@@ -486,6 +485,8 @@ body.is-dragging { cursor: grabbing; user-select: none; }
   -ms-overflow-style: none;
 }
 .board::-webkit-scrollbar { display: none !important; width: 0; height: 0; }
+/* A scripted glide owns the scroll; mandatory snapping resumes when it lands. */
+.board.is-snapping { scroll-snap-type: none; }
 
 .slide {
   scroll-snap-align: start;
@@ -496,6 +497,8 @@ body.is-dragging { cursor: grabbing; user-select: none; }
   padding: 0.2rem 0.1rem 0.25rem;
   display: grid;
   grid-template-columns: repeat(var(--cols, 3), minmax(0, 1fr));
+  /* Banner row hugs its text; tile rows share the rest. */
+  grid-template-rows: auto;
   grid-auto-rows: minmax(0, 1fr);
   gap: 0.45rem;
   align-content: stretch;
@@ -840,3 +843,88 @@ th, td { text-align: left; padding: 0.12rem 0.25rem; border-bottom: 1px solid va
   .cube-legend { top: 4.1rem; }
 }
 .cube-clock.is-beyond { color: var(--warn); }
+
+/* ---- Asset glyph badge (asset object model v1). Classes only: CSP style-src 'self'. ---- */
+.ga-glyph {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.2rem;
+  padding: 0.05rem 0.25rem;
+  border: 1px solid currentColor;
+  border-radius: 5px;
+  background: rgba(8, 11, 18, 0.55);
+  color: var(--muted);
+  font: inherit;
+  font-size: 0.56rem;
+  line-height: 1;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  cursor: copy;
+  flex: 0 0 auto;
+}
+.ga-glyph:focus-visible { outline: 2px solid var(--focus); outline-offset: 1px; }
+.ga-glyph.is-copied { background: rgba(62, 224, 197, 0.25); }
+.ga-glyph-svg { width: 1.05rem; height: 0.95rem; display: block; }
+.ga-dot.is-on { fill: currentColor; }
+.ga-dot.is-off { fill: none; stroke: currentColor; stroke-width: 0.3; opacity: 0.28; }
+.live-row .ga-glyph:first-of-type { margin-left: auto; }
+/* Fixed hue per kind; never derived from the hash. */
+.ga-kind-voice_model { color: #7fb4ff; }
+.ga-kind-voice_profile { color: #c99bff; }
+.ga-kind-audio_clip { color: #ff9a5c; }
+.ga-kind-spectrogram_2d { color: #ffd166; }
+.ga-kind-cube_ihdr { color: #3ee0c5; }
+.ga-kind-layer { color: #8af3e2; }
+.ga-kind-podcast_script { color: #f78fb3; }
+.ga-kind-transcript { color: #b8c4d6; }
+.ga-kind-card { color: #9aa6bd; }
+.ga-kind-mcp_tool { color: #9be37a; }
+.ga-kind-unknown { color: #e2b15a; }
+.library-tile[data-has-wav="1"] .ga-glyph { background: #0f1420; }
+.cube-glyph:empty { display: none; }
+.cube-glyph .ga-glyph { font-size: 0.62rem; padding: 0.15rem 0.35rem; }
+.cube-glyph .ga-glyph-svg { width: 1.3rem; height: 1.15rem; }
+
+/* ---- Flat 2D spectrogram strip on audio-clip livetiles ---- */
+.spec-strip {
+  display: grid;
+  gap: 0.12rem;
+  margin-top: 0.25rem;
+}
+.spec-strip-canvas {
+  display: block;
+  width: 100%;
+  height: 3rem;
+  border-radius: 6px;
+  border: 1px solid #3d2a55;
+  background: #06090f;
+}
+.spec-strip-label {
+  margin: 0;
+  font-size: 0.62rem;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.spec-strip[data-state="none"] .spec-strip-label,
+.spec-strip[data-state="missing"] .spec-strip-label {
+  padding: 0.35rem 0.4rem;
+  border: 1px dashed var(--line);
+  border-radius: 6px;
+  white-space: normal;
+}
+.spec-strip.is-beyond .spec-strip-label { color: #ff8a3d; }
+/* The live strip replaces the static cube thumbnail on the tile; the cube itself is on the Cube tab. */
+.library-tile .spec-strip[data-state="ready"] ~ .cube-thumb { display: none; }
+
+/* Voice model card back: Status / Cube tabs (E4). */
+.back-tabs { display: flex; gap: 0.25rem; flex: 0 0 auto; margin-bottom: 0.25rem; }
+.back-tabs [role="tab"] { padding: 0.12rem 0.5rem; font-size: 0.68rem; }
+.back-tabs [role="tab"][aria-selected="true"] { background: #143528; border-color: var(--accent); color: var(--accent); }
+.engine-back [role="tabpanel"][hidden] { display: none; }
+.model-cubes { overflow: auto; min-height: 0; }
+.model-cube-table { font-size: 0.64rem; }
+.model-cube-table .mono { font-family: ui-monospace, "Cascadia Mono", Consolas, monospace; word-break: break-all; }
+.model-cube-table button { padding: 0.08rem 0.4rem; font-size: 0.64rem; }

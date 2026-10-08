@@ -2,6 +2,9 @@
 //!
 //! This crate does not synthesize speech and does not ship model weights.
 
+pub mod asset;
+pub mod asset_catalog;
+pub mod asset_migrate;
 pub mod benchmark;
 pub mod bridge;
 pub mod cards;

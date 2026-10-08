@@ -19,6 +19,8 @@ use serde_json::{json, Value};
 pub struct Server {
     pub scratch: Scratch,
     pub repo: Option<PathBuf>,
+    /// HTTP rejections seen by this server's listener (served on /health).
+    pub rejections: std::sync::Arc<http::RejectionStats>,
 }
 
 impl Server {
@@ -31,6 +33,7 @@ impl Server {
         Self {
             scratch,
             repo: find_repo_root(),
+            rejections: Default::default(),
         }
     }
 
@@ -39,6 +42,7 @@ impl Server {
         Self {
             scratch: Scratch::create().expect("isolated work directory"),
             repo: find_repo_root(),
+            rejections: Default::default(),
         }
     }
 }
@@ -74,6 +78,7 @@ pub fn smoke() -> Result<String, String> {
         "ui_navigate",
         "ui_select_tile",
         "ui_playback",
+        "ui_seek_report",
         "ui_set_sidepane",
         "ui_generate",
         "library_list",
@@ -83,6 +88,9 @@ pub fn smoke() -> Result<String, String> {
         "voice_profile_list",
         "ui_flip",
         "cube_layers",
+        "asset_resolve",
+        "asset_list",
+        "asset_glyph",
     ] {
         if !names.contains(&required) {
             return Err(format!("missing tool {required}"));
@@ -166,7 +174,8 @@ fn tool_defs() -> Vec<Value> {
         tool("ui_navigate", "Queue a viewport slide change for the local Gen-Audio window. Does not render audio."),
         tool("ui_select_tile", "Queue selection of a card id. Loads a 3D cube only when that tile has cube JSON."),
         tool("ui_flip", "Queue a flipcard. Optional personaId attaches the voice-profile payload. Does not render audio."),
-        tool("ui_playback", "Queue play, pause, or seek for a library tile. Does not open the WAV in this process."),
+        tool("ui_playback", "Queue play, pause, or seek for a library tile. A seek waits (waitMs, default 2000) for the window and returns {requested_t, landed_t, ok, reason}. Does not open the WAV in this process."),
+        tool("ui_seek_report", "Desktop window only: report where a queued ui_playback seek (bus seq) landed. Records the result ui_playback returns."),
         tool("ui_set_sidepane", "Queue Agent personas (max 8) and a Voice TTS model. Connector ids are rejected."),
         tool("ui_generate", "Record a generation request. synthesizedSpeech is false. Does not call synth."),
         tool("library_list", "List the library catalog. Does not open WAV bytes. Unavailable clips stay unavailable."),
@@ -175,8 +184,15 @@ fn tool_defs() -> Vec<Value> {
         tool("voice_profile_get", "Return one persona profile: tone, purpose, domain, accent, traits, refs. Not audio."),
         tool("voice_profile_list", "List personas and TTS voice models. LLM ids are connectors, not agents."),
         tool("cube_layers", "Read signal, tonality, confidence, and quality summaries from an allowlisted library cube JSON. Omits point clouds and absolute paths."),
+        tool("asset_resolve", "Resolve a ga1 asset uid (or a ga:<kind>: prefix of 8+ chars) from the library catalog. Media come back as /library URLs plus sha256."),
+        tool("asset_list", "Page through library assets in uid order. Optional kind; limit 1 to 100 (default 50); cursor is the last uid returned."),
+        tool("asset_glyph", "Braille glyph, dot pattern, kind hue class and aria label for a ga1 uid. Visual hint only; resolve by uid."),
     ]
 }
+
+static UID_PROP: std::sync::LazyLock<Value> = std::sync::LazyLock::new(|| {
+    json!({"type": "string", "description": "ga1 asset uid, ga:<kind>:<26 base32>", "maxLength": 44})
+});
 
 fn tool(name: &str, description: &str) -> Value {
     let (properties, required) = match name {
@@ -186,10 +202,23 @@ fn tool(name: &str, description: &str) -> Value {
         "spectrogram" => (json!({"before": {"type": "string"}, "after": {"type": "string"}}), json!(["before"])),
         "serve_health" => (json!({"host": {"type": "string"}, "port": {"type": "integer"}, "probe": {"type": "boolean"}}), json!([])),
         "connector_health" => (json!({"id": {"type": "string"}}), json!([])),
-        "ui_navigate" => (json!({"slide": {"type": "string"}, "tileId": {"type": "string"}}), json!(["slide"])),
-        "ui_select_tile" => (json!({"tileId": {"type": "string"}}), json!(["tileId"])),
-        "ui_flip" => (json!({"tileId": {"type": "string"}, "flipped": {"type": "boolean"}, "personaId": {"type": "string"}}), json!(["tileId"])),
-        "ui_playback" => (json!({"tileId": {"type": "string"}, "action": {"type": "string"}, "seconds": {"type": "number"}}), json!(["tileId", "action"])),
+        "ui_navigate" => (
+            json!({
+                "slide": {"type": "string", "description": "slide:<slug> (e.g. slide:library). A bare slug is a deprecated alias: it resolves and the result carries a deprecation note."},
+                "tileId": {"type": "string"},
+                "uid": UID_PROP.clone()
+            }),
+            json!(["slide"]),
+        ),
+        "ui_select_tile" => (json!({"tileId": {"type": "string"}, "uid": UID_PROP.clone()}), json!([])),
+        "ui_flip" => (json!({"tileId": {"type": "string"}, "uid": UID_PROP.clone(), "flipped": {"type": "boolean"}, "personaId": {"type": "string"}}), json!([])),
+        "ui_playback" => (json!({"tileId": {"type": "string"}, "uid": UID_PROP.clone(), "action": {"type": "string"}, "seconds": {"type": "number"}, "origin": {"type": "string", "enum": ["user", "auto"], "description": "play only; default user"}, "waitMs": {"type": "integer", "minimum": 0, "maximum": 10000, "description": "seek only; default 2000"}}), json!(["action"])),
+        "ui_seek_report" => (
+            json!({"seq": {"type": "integer", "minimum": 1}, "requested_t": {"type": "number"}, "landed_t": {"type": ["number", "null"]}, "ok": {"type": "boolean"}, "reason": {"type": "string", "maxLength": 240}}),
+            json!(["seq", "requested_t", "landed_t", "ok", "reason"]),
+        ),
+        "asset_resolve" | "asset_glyph" => (json!({"uid": UID_PROP.clone()}), json!(["uid"])),
+        "asset_list" => (json!({"kind": {"type": "string"}, "cursor": {"type": "string"}, "limit": {"type": "integer", "minimum": 1, "maximum": 100}}), json!([])),
         "ui_set_sidepane" | "ui_generate" => (
             json!({"agents": {"type": "array"}, "voice": {"type": "string"}, "durationMin": {"type": "integer"}, "promptNote": {"type": "string"}}),
             json!(["agents", "voice"]),
@@ -235,6 +264,7 @@ pub fn call_tool(server: &Server, params: &Value) -> Result<Value, (i32, String)
         "ui_select_tile" => control::ui_select_tile(&args)?,
         "ui_flip" => control::ui_flip(&args)?,
         "ui_playback" => control::ui_playback(&args)?,
+        "ui_seek_report" => control::ui_seek_report(&args)?,
         "ui_set_sidepane" => control::ui_set_sidepane(&args)?,
         "ui_generate" => control::ui_generate(&args)?,
         "library_list" => control::library_list(),
@@ -243,6 +273,9 @@ pub fn call_tool(server: &Server, params: &Value) -> Result<Value, (i32, String)
         "cube_layers" => control::cube_layers(server.repo.as_deref(), &args)?,
         "voice_profile_get" => control::voice_profile_get(&args)?,
         "voice_profile_list" => control::voice_profile_list(),
+        "asset_resolve" => assets::asset_resolve(&args)?,
+        "asset_list" => assets::asset_list(&args)?,
+        "asset_glyph" => assets::asset_glyph(&args)?,
         _ => return Err((-32602, format!("unknown tool {name}"))),
     };
     Ok(json!({
@@ -251,8 +284,10 @@ pub fn call_tool(server: &Server, params: &Value) -> Result<Value, (i32, String)
     }))
 }
 
-fn known_arguments(name: &str, args: &Value) -> Result<(), (i32, String)> {
-    let allowed: &[&str] = match name {
+/// Argument names each tool accepts. Must equal the tool's advertised
+/// inputSchema properties (tested): the UI and agents speak one contract.
+fn allowed_arguments(name: &str) -> &'static [&'static str] {
+    match name {
         "synth" => &["script", "castMap", "output"],
         "improve" => &["input", "output"],
         "spectrogram" => &["before", "after"],
@@ -260,17 +295,24 @@ fn known_arguments(name: &str, args: &Value) -> Result<(), (i32, String)> {
         "serve_health" => &["host", "port", "probe"],
         "connector_health" => &["id"],
         "list_connectors" | "list_engines" | "fixture_tone" | "benchmark_reference" | "harness_plan" | "library_list" | "voice_profile_list" => &[],
-        "ui_navigate" => &["slide", "tileId"],
-        "ui_select_tile" => &["tileId"],
-        "ui_flip" => &["tileId", "flipped", "personaId"],
-        "ui_playback" => &["tileId", "action", "seconds"],
+        "ui_navigate" => &["slide", "tileId", "uid"],
+        "ui_select_tile" => &["tileId", "uid"],
+        "ui_flip" => &["tileId", "uid", "flipped", "personaId"],
+        "ui_playback" => &["tileId", "uid", "action", "seconds", "origin", "waitMs"],
+        "ui_seek_report" => &["seq", "requested_t", "landed_t", "ok", "reason"],
+        "asset_resolve" | "asset_glyph" => &["uid"],
+        "asset_list" => &["kind", "cursor", "limit"],
         "ui_set_sidepane" | "ui_generate" => &["agents", "voice", "durationMin", "promptNote"],
         "library_rename" => &["clipId", "semanticName", "faceName"],
         "library_harvest" => &["clipId", "personaId", "apply"],
         "cube_layers" => &["clipId"],
         "voice_profile_get" => &["personaId", "agentName"],
         _ => &[],
-    };
+    }
+}
+
+fn known_arguments(name: &str, args: &Value) -> Result<(), (i32, String)> {
+    let allowed = allowed_arguments(name);
     let obj = args
         .as_object()
         .ok_or((-32602, "arguments must be an object".to_string()))?;
@@ -486,6 +528,7 @@ pub fn stdio_loop(server: &Server) {
     }
 }
 
+pub mod assets;
 pub mod control;
 pub mod http;
 
@@ -629,6 +672,9 @@ mod tests {
 
     #[test]
     fn harvest_attaches_a_clip_ref_without_decoding_audio() {
+        // E3: hermetic. With GEN_AUDIO_KOKORO_* set, the synth call below
+        // would start a real synth and the refusal asserts would not hold.
+        let _env = gen_audio_core::bridge::NoKokoroEnv::new();
         let server = Server::boot();
         let harvested = handle(
             &server,
@@ -694,5 +740,132 @@ mod tests {
         assert!(synth_text.contains("No speech was invented"), "{synth_text}");
         assert!(!synth_text.contains("\"synthesizedSpeech\":true"), "{synth_text}");
         let _ = std::fs::remove_dir_all(&server.scratch.dir);
+    }
+
+    // One contract, tested from both sides: the fixtures below are exactly
+    // what the desktop window posts (apps/desktop/tests/play-control.test.ts
+    // asserts that from the desktop's own builders); here the server accepts them.
+    const DESKTOP_USER_PLAY: &str = include_str!("../../../schemas/examples/control/desktop-user-play.json");
+    const SEEK_ROUND_TRIP: &str = include_str!("../../../schemas/examples/control/seek-round-trip.json");
+
+    fn tool_text(response: &Value) -> Value {
+        let text = response["result"]["content"][0]["text"].as_str().unwrap_or_else(|| panic!("no tool text: {response}"));
+        serde_json::from_str(text).expect("tool text is json")
+    }
+
+    fn bus_events_for(tile: &str, after: u64) -> Vec<Value> {
+        control::since(after).1.into_iter().filter(|event| event["args"]["tileId"] == tile).collect()
+    }
+
+    #[test]
+    fn contract_the_desktop_play_payload_is_accepted_and_carries_origin_user() {
+        let server = Server::boot();
+        let request: Value = serde_json::from_str(DESKTOP_USER_PLAY).unwrap();
+        let tile = request["params"]["arguments"]["tileId"].as_str().unwrap().to_string();
+        let before = control::since(0).0;
+        let response = handle(&server, request).unwrap().unwrap();
+        assert!(response.get("error").is_none(), "the server rejected the desktop's Play payload: {response}");
+        let body = tool_text(&response);
+        assert_eq!(body["args"]["origin"], "user");
+        let events = bus_events_for(&tile, before);
+        assert!(events.iter().any(|event| event["op"] == "playback" && event["args"]["origin"] == "user"), "{events:?}");
+    }
+
+    #[test]
+    fn ui_playback_origin_is_a_validated_enum_and_a_bad_value_changes_nothing() {
+        let server = Server::boot();
+        let mut request: Value = serde_json::from_str(DESKTOP_USER_PLAY).unwrap();
+        // A tile only this test uses, so the bus check cannot see another test's event.
+        request["params"]["arguments"]["tileId"] = json!("contract-origin-bad");
+        for bad in [json!("agent"), json!("mcp"), json!(""), json!(5), json!(null)] {
+            request["params"]["arguments"]["origin"] = bad.clone();
+            let before = control::since(0).0;
+            let response = handle(&server, request.clone()).unwrap().unwrap();
+            assert_eq!(response["error"]["code"], -32602, "origin {bad}: {response}");
+            assert!(bus_events_for("contract-origin-bad", before).is_empty(), "origin {bad} reached the bus");
+        }
+        request["params"]["arguments"]["origin"] = json!("auto");
+        let response = handle(&server, request).unwrap().unwrap();
+        assert_eq!(tool_text(&response)["args"]["origin"], "auto");
+    }
+
+    #[test]
+    fn every_tool_accepts_exactly_its_advertised_input_schema_properties() {
+        for def in tool_defs() {
+            let name = def["name"].as_str().unwrap();
+            let mut advertised: Vec<&str> = def["inputSchema"]["properties"].as_object().unwrap().keys().map(String::as_str).collect();
+            let mut allowed = allowed_arguments(name).to_vec();
+            advertised.sort_unstable();
+            allowed.sort_unstable();
+            assert_eq!(advertised, allowed, "{name}: inputSchema and the allowed-args list disagree");
+        }
+    }
+
+    #[test]
+    fn contract_seek_round_trip_returns_where_the_window_landed() {
+        let fixture: Value = serde_json::from_str(SEEK_ROUND_TRIP).unwrap();
+        let seek = fixture["agentSeek"].clone();
+        let seconds = seek["params"]["arguments"]["seconds"].as_f64().unwrap();
+        let before = control::since(0).0;
+        let agent = std::thread::spawn(move || {
+            let server = Server::boot();
+            handle(&server, seek).unwrap().unwrap()
+        });
+        // The window: find the queued seek, then post the fixture report for its seq.
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(4);
+        let seq = loop {
+            let found = control::since(before).1.into_iter().find(|event| {
+                event["op"] == "playback" && event["args"]["action"] == "seek" && event["args"]["seconds"].as_f64() == Some(seconds)
+            });
+            if let Some(event) = found {
+                assert!(event["args"].get("waitMs").is_none(), "waitMs stays off the bus");
+                break event["seq"].as_u64().unwrap();
+            }
+            assert!(std::time::Instant::now() < deadline, "the seek never reached the bus");
+            std::thread::sleep(std::time::Duration::from_millis(5));
+        };
+        let mut report = fixture["desktopReport"].clone();
+        report["params"]["arguments"]["seq"] = json!(seq);
+        let server = Server::boot();
+        let recorded = handle(&server, report.clone()).unwrap().unwrap();
+        assert!(recorded.get("error").is_none(), "the server rejected the desktop's seek report: {recorded}");
+        let result = tool_text(&agent.join().unwrap());
+        for key in ["requested_t", "landed_t", "ok", "reason"] {
+            let (got, want) = (&result[key], &fixture["agentResult"][key]);
+            match want.as_f64() {
+                Some(number) => assert_eq!(got.as_f64(), Some(number), "{key}: {result}"),
+                None => assert_eq!(got, want, "{key}: {result}"),
+            }
+        }
+        // A second report for the same seek is refused.
+        assert_eq!(handle(&server, report).unwrap().unwrap()["error"]["code"], -32602);
+    }
+
+    #[test]
+    fn a_seek_no_window_answers_says_so_and_bad_reports_record_nothing() {
+        let server = Server::boot();
+        let call = |name: &str, args: Value| {
+            handle(&server, json!({"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name": name, "arguments": args}})).unwrap().unwrap()
+        };
+        let timed_out = call("ui_playback", json!({"tileId": "contract-seek-quiet", "action": "seek", "seconds": 3.25, "waitMs": 0}));
+        let body = tool_text(&timed_out);
+        assert_eq!(body["requested_t"], 3.25);
+        assert!(body["landed_t"].is_null());
+        assert_eq!(body["ok"], false);
+        assert!(body["reason"].as_str().unwrap().contains("no window reported"), "{body}");
+        let seq = body["seq"].as_u64().unwrap();
+        let report = |args: Value| call("ui_seek_report", args);
+        let code = |response: Value| response["error"]["code"].clone();
+        assert_eq!(code(report(json!({"seq": seq + 100_000, "requested_t": 3.25, "landed_t": 3.25, "ok": true, "reason": "x"}))), -32602, "unknown seq");
+        assert_eq!(code(report(json!({"seq": seq, "requested_t": 9.0, "landed_t": 3.25, "ok": true, "reason": "x"}))), -32602, "wrong requested_t");
+        assert_eq!(code(report(json!({"seq": seq, "requested_t": 3.25, "landed_t": null, "ok": true, "reason": "x"}))), -32602, "ok without landed_t");
+        assert_eq!(code(report(json!({"seq": seq, "requested_t": 3.25, "landed_t": -1, "ok": false, "reason": "x"}))), -32602, "negative landed_t");
+        assert_eq!(code(report(json!({"seq": seq, "requested_t": 3.25, "landed_t": 0, "ok": false, "reason": "r".repeat(241)}))), -32602, "long reason");
+        assert_eq!(code(call("ui_playback", json!({"tileId": "contract-seek-quiet", "action": "seek", "seconds": 1, "waitMs": 60_000}))), -32602, "waitMs cap");
+        assert_eq!(code(call("ui_playback", json!({"tileId": "contract-seek-quiet", "action": "pause", "waitMs": 10}))), -32602, "waitMs on pause");
+        // None of the bad reports was recorded: the honest one still is.
+        let honest = report(json!({"seq": seq, "requested_t": 3.25, "landed_t": 0, "ok": false, "reason": "seek failed: this WAV source cannot seek (stays at 0:00)"}));
+        assert!(honest.get("error").is_none(), "{honest}");
+        assert_eq!(tool_text(&honest)["report"]["landed_t"], 0.0);
     }
 }

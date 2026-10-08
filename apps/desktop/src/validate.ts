@@ -12,15 +12,20 @@ export const CARD_KINDS = [
   "VoiceProfile",
 ] as const;
 
-export const CONNECTOR_IDS = ["mcp", "acp", "harness", "copilot", "claude", "gpt", "gemini"] as const;
+export const CONNECTOR_IDS = ["mcp", "acp", "harness", "copilot", "claude", "gpt", "gemini", "local"] as const;
 export const CONNECTOR_MODES = ["mock", "live", "local", "token_present", "misconfigured"] as const;
 export const ENGINE_STATUSES = ["implemented", "external", "library", "weights_absent", "unavailable"] as const;
 export const LIBRARY_STATUSES = ["ok", "running", "weights_absent", "unavailable", "external"] as const;
+
+/** Same grammar as asset.ts parseUid, narrowed to kind card (pad bits zero). */
+export const CARD_UID = /^ga:card:[a-z2-7]{25}[aeimquy4]$/;
 
 export type CardKind = (typeof CARD_KINDS)[number];
 
 export interface ViewportCard {
   id: string;
+  /** Asset object model v1 card uid (ga:card:...), alongside the legacy id. */
+  uid?: string;
   kind: CardKind;
   title: string;
   span?: number;
@@ -67,6 +72,9 @@ function validateCard(card: unknown, seen: Set<string>): string | null {
     return `card ${card.id} has an unknown kind`;
   }
   if (!boundedString(card.title, 1, 120)) return "card title is required";
+  if (card.uid !== undefined && (typeof card.uid !== "string" || !CARD_UID.test(card.uid))) {
+    return `card ${card.id} uid must be ga:card:<26 base32>`;
+  }
   if (card.span !== undefined) {
     const span = card.span;
     if (typeof span !== "number" || !Number.isInteger(span) || span < 1 || span > 3) {
@@ -167,8 +175,11 @@ function validateBody(id: string, kind: string, body: Record<string, unknown>): 
     for (const reference of body.refs) {
       if (!boundedString(reference, 1, 80)) return `card ${id} ref is invalid`;
     }
-    if (body.spectrogram2d !== "browser-profile-map") return `card ${id} spectrogram2d must be a browser profile map`;
-    if (body.spectrogram3d !== "none" && body.spectrogram3d !== "library-cube-hook" && body.spectrogram3d !== "fixture-cube") {
+    if (body.spectrogram2d !== "none") return `card ${id} spectrogram2d must be none (a persona has no audio)`;
+    // AP-OPT-1: only what the product renders. Nothing renders a persona
+    // cube, so "library-cube-hook" (and its cubeJsonUrl) and "fixture-cube"
+    // are refused: "none" is the only value.
+    if (body.spectrogram3d !== "none") {
       return `card ${id} spectrogram3d is not a known hook`;
     }
     if (body.notPodcast !== true) return `card ${id} must set notPodcast true`;
@@ -179,11 +190,7 @@ function validateBody(id: string, kind: string, body: Record<string, unknown>): 
     if (!boundedString(body.disclaimer, 12, 400) || !String(body.disclaimer).toLowerCase().includes("not")) {
       return `card ${id} disclaimer must say the profile is not a podcast render`;
     }
-    if (body.spectrogram3d === "library-cube-hook") {
-      if (!boundedString(body.cubeJsonUrl, 1, 260)) return `card ${id} cubeJsonUrl is required for a library cube hook`;
-    } else if (body.cubeJsonUrl) {
-      return `card ${id} cubeJsonUrl is only set for a library-cube-hook`;
-    }
+    if (body.cubeJsonUrl !== undefined) return `card ${id} must not link a cube on a voice profile`;
   }
   if (kind === "ConnectorStatus") {
     if (typeof body.connectorId !== "string" || !CONNECTOR_IDS.includes(body.connectorId as (typeof CONNECTOR_IDS)[number])) {
@@ -206,8 +213,17 @@ function validateAdaptive(id: string, adaptive: unknown): string | null {
   return null;
 }
 
+/** Length in Unicode code points, matching JSON Schema minLength/maxLength and Rust chars(). */
+export function charLength(value: string): number {
+  let count = 0;
+  for (const _ of value) count += 1;
+  return count;
+}
+
 function boundedString(value: unknown, min: number, max: number): value is string {
-  return typeof value === "string" && value.length >= min && value.length <= max;
+  if (typeof value !== "string") return false;
+  const length = charLength(value);
+  return length >= min && length <= max;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

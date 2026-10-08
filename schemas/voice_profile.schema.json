@@ -21,9 +21,8 @@
       "maxItems": 8,
       "items": { "type": "string", "minLength": 1, "maxLength": 80 }
     },
-    "spectrogram2d": { "const": "browser-profile-map" },
-    "spectrogram3d": { "enum": ["none", "library-cube-hook", "fixture-cube"] },
-    "cubeJsonUrl": { "type": "string" },
+    "spectrogram2d": { "const": "none" },
+    "spectrogram3d": { "enum": ["none"] },
     "notPodcast": { "const": true },
     "synthesizedSpeech": { "const": false },
     "disclaimer": { "type": "string", "minLength": 12, "maxLength": 400 }

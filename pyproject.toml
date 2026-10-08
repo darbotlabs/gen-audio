@@ -40,6 +40,7 @@ gen-audio-synth = "gen_audio.cli.synth:main"
 gen-audio-improve = "gen_audio.cli.improve:main"
 gen-audio-spectrogram = "gen_audio.cli.spectrogram:main"
 gen-audio-cube = "gen_audio.cli.cube:main"
+gen-audio-spectrogram-strip = "gen_audio.cli.spectrogram_strip:main"
 gen-audio-compare = "gen_audio.cli.compare:main"
 
 [tool.setuptools.packages.find]

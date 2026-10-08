@@ -10,3 +10,13 @@ description = "Shared Gen-Audio types: engines, serve URLs, card viewport checks
 [dependencies]
 serde = { workspace = true }
 serde_json = { workspace = true }
+sha2 = "0.10"
+unicode-normalization = "0.1"
+
+[features]
+# NoKokoroEnv and KOKORO_ENV (bridge.rs) for other crates' tests. Enabled only
+# from [dev-dependencies]; never in a normal or release build.
+test-support = []
+
+[dev-dependencies]
+jsonschema = { version = "0.33", default-features = false }

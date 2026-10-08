@@ -17,6 +17,9 @@ struct Track {
     cwd: String,
     agents: Vec<String>,
     voice: String,
+    /// Library asset uids bound to this track (max 8). Uids only, never paths.
+    #[allow(dead_code)]
+    assets: Vec<String>,
 }
 
 pub struct Agent {
@@ -104,6 +107,7 @@ fn session_new(agent: &Agent, params: &Value) -> Result<Value, String> {
         gen_audio_mcp::control::validate_track(&agents, &voice).map_err(|(_, message)| message)?;
     }
     let agent_ids: Vec<String> = agents.iter().filter_map(|value| value.as_str().map(str::to_string)).collect();
+    let assets = session_assets(params.get("assets"))?;
     let mut next = agent.next.lock().expect("session counter");
     let id = format!("gen-audio-session-{next}");
     *next += 1;
@@ -114,9 +118,32 @@ fn session_new(agent: &Agent, params: &Value) -> Result<Value, String> {
             cwd: cwd.to_string(),
             agents: agent_ids.clone(),
             voice: voice.clone(),
+            assets: assets.clone(),
         },
     );
-    Ok(json!({"sessionId": id, "agents": agent_ids, "voice": voice}))
+    Ok(json!({"sessionId": id, "agents": agent_ids, "voice": voice, "assets": assets}))
+}
+
+/// `session/new` `assets`: up to 8 distinct ga1 uids that resolve in the library catalog.
+fn session_assets(value: Option<&Value>) -> Result<Vec<String>, String> {
+    use gen_audio_core::asset_catalog::{require, MAX_SESSION_ASSETS};
+    let Some(value) = value else {
+        return Ok(Vec::new());
+    };
+    let items = value.as_array().ok_or("assets must be an array of asset uids")?;
+    if items.len() > MAX_SESSION_ASSETS {
+        return Err(format!("assets is capped at {MAX_SESSION_ASSETS} uids"));
+    }
+    let mut out: Vec<String> = Vec::new();
+    for item in items {
+        let uid = item.as_str().ok_or("asset uid must be a string")?;
+        require(uid).map_err(|error| error.rpc().1)?;
+        if out.iter().any(|seen| seen == uid) {
+            return Err(format!("duplicate asset {uid}"));
+        }
+        out.push(uid.to_string());
+    }
+    Ok(out)
 }
 
 fn session_prompt(agent: &Agent, params: &Value) -> Result<(Value, Vec<Value>), String> {
@@ -588,6 +615,8 @@ use std::io::{BufRead, Write};
 mod tests {
     use super::*;
 
+    use gen_audio_core::bridge::NoKokoroEnv;
+
     #[test]
     fn handshake_smoke() {
         assert_eq!(smoke().unwrap(), "acp smoke ok");
@@ -648,6 +677,7 @@ mod tests {
 
     #[test]
     fn session_persona_generate_calls_synth_and_does_not_invent_speech() {
+        let _env = NoKokoroEnv::new();
         let agent = Agent::new();
         let created = handle(
             &agent,
@@ -682,6 +712,7 @@ mod tests {
         assert!(blob.contains("No speech was invented"), "{blob}");
         assert!(blob.contains("tool_call"), "{blob}");
         assert!(!blob.contains("\"synthesizedSpeech\":true"), "{blob}");
+        assert!(blob.contains("GEN_AUDIO_KOKORO_MODEL and GEN_AUDIO_KOKORO_VOICES are unset"), "{blob}");
         let rejected = handle(
             &agent,
             json!({
@@ -693,5 +724,30 @@ mod tests {
         )
         .unwrap_err();
         assert!(rejected.contains("connector") || rejected.contains("af_heart"), "{rejected}");
+    }
+
+    #[test]
+    fn session_new_binds_library_asset_uids() {
+        let agent = Agent::new();
+        let clip = gen_audio_core::asset_catalog::uid_for_legacy("audio_clip", "lib-misaki-kokoro").unwrap();
+        let out = handle(
+            &agent,
+            json!({"jsonrpc":"2.0","id":1,"method":"session/new","params":{"cwd":".","assets":[clip, "ga:cube_ihdr:biaxxmnibxtcur7nxdu3ffvna4"]}}),
+        )
+        .unwrap();
+        let result = &out.response.unwrap()["result"];
+        assert_eq!(result["assets"][0], clip);
+        let session = result["sessionId"].as_str().unwrap();
+        assert_eq!(agent.sessions.lock().unwrap()[session].assets.len(), 2);
+        for bad in [
+            json!(["ga:cube_ihdr:aaaaaaaaaaaaaaaaaaaaaaaaaa"]),
+            json!(["lib-misaki-kokoro"]),
+            json!([clip, clip]),
+            json!(vec![clip; 9]),
+            json!("ga:cube_ihdr:biaxxmnibxtcur7nxdu3ffvna4"),
+        ] {
+            let err = handle(&agent, json!({"jsonrpc":"2.0","id":2,"method":"session/new","params":{"cwd":".","assets":bad}}));
+            assert!(err.is_err(), "{bad} should be rejected");
+        }
     }
 }

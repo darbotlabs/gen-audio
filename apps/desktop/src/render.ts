@@ -1,6 +1,8 @@
-import { profileForPersona } from "./profiles";
+import { glyphBadge } from "./glyph";
+import type { LibraryCatalog, ModelCubes } from "./library-assets";
+import { emptyStrip } from "./livestrip";
 import { renderTransport } from "./playback";
-import { drawSpectrogram } from "./signal";
+import { SnapAnimator, WheelGesture, stepIndex, type SlideKey } from "./snap";
 import type { ViewportCard, ViewportDocument } from "./validate";
 
 const EMPTY_COPY =
@@ -23,7 +25,7 @@ export const SLIDE_SCHEMAS: SlideSchema[] = [
     blurb: "TTS and G2P models. Magpie, VibeVoice, and Pocket stay unavailable.",
     columns: 3,
     layer: "models",
-    cardIds: ["engine-kokoro", "engine-vibevoice", "engine-magpie", "engine-pocket"],
+    cardIds: ["engine-kokoro", "engine-kokoro-dayour", "engine-misaki", "engine-vibevoice", "engine-magpie", "engine-pocket"],
   },
   {
     id: "profiles",
@@ -52,6 +54,7 @@ export const SLIDE_SCHEMAS: SlideSchema[] = [
       "lib-kokoro-onnx",
       "lib-kokoro",
       "lib-misaki-kokoro",
+      "lib-bitdot-braille-vibevoice",
       "lib-magpie",
       "lib-vibevoice",
       "lib-pocket",
@@ -166,7 +169,6 @@ export function renderBoard(board: HTMLElement, empty: HTMLElement, document: Vi
         article.classList.add("profile-tile");
         article.dataset.personaId = String(card.body.personaId ?? "");
         article.dataset.voiceModel = String(card.body.voiceModel ?? "");
-        article.dataset.cubeJson = typeof card.body.cubeJsonUrl === "string" ? card.body.cubeJsonUrl : "";
       }
       if (card.kind === "EngineStatus") {
         article.classList.add("engine-source");
@@ -215,6 +217,9 @@ function frontFace(card: ViewportCard): HTMLElement {
   live.className = "live-mark";
   live.textContent = liveLabel(card);
   row.append(kind, live);
+  // Asset object model v1: every card shows its uid glyph (uid on hover, copy on click).
+  const badge = glyphBadge(card.uid, { onCopy: announceCopy });
+  if (badge) row.append(badge);
   const title = window.document.createElement("h2");
   title.textContent = card.title;
   if (card.kind === "SpectrogramPanel") title.classList.add("spec-title");
@@ -268,6 +273,7 @@ function backFace(card: ViewportCard): HTMLElement {
   const title = window.document.createElement("h2");
   title.textContent = card.title;
   if (card.kind === "VoiceProfile") face.append(voiceProfileBack(card));
+  else if (card.kind === "EngineStatus") face.append(engineBack(card));
   else face.append(adaptiveFace(card));
   if (card.kind === "LibraryClip") face.append(renameBlock(card));
   const flip = button("Show front");
@@ -425,6 +431,10 @@ function bodyFor(card: ViewportCard, kind: string, body: Record<string, unknown>
       const sr = String(body.sample_rate ?? "?");
       wrap.append(paragraph((dur ? dur.toFixed(1) : "?") + "s · " + sr + " Hz"));
       wrap.append(renderTransport(card.id, typeof body.wavUrl === "string" ? body.wavUrl : undefined, dur));
+      // Filled from /library/assets.json once it loads (spectrogram strip + clip glyph).
+      const slot = window.document.createElement("div");
+      slot.className = "spec-strip-slot";
+      wrap.append(slot);
       if (body.cubePngUrl) {
         const img = window.document.createElement("img");
         img.className = "cube-thumb";
@@ -439,6 +449,7 @@ function bodyFor(card: ViewportCard, kind: string, body: Record<string, unknown>
     } else {
       wrap.append(paragraph("No WAV — honest empty tile."));
       wrap.append(renderTransport(card.id, undefined));
+      wrap.append(emptyStrip("this clip has no WAV, so there is nothing to analyze."));
     }
   } else if (kind === "VoiceProfile") {
     wrap.append(pill(String(body.voiceModel ?? "voice"), false));
@@ -451,6 +462,11 @@ function bodyFor(card: ViewportCard, kind: string, body: Record<string, unknown>
     else wrap.append(paragraph("Authenticated: no"));
   }
   return wrap;
+}
+
+export function announceCopy(uid: string, copied: boolean): void {
+  const status = window.document.querySelector<HTMLElement>("#status");
+  if (status) status.textContent = copied ? `Copied ${uid}` : `Clipboard unavailable. uid: ${uid}`;
 }
 
 function pill(text: string, warn: boolean): HTMLElement {
@@ -514,6 +530,141 @@ function adaptiveFace(card: ViewportCard): HTMLElement {
   return wrap;
 }
 
+/**
+ * Voice model (EngineStatus) back face: a Status tab (the adaptive card) and a
+ * Cube tab listing the engine's real cubes (E4). The Cube tab reads "pending"
+ * until /library/assets.json loads; fillModelCubes then fills it.
+ */
+function engineBack(card: ViewportCard): HTMLElement {
+  const engineId = String(card.body.engineId ?? card.id);
+  const wrap = window.document.createElement("div");
+  wrap.className = "engine-back";
+  const list = window.document.createElement("div");
+  list.className = "back-tabs";
+  list.setAttribute("role", "tablist");
+  list.setAttribute("aria-label", `${card.title} details`);
+  const panels: HTMLElement[] = [];
+  const tabs: HTMLButtonElement[] = [];
+  const select = (index: number, focus: boolean) => {
+    tabs.forEach((tab, i) => {
+      tab.setAttribute("aria-selected", String(i === index));
+      tab.tabIndex = i === index ? 0 : -1;
+      panels[i].hidden = i !== index;
+    });
+    if (focus) tabs[index].focus();
+  };
+  const status = adaptiveFace(card);
+  const cube = window.document.createElement("div");
+  cube.className = "model-cubes";
+  cube.dataset.modelCubes = engineId;
+  cube.append(paragraph("pending"));
+  ([["Status", status], ["Cube", cube]] as const).forEach(([label, panel], index) => {
+    const id = `${card.id}-tab-${label.toLowerCase()}`;
+    const tab = button(label);
+    tab.id = id;
+    tab.dataset.tab = label.toLowerCase();
+    tab.setAttribute("role", "tab");
+    tab.setAttribute("aria-controls", `${id}-panel`);
+    tab.addEventListener("click", (event) => {
+      event.stopPropagation();
+      select(index, false);
+    });
+    tab.addEventListener("keydown", (event) => {
+      const next = event.key === "ArrowRight" ? index + 1 : event.key === "ArrowLeft" ? index - 1 : event.key === "Home" ? 0 : event.key === "End" ? 1 : null;
+      if (next === null) return;
+      event.preventDefault();
+      event.stopPropagation();
+      select((next + 2) % 2, true);
+    });
+    panel.id = `${id}-panel`;
+    panel.setAttribute("role", "tabpanel");
+    panel.setAttribute("aria-labelledby", id);
+    tabs.push(tab);
+    panels.push(panel);
+    list.append(tab);
+  });
+  wrap.append(list, ...panels);
+  select(0, false);
+  return wrap;
+}
+
+export interface ModelCubeActions {
+  openCube(jsonUrl: string, source: string): void;
+  selectTile(tileId: string): void;
+}
+
+const fixed = (value: number | null, digits: number) => (value === null ? "pending" : value.toFixed(digits));
+
+/** Fill every voice model card's Cube tab from the asset catalog (E4). */
+export function fillModelCubes(board: HTMLElement, catalog: LibraryCatalog | null, actions: ModelCubeActions): void {
+  board.querySelectorAll<HTMLElement>("[data-model-cubes]").forEach((panel) => {
+    const view: ModelCubes = catalog ? catalog.modelCubes(panel.dataset.modelCubes ?? "") : { state: "unknown" };
+    panel.dataset.state = view.state;
+    panel.replaceChildren();
+    if (view.state === "unknown") {
+      panel.append(paragraph("pending"));
+    } else if (view.state === "none") {
+      panel.append(paragraph("no cube: no Library clip from this engine yet"));
+    } else if (view.state === "unavailable") {
+      panel.append(paragraph(`no cube: engine unavailable (${view.reason})`));
+    } else if (view.state === "g2p") {
+      const first = view.clips[0];
+      panel.append(paragraph(first ? `G2P only, see ${first.clipTitle}` : "G2P only: no clip yet"));
+      for (const clip of view.clips) {
+        const link = button(`Open ${clip.clipTitle}`);
+        link.dataset.action = "select-tile";
+        link.dataset.tileId = clip.clipId;
+        link.addEventListener("click", (event) => {
+          event.stopPropagation();
+          actions.selectTile(clip.clipId);
+        });
+        panel.append(link);
+      }
+    } else {
+      if (view.offline) panel.append(paragraph("Offline run: rendered outside this app; the engine has no adapter here."));
+      const table = window.document.createElement("table");
+      table.className = "model-cube-table";
+      const head = window.document.createElement("tr");
+      for (const label of ["Clip", "Cube uid", "rev", "shape", "inv-HDR", "layer score", ""]) {
+        const th = window.document.createElement("th");
+        th.textContent = label;
+        head.append(th);
+      }
+      table.append(head);
+      for (const row of view.rows) {
+        const tr = window.document.createElement("tr");
+        tr.dataset.cubeUid = row.cubeUid;
+        const cells = [
+          view.offline ? `${row.clipTitle} (offline run)` : row.clipTitle,
+          row.cubeUid,
+          row.revision === null ? "pending" : String(row.revision),
+          row.shape ? `${row.shape[0]}\u00d7${row.shape[1]}` : "pending",
+          fixed(row.invHdr, 4),
+          fixed(row.layerScore, 4),
+        ];
+        cells.forEach((text, i) => {
+          const td = window.document.createElement("td");
+          td.textContent = text;
+          if (i === 1) td.className = "mono";
+          tr.append(td);
+        });
+        const open = button("Open 3D cube");
+        open.dataset.action = "open-cube";
+        open.dataset.cubeJson = row.jsonUrl;
+        open.addEventListener("click", (event) => {
+          event.stopPropagation();
+          actions.openCube(row.jsonUrl, row.clipId);
+        });
+        const td = window.document.createElement("td");
+        td.append(open);
+        tr.append(td);
+        table.append(tr);
+      }
+      panel.append(table);
+    }
+  });
+}
+
 function fallbackBack(kind: string, body: Record<string, unknown>): string {
   if (kind === "EngineStatus") return `${String(body.engineId ?? "engine")} is ${String(body.status ?? "unknown")}. No speech claim.`;
   if (kind === "ConnectorStatus") return `${String(body.connectorId ?? "connector")} mode ${String(body.mode ?? "unknown")}.`;
@@ -542,8 +693,6 @@ function voiceProfileBack(card: ViewportCard): HTMLElement {
     ["Accent", String(body.accent ?? "")],
     ["Traits", String(body.traits ?? "")],
     ["Refs", Array.isArray(body.refs) ? body.refs.map((item) => String(item)).join(", ") : ""],
-    ["2D spectrogram", String(body.spectrogram2d ?? "")],
-    ["3D spectrogram", String(body.spectrogram3d ?? "none")],
   ];
   const list = window.document.createElement("dl");
   list.className = "profile-schema";
@@ -556,25 +705,14 @@ function voiceProfileBack(card: ViewportCard): HTMLElement {
     list.append(term, detail);
   }
   wrap.append(list);
+  // Persona config, not audio evidence (H): no spectrogram area and no cube
+  // link. The voice model row is the honest relation; that engine's own
+  // clips and cubes are on the Library slide.
+  const none = paragraph("No audio of this persona yet");
+  none.dataset.field = "no-audio";
+  wrap.append(none);
   wrap.append(paragraph(String(body.disclaimer ?? "")));
-  const canvas = window.document.createElement("canvas");
-  canvas.dataset.canvas = "profile-spec";
-  canvas.dataset.personaId = String(body.personaId ?? "");
-  canvas.dataset.voiceModel = String(body.voiceModel ?? "");
-  wrap.append(canvas);
-  const open = button(body.spectrogram3d === "library-cube-hook" ? "Open 3D cube" : "No library cube");
-  open.dataset.action = "open-cube";
-  open.dataset.cubeJson = typeof body.cubeJsonUrl === "string" ? body.cubeJsonUrl : "";
-  open.disabled = body.spectrogram3d !== "library-cube-hook";
-  wrap.append(open);
   return wrap;
-}
-
-export function paintProfileCanvases(): void {
-  document.querySelectorAll<HTMLCanvasElement>('[data-canvas="profile-spec"]').forEach((canvas) => {
-    const preview = profileForPersona(canvas.dataset.personaId || "alice", canvas.dataset.voiceModel || "kokoro_onnx");
-    drawSpectrogram(canvas, preview.before, preview.beforeTitle);
-  });
 }
 
 function renameBlock(card: ViewportCard): HTMLElement {
@@ -629,7 +767,7 @@ function appendUtilitySlides(board: HTMLElement, startIndex: number): number {
   spatial.dataset.slide = "spatial";
   spatial.dataset.layer = "cube";
   spatial.dataset.slideIndex = String(startIndex + 1);
-  spatial.setAttribute("aria-label", "Spatial cube: Inverse-HDR bitdot cube from library cube JSON");
+  spatial.setAttribute("aria-label", "Spatial cube: Inverse-HDR cube from library cube JSON");
 
   // The WebGL cube is the whole card. Everything else is a translucent overlay.
   const stage = window.document.createElement("div");
@@ -637,7 +775,7 @@ function appendUtilitySlides(board: HTMLElement, startIndex: number): number {
   const canvas = window.document.createElement("canvas");
   canvas.id = "cube-viewport";
   canvas.dataset.canvas = "cube-viewport";
-  canvas.setAttribute("aria-label", "Inverse-HDR bitdot cube. Drag to rotate, wheel to zoom.");
+  canvas.setAttribute("aria-label", "Inverse-HDR cube. Drag to rotate, wheel to zoom.");
   const labels = window.document.createElement("canvas");
   labels.id = "cube-labels";
   labels.className = "cube-labels";
@@ -646,7 +784,7 @@ function appendUtilitySlides(board: HTMLElement, startIndex: number): number {
   const title = window.document.createElement("p");
   title.id = "cube-title";
   title.className = "cube-overlay cube-title";
-  title.textContent = "Inverse-HDR bitdot cube";
+  title.textContent = "Inverse-HDR cube";
 
   const legend = window.document.createElement("ul");
   legend.className = "cube-overlay cube-legend";
@@ -675,7 +813,10 @@ function appendUtilitySlides(board: HTMLElement, startIndex: number): number {
   layersToggle.textContent = "Layers \u25be";
   layersToggle.setAttribute("aria-expanded", "true");
   layersToggle.setAttribute("aria-controls", "cube-layer-matrix");
-  picker.append(select, play, layersToggle);
+  const cubeGlyph = window.document.createElement("span");
+  cubeGlyph.id = "cube-glyph";
+  cubeGlyph.className = "cube-glyph";
+  picker.append(cubeGlyph, select, play, layersToggle);
 
   const badge = window.document.createElement("p");
   badge.id = "cube-badge";
@@ -754,33 +895,55 @@ export function currentSlide(board: HTMLElement): HTMLElement | null {
   return list[currentSlideIndex(board)] ?? null;
 }
 
-export function goToSlide(board: HTMLElement, index: number): void {
+const animators = new WeakMap<HTMLElement, SnapAnimator>();
+
+function animatorFor(board: HTMLElement): SnapAnimator {
+  let animator = animators.get(board);
+  if (!animator) {
+    animator = new SnapAnimator(board, (index) => syncSlideChrome(index, slides(board).length));
+    animators.set(board, animator);
+  }
+  return animator;
+}
+
+/** True while a slide animation is running (input lock). */
+export function isSnapping(board: HTMLElement): boolean {
+  return animatorFor(board).locked;
+}
+
+/**
+ * Jump or glide to a slide by its position in the DOM slide list. Dots, label and
+ * layer tabs update to the target immediately and again when the glide lands.
+ */
+export function goToSlide(board: HTMLElement, index: number, options: { animate?: boolean } = {}): void {
   const list = slides(board);
   if (list.length === 0) return;
   const next = Math.min(list.length - 1, Math.max(0, index));
   const slide = list[next];
-  const delta = slide.getBoundingClientRect().top - board.getBoundingClientRect().top;
-  board.style.scrollBehavior = "auto";
-  board.scrollTop += delta;
-  const slideCards = Array.from(list[next].querySelectorAll<HTMLElement>(".card"));
+  const slideCards = Array.from(slide.querySelectorAll<HTMLElement>(".card"));
   cards(board).forEach((item) => {
     item.tabIndex = -1;
   });
+  syncSlideChrome(next, list.length);
+  syncLayerTabs(slide.dataset.slide);
+  animatorFor(board).go(slide, next, options.animate === true);
   if (slideCards[0]) {
     slideCards[0].tabIndex = 0;
     slideCards[0].focus({ preventScroll: true });
   }
-  syncSlideChrome(next, list.length);
-  syncLayerTabs(slide.dataset.slide);
 }
 
-export function moveSlide(board: HTMLElement, direction: 1 | -1 | "home" | "end"): void {
+/** One slide per call (keys, wheel); ignored while the previous glide is still running. */
+export function moveSlide(board: HTMLElement, direction: 1 | -1 | Exclude<SlideKey, null>): boolean {
   const list = slides(board);
-  if (list.length === 0) return;
+  if (list.length === 0) return false;
+  const animator = animatorFor(board);
+  if (animator.locked) return false;
   const current = currentSlideIndex(board);
-  if (direction === "home") goToSlide(board, 0);
-  else if (direction === "end") goToSlide(board, list.length - 1);
-  else goToSlide(board, current + direction);
+  const target = stepIndex(current, direction, list.length);
+  if (target === current) return false;
+  goToSlide(board, target, { animate: true });
+  return true;
 }
 
 export function moveFocus(board: HTMLElement, direction: 1 | -1 | "home" | "end"): void {
@@ -814,7 +977,7 @@ function buildSlideDots(count: number): void {
     dot.dataset.slideIndex = String(i);
     dot.addEventListener("click", () => {
       const board = window.document.querySelector<HTMLElement>("#board");
-      if (board) goToSlide(board, i);
+      if (board) goToSlide(board, i, { animate: true });
     });
     host.append(dot);
   }
@@ -837,12 +1000,29 @@ export function syncSlideChrome(index: number, total: number): void {
   });
 }
 
+/** Elements that keep their own wheel (cube zoom, range sliders, scrollable lists). */
+function ownsWheel(target: EventTarget | null, deltaY: number): boolean {
+  let node = target instanceof Element ? target : null;
+  while (node && !node.classList.contains("board")) {
+    if (node.matches("select, input[type='range'], textarea")) return true;
+    if (node instanceof HTMLElement && node.scrollHeight > node.clientHeight + 1) {
+      const overflow = window.getComputedStyle(node).overflowY;
+      if (overflow === "auto" || overflow === "scroll") {
+        const canScroll = deltaY > 0 ? node.scrollTop + node.clientHeight < node.scrollHeight - 1 : node.scrollTop > 0;
+        if (canScroll) return true;
+      }
+    }
+    node = node.parentElement;
+  }
+  return false;
+}
+
 export function bindSlideScroll(board: HTMLElement): void {
   let frame = 0;
   board.addEventListener(
     "scroll",
     () => {
-      if (frame) return;
+      if (frame || isSnapping(board)) return;
       frame = window.requestAnimationFrame(() => {
         frame = 0;
         const total = slides(board).length;
@@ -850,5 +1030,18 @@ export function bindSlideScroll(board: HTMLElement): void {
       });
     },
     { passive: true },
+  );
+  const gesture = new WheelGesture();
+  board.addEventListener(
+    "wheel",
+    (event) => {
+      // The cube canvas zooms on wheel and calls preventDefault first.
+      if (event.defaultPrevented || event.ctrlKey || Math.abs(event.deltaY) < Math.abs(event.deltaX)) return;
+      if (ownsWheel(event.target, event.deltaY)) return;
+      event.preventDefault();
+      const step = gesture.feed(event.deltaY, event.deltaMode, event.timeStamp || performance.now(), isSnapping(board));
+      if (step !== 0) moveSlide(board, step);
+    },
+    { passive: false },
   );
 }
