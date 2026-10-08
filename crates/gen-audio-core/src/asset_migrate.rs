@@ -69,6 +69,66 @@ fn clip_voice_model(engine: &str) -> Option<(&'static str, Option<&'static str>)
     }
 }
 
+/// Layer methods a manifest `cube.compare` entry may name (gen_audio.cube_layers
+/// LAYER_METHODS minus the default library_r3, which is the clip's own cube).
+pub const COMPARE_LAYER_METHODS: &[&str] = &["pipeline_r2"];
+
+/// cube_ihdr identity fields, body and "bins inferred" flag from a cube JSON
+/// (plus the v0 manifest `cube` block for fallbacks; Null when there is none).
+fn cube_identity(cube_doc: &Value, cube: &Value, sha: &str, sample_rate: u64, json_path: &str, png_path: &str) -> (Value, Value, bool) {
+    let cube_sr = cube_doc["sample_rate"].as_u64().unwrap_or(sample_rate);
+    let cube_duration_s = cube_doc["duration_s"].as_f64().or_else(|| cube["duration_s"].as_f64()).unwrap_or(0.0);
+    let shape = cube_doc["cube_shape_f_t"]
+        .as_array()
+        .cloned()
+        .or_else(|| cube_doc.pointer("/layers/signal/shape").and_then(Value::as_array).cloned())
+        .unwrap_or_default();
+    let freq_bins = shape.first().and_then(Value::as_u64).unwrap_or(0);
+    let time_bins = shape.get(1).and_then(Value::as_u64).unwrap_or(0).max(1);
+    let hop = cube_doc["hop"].as_u64();
+    let (bin_frames, inferred) = match (cube_doc["downsample_sf_st"].get(1).and_then(Value::as_u64), hop) {
+        (Some(step), Some(hop)) => (step * hop, false),
+        // No downsample step: infer from the float duration (B1'; two binary64 ops).
+        _ => (bin_frames_inferred(cube_duration_s, cube_sr, time_bins).unwrap_or(0), true),
+    };
+    let covers_ms = cube_doc["cube_covers_s"]
+        .as_f64()
+        .map(ms)
+        .unwrap_or_else(|| ms_from_frames(time_bins * bin_frames, cube_sr));
+    let n_points = cube_doc["n_points"]
+        .as_u64()
+        .unwrap_or_else(|| cube_doc["points_preview"].as_array().map(|items| items.len() as u64).unwrap_or(0));
+    let inv_hdr = cube_doc["inv_hdr"].as_f64().or_else(|| cube["inv_hdr"].as_f64()).unwrap_or(0.0);
+    let mut fields = json!({
+        "source_sha256": sha,
+        "sample_rate_hz": cube_sr,
+        "bin_frames": bin_frames,
+        "time_bins": time_bins,
+        "freq_bins": freq_bins,
+        "duration_ms": ms(cube_duration_s),
+        "covers_ms": covers_ms,
+        "inv_hdr_ppm": round_half_up(inv_hdr * 1_000_000.0).unwrap_or(0),
+        "cube_revision": cube_doc["cube_revision"].as_u64().or_else(|| cube["cube_revision"].as_u64()).unwrap_or(1),
+        "n_points": n_points,
+    });
+    if let Some(n_fft) = cube_doc["n_fft"].as_u64() {
+        fields["n_fft"] = json!(n_fft);
+    }
+    if let Some(hop) = hop {
+        fields["hop_frames"] = json!(hop);
+    }
+    let body = json!({
+        "inv_hdr": inv_hdr,
+        "duration_s": cube_duration_s,
+        "bin_seconds": bin_frames as f64 / cube_sr.max(1) as f64,
+        "cube_covers_s": covers_ms as f64 / 1000.0,
+        "cube_shape_f_t": [freq_bins, time_bins],
+        "json_url": format!("/library/{json_path}"),
+        "png_url": format!("/library/{png_path}"),
+    });
+    (fields, body, inferred)
+}
+
 pub fn migrate_v0_to_v1(bundle: &Value) -> Result<Value, AssetError> {
     let media = bundle.get("media").cloned().unwrap_or_else(|| json!({}));
     let clips = bundle.pointer("/manifest/clips").and_then(Value::as_array).cloned().unwrap_or_default();
@@ -211,47 +271,7 @@ pub fn migrate_v0_to_v1(bundle: &Value) -> Result<Value, AssetError> {
         let Some(cube_doc) = bundle.pointer("/cube_docs").and_then(|docs| docs.get(&json_path)) else {
             return fail("cube_doc_missing", format!("v0 clip {id}: cube JSON {json_path} not supplied"));
         };
-        let cube_sr = cube_doc["sample_rate"].as_u64().unwrap_or(sample_rate);
-        let cube_duration_s = cube_doc["duration_s"].as_f64().or_else(|| cube["duration_s"].as_f64()).unwrap_or(0.0);
-        let shape = cube_doc["cube_shape_f_t"]
-            .as_array()
-            .cloned()
-            .or_else(|| cube_doc.pointer("/layers/signal/shape").and_then(Value::as_array).cloned())
-            .unwrap_or_default();
-        let freq_bins = shape.first().and_then(Value::as_u64).unwrap_or(0);
-        let time_bins = shape.get(1).and_then(Value::as_u64).unwrap_or(0).max(1);
-        let hop = cube_doc["hop"].as_u64();
-        let (bin_frames, inferred) = match (cube_doc["downsample_sf_st"].get(1).and_then(Value::as_u64), hop) {
-            (Some(step), Some(hop)) => (step * hop, false),
-            // No downsample step: infer from the float duration (B1'; two binary64 ops).
-            _ => (bin_frames_inferred(cube_duration_s, cube_sr, time_bins).unwrap_or(0), true),
-        };
-        let covers_ms = cube_doc["cube_covers_s"]
-            .as_f64()
-            .map(ms)
-            .unwrap_or_else(|| ms_from_frames(time_bins * bin_frames, cube_sr));
-        let n_points = cube_doc["n_points"]
-            .as_u64()
-            .unwrap_or_else(|| cube_doc["points_preview"].as_array().map(|items| items.len() as u64).unwrap_or(0));
-        let inv_hdr = cube_doc["inv_hdr"].as_f64().or_else(|| cube["inv_hdr"].as_f64()).unwrap_or(0.0);
-        let mut fields = json!({
-            "source_sha256": sha,
-            "sample_rate_hz": cube_sr,
-            "bin_frames": bin_frames,
-            "time_bins": time_bins,
-            "freq_bins": freq_bins,
-            "duration_ms": ms(cube_duration_s),
-            "covers_ms": covers_ms,
-            "inv_hdr_ppm": round_half_up(inv_hdr * 1_000_000.0).unwrap_or(0),
-            "cube_revision": cube_doc["cube_revision"].as_u64().or_else(|| cube["cube_revision"].as_u64()).unwrap_or(1),
-            "n_points": n_points,
-        });
-        if let Some(n_fft) = cube_doc["n_fft"].as_u64() {
-            fields["n_fft"] = json!(n_fft);
-        }
-        if let Some(hop) = hop {
-            fields["hop_frames"] = json!(hop);
-        }
+        let (fields, cube_body, inferred) = cube_identity(cube_doc, cube, &sha, sample_rate, &json_path, &png_path);
         let mut cube_media = Vec::new();
         cube_media.extend(media_ref(&media, "cube_json", &json_path, "application/json"));
         cube_media.extend(media_ref(&media, "cube_png", &png_path, "image/png"));
@@ -270,15 +290,7 @@ pub fn migrate_v0_to_v1(bundle: &Value) -> Result<Value, AssetError> {
                 ("generator", json!("scripts/cube_spectrogram_3d.py (inverse-HDR bitdot cube)")),
                 ("params", json!({"bins_inferred_from_shape": inferred})),
             ]),
-            body: json!({
-                "inv_hdr": inv_hdr,
-                "duration_s": cube_duration_s,
-                "bin_seconds": bin_frames as f64 / cube_sr.max(1) as f64,
-                "cube_covers_s": covers_ms as f64 / 1000.0,
-                "cube_shape_f_t": [freq_bins, time_bins],
-                "json_url": format!("/library/{json_path}"),
-                "png_url": format!("/library/{png_path}"),
-            }),
+            body: cube_body,
         })?;
         let cube_uid = remember(&mut assets, cube_envelope);
         cube_uid_by_json.insert(format!("/library/{json_path}"), cube_uid.clone());
@@ -301,6 +313,57 @@ pub fn migrate_v0_to_v1(bundle: &Value) -> Result<Value, AssetError> {
                 body: stats.clone(),
             })?;
             remember(&mut assets, layer);
+        }
+
+        // Comparison cubes of the same WAV under another layer_method
+        // (gen_audio.cube_layers, e.g. pipeline_r2 = PR #4's formulas). Cube
+        // tab Compare mode only; never the clip's primary cube.
+        for entry in cube.get("compare").and_then(Value::as_array).cloned().unwrap_or_default() {
+            let method = entry["layer_method"].as_str().unwrap_or_default().to_string();
+            if !COMPARE_LAYER_METHODS.contains(&method.as_str()) {
+                return fail("bad_layer_method", format!("v0 clip {id}: compare layer_method {method:?} is not one of {COMPARE_LAYER_METHODS:?}"));
+            }
+            let compare_json = entry["jsonUrl"].as_str().and_then(web_to_library_path).unwrap_or_default();
+            let compare_png = entry["pngUrl"].as_str().and_then(web_to_library_path).unwrap_or_default();
+            let Some(compare_doc) = bundle.pointer("/cube_docs").and_then(|docs| docs.get(&compare_json)) else {
+                return fail("cube_doc_missing", format!("v0 clip {id}: compare cube JSON {compare_json} not supplied"));
+            };
+            if compare_doc["layer_method"].as_str() != Some(method.as_str()) {
+                return fail("bad_layer_method", format!("{compare_json}: layer_method is not {method:?}"));
+            }
+            if compare_doc["source_sha256"].as_str() != Some(sha.as_str()) {
+                return fail("source_sha_mismatch", format!("{compare_json}: source_sha256 is not the sha256 of {wav_path}"));
+            }
+            let (fields, body, inferred) = cube_identity(compare_doc, &Value::Null, &sha, sample_rate, &compare_json, &compare_png);
+            let mut compare_media = Vec::new();
+            compare_media.extend(media_ref(&media, "cube_json", &compare_json, "application/json"));
+            compare_media.extend(media_ref(&media, "cube_png", &compare_png, "image/png"));
+            let envelope = build_envelope(EnvelopeParts {
+                kind: "cube_ihdr",
+                legacy_id: Some(format!("{id}.cube.{method}")),
+                title: compare_doc["title"].as_str().map(str::to_string).unwrap_or_else(|| format!("Inverse-HDR cube ({method}) — {id}")),
+                summary: entry["note"].as_str().map(str::to_string),
+                status: "ok",
+                fields,
+                media: compare_media,
+                src: vec![uid.clone()],
+                relations: Map::new(),
+                honesty: honesty(false, false, &["library_cube"]),
+                provenance: obj(vec![
+                    ("generator", json!(format!("gen_audio.cube_layers layer_method {method} (comparison variant)"))),
+                    (
+                        "params",
+                        json!({
+                            "bins_inferred_from_shape": inferred,
+                            "layer_method": method,
+                            "compare_to": cube_uid,
+                            "layer_method_source": compare_doc["layer_method_source"],
+                        }),
+                    ),
+                ]),
+                body,
+            })?;
+            remember(&mut assets, envelope);
         }
     }
 

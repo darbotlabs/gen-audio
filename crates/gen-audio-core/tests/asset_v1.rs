@@ -244,3 +244,60 @@ fn library_media_hashes_verify_where_present() {
     }
     assert!(verified > 0);
 }
+
+/// A v0 bundle with one clip, its cube and one `cube.compare[]` entry (Cube tab Compare mode).
+fn compare_bundle(compare_sha: &str, method: &str) -> Value {
+    let wav_sha = "61b8ca26b3f4759ce643738e2afbc80f7bf2a5eb554c5fedbfbdc2d9bfad3d38";
+    let cube_doc = |extra: Value| {
+        let mut doc = serde_json::json!({
+            "sample_rate": 24000, "duration_s": 139.375, "cube_shape_f_t": [102, 395], "downsample_sf_st": [5, 33],
+            "hop": 256, "n_fft": 1024, "cube_covers_s": 139.04, "n_points": 3600, "inv_hdr": 0.07021075781225594,
+            "cube_revision": 3, "title": "cube"
+        });
+        doc.as_object_mut().unwrap().extend(extra.as_object().unwrap().clone());
+        doc
+    };
+    let digest = |n: u8| serde_json::json!({"sha256": format!("{:064x}", n), "bytes": 10});
+    serde_json::json!({
+        "manifest": {"clips": [{
+            "id": "lib-misaki-kokoro", "engineId": "misaki_kokoro", "title": "misaki", "status": "ok", "synthesizedSpeech": false,
+            "sample_rate": 24000, "duration_s": 139.375, "wavUrl": "/library/m.wav",
+            "cube": {
+                "jsonUrl": "/library/c.json", "pngUrl": "/library/c.png",
+                "compare": [{"layer_method": method, "jsonUrl": "/library/c2.json", "pngUrl": "/library/c2.png"}]
+            }
+        }]},
+        "voice_models": [], "cards": [], "profiles": [], "spectrograms": [],
+        "cube_docs": {
+            "c.json": cube_doc(serde_json::json!({"layer_score": 0.24})),
+            "c2.json": cube_doc(serde_json::json!({"layer_score": 0.25, "cube_revision": 2, "layer_method": method, "source_sha256": compare_sha}))
+        },
+        "media": {
+            "m.wav": {"sha256": wav_sha, "bytes": 6690044, "frames": 3345000, "sample_rate": 24000, "channels": 1},
+            "c.json": digest(1), "c.png": digest(2), "c2.json": digest(3), "c2.png": digest(4)
+        }
+    })
+}
+
+#[test]
+fn compare_cubes_migrate_as_real_cubes_of_the_same_wav() {
+    let wav_sha = "61b8ca26b3f4759ce643738e2afbc80f7bf2a5eb554c5fedbfbdc2d9bfad3d38";
+    let migrated = migrate_to_v1(&compare_bundle(wav_sha, "pipeline_r2")).expect("migrates");
+    let assets = migrated["assets"].as_array().unwrap().clone();
+    validate_set(&assets).expect("valid set");
+    let compare = assets.iter().find(|a| a["legacy_id"] == "lib-misaki-kokoro.cube.pipeline_r2").expect("compare cube");
+    let own = assets.iter().find(|a| a["legacy_id"] == "lib-misaki-kokoro.cube").expect("own cube");
+    assert_eq!(compare["kind"], "cube_ihdr");
+    assert_eq!(compare["fields"]["source_sha256"], wav_sha);
+    assert_eq!(compare["fields"]["cube_revision"], 2);
+    assert_eq!(compare["provenance"]["params"]["layer_method"], "pipeline_r2");
+    assert_eq!(compare["provenance"]["params"]["compare_to"], own["uid"]);
+    assert_eq!(compare["src"], own["src"]);
+    assert_ne!(compare["uid"], own["uid"]);
+    let roles: Vec<&str> = compare["media"].as_array().unwrap().iter().map(|m| m["role"].as_str().unwrap()).collect();
+    assert_eq!(roles, ["cube_json", "cube_png"]);
+    // Another WAV's cube, or an unknown layer method, is refused rather than shipped.
+    assert_eq!(code(migrate_to_v1(&compare_bundle(&"0".repeat(64), "pipeline_r2"))), "source_sha_mismatch");
+    assert_eq!(code(migrate_to_v1(&compare_bundle(wav_sha, "library_r3"))), "bad_layer_method");
+    assert_eq!(code(migrate_to_v1(&compare_bundle(wav_sha, "pipeline_r9"))), "bad_layer_method");
+}
