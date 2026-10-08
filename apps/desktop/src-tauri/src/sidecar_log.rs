@@ -41,12 +41,19 @@ pub fn log_path(dir: &Path, index: usize) -> PathBuf {
 /// Append-only log that rotates before a write would take the current file
 /// past `max_bytes`, keeping `files` files in all (so at most
 /// `files * max_bytes` bytes on disk).
+///
+/// A line that cannot be written (a rotation that fails, a closed file) is
+/// never lost silently: the first failure says so once on the desktop's own
+/// stderr, every lost line is counted, and the first write that succeeds
+/// again is preceded by one marker line with the count and the reason.
 pub struct RotatingLog {
     dir: PathBuf,
     max_bytes: u64,
     files: usize,
     file: Option<File>,
     size: u64,
+    dropped: u64,
+    drop_reason: String,
 }
 
 impl RotatingLog {
@@ -60,15 +67,45 @@ impl RotatingLog {
             files: files.max(1),
             file: Some(file),
             size,
+            dropped: 0,
+            drop_reason: String::new(),
         })
     }
 
+    /// Lines lost since the last successful write (0 once a marker reported them).
+    pub fn dropped(&self) -> u64 {
+        self.dropped
+    }
+
     pub fn write_line(&mut self, line: &str) -> io::Result<()> {
+        let result = self.report_drops().and_then(|()| self.append(line));
+        if let Err(err) = &result {
+            if self.dropped == 0 {
+                eprintln!("gen-audio-desktop: sidecar log write failed ({err}); counting dropped lines until it recovers");
+            }
+            self.dropped += 1;
+            self.drop_reason = redact(&err.to_string());
+        }
+        result
+    }
+
+    /// Writes the one marker line for the lines lost so far, if any.
+    fn report_drops(&mut self) -> io::Result<()> {
+        if self.dropped == 0 {
+            return Ok(());
+        }
+        let marker = format!("{} gen-audio-desktop: sidecar log dropped {} line(s): {}", now_ms(), self.dropped, self.drop_reason);
+        self.append(&marker)?;
+        self.dropped = 0;
+        Ok(())
+    }
+
+    fn append(&mut self, line: &str) -> io::Result<()> {
         let max = usize::try_from(self.max_bytes.saturating_sub(1)).unwrap_or(usize::MAX);
         let line = cut(line, max);
         let bytes = line.len() as u64 + 1;
-        if self.size > 0 && self.size + bytes > self.max_bytes {
-            self.rotate()?;
+        if self.file.is_none() || (self.size > 0 && self.size + bytes > self.max_bytes) {
+            self.rotate().map_err(|err| io::Error::new(err.kind(), format!("rotate failed: {err}")))?;
         }
         let file = match self.file.as_mut() {
             Some(file) => file,
@@ -396,6 +433,31 @@ mod tests {
         assert_eq!(redact("gen-audio-mcp: listening on library_kokoro_cube3d"), "gen-audio-mcp: listening on library_kokoro_cube3d");
         assert!(redact(&"a".repeat(5000)).len() <= MAX_LINE + "<redacted>".len());
         assert!(!redact("a\u{1b}[31mred\rb").contains(['\u{1b}', '\r']));
+    }
+
+    /// A rotation that fails (here: `.log.2` is a non-empty directory, so the
+    /// `.log.1` -> `.log.2` rename fails) must not lose lines silently: they
+    /// are counted, and the first write that succeeds again is preceded by one
+    /// marker line saying how many were dropped and why.
+    #[test]
+    fn a_failed_rotation_is_counted_and_marked_not_silent() {
+        let dir = scratch("rotate-fail");
+        let mut log = RotatingLog::open(&dir, 256, FILES).unwrap();
+        log.write_line(&format!("first line {}", "x".repeat(200))).unwrap();
+        fs::write(log_path(&dir, 1), "older\n").unwrap();
+        fs::create_dir_all(log_path(&dir, 2).join("blocker")).unwrap();
+        for i in 0..3 {
+            assert!(log.write_line(&format!("lost {i} {}", "y".repeat(100))).is_err(), "rotation should fail");
+        }
+        assert_eq!(log.dropped(), 3);
+        fs::remove_dir_all(log_path(&dir, 2)).unwrap();
+        log.write_line("after recovery").unwrap();
+        assert_eq!(log.dropped(), 0, "the marker reported them");
+        let current = fs::read_to_string(log_path(&dir, 0)).unwrap();
+        let marker = current.lines().find(|line| line.contains("sidecar log dropped 3 line(s)")).unwrap_or_else(|| panic!("no drop marker in {current:?}"));
+        assert!(marker.contains("rotate failed"), "{marker}");
+        assert!(current.ends_with("after recovery\n"), "{current:?}");
+        let _ = fs::remove_dir_all(&dir);
     }
 
     /// Feeds `input` through `pump` into a fresh log and returns its lines,
