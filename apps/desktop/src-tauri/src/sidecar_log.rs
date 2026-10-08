@@ -1,8 +1,8 @@
 //! The MCP sidecar's stderr, kept: a size-capped rotating file in the Tauri
 //! app_log_dir (gen-audio-mcp.log, .log.1, .log.2; 1 MiB each).
 //!
-//! The sidecar writes one stderr line per rejected request (method, path,
-//! status, reason, peer) and its startup errors. Before this, the desktop
+//! The sidecar writes one stderr line per rejected request (method, target,
+//! status, reason, peer and seq) and its startup errors. Before this, the desktop
 //! spawned it with stderr set to null, so on a user's machine those lines went
 //! nowhere: a diagnostic written to a stream nobody can read is the same as no
 //! diagnostic.
@@ -201,7 +201,7 @@ pub enum Rule {
 ///
 /// Denylist redaction is defense in depth, not the boundary. The boundary is
 /// what is written at all: the sidecar's rejection lines carry method, target,
-/// status, reason and peer, never a body or a header value. This table only
+/// status, reason, peer and seq, never a body or a header value. This table only
 /// catches what slips through anyway and can never be complete, so a miss is
 /// first a reason to stop writing that thing, then a new row here.
 pub const CLASSES: &[(&str, Rule)] = &[

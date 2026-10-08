@@ -332,13 +332,18 @@ thread_local! {
     static LOGGED_ON_THIS_THREAD: std::cell::RefCell<Vec<String>> = const { std::cell::RefCell::new(Vec::new()) };
 }
 
-/// One stderr line per rejected request: method, path or tool, code, reason
-/// and peer. Kept in a small ring so tests (and a future status read) can see it.
+/// This process's rejection number, so no two rejection lines are the same
+/// text even when the OS hands two connections the same client port.
+static REJECTION_SEQ: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
+/// One stderr line per rejected request: method, path or tool, code, reason,
+/// peer and seq. Kept in a small ring so tests (and a future status read) can see it.
 fn log_rejection(stream: &TcpStream, method: &str, target: &str, code: &str, reason: &str) {
     let peer = stream.peer_addr().map(|addr| addr.to_string()).unwrap_or_else(|_| "?".into());
     let method = if method.is_empty() { "-" } else { method };
     let target = if target.is_empty() { "-" } else { target };
-    let line = format!("gen-audio-mcp http: rejected {method} {target} {code} {reason} peer={peer}");
+    let seq = REJECTION_SEQ.fetch_add(1, std::sync::atomic::Ordering::Relaxed) + 1;
+    let line = format!("gen-audio-mcp http: rejected {method} {target} {code} {reason} peer={peer} seq={seq}");
     eprintln!("{line}");
     #[cfg(test)]
     LOGGED_ON_THIS_THREAD.with(|lines| lines.borrow_mut().push(line.clone()));
@@ -776,34 +781,44 @@ mod tests {
         ]
     }
 
-    /// Lines in the production ring (`recent_rejections()`) that name this peer.
-    fn ring_lines_for(peer: &str) -> usize {
-        let suffix = format!(" peer={peer}");
-        recent_rejections().iter().filter(|line| line.ends_with(&suffix)).count()
+    /// How many times this exact line is in the production ring (`recent_rejections()`).
+    fn ring_copies_of(line: &str) -> usize {
+        recent_rejections().iter().filter(|ring_line| *ring_line == line).count()
     }
 
     /// The thread-local hook scopes lines to their connection; it must not
     /// stand in for the production path. So each line this worker logged must
-    /// also be in `recent_rejections()` verbatim, as the one new ring line for
-    /// this peer. (stderr is checked by `every_rejection_reaches_stderr_exactly_once`.)
+    /// also be in `recent_rejections()` verbatim, exactly once. Keyed on the
+    /// whole line, which its `seq=` makes unique, never on `peer=`: while the
+    /// request is in flight, "another connection" on this same client port
+    /// leaves its lines in the ring (forced, not left to port reuse), and a
+    /// count of this peer's lines would take them for this request's.
+    /// (stderr is checked by `every_rejection_reaches_stderr_exactly_once`.)
     #[test]
     fn every_rejection_is_one_log_line_with_method_target_and_code() {
+        let mut last_seq = 0u64;
         for (build, want) in rejection_cases() {
-            let mut before = None;
-            let (status, text, peer, served) = roundtrip_seeded(build, |peer| before = Some(ring_lines_for(peer)));
+            let same_port = |peer: &str| {
+                let mut ring = REJECTIONS.lock().unwrap();
+                ring.push_back(format!("gen-audio-mcp http: {want} peer={peer}"));
+                ring.push_back(format!("gen-audio-mcp http: {want} peer={peer} seq=0"));
+            };
+            let (status, text, peer, served) = roundtrip_seeded(build, same_port);
             let lines = rejection_lines(&peer, &served);
             assert_eq!(lines.len(), 1, "one line per rejection ({want}), status {status}: {lines:?} {text}");
             assert!(lines[0].starts_with(&format!("gen-audio-mcp http: {want} ")), "{lines:?}");
-            assert!(lines[0].ends_with(&format!(" peer={peer}")), "the line still names the peer: {lines:?}");
-            assert!(recent_rejections().contains(&lines[0]), "recent_rejections() holds the logged line verbatim ({want}): {lines:?}");
-            assert_eq!(ring_lines_for(&peer), before.unwrap() + 1, "exactly one new ring line for this connection ({want}): {lines:?}");
+            assert!(lines[0].contains(&format!(" peer={peer} seq=")), "the line still names the peer, then its seq: {lines:?}");
+            let seq: u64 = lines[0].rsplit(" seq=").next().and_then(|n| n.parse().ok()).unwrap_or(0);
+            assert!(seq > last_seq, "seq rises with each rejection ({want}): {seq} after {last_seq}: {lines:?}");
+            last_seq = seq;
+            assert_eq!(ring_copies_of(&lines[0]), 1, "recent_rejections() holds the logged line verbatim, once ({want}): {lines:?}");
         }
-        // Accepted requests log nothing, on the thread or in the ring.
-        let mut before = None;
-        let (status, _text, peer, served) = roundtrip_seeded(|port| post(port, "Content-Type: application/json\r\n", NAVIGATE), |peer| before = Some(ring_lines_for(peer)));
+        // Accepted requests log nothing. log_rejection is the only writer of
+        // both this thread's lines and the ring, and the stderr test compares
+        // the whole sequence, accepted request included.
+        let (status, _text, peer, served) = roundtrip_seeded(|port| post(port, "Content-Type: application/json\r\n", NAVIGATE), |_| {});
         assert_eq!(status, 200);
         assert!(rejection_lines(&peer, &served).is_empty());
-        assert_eq!(ring_lines_for(&peer), before.unwrap(), "an accepted request adds no ring line");
     }
 
     const STDERR_CHILD_ENV: &str = "GEN_AUDIO_MCP_TEST_STDERR_CHILD";
