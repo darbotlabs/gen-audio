@@ -29,6 +29,19 @@ kokoro = [
 dev = [
     "pytest>=8",
 ]
+# VibeVoice-1.5B inference runtime (VibeVoice-community @ 952326d, which is
+# located by env/config and never vendored). Inference only: datasets, gradio,
+# peft, ml-collections, absl-py, av and aiortc from upstream's pyproject are
+# fine-tuning / demo-UI deps and are deliberately left out. torch comes from
+# the PyTorch CPU index (see [tool.uv.sources]); every package must install
+# from a cp314 (or pure/abi3) wheel, never an sdist (see [tool.uv]).
+vibevoice = [
+    "torch==2.14.1",
+    "transformers==4.51.3",
+    "accelerate==1.6.0",
+    "diffusers==0.39.0",
+    "librosa>=1.0.0",
+]
 
 [project.urls]
 Homepage = "https://github.com/darbotlabs/gen-audio"
@@ -45,6 +58,29 @@ gen-audio-compare = "gen_audio.cli.compare:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.uv]
+# Lock only for the hosts we ship to (box/CI linux x86_64, SMAX win AMD64), and
+# fail the lock if either one would need anything but a wheel.
+environments = [
+    "sys_platform == 'linux' and platform_machine == 'x86_64'",
+    "sys_platform == 'win32' and platform_machine == 'AMD64'",
+]
+required-environments = [
+    "sys_platform == 'linux' and platform_machine == 'x86_64'",
+    "sys_platform == 'win32' and platform_machine == 'AMD64'",
+]
+# Wheels only for every dependency; the gen-audio project itself is still
+# built (editable) from this checkout.
+no-build = true
+
+[tool.uv.sources]
+torch = [{ index = "pytorch-cpu" }]
+
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
