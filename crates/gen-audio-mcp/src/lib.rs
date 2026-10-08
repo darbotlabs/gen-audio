@@ -177,7 +177,7 @@ fn tool_defs() -> Vec<Value> {
         tool("ui_seek_report", "Desktop window only: report where a queued ui_playback seek (bus seq) landed. Records the result ui_playback returns."),
         tool("ui_set_sidepane", "Queue Agent personas (max 8) and a Voice TTS model. Connector ids are rejected."),
         tool("ui_generate", "Queue generation. Unset model env vars refuse and land no audio uid. synthesizedSpeech stays false."),
-        tool("ui_compare", "Set the A/B compare list (max 2). Optional select switches clock.source and does not move focus."),
+        tool("ui_compare", "Set the A/B compare list (max 2). Optional select is a user Play: focus and clock.source follow that side."),
         tool("viewport_get", "Return the reduced viewport: slides, views, focus, clock source, jobs. No webview."),
         tool("card_export", "Export facts() as an Adaptive Card 1.5 JSON document. The webview does not template cards."),
         tool("library_list", "List the library catalog. Does not open WAV bytes. Unavailable clips stay unavailable."),

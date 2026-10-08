@@ -39,6 +39,7 @@ import { applySidepane, bindStudio, promptNote, readSelection, type StudioSelect
 import { drawCube, drawSpectrogram, makeFixture, play } from "./signal";
 import { voiceById } from "./catalog";
 import { CONNECTOR_MODES, validateViewport, type ViewportDocument } from "./validate";
+import { fixturesRequested, selectViewport } from "./viewport-source";
 
 function required(id: string): HTMLElement {
   const node = document.querySelector<HTMLElement>(id);
@@ -238,6 +239,30 @@ setUserPlayReporter((clipId) => {
   const request = userPlayControl(clipId);
   void mcpCall(request.name, request.args);
 });
+
+function bindCubeToPlayingClip(clipId: string): void {
+  const tile = board.querySelector<HTMLElement>(`.library-tile[data-id="${CSS.escape(clipId)}"]`);
+  if (!tile) return;
+  const url = tile.dataset.cubeJson || "";
+  if (url) {
+    if (cubeClipId !== clipId || boundCubeUrl() !== url) void bindCubeSource(clipId, url, "focus");
+    return;
+  }
+  cubeBindSeq += 1;
+  cubeClipId = clipId;
+  noCubeClipId = clipId;
+  setCubeClockClip(clipId, clipUid(clipId));
+  clearCube(`No cube for this clip (${tileTitle(clipId)}). Nothing is drawn; another clip's cube is not borrowed.`);
+  syncCubeChrome();
+}
+
+/** Mark the focused clip without scrolling the deck (the user is already looking at it, or asked over MCP). */
+function focusClipTile(clipId: string): void {
+  const tile = board.querySelector<HTMLElement>(`.library-tile[data-id="${CSS.escape(clipId)}"]`);
+  if (!tile) return;
+  board.querySelectorAll<HTMLElement>(".card.is-selected").forEach((node) => node.classList.remove("is-selected"));
+  tile.classList.add("is-selected");
+}
 
 function bindCubeCanvas(): void {
   const canvas = document.querySelector<HTMLCanvasElement>("#cube-viewport");
@@ -700,7 +725,9 @@ async function resyncViewport(): Promise<void> {
   const ui = body.ui;
   if (ui && typeof ui === "object") {
     const slide = (ui as { slide?: unknown }).slide;
-    if (typeof slide === "string") goToSlideId(board, slide.replace(/^slide:/, ""));
+    if (typeof slide === "string") goToSlideId(board, slide);
+    const focus = (ui as { focus?: unknown }).focus;
+    if (typeof focus === "string" || focus === null) setCubeClockClip(typeof focus === "string" ? focus : null);
   }
 }
 

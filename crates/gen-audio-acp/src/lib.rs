@@ -839,7 +839,10 @@ mod tests {
         let after = gen_audio_mcp::http::get_control(&addr, cursor).unwrap();
         let events = after["events"].as_array().cloned().unwrap_or_default();
         assert!(
-            events.iter().any(|event| event["op"] == "navigate" && event["args"]["slide"] == "spatial"),
+            events.iter().any(|event| {
+                event["op"] == "navigate"
+                    && event["args"]["slide"] == "slide:spatial"
+            }),
             "{after}"
         );
         let view = gen_audio_mcp::http::tools_call(&addr, "viewport_get", &json!({})).unwrap();

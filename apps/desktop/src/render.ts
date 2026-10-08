@@ -886,7 +886,8 @@ function appendUtilitySlides(board: HTMLElement, startIndex: number): number {
 }
 
 export function goToSlideId(board: HTMLElement, id: string): boolean {
-  const index = slides(board).findIndex((slide) => slide.dataset.slide === id);
+  const bare = id.startsWith("slide:") ? id.slice("slide:".length) : id;
+  const index = slides(board).findIndex((slide) => slide.dataset.slide === bare || slide.dataset.slide === id);
   if (index < 0) return false;
   goToSlide(board, index);
   return true;

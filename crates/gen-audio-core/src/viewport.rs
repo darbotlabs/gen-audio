@@ -1,8 +1,9 @@
 //! Canonical viewport reducer.
 //!
 //! The desktop, MCP, and ACP all read this store. TypeScript renders it.
-//! The clock keeps `source` plus the last committed Seek. Play and Pause
-//! change transport only. Playback frames never enter the reducer.
+//! The clock keeps `source` plus the last committed Seek. A user Play emits
+//! focus, then play, and rebinds the cube. Autoplay, scroll, resync, and
+//! hover do not. Playback frames never enter the reducer.
 //!
 //! Coverage uses the cube's own `sec_per_bin`. Reject reasons stay in one order:
 //! start < 0, clip missing from `src`, recorded source duration lie, selector end.
@@ -29,6 +30,29 @@ impl ReduceError {
     }
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Origin {
+    User,
+    Auto,
+}
+
+impl Origin {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Origin::User => "user",
+            Origin::Auto => "auto",
+        }
+    }
+
+    pub fn parse(raw: &str) -> Result<Self, ReduceError> {
+        match raw {
+            "user" => Ok(Origin::User),
+            "auto" => Ok(Origin::Auto),
+            _ => Err(ReduceError::invalid("origin must be user or auto")),
+        }
+    }
+}
+
 #[derive(Clone, Debug)]
 pub enum Action {
     Navigate { slide: String },
@@ -37,7 +61,7 @@ pub enum Action {
     /// Switches `clock.source` inside `compare` and does not change focus.
     CompareSelect { uid: String },
     Seek { uid: String, t: f64 },
-    Play { uid: String },
+    Play { uid: String, origin: Origin },
     Pause { uid: String },
     Flip { view: String, face: String, section: Option<String> },
     Rename { uid: String, name: String },
@@ -207,9 +231,16 @@ impl Viewport {
     pub fn apply(&mut self, action: Action) -> Result<Value, ReduceError> {
         match action {
             Action::Navigate { slide } => {
-                let canonical = canonical_slide(&slide)?;
-                self.slide = canonical.clone();
-                Ok(json!({"op": "navigate", "slide": canonical}))
+                let resolved = resolve_slide(&slide)?;
+                self.slide = resolved.canonical.clone();
+                let mut body = json!({"op": "navigate", "slide": resolved.canonical});
+                if resolved.deprecated_alias {
+                    let line = resolved.log.clone().unwrap_or_default();
+                    eprintln!("gen-audio: {line}");
+                    body["deprecatedAlias"] = json!(true);
+                    body["log"] = json!(line);
+                }
+                Ok(body)
             }
             Action::Focus { uid } => {
                 if let Some(uid) = uid.as_deref() {
@@ -246,11 +277,30 @@ impl Viewport {
                 self.clock_t = Some(t);
                 Ok(json!({"op": "seek", "clock": {"source": uid, "t": t}}))
             }
-            Action::Play { uid } => {
+            Action::Play { uid, origin } => {
                 self.require_asset(&uid)?;
+                let mut events = Vec::new();
+                if origin == Origin::User {
+                    self.focus = Some(uid.clone());
+                    self.clock_source = Some(uid.clone());
+                    events.push(json!({"op": "focus", "uid": uid, "origin": "user"}));
+                }
                 self.playing = Some(uid.clone());
-                self.clock_source = Some(uid.clone());
-                Ok(json!({"op": "play", "playing": uid, "clock": {"source": self.clock_source}}))
+                events.push(json!({
+                    "op": "play",
+                    "playing": uid,
+                    "origin": origin.as_str(),
+                    "focus": self.focus,
+                    "clock": {"source": self.clock_source}
+                }));
+                Ok(json!({
+                    "op": "play",
+                    "origin": origin.as_str(),
+                    "events": events,
+                    "focus": self.focus,
+                    "playing": uid,
+                    "clock": {"source": self.clock_source}
+                }))
             }
             Action::Pause { uid } => {
                 self.require_asset(&uid)?;
@@ -632,13 +682,32 @@ fn append_member(slides: &mut [Slide], slide_id: &str, view_id: &str) {
     }
 }
 
-pub fn canonical_slide(slide: &str) -> Result<String, ReduceError> {
-    let slug = slide.strip_prefix("slide:").unwrap_or(slide);
-    if catalog::SLIDES.contains(&slug) {
-        Ok(format!("slide:{slug}"))
-    } else {
-        Err(ReduceError::invalid(format!("unknown slide {slide}")))
+pub struct ResolvedSlide {
+    pub canonical: String,
+    pub deprecated_alias: bool,
+    pub log: Option<String>,
+}
+
+/// `slide:<slug>` is canonical. A bare slug is accepted and reported as a deprecated alias.
+pub fn resolve_slide(slide: &str) -> Result<ResolvedSlide, ReduceError> {
+    let (slug, deprecated) = match slide.strip_prefix("slide:") {
+        Some(slug) => (slug, false),
+        None => (slide, true),
+    };
+    if slug.is_empty() || !catalog::SLIDES.contains(&slug) {
+        return Err(ReduceError::invalid(format!("unknown slide {slide}")));
     }
+    let canonical = format!("slide:{slug}");
+    if deprecated {
+        let log = format!("deprecated slide alias '{slide}'; use '{canonical}'");
+        Ok(ResolvedSlide { canonical, deprecated_alias: true, log: Some(log) })
+    } else {
+        Ok(ResolvedSlide { canonical, deprecated_alias: false, log: None })
+    }
+}
+
+pub fn canonical_slide(slide: &str) -> Result<String, ReduceError> {
+    Ok(resolve_slide(slide)?.canonical)
 }
 
 pub fn facts_snapshot(uid: &str, kind: &str, title: &str, honesty: &str, media: &str, display_rev: u64) -> Value {
@@ -951,18 +1020,45 @@ mod tests {
     }
 
     #[test]
-    fn t18_compare_switches_clock_and_rejects_three() {
+    fn t4_user_play_rebinds_focus_and_autoplay_does_not() {
+        let mut vp = Viewport::release();
+        vp.apply(Action::Focus { uid: Some("lib-misaki-kokoro".into()) }).unwrap();
+        let played = vp
+            .apply(Action::Play { uid: "lib-kokoro-onnx".into(), origin: Origin::User })
+            .unwrap();
+        let events = played["events"].as_array().unwrap();
+        assert_eq!(events[0]["op"], "focus");
+        assert_eq!(events[0]["uid"], "lib-kokoro-onnx");
+        assert_eq!(events[1]["op"], "play");
+        assert_eq!(played["focus"], "lib-kokoro-onnx");
+        assert_eq!(vp.snapshot()["ui"]["focus"], "lib-kokoro-onnx");
+        assert_eq!(vp.snapshot()["ui"]["clock"]["source"], "lib-kokoro-onnx");
+        let auto = vp
+            .apply(Action::Play { uid: "lib-kokoro".into(), origin: Origin::Auto })
+            .unwrap();
+        let auto_events = auto["events"].as_array().unwrap();
+        assert_eq!(auto_events.len(), 1);
+        assert_eq!(auto_events[0]["op"], "play");
+        assert_eq!(auto_events[0]["origin"], "auto");
+        let snap = vp.snapshot();
+        assert_eq!(snap["ui"]["focus"], "lib-kokoro-onnx");
+        assert_eq!(snap["ui"]["clock"]["source"], "lib-kokoro-onnx");
+        assert_eq!(snap["ui"]["playing"], "lib-kokoro");
+    }
+
+    #[test]
+    fn t18_user_play_toggles_compare_and_rejects_three() {
         let mut vp = Viewport::release();
         vp.apply(Action::Compare { uids: vec!["lib-kokoro-onnx".into(), "lib-misaki-kokoro".into()] }).unwrap();
         vp.apply(Action::Focus { uid: Some("lib-kokoro".into()) }).unwrap();
-        vp.apply(Action::CompareSelect { uid: "lib-kokoro-onnx".into() }).unwrap();
-        assert_eq!(vp.snapshot()["ui"]["clock"]["source"], "lib-kokoro-onnx");
-        assert_eq!(vp.snapshot()["ui"]["focus"], "lib-kokoro");
-        vp.apply(Action::Play { uid: "lib-misaki-kokoro".into() }).unwrap();
-        let snap = vp.snapshot();
-        assert_eq!(snap["ui"]["clock"]["source"], "lib-misaki-kokoro");
-        assert_eq!(snap["ui"]["focus"], "lib-kokoro");
-        assert!(snap["ui"]["clock"].get("t").is_none() || snap["ui"]["clock"]["t"].is_null());
+        vp.apply(Action::Play { uid: "lib-kokoro-onnx".into(), origin: Origin::User }).unwrap();
+        let side_a = vp.snapshot();
+        assert_eq!(side_a["ui"]["focus"], "lib-kokoro-onnx");
+        assert_eq!(side_a["ui"]["clock"]["source"], "lib-kokoro-onnx");
+        vp.apply(Action::Play { uid: "lib-misaki-kokoro".into(), origin: Origin::User }).unwrap();
+        let side_b = vp.snapshot();
+        assert_eq!(side_b["ui"]["focus"], "lib-misaki-kokoro");
+        assert_eq!(side_b["ui"]["clock"]["source"], "lib-misaki-kokoro");
         let err = vp
             .apply(Action::Compare {
                 uids: vec!["lib-kokoro-onnx".into(), "lib-misaki-kokoro".into(), "lib-kokoro".into()],
@@ -970,6 +1066,21 @@ mod tests {
             .unwrap_err();
         assert_eq!(err.code, -32602);
         assert_eq!(vp.snapshot()["ui"]["compare"].as_array().unwrap().len(), 2);
+        assert_eq!(vp.snapshot()["ui"]["focus"], "lib-misaki-kokoro");
+    }
+
+    #[test]
+    fn c5_canonical_slide_id_and_deprecated_bare_alias() {
+        let mut vp = Viewport::release();
+        let canonical = vp.apply(Action::Navigate { slide: "slide:spatial".into() }).unwrap();
+        assert_eq!(canonical["slide"], "slide:spatial");
+        assert!(canonical.get("deprecatedAlias").is_none());
+        let alias = vp.apply(Action::Navigate { slide: "library".into() }).unwrap();
+        assert_eq!(alias["slide"], "slide:library");
+        assert_eq!(alias["deprecatedAlias"], true);
+        assert!(alias["log"].as_str().unwrap().contains("deprecated slide alias 'library'"));
+        assert_eq!(vp.snapshot()["ui"]["slide"], "slide:library");
+        assert!(vp.apply(Action::Navigate { slide: "slide:nope".into() }).is_err());
     }
 
     #[test]
@@ -1021,7 +1132,7 @@ mod tests {
     fn play_does_not_store_a_playhead_frame() {
         let mut vp = Viewport::release();
         vp.apply(Action::Seek { uid: "lib-misaki-kokoro".into(), t: 4.0 }).unwrap();
-        vp.apply(Action::Play { uid: "lib-misaki-kokoro".into() }).unwrap();
+        vp.apply(Action::Play { uid: "lib-misaki-kokoro".into(), origin: Origin::User }).unwrap();
         let snap = vp.snapshot();
         assert_eq!(snap["ui"]["clock"]["t"], 4.0);
         assert_eq!(snap["ui"]["playing"], "lib-misaki-kokoro");

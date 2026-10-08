@@ -11,7 +11,7 @@ use std::time::{Duration, Instant};
 
 use gen_audio_core::asset_catalog;
 use gen_audio_core::catalog::{self, MAX_AGENTS_PER_TRACK};
-use gen_audio_core::viewport::{self, Action};
+use gen_audio_core::viewport::{self, Action, Origin};
 use serde_json::{json, Value};
 
 struct Event {
@@ -250,14 +250,14 @@ pub fn ui_navigate(args: &Value) -> Result<Value, (i32, String)> {
         .to_string();
     let (slug, deprecated) = resolve_slide(&reference)?;
     let slug = slug.to_string();
-    viewport::apply_global(Action::Navigate { slide: reference.clone() }).map_err(|err| (err.code, err.message))?;
+    let reduced = viewport::apply_global(Action::Navigate { slide: reference.clone() }).map_err(|err| (err.code, err.message))?;
     if let Some(tile) = args.get("tileId").and_then(Value::as_str) {
         if !id_ok(tile) {
             return Err((-32602, "tileId is invalid".into()));
         }
     }
     // The queued event always carries the canonical id; the UI accepts both.
-    args["slide"] = json!(format!("slide:{slug}"));
+    args["slide"] = reduced.get("slide").cloned().unwrap_or_else(|| json!(format!("slide:{slug}")));
     let mut out = queued("navigate", args, "Queued a viewport navigation. This does not render audio.");
     if deprecated {
         let warning = format!("ui_navigate slide \"{reference}\" is a deprecated alias; use \"slide:{slug}\"");
@@ -342,16 +342,25 @@ pub fn ui_playback(args: &Value) -> Result<Value, (i32, String)> {
         }
         requested = Some(seconds);
     }
-    if let Err(err) = apply_playback(tile, action, args) {
+    let origin = match args.get("origin").and_then(Value::as_str).unwrap_or("user") {
+        "user" => Origin::User,
+        "auto" => Origin::Auto,
+        other => return Err((-32602, format!("origin must be user or auto, got {other}"))),
+    };
+    if let Err(err) = apply_playback(tile, action, args, origin) {
         if err.0 != -32602 || !err.1.contains("unknown asset") {
             return Err(err);
         }
     }
     let clip = catalog::library_clip(tile);
     let has_wav = clip.and_then(|item| item.wav_url).is_some();
+    let mut playback_args = args.clone();
+    if action == "play" {
+        playback_args["origin"] = json!(origin.as_str());
+    }
     let mut payload = queued(
         "playback",
-        args.clone(),
+        playback_args,
         "Queued playback. The window plays a file only when that tile's WAV actually loads. Missing bytes stay missing.",
     );
     payload["catalogWav"] = json!(has_wav);
@@ -418,9 +427,9 @@ pub fn ui_seek_report(args: &Value) -> Result<Value, (i32, String)> {
     Ok(json!({"recorded": true, "seekSeq": seq, "report": report, "synthesizedSpeech": false}))
 }
 
-fn apply_playback(tile: &str, action: &str, args: &Value) -> Result<(), (i32, String)> {
+fn apply_playback(tile: &str, action: &str, args: &Value, origin: Origin) -> Result<(), (i32, String)> {
     let action = match action {
-        "play" => Action::Play { uid: tile.to_string() },
+        "play" => Action::Play { uid: tile.to_string(), origin },
         "pause" => Action::Pause { uid: tile.to_string() },
         "seek" => Action::Seek {
             uid: tile.to_string(),
@@ -428,7 +437,14 @@ fn apply_playback(tile: &str, action: &str, args: &Value) -> Result<(), (i32, St
         },
         _ => return Ok(()),
     };
-    viewport::apply_global(action).map(|_| ()).map_err(|err| (err.code, err.message))
+    let reduced = viewport::apply_global(action).map_err(|err| (err.code, err.message))?;
+    if let Some(events) = reduced.get("events").and_then(Value::as_array) {
+        for event in events {
+            let op = event.get("op").and_then(Value::as_str).unwrap_or("play");
+            publish(op, event);
+        }
+    }
+    Ok(())
 }
 
 pub fn ui_flip(args: &Value) -> Result<Value, (i32, String)> {
@@ -618,9 +634,23 @@ pub fn ui_compare(args: &Value) -> Result<Value, (i32, String)> {
     }
     viewport::apply_global(Action::Compare { uids: uids.clone() }).map_err(|err| (err.code, err.message))?;
     if let Some(select) = args.get("select").and_then(Value::as_str) {
-        viewport::apply_global(Action::CompareSelect { uid: select.to_string() }).map_err(|err| (err.code, err.message))?;
+        if !uids.iter().any(|uid| uid == select) {
+            return Err((-32602, "select is outside compare".into()));
+        }
+        let reduced = viewport::apply_global(Action::Play { uid: select.to_string(), origin: Origin::User })
+            .map_err(|err| (err.code, err.message))?;
+        if let Some(events) = reduced.get("events").and_then(Value::as_array) {
+            for event in events {
+                let op = event.get("op").and_then(Value::as_str).unwrap_or("play");
+                publish(op, event);
+            }
+        }
     }
-    Ok(queued("compare", args.clone(), "Queued compare. The cube follows focus, not the A/B clock."))
+    Ok(queued(
+        "compare",
+        args.clone(),
+        "Queued compare. Selecting a side is a user Play, so focus and the clock follow that side.",
+    ))
 }
 
 pub fn viewport_get() -> Value {
@@ -930,6 +960,10 @@ pub fn voice_profile_list() -> Value {
 mod tests {
     use super::*;
     use serde_json::json;
+    use std::sync::Mutex;
+
+    /// Serializes tests that read the process-global viewport after a mutation.
+    static VIEWPORT: Mutex<()> = Mutex::new(());
 
     #[test]
     fn validate_track_and_voice_profile_get_accept_optimus() {
@@ -1007,6 +1041,7 @@ mod tests {
 
     #[test]
     fn t17_mcp_viewport_get_reports_navigate_focus_seek_flip_rename() {
+        let _viewport = VIEWPORT.lock().expect("viewport test");
         ui_navigate(&json!({"slide": "spatial"})).unwrap();
         let snap = viewport_get();
         assert_eq!(snap["ui"]["slide"], "slide:spatial");
@@ -1020,8 +1055,81 @@ mod tests {
     }
 
     #[test]
-    fn t18_compare_of_three_is_rejected() {
+    fn t18_compare_of_three_is_rejected_and_select_follows_focus() {
+        let _viewport = VIEWPORT.lock().expect("viewport test");
+        ui_playback(&json!({"tileId": "lib-kokoro", "action": "play", "origin": "user"})).unwrap();
         let err = ui_compare(&json!({"uids": ["lib-kokoro-onnx", "lib-misaki-kokoro", "lib-kokoro"]})).unwrap_err();
         assert_eq!(err.0, -32602);
+        assert_eq!(viewport_get()["ui"]["focus"], "lib-kokoro");
+        ui_compare(&json!({"uids": ["lib-kokoro-onnx", "lib-misaki-kokoro"], "select": "lib-misaki-kokoro"})).unwrap();
+        let snap = viewport_get();
+        assert_eq!(snap["ui"]["focus"], "lib-misaki-kokoro");
+        assert_eq!(snap["ui"]["clock"]["source"], "lib-misaki-kokoro");
+        assert_eq!(snap["ui"]["compare"].as_array().unwrap().len(), 2);
+    }
+
+    #[test]
+    fn c5_bare_slide_is_a_logged_alias_and_canonical_is_not() {
+        let _viewport = VIEWPORT.lock().expect("viewport test");
+        let bare = ui_navigate(&json!({"slide": "library"})).unwrap();
+        assert_eq!(bare["args"]["slide"], "slide:library");
+        assert!(bare["deprecation"].as_str().unwrap().contains("slide:library"));
+        let canonical = ui_navigate(&json!({"slide": "slide:spatial"})).unwrap();
+        assert_eq!(canonical["args"]["slide"], "slide:spatial");
+        assert!(canonical.get("deprecation").is_none());
+        assert_eq!(viewport_get()["ui"]["slide"], "slide:spatial");
+    }
+
+    #[test]
+    fn user_play_publishes_focus_before_play() {
+        let _viewport = VIEWPORT.lock().expect("viewport test");
+        // Other tests share the process-global ring. A three-seq lookback
+        // drops focus/play whenever a neighbour publishes between them.
+        let mut last = String::new();
+        for _ in 0..8 {
+            let before = since(u64::MAX).cursor;
+            let played = ui_playback(&json!({"tileId": "lib-kokoro-onnx", "action": "play", "origin": "user"})).unwrap();
+            assert_eq!(played["args"]["origin"], "user");
+            let seq = played["seq"].as_u64().unwrap();
+            let delta = since(before);
+            if delta.gap {
+                last = format!("gap oldest={:?} cursor={}", delta.oldest, delta.cursor);
+                continue;
+            }
+            let ops: Vec<_> = delta
+                .events
+                .iter()
+                .filter(|event| {
+                    let event_seq = event["seq"].as_u64().unwrap_or(0);
+                    event_seq > before
+                        && event_seq <= seq
+                        && (event["args"]["uid"] == "lib-kokoro-onnx" || event["args"]["playing"] == "lib-kokoro-onnx")
+                })
+                .map(|event| event["op"].as_str().unwrap_or(""))
+                .collect();
+            let focus_at = ops.iter().position(|op| *op == "focus");
+            let play_at = ops.iter().position(|op| *op == "play");
+            assert!(
+                focus_at.is_some() && play_at.is_some() && focus_at < play_at,
+                "focus then play, got {ops:?}"
+            );
+            let auto = ui_playback(&json!({"tileId": "lib-kokoro", "action": "play", "origin": "auto"})).unwrap();
+            assert_eq!(auto["args"]["origin"], "auto");
+            let after_auto = since(seq);
+            if !after_auto.gap {
+                let auto_ops: Vec<_> = after_auto
+                    .events
+                    .iter()
+                    .filter(|event| event["args"]["playing"] == "lib-kokoro" || event["args"]["uid"] == "lib-kokoro")
+                    .map(|event| event["op"].as_str().unwrap_or(""))
+                    .collect();
+                assert!(auto_ops.contains(&"play"), "{auto_ops:?}");
+                assert!(!auto_ops.contains(&"focus"), "{auto_ops:?}");
+            }
+            assert_eq!(viewport_get()["ui"]["focus"], "lib-kokoro-onnx");
+            assert_eq!(viewport_get()["ui"]["clock"]["source"], "lib-kokoro-onnx");
+            return;
+        }
+        panic!("ring dropped the user-play events before they could be read: {last}");
     }
 }

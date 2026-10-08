@@ -529,18 +529,30 @@ mod tests {
         assert!(text.contains("\"speech\":false"), "{text}");
         assert!(!text.to_ascii_lowercase().contains("mcp-session-id"));
 
-        let seq = crate::control::publish("navigate", &serde_json::json!({"slide": "library", "marker": "ready-stream"}));
-        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
-        let addr = listener.local_addr().unwrap();
-        std::thread::spawn(move || {
-            let (stream, _) = listener.accept().unwrap();
-            handle_connection(&Server::boot(), stream).unwrap();
-        });
-        let mut stream = TcpStream::connect(addr).unwrap();
-        let req = format!("GET /control/stream?after={}&wait=0 HTTP/1.1\r\nHost: {addr}\r\nConnection: close\r\n\r\n", seq.saturating_sub(1));
-        stream.write_all(req.as_bytes()).unwrap();
+        // The control ring is process-global. A neighbour test can drop this
+        // marker before the stream is read; a gap is the honest signal, so retry.
         let mut text = String::new();
-        stream.read_to_string(&mut text).unwrap();
+        for _ in 0..8 {
+            let seq = crate::control::publish("navigate", &serde_json::json!({"slide": "library", "marker": "ready-stream"}));
+            let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+            let addr = listener.local_addr().unwrap();
+            std::thread::spawn(move || {
+                let (stream, _) = listener.accept().unwrap();
+                handle_connection(&Server::boot(), stream).unwrap();
+            });
+            let mut stream = TcpStream::connect(addr).unwrap();
+            let req = format!(
+                "GET /control/stream?after={}&wait=0 HTTP/1.1\r\nHost: 127.0.0.1\r\nConnection: close\r\n\r\n",
+                seq.saturating_sub(1)
+            );
+            stream.write_all(req.as_bytes()).unwrap();
+            text.clear();
+            stream.read_to_string(&mut text).unwrap();
+            if text.contains("event: gap") {
+                continue;
+            }
+            break;
+        }
         assert!(text.contains("text/event-stream"), "{text}");
         assert!(text.contains("ready-stream"), "{text}");
         assert!(!text.to_ascii_lowercase().contains("mcp-session-id"));
