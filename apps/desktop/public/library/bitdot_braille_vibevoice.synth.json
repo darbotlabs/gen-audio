@@ -1,0 +1,55 @@
+{
+  "engine": "vibevoice",
+  "model": "microsoft/VibeVoice-1.5B",
+  "model_path": "/workspace/genaid-podcast-compare/models/VibeVoice-1.5B",
+  "inference_code": "models/VibeVoice-community/demo/inference_from_file.py",
+  "inference_code_commit": "952326ddb264062466a888cf32a5b2f4e803e16e",
+  "python": "venvs/vibevoice (CPython 3.14.8, created this run with uv; torch 2.14.1+cpu, transformers 4.51.3)",
+  "venv_note": "No pre-existing venv on the box still had torch+vibevoice importable (root venv/ was recreated in S15 without torch), so a dedicated venv was created; model weights and inference script are the same ones used for genaid_full_vibevoice_*.",
+  "command": "cd /workspace/genaid-podcast-compare/models/VibeVoice-community && PYTHONPATH=/workspace/genaid-podcast-compare/models/VibeVoice-community /workspace/genaid-podcast-compare/venvs/vibevoice/bin/python demo/inference_from_file.py --model_path /workspace/genaid-podcast-compare/models/VibeVoice-1.5B --txt_path /workspace/genaid-podcast-compare/podcast_bitdot_braille.txt --speaker_names Alice Frank --output_dir /workspace/genaid-podcast-compare/audio/vv_bitdot_braille --device cpu --dtype float16 --cfg_scale 1.3 --seed 42",
+  "device": "cpu (8 vCPU)",
+  "dtype": "float16",
+  "cfg_scale": 1.3,
+  "seed": 42,
+  "chunked": false,
+  "voices": {
+    "Speaker 1": {
+      "name": "Alice",
+      "prompt_wav": "models/VibeVoice-community/demo/voices/en-Alice_woman.wav"
+    },
+    "Speaker 2": {
+      "name": "Frank",
+      "prompt_wav": "models/VibeVoice-community/demo/voices/en-Frank_man.wav"
+    }
+  },
+  "script": "podcast_bitdot_braille.txt",
+  "script_sha256": "d2afd8a49a9563fcf7023ea463eae78b7cb39056e1998e4a79efba1abf01f858",
+  "segments": 26,
+  "script_words": 774,
+  "started_pt": "2026-10-07 20:21:27 PT",
+  "finished_pt": "2026-10-07 20:46:05 PT",
+  "wall_time_s": 1478.23,
+  "vibevoice_reported": {
+    "generation_time_s": 1434.29,
+    "audio_duration_s": 247.07,
+    "rtf": 5.81,
+    "prefill_tokens": 1306,
+    "generated_tokens": 1867,
+    "total_tokens": 3173,
+    "eos_step": 1867,
+    "max_steps": 2612
+  },
+  "raw_output": "audio/vv_bitdot_braille/podcast_bitdot_braille_generated.wav",
+  "raw_sha256": "63490e16e5841d4e7db6db5a5800f64c0fabdc76a2544997694708c03726439f",
+  "output": "audio/bitdot_braille_vibevoice.wav",
+  "output_sha256": "63490e16e5841d4e7db6db5a5800f64c0fabdc76a2544997694708c03726439f",
+  "output_format": {
+    "sample_rate": 24000,
+    "channels": 1,
+    "subtype": "PCM_16",
+    "frames": 5929600,
+    "duration_s": 247.0667
+  },
+  "post": "none (raw VibeVoice audio re-written as 24 kHz mono PCM16; no trim/EQ/normalize)",
+  "log": "logs/vv_bitdot_braille.log"
+}

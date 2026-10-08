@@ -63,6 +63,8 @@ fn clip_voice_model(engine: &str) -> Option<(&'static str, Option<&'static str>)
         "kokoro_dayour" => Some(("kokoro_dayour", None)),
         // dayour/kokoro KPipeline.generate_from_tokens on misaki G2P phonemes.
         "misaki_kokoro" => Some(("kokoro_dayour", Some("misaki"))),
+        // Rendered offline with microsoft/VibeVoice-1.5B; the app has no adapter.
+        "vibevoice" => Some(("vibevoice", None)),
         _ => None,
     }
 }
@@ -160,6 +162,15 @@ pub fn migrate_v0_to_v1(bundle: &Value) -> Result<Value, AssetError> {
         }
         if let Some(uid) = g2p.and_then(|name| model_uid.get(name)) {
             provenance.insert("g2p_model".into(), json!(uid));
+        }
+        // A v0 clip may carry its synth provenance (engine label, generator,
+        // created_at, params). It is unhashed, so it never changes the uid.
+        if let Some(extra) = clip.get("provenance").and_then(Value::as_object) {
+            for key in ["engine", "generator", "created_at", "params"] {
+                if let Some(value) = extra.get(key) {
+                    provenance.insert(key.into(), value.clone());
+                }
+            }
         }
         let mut body = obj(vec![
             ("duration_s", clip["duration_s"].clone()),

@@ -50,6 +50,78 @@
     },
     {
       "body": {
+        "duration_s": 247.0667,
+        "n_turns": 26,
+        "n_words": 774,
+        "sample_rate": 24000,
+        "wav_url": "/library/bitdot_braille_vibevoice.wav"
+      },
+      "display": {
+        "glyph": "⠴⠴",
+        "summary": "Real VibeVoice-1.5B two-speaker podcast (Alice, Frank) on bitdot braille, 247.1 s @ 24 kHz mono, raw model output (no trim/EQ/normalize). synthesizedSpeech true. Inverse-HDR cube and 2D strip attached.",
+        "title": "Bitdot braille (VibeVoice-1.5B)"
+      },
+      "fields": {
+        "channels": 1,
+        "duration_ms": 247067,
+        "engine": "vibevoice",
+        "sample_rate_hz": 24000
+      },
+      "honesty": {
+        "claims": [
+          "real_wav",
+          "synthesized_speech"
+        ],
+        "fixture": false,
+        "synthesized_speech": true
+      },
+      "kind": "audio_clip",
+      "legacy_id": "lib-bitdot-braille-vibevoice",
+      "media": [
+        {
+          "bytes": 11859244,
+          "mime": "audio/wav",
+          "path": "bitdot_braille_vibevoice.wav",
+          "role": "wav",
+          "sha256": "63490e16e5841d4e7db6db5a5800f64c0fabdc76a2544997694708c03726439f"
+        }
+      ],
+      "provenance": {
+        "created_at": "2026-10-07T20:46:05-07:00",
+        "engine": "vibevoice-1.5B",
+        "generator": "VibeVoice-community demo/inference_from_file.py @ 952326d (offline run; see bitdot_braille_vibevoice.synth.json)",
+        "params": {
+          "cfg_scale": 1.3,
+          "device": "cpu (8 vCPU)",
+          "dtype": "float16",
+          "inference_code_commit": "952326ddb264062466a888cf32a5b2f4e803e16e",
+          "model": "microsoft/VibeVoice-1.5B",
+          "output_sha256": "63490e16e5841d4e7db6db5a5800f64c0fabdc76a2544997694708c03726439f",
+          "post": "none (raw VibeVoice audio re-written as 24 kHz mono PCM16; no trim/EQ/normalize)",
+          "rtf": 5.81,
+          "script": "podcast_bitdot_braille.txt",
+          "script_sha256": "d2afd8a49a9563fcf7023ea463eae78b7cb39056e1998e4a79efba1abf01f858",
+          "script_words": 774,
+          "seed": 42,
+          "segments": 26,
+          "synth_json": "/library/bitdot_braille_vibevoice.synth.json",
+          "voices": {
+            "Speaker 1": "Alice",
+            "Speaker 2": "Frank"
+          },
+          "wall_time_s": 1478.23
+        },
+        "voice_model": "ga:voice_model:wzxiin3qxxx7jeg3q66opnrnnu"
+      },
+      "relations": {},
+      "schema_version": "1.0.0",
+      "src": [],
+      "status": "ok",
+      "uid": "ga:audio_clip:gq2l5uxxj44uwnok6io3kduf5a",
+      "uid_scheme": "ga1"
+    },
+    {
+      "body": {
         "duration_s": 375.625,
         "sample_rate": 24000,
         "wav_url": "/library/library_kokoro.wav"
@@ -698,6 +770,96 @@
       "src": [],
       "status": "ok",
       "uid": "ga:card:fijqhsk7xhpcgehxdeexal6jnm",
+      "uid_scheme": "ga1"
+    },
+    {
+      "body": {
+        "adaptive": {
+          "body": [
+            {
+              "text": "Real synth: VibeVoice-1.5B · Alice + Frank · 247.1s · cube attached",
+              "type": "TextBlock",
+              "wrap": true
+            },
+            {
+              "facts": [
+                {
+                  "title": "Duration",
+                  "value": "247.067 s"
+                },
+                {
+                  "title": "SR",
+                  "value": "24000"
+                },
+                {
+                  "title": "Voices",
+                  "value": "Alice, Frank"
+                },
+                {
+                  "title": "inv-HDR",
+                  "value": "0.187"
+                },
+                {
+                  "title": "Cube points",
+                  "value": "3600"
+                },
+                {
+                  "title": "Cube",
+                  "value": "rev 1 · 399 time bins · 0.619 s/bin · 0:00–4:06"
+                }
+              ],
+              "type": "FactSet"
+            }
+          ],
+          "type": "AdaptiveCard",
+          "version": "1.5"
+        },
+        "body": {
+          "cubeJsonUrl": "/library/library_bitdot_braille_vibevoice_cube3d.json",
+          "cubePngUrl": "/library/bitdot_braille_vibevoice_cube3d.png",
+          "duration_s": 247.0667,
+          "engineId": "vibevoice",
+          "inv_hdr": 0.18686723709106445,
+          "sample_rate": 24000,
+          "status": "ok",
+          "summary": "Real VibeVoice-1.5B podcast · Alice + Frank · bitdot braille @ 24 kHz. Inverse-HDR cube attached. Not a fixture.",
+          "synthesizedSpeech": true,
+          "wavUrl": "/library/bitdot_braille_vibevoice.wav"
+        },
+        "id": "lib-bitdot-braille-vibevoice",
+        "kind": "LibraryClip",
+        "title": "Bitdot braille (VibeVoice-1.5B)"
+      },
+      "display": {
+        "glyph": "⠹⡴",
+        "title": "Bitdot braille (VibeVoice-1.5B)"
+      },
+      "fields": {
+        "card_id": "lib-bitdot-braille-vibevoice",
+        "view": "LibraryClip"
+      },
+      "honesty": {
+        "claims": [
+          "real_wav"
+        ],
+        "fixture": false,
+        "synthesized_speech": false
+      },
+      "kind": "card",
+      "legacy_id": "lib-bitdot-braille-vibevoice",
+      "media": [],
+      "provenance": {
+        "generator": "viewport.example.json card (v0)"
+      },
+      "relations": {
+        "bound_to": [
+          "ga:audio_clip:gq2l5uxxj44uwnok6io3kduf5a"
+        ]
+      },
+      "schema_version": "1.0.0",
+      "src": [],
+      "status": "ok",
+      "uid": "ga:card:hf2ojkdfxizvznvyckuzxrgzay",
       "uid_scheme": "ga1"
     },
     {
@@ -1800,6 +1962,78 @@
     },
     {
       "body": {
+        "bin_seconds": 0.6186666666666667,
+        "cube_covers_s": 246.848,
+        "cube_shape_f_t": [
+          102,
+          399
+        ],
+        "duration_s": 247.06666666666663,
+        "inv_hdr": 0.18686723709106445,
+        "json_url": "/library/library_bitdot_braille_vibevoice_cube3d.json",
+        "png_url": "/library/bitdot_braille_vibevoice_cube3d.png"
+      },
+      "display": {
+        "glyph": "⡡⠐",
+        "summary": "Inverse-HDR bitdot cube rev 1 over the full 247.067 s WAV (stft 1024/256 @ 24 kHz, downsample 5x58; signal/tonality/confidence/quality). Scrub maps by seconds: bin = floor(t / 0.618667 s).",
+        "title": "Inverse-HDR bitdot cube — bitdot_braille_vibevoice"
+      },
+      "fields": {
+        "bin_frames": 14848,
+        "covers_ms": 246848,
+        "cube_revision": 1,
+        "duration_ms": 247067,
+        "freq_bins": 102,
+        "hop_frames": 256,
+        "inv_hdr_ppm": 186867,
+        "n_fft": 1024,
+        "n_points": 3600,
+        "sample_rate_hz": 24000,
+        "source_sha256": "63490e16e5841d4e7db6db5a5800f64c0fabdc76a2544997694708c03726439f",
+        "time_bins": 399
+      },
+      "honesty": {
+        "claims": [
+          "library_cube"
+        ],
+        "fixture": false,
+        "synthesized_speech": false
+      },
+      "kind": "cube_ihdr",
+      "legacy_id": "lib-bitdot-braille-vibevoice.cube",
+      "media": [
+        {
+          "bytes": 294218,
+          "mime": "application/json",
+          "path": "library_bitdot_braille_vibevoice_cube3d.json",
+          "role": "cube_json",
+          "sha256": "f9d6ba88eab814e49eb9e61bfd300ef4e5b6b8dccc576bc18ba9e40017c766c5"
+        },
+        {
+          "bytes": 1120824,
+          "mime": "image/png",
+          "path": "bitdot_braille_vibevoice_cube3d.png",
+          "role": "cube_png",
+          "sha256": "ee40fcb593691fd42b3a805a0b8463469bfcd446b4eb6399ca9068ddc586499e"
+        }
+      ],
+      "provenance": {
+        "generator": "scripts/cube_spectrogram_3d.py (inverse-HDR bitdot cube)",
+        "params": {
+          "bins_inferred_from_shape": false
+        }
+      },
+      "relations": {},
+      "schema_version": "1.0.0",
+      "src": [
+        "ga:audio_clip:gq2l5uxxj44uwnok6io3kduf5a"
+      ],
+      "status": "ok",
+      "uid": "ga:cube_ihdr:meih3uudlorg35xxhape5d5psq",
+      "uid_scheme": "ga1"
+    },
+    {
+      "body": {
         "bin_seconds": 3.9037916666666668,
         "cube_covers_s": 374.764,
         "cube_shape_f_t": [
@@ -2223,6 +2457,50 @@
     },
     {
       "body": {
+        "active_frac": 0.9321140398425634,
+        "mean": 0.3006399869918823,
+        "p50": 0.2951991558074951,
+        "p90": 0.3960772454738617,
+        "shape": [
+          102,
+          399
+        ],
+        "std": 0.07366328686475754
+      },
+      "display": {
+        "glyph": "⡛⠁",
+        "title": "quality layer"
+      },
+      "fields": {
+        "index": 3,
+        "name": "quality"
+      },
+      "honesty": {
+        "claims": [
+          "library_cube"
+        ],
+        "fixture": false,
+        "synthesized_speech": false
+      },
+      "kind": "layer",
+      "legacy_id": "lib-bitdot-braille-vibevoice.cube.quality",
+      "media": [],
+      "provenance": {
+        "generator": "cube JSON layers block (v0)"
+      },
+      "relations": {
+        "layer_of": "ga:cube_ihdr:meih3uudlorg35xxhape5d5psq"
+      },
+      "schema_version": "1.0.0",
+      "src": [
+        "ga:cube_ihdr:meih3uudlorg35xxhape5d5psq"
+      ],
+      "status": "ok",
+      "uid": "ga:layer:lma3nlr3pjjenrffkbcp6dd23e",
+      "uid_scheme": "ga1"
+    },
+    {
+      "body": {
         "active_frac": 1.0,
         "mean": 0.533763335002476,
         "p50": 0.5496301440673312,
@@ -2267,6 +2545,94 @@
     },
     {
       "body": {
+        "active_frac": 0.2770619843992305,
+        "mean": 0.16051141917705536,
+        "p50": 0.0,
+        "p90": 0.5772971510887146,
+        "shape": [
+          102,
+          399
+        ],
+        "std": 0.260272741317749
+      },
+      "display": {
+        "glyph": "⡻⠉",
+        "title": "tonality layer"
+      },
+      "fields": {
+        "index": 1,
+        "name": "tonality"
+      },
+      "honesty": {
+        "claims": [
+          "library_cube"
+        ],
+        "fixture": false,
+        "synthesized_speech": false
+      },
+      "kind": "layer",
+      "legacy_id": "lib-bitdot-braille-vibevoice.cube.tonality",
+      "media": [],
+      "provenance": {
+        "generator": "cube JSON layers block (v0)"
+      },
+      "relations": {
+        "layer_of": "ga:cube_ihdr:meih3uudlorg35xxhape5d5psq"
+      },
+      "schema_version": "1.0.0",
+      "src": [
+        "ga:cube_ihdr:meih3uudlorg35xxhape5d5psq"
+      ],
+      "status": "ok",
+      "uid": "ga:layer:pmezzrncctfa24qhwovi6mv2h4",
+      "uid_scheme": "ga1"
+    },
+    {
+      "body": {
+        "active_frac": 0.3497712920022093,
+        "mean": 0.27757853269577026,
+        "p50": 0.0,
+        "p90": 1.0,
+        "shape": [
+          102,
+          399
+        ],
+        "std": 0.4001723229885102
+      },
+      "display": {
+        "glyph": "⡼⢵",
+        "title": "confidence layer"
+      },
+      "fields": {
+        "index": 2,
+        "name": "confidence"
+      },
+      "honesty": {
+        "claims": [
+          "library_cube"
+        ],
+        "fixture": false,
+        "synthesized_speech": false
+      },
+      "kind": "layer",
+      "legacy_id": "lib-bitdot-braille-vibevoice.cube.confidence",
+      "media": [],
+      "provenance": {
+        "generator": "cube JSON layers block (v0)"
+      },
+      "relations": {
+        "layer_of": "ga:cube_ihdr:meih3uudlorg35xxhape5d5psq"
+      },
+      "schema_version": "1.0.0",
+      "src": [
+        "ga:cube_ihdr:meih3uudlorg35xxhape5d5psq"
+      ],
+      "status": "ok",
+      "uid": "ga:layer:ps23mp4l5nzbinplh7fjjm5s5y",
+      "uid_scheme": "ga1"
+    },
+    {
+      "body": {
         "active_frac": 1.0,
         "mean": 0.5213926249268918,
         "p50": 0.5490434393120329,
@@ -2307,6 +2673,50 @@
       ],
       "status": "ok",
       "uid": "ga:layer:rmliokkfbpohudxaztdltuvo6u",
+      "uid_scheme": "ga1"
+    },
+    {
+      "body": {
+        "active_frac": 0.13922881815869045,
+        "mean": 0.08884477615356445,
+        "p50": 0.017054392024874687,
+        "p90": 0.2711089551448822,
+        "shape": [
+          102,
+          399
+        ],
+        "std": 0.16468018293380737
+      },
+      "display": {
+        "glyph": "⢑⡬",
+        "title": "signal layer"
+      },
+      "fields": {
+        "index": 0,
+        "name": "signal"
+      },
+      "honesty": {
+        "claims": [
+          "library_cube"
+        ],
+        "fixture": false,
+        "synthesized_speech": false
+      },
+      "kind": "layer",
+      "legacy_id": "lib-bitdot-braille-vibevoice.cube.signal",
+      "media": [],
+      "provenance": {
+        "generator": "cube JSON layers block (v0)"
+      },
+      "relations": {
+        "layer_of": "ga:cube_ihdr:meih3uudlorg35xxhape5d5psq"
+      },
+      "schema_version": "1.0.0",
+      "src": [
+        "ga:cube_ihdr:meih3uudlorg35xxhape5d5psq"
+      ],
+      "status": "ok",
+      "uid": "ga:layer:sfwgrijzt6qmsewe5c2ljhxbju",
       "uid_scheme": "ga1"
     },
     {
@@ -2513,6 +2923,65 @@
       ],
       "status": "ok",
       "uid": "ga:spectrogram_2d:5m36aynuwitz7oswnkjborm4dy",
+      "uid_scheme": "ga1"
+    },
+    {
+      "body": {
+        "png_url": "/library/library_bitdot_braille_vibevoice_spec2d.png",
+        "seconds_per_px": 0.1
+      },
+      "display": {
+        "glyph": "⠹⡾",
+        "title": "2D spectrogram — lib-bitdot-braille-vibevoice"
+      },
+      "fields": {
+        "colormap": "ga-ember",
+        "covers_ms": 247000,
+        "db_floor": -80,
+        "duration_ms": 247067,
+        "height_px": 64,
+        "hop_frames": 2400,
+        "n_bands": 64,
+        "n_fft": 2048,
+        "sample_rate_hz": 24000,
+        "source_sha256": "63490e16e5841d4e7db6db5a5800f64c0fabdc76a2544997694708c03726439f",
+        "width_px": 2470
+      },
+      "honesty": {
+        "claims": [
+          "library_spectrogram"
+        ],
+        "fixture": false,
+        "synthesized_speech": false
+      },
+      "kind": "spectrogram_2d",
+      "legacy_id": "lib-bitdot-braille-vibevoice.spec2d",
+      "media": [
+        {
+          "bytes": 241061,
+          "mime": "image/png",
+          "path": "library_bitdot_braille_vibevoice_spec2d.png",
+          "role": "spectrogram_png",
+          "sha256": "4bd03d6a6f8cff591ec93abad499190d2b3253de7a78218921a330552b9d10e5"
+        }
+      ],
+      "provenance": {
+        "generator": "scripts/spectrogram_strip.py",
+        "params": {
+          "band_spacing": "geometric",
+          "f_max_hz": 8000.0,
+          "f_min_hz": 60.0,
+          "seconds_per_px": 0.1,
+          "window": "hann"
+        }
+      },
+      "relations": {},
+      "schema_version": "1.0.0",
+      "src": [
+        "ga:audio_clip:gq2l5uxxj44uwnok6io3kduf5a"
+      ],
+      "status": "ok",
+      "uid": "ga:spectrogram_2d:hf7clfpowg7zajxke6rqhorcve",
       "uid_scheme": "ga1"
     },
     {
@@ -3170,6 +3639,7 @@
     }
   ],
   "legacy_index": {
+    "audio_clip:lib-bitdot-braille-vibevoice": "ga:audio_clip:gq2l5uxxj44uwnok6io3kduf5a",
     "audio_clip:lib-cube-explainer": "ga:audio_clip:33g2yv7vmahe5hzxn2e6p57fuy",
     "audio_clip:lib-kokoro": "ga:audio_clip:suixeici2fik7yjih5qlave3kq",
     "audio_clip:lib-kokoro-onnx": "ga:audio_clip:tlpralovoabmu44zazgsxm62uy",
@@ -3188,6 +3658,7 @@
     "card:engine-magpie": "ga:card:fijqhsk7xhpcgehxdeexal6jnm",
     "card:engine-pocket": "ga:card:nmfqip53e5thxk43egqjzl27da",
     "card:engine-vibevoice": "ga:card:bvm7yk6rqz5ir4ms5oej62rhra",
+    "card:lib-bitdot-braille-vibevoice": "ga:card:hf2ojkdfxizvznvyckuzxrgzay",
     "card:lib-cube-explainer": "ga:card:72pxivh23dgi6hruzry7hzykbu",
     "card:lib-kokoro": "ga:card:a2ti6pijkx6p2qp46yrsaxvwve",
     "card:lib-kokoro-onnx": "ga:card:mkkpjlcv232f4yyyzkolrvw3yu",
@@ -3203,9 +3674,14 @@
     "card:serve-gateway": "ga:card:ayvizyvubrzigxewm2bjzjmvam",
     "card:serve-node": "ga:card:3kc35sblccksmpuwia6s5xobae",
     "card:spec-fixture": "ga:card:rt6iial7o6xf7oetud56lcmv54",
+    "cube_ihdr:lib-bitdot-braille-vibevoice.cube": "ga:cube_ihdr:meih3uudlorg35xxhape5d5psq",
     "cube_ihdr:lib-cube-explainer.cube": "ga:cube_ihdr:bcuw4m76pyqanslfiugnvlxnda",
     "cube_ihdr:lib-kokoro-onnx.cube": "ga:cube_ihdr:uzkw5dq5jjubbqdlaz2pzm4rv4",
     "cube_ihdr:lib-misaki-kokoro.cube": "ga:cube_ihdr:2anzv4lhhjhlv6jocqvnlynvky",
+    "layer:lib-bitdot-braille-vibevoice.cube.confidence": "ga:layer:ps23mp4l5nzbinplh7fjjm5s5y",
+    "layer:lib-bitdot-braille-vibevoice.cube.quality": "ga:layer:lma3nlr3pjjenrffkbcp6dd23e",
+    "layer:lib-bitdot-braille-vibevoice.cube.signal": "ga:layer:sfwgrijzt6qmsewe5c2ljhxbju",
+    "layer:lib-bitdot-braille-vibevoice.cube.tonality": "ga:layer:pmezzrncctfa24qhwovi6mv2h4",
     "layer:lib-cube-explainer.cube.confidence": "ga:layer:6unkosdmp7rrikjtor5s2s4qui",
     "layer:lib-cube-explainer.cube.quality": "ga:layer:u2liakmfthyzbhyv7bn37s2uq4",
     "layer:lib-cube-explainer.cube.signal": "ga:layer:gpznanzjovaxtuttuv5uf2ohia",
@@ -3218,6 +3694,7 @@
     "layer:lib-misaki-kokoro.cube.quality": "ga:layer:w6cqig64t7yqi3x37r6i6cmk7e",
     "layer:lib-misaki-kokoro.cube.signal": "ga:layer:4txsd7tivveijssii52pyvjkny",
     "layer:lib-misaki-kokoro.cube.tonality": "ga:layer:4ek7xme6e2ed575nexvobv74pm",
+    "spectrogram_2d:lib-bitdot-braille-vibevoice.spec2d": "ga:spectrogram_2d:hf7clfpowg7zajxke6rqhorcve",
     "spectrogram_2d:lib-cube-explainer.spec2d": "ga:spectrogram_2d:udrjd5wyfbgssasvbvkgc2tpxy",
     "spectrogram_2d:lib-kokoro-onnx.spec2d": "ga:spectrogram_2d:54kcseq3lsdqetwmds45vbhhya",
     "spectrogram_2d:lib-kokoro.spec2d": "ga:spectrogram_2d:tpwcmd2fvhizzmdal7gwzdqy5y",

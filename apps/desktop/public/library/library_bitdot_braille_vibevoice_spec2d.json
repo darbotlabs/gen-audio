@@ -1,0 +1,23 @@
+{
+  "clip_id": "lib-bitdot-braille-vibevoice",
+  "path": "library_bitdot_braille_vibevoice_spec2d.png",
+  "fields": {
+    "sample_rate_hz": 24000,
+    "n_fft": 2048,
+    "hop_frames": 2400,
+    "n_bands": 64,
+    "width_px": 2470,
+    "height_px": 64,
+    "duration_ms": 247067,
+    "covers_ms": 247000,
+    "db_floor": -80,
+    "colormap": "ga-ember"
+  },
+  "params": {
+    "f_min_hz": 60.0,
+    "f_max_hz": 8000.0,
+    "band_spacing": "geometric",
+    "seconds_per_px": 0.1,
+    "window": "hann"
+  }
+}

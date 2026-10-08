@@ -486,6 +486,64 @@
       }
     },
     {
+      "id": "lib-bitdot-braille-vibevoice",
+      "uid": "ga:card:hf2ojkdfxizvznvyckuzxrgzay",
+      "kind": "LibraryClip",
+      "title": "Bitdot braille (VibeVoice-1.5B)",
+      "body": {
+        "engineId": "vibevoice",
+        "status": "ok",
+        "synthesizedSpeech": true,
+        "wavUrl": "/library/bitdot_braille_vibevoice.wav",
+        "duration_s": 247.0667,
+        "sample_rate": 24000,
+        "summary": "Real VibeVoice-1.5B podcast \u00b7 Alice + Frank \u00b7 bitdot braille @ 24 kHz. Inverse-HDR cube attached. Not a fixture.",
+        "cubePngUrl": "/library/bitdot_braille_vibevoice_cube3d.png",
+        "cubeJsonUrl": "/library/library_bitdot_braille_vibevoice_cube3d.json",
+        "inv_hdr": 0.18686723709106445
+      },
+      "adaptive": {
+        "type": "AdaptiveCard",
+        "version": "1.5",
+        "body": [
+          {
+            "type": "TextBlock",
+            "text": "Real synth: VibeVoice-1.5B \u00b7 Alice + Frank \u00b7 247.1s \u00b7 cube attached",
+            "wrap": true
+          },
+          {
+            "type": "FactSet",
+            "facts": [
+              {
+                "title": "Duration",
+                "value": "247.067 s"
+              },
+              {
+                "title": "SR",
+                "value": "24000"
+              },
+              {
+                "title": "Voices",
+                "value": "Alice, Frank"
+              },
+              {
+                "title": "inv-HDR",
+                "value": "0.187"
+              },
+              {
+                "title": "Cube points",
+                "value": "3600"
+              },
+              {
+                "title": "Cube",
+                "value": "rev 1 \u00b7 399 time bins \u00b7 0.619 s/bin \u00b7 0:00\u20134:06"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
       "id": "lib-magpie",
       "uid": "ga:card:z2ghwc3rentj2grxbsbp5najzy",
       "kind": "LibraryClip",

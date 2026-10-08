@@ -55,6 +55,7 @@ export const SLIDE_SCHEMAS: SlideSchema[] = [
       "lib-kokoro-onnx",
       "lib-kokoro",
       "lib-misaki-kokoro",
+      "lib-bitdot-braille-vibevoice",
       "lib-magpie",
       "lib-vibevoice",
       "lib-pocket",

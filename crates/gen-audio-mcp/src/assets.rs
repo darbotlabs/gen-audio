@@ -132,7 +132,7 @@ mod tests {
     #[test]
     fn list_and_glyph() {
         let page = payload(&call("asset_list", json!({"kind": "audio_clip"})));
-        assert_eq!(page["count"], 4);
+        assert_eq!(page["count"], 5); // cube explainer, kokoro-onnx, kokoro, misaki, bitdot
         assert!(page["nextCursor"].is_null());
         let first = payload(&call("asset_list", json!({"limit": 2})));
         assert_eq!(first["count"], 2);

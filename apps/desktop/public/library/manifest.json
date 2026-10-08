@@ -83,6 +83,67 @@
       "summary": "Real misaki\u2192kokoro WAV (genaid_full_misaki_kokoro). synthesizedSpeech true."
     },
     {
+      "id": "lib-bitdot-braille-vibevoice",
+      "engineId": "vibevoice",
+      "title": "Bitdot braille (VibeVoice-1.5B)",
+      "status": "ok",
+      "synthesizedSpeech": true,
+      "sample_rate": 24000,
+      "duration_s": 247.0667,
+      "bytes": 11859244,
+      "wavUrl": "/library/bitdot_braille_vibevoice.wav",
+      "wav": "artifacts/library/bitdot_braille_vibevoice.wav",
+      "voices": [
+        "Alice",
+        "Frank"
+      ],
+      "n_words": 774,
+      "n_turns": 26,
+      "cube": {
+        "pngUrl": "/library/bitdot_braille_vibevoice_cube3d.png",
+        "jsonUrl": "/library/library_bitdot_braille_vibevoice_cube3d.json",
+        "inv_hdr": 0.18686723709106445,
+        "cube_revision": 1,
+        "duration_s": 247.06666666666666,
+        "cube_shape_f_t": [
+          102,
+          399
+        ],
+        "bin_seconds": 0.6186666666666667,
+        "cube_covers_s": 246.848,
+        "n_points": 3600,
+        "n_points_source": 94667,
+        "note": "Inverse-HDR bitdot cube rev 1 over the full 247.067 s WAV (stft 1024/256 @ 24 kHz, downsample 5x58; signal/tonality/confidence/quality). Scrub maps by seconds: bin = floor(t / 0.618667 s)."
+      },
+      "provenance": {
+        "engine": "vibevoice-1.5B",
+        "generator": "VibeVoice-community demo/inference_from_file.py @ 952326d (offline run; see bitdot_braille_vibevoice.synth.json)",
+        "created_at": "2026-10-07T20:46:05-07:00",
+        "params": {
+          "model": "microsoft/VibeVoice-1.5B",
+          "voices": {
+            "Speaker 1": "Alice",
+            "Speaker 2": "Frank"
+          },
+          "device": "cpu (8 vCPU)",
+          "dtype": "float16",
+          "cfg_scale": 1.3,
+          "seed": 42,
+          "script": "podcast_bitdot_braille.txt",
+          "script_sha256": "d2afd8a49a9563fcf7023ea463eae78b7cb39056e1998e4a79efba1abf01f858",
+          "segments": 26,
+          "script_words": 774,
+          "inference_code_commit": "952326ddb264062466a888cf32a5b2f4e803e16e",
+          "wall_time_s": 1478.23,
+          "rtf": 5.81,
+          "output_sha256": "63490e16e5841d4e7db6db5a5800f64c0fabdc76a2544997694708c03726439f",
+          "post": "none (raw VibeVoice audio re-written as 24 kHz mono PCM16; no trim/EQ/normalize)",
+          "synth_json": "/library/bitdot_braille_vibevoice.synth.json"
+        }
+      },
+      "summary": "Real VibeVoice-1.5B two-speaker podcast (Alice, Frank) on bitdot braille, 247.1 s @ 24 kHz mono, raw model output (no trim/EQ/normalize). synthesizedSpeech true. Inverse-HDR cube and 2D strip attached."
+    },
+    {
       "synthesizedSpeech": false,
       "reason": "GGUF present on box; magpie-tts.cpp not built; no SMAX runtime",
       "id": "lib-magpie",

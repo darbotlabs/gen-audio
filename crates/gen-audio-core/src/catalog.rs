@@ -244,6 +244,17 @@ const LIBRARY: &[LibraryClipMeta] = &[
         summary: "Catalog says this clip is a real misaki→kokoro WAV with an Inverse-HDR cube. This process does not open the WAV.",
     },
     LibraryClipMeta {
+        id: "lib-bitdot-braille-vibevoice",
+        title: "Bitdot braille (VibeVoice-1.5B)",
+        engine_id: "vibevoice",
+        status: "ok",
+        synthesized_speech: true,
+        wav_url: Some("/library/bitdot_braille_vibevoice.wav"),
+        cube_json_url: Some("/library/library_bitdot_braille_vibevoice_cube3d.json"),
+        sidecar_url: Some("/library/bitdot_braille_vibevoice.synth.json"),
+        summary: "Catalog says this clip is a real VibeVoice-1.5B podcast (Alice, Frank) rendered offline, with an Inverse-HDR cube. This app has no VibeVoice adapter; it only plays the WAV.",
+    },
+    LibraryClipMeta {
         id: "lib-magpie",
         title: "Magpie",
         engine_id: "magpie",
@@ -371,6 +382,19 @@ mod tests {
         assert_eq!(
             clip.cube_json_url,
             Some("/library/library_genaid_full_misaki_kokoro_cube3d.json")
+        );
+    }
+
+    #[test]
+    fn bitdot_vibevoice_clip_is_real_with_cube_and_synth_sidecar() {
+        let clip = library_clip("lib-bitdot-braille-vibevoice").expect("bitdot clip");
+        assert_eq!(clip.status, "ok");
+        assert!(clip.synthesized_speech);
+        assert_eq!(clip.engine_id, "vibevoice");
+        assert_eq!(clip.wav_url, Some("/library/bitdot_braille_vibevoice.wav"));
+        assert_eq!(
+            clip.sidecar_url,
+            Some("/library/bitdot_braille_vibevoice.synth.json")
         );
     }
 

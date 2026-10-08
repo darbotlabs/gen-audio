@@ -250,7 +250,9 @@ mod tests {
         let (first, next) = list(Some("layer"), None, 5).unwrap();
         assert_eq!(first.len(), 5);
         let (second, after) = list(Some("layer"), next.as_deref(), 100).unwrap();
-        assert_eq!(second.len(), 7);
+        let layers = list(Some("layer"), None, 100).unwrap().0.len();
+        assert_eq!(layers % 4, 0, "four layers per cube");
+        assert_eq!(second.len(), layers - 5);
         assert!(after.is_none());
         assert!(first.last().unwrap()["uid"].as_str() < second[0]["uid"].as_str());
         assert!(list(None, None, 0).is_err());
