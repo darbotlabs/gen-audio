@@ -1,6 +1,6 @@
 # Livetile faces contract (v1.1)
 
-Status: **v1.1c — C12-M1 + C12-L1/L2 + Info (2026-10-08).** Behavior-only; no code on this line. Symbol
+Status: **v1.1d — C13: back+section deprecation warning, connectors pinned M=1 (2026-10-08).** Behavior-only; no code on this line. Symbol
 citations below still name PR #4 at `99ba67e` (do not chase later moves). The one exception is
 `apps/desktop/src/library-assets.ts`, which is cited on both lines as **livetile L64–70 / #4 `fb07d91`
 L65–71**, because the hand-off is implemented on #4. Behavioral claims were
@@ -65,7 +65,9 @@ Which `facts()` sections each face renders (§5):
   - `relations` → `relations`. When the model has no link (§2, C12-M1: `engine-magpie`,
     `engine-pocket`), this face is absent and `facts().relations` (pending / `no_envelope`, §5.6) is
     what the renderer shows on the `model` face instead.
-- Connector: `connector` → `identity`, `honesty`, `connector`; `relations` → `relations`.
+- Connector: `connector` → `identity`, `honesty`, `connector`; `relations` → `relations`. §5.6
+  defines no connector link types, so the connector `relations` face never applies today (§2:
+  every connector is M = 1).
 - Voice profile: `profile` → `identity`, `honesty`, `profile`; `persona` → `persona`;
   `relations` → `relations`.
 
@@ -139,7 +141,11 @@ Worked examples on the release deck:
   `model` face carries `facts().cube` (pending / `wav_missing`) and `facts().relations` (pending /
   `no_envelope`), each with `tile_ids: ["lib-magpie"]` (resp. `["lib-pocket"]`). The glyph is
   `aria-disabled` with the label `Card has 1 face: Model` (Q2: `<name>` is the face name, id `model`).
-- `conn-mcp`: M = 1 if it has no link. That case is Decision Q2. `conn-claude`: M = 1 (`face_count: 1`).
+- Connectors: §5.6 defines **no** connector link types, so a connector view has no link and the
+  face-table rule above omits `relations`. Every connector is therefore M = 1 (`connector` only),
+  with the glyph `aria-disabled` and labelled `Card has 1 face: Connector` (Q2). T17 step 8 pins
+  all seven by tile id. Adding a connector link type is a contract change, not an implementation
+  choice.
 
 ## 3. Reducer state and actions (core, `viewport.rs`)
 
@@ -183,16 +189,23 @@ MCP `ui_flip` arguments (`control.rs` `ui_flip`), on top of today's `tileId | ui
 - At most one of `next`, `face` and `flipped` may be given. Two or more is -32602.
 - `section` is what PR #4 uses today to pick a facts section on the back. Decision Q1 (closed):
   `back` + `section: "<id>"` maps to the face that renders that section (for example `honesty` →
-  `clip`). Log a deprecation for one release; then the pair is **-32602**.
+  `clip`). Deprecated for one release (it lands as `deprecated_back_section`, below); then the pair
+  is **-32602**.
 - **C11-L2 — bare `{tileId, section}` without `back` / `face` / `flipped`:** at `fb07d91`
   `control.rs` `ui_flip` L629–644, `flipped` defaults to `true` and `face` to `"back"`, so
   `{tileId, section}` is accepted and applied as back+section today. Contract: log a **deprecation
   warning for one release** (same window as Q1), then the bare form is **-32602**. Do not fail-open
   forever; do not make it hard-fail before the deprecation window ends.
-- **C12-L1 — where the deprecation lands:** during the window the call succeeds and the JSON-RPC
-  `result` carries `warnings: [{"code": "deprecated_bare_section", "detail": "<text>"}]`, and the
-  mcp server writes exactly one line for that call to its stderr log. T17 8b asserts the `result`
-  field. A deprecation that nobody can observe in the response never gets acted on.
+- **Where the deprecations land (C12-L1, C13):** during the window the call succeeds, and:
+  - **back + `section` (Q1):** the JSON-RPC `result` carries
+    `warnings: [{"code": "deprecated_back_section", "detail": "<text>"}]`, and the mcp server writes
+    exactly one line for that call to its stderr log. T17 8c asserts the `result` field.
+  - **bare `{tileId, section}` (C11-L2):** the JSON-RPC `result` carries
+    `warnings: [{"code": "deprecated_bare_section", "detail": "<text>"}]`, and the mcp server writes
+    exactly one line for that call to its stderr log. T17 8b asserts the `result` field.
+  Each deprecated call carries exactly one warning, with its own code: the bare form reports
+  `deprecated_bare_section` only, not also `deprecated_back_section`. A deprecation that nobody can
+  observe in the response never gets acted on.
 
 The reducer result, which is also the `flip` event echoed over SSE with its seq (converged 3b: TS applies
 events, never actions):
@@ -397,6 +410,8 @@ out of the reducer (converged v1 FINAL 3a: no per-frame events over SSE).
   (`["lib-magpie"]`, resp. `["lib-pocket"]`), shown on the `model` face. Same rule as the cubes
   omission: honest absence plus a visible reason, not a placeholder face.
 - **Profile links:** its voice model, plus attached clip refs that resolve to a clip uid.
+- **Connector links:** none are defined. A connector view has no link, so its `relations` face is
+  omitted (§2: M = 1).
 - **Section status:** the worst of its links, ordered `partial` > `pending` > `real`.
 
 ## 6. The 'pending' rendering rule (desktop)
@@ -457,7 +472,7 @@ Each step reads back through `viewport_get`.
    `face_count: 2` for those three; `ui_flip {"tileId": "lib-magpie", "face": "cube"}` → **-32602**,
    naming `clip, relations` (aliases: front, back); `ui_flip {"tileId": "lib-magpie", "next": true}`
    → `relations`, 1, 2.
-8. Engine and connector (C11-L1 / C11-M1):
+8. Engine and connector (C11-L1 / C11-M1 / C13):
    - `ui_flip {"tileId": "engine-kokoro", "next": true}` → `cubes`, 1, 3.
    - `engine-vibevoice`: M = 3. `ui_flip {"tileId": "engine-vibevoice", "next": true}` → `cubes`, 1, 3
      (exactly the bitdot cube; no pending cube section on the model).
@@ -474,13 +489,21 @@ Each step reads back through `viewport_get`.
    - **Must-fail (C12-M1):** a relations link whose `target_uid` is not a `ga:` uid (for example
      `target_uid: "lib-magpie"` forced onto `engine-magpie`) is rejected. A mutant that accepts it
      must turn this row red.
-   - `conn-claude` appears **once** on the release deck (`conn-claude` count = 1) and
-     `ui.faces["view:conn-claude"].face_count` = **1**.
+   - Connectors (C13): each of the seven connector tile ids appears **once** on the release deck
+     (`conn-claude` count = 1, C11-L1), and `ui.faces["view:<id>"].face_count` = **1** with
+     `views[…].faces` ids `connector`, for each of:
+     `conn-mcp`, `conn-acp`, `conn-harness`, `conn-copilot`, `conn-claude`, `conn-gpt`, `conn-gemini`.
+     `ui_flip {"tileId": "conn-mcp", "face": "relations"}` → **-32602** (valid faces: `connector`).
 8b. Bare section deprecation (C11-L2): `ui_flip {"tileId": "lib-misaki-kokoro", "section": "honesty"}`
-    (no `back` / `face` / `flipped`) behaves as back+section for one release, and the JSON-RPC result
-    contains `warnings: [{code: "deprecated_bare_section", detail}]` (C12-L1; the test asserts this
-    result field). After that window it is **-32602**. Must-pass during the window; must-fail (as
+    (no `back` / `face` / `flipped`) behaves as back+section, which Q1 maps (`honesty` → `clip`), for
+    one release, and the JSON-RPC result contains `warnings: [{code: "deprecated_bare_section", detail}]`
+    (C12-L1; the test asserts this result field). After that window it is **-32602**. Must-pass during the window; must-fail (as
     -32602) after.
+8c. Back + section deprecation (Q1): `ui_flip {"tileId": "lib-misaki-kokoro", "face": "back", "section": "honesty"}`
+    behaves as Q1 maps it (`honesty` → `clip`) for one release, and the JSON-RPC result contains
+    `warnings: [{code: "deprecated_back_section", detail}]` (C13; the test asserts this result
+    field). After that window it is **-32602**. Must-pass during the window; must-fail (as -32602)
+    after.
 9. Two selectors: `ui_flip {"tileId": "lib-misaki-kokoro", "next": true, "face": "cube"}` → -32602.
 10. Snapshot stability: steps 2–5 leave every `views[].snapshot` byte-identical (§7).
 11. **face_index stability under data mutation (Q10):** with `view:lib-misaki-kokoro` on face
@@ -517,9 +540,10 @@ alias is **pending** on this line (today's desktop still keys on `flipcard` /
 ## 10. Decisions (Q1–Q9) — closed
 
 - **Q1. `section`:** `back` + `section: "<id>"` maps to the face that renders that section (for example
-  `honesty` → `clip`). Log a deprecation for one release; then the pair is **-32602**. The same
+  `honesty` → `clip`). Deprecated for one release (it lands as `result.warnings` code
+  `deprecated_back_section` plus one stderr line, §3; T17 8c); then the pair is **-32602**. The same
   one-release deprecation applies to bare `{tileId, section}` without `back` (C11-L2; it lands as
-  `result.warnings` plus one stderr line, §3 C12-L1); #4 at
+  `result.warnings` code `deprecated_bare_section` plus one stderr line, §3; T17 8b); #4 at
   `fb07d91` accepts it today by defaulting `ui_flip` to back (`control.rs` L629–633).
 - **Q2. M = 1:** the glyph stays in the same corner, `aria-disabled`, labelled
   `Card has 1 face: <name>`. Activating it is a no-op. `back` is -32602; `next` stays at index 0.
