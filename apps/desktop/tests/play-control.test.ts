@@ -179,3 +179,24 @@ test("observability: network errors and JSON-RPC errors are counted too; success
   assert.deepEqual(failures.snapshot(), { "ui_navigate:rpc_-32602": 1, "ui_generate:TypeError": 1 });
   assert.equal(failures.total(), 2);
 });
+
+// CSP: the window may connect to itself, Tauri's IPC, and the loopback MCP it posts to. Nothing else, no wildcards.
+test("csp: connect-src is exactly self, Tauri IPC and the MCP origin mcpCall posts to", () => {
+  const csp: string = load("apps/desktop/src-tauri/tauri.conf.json").app.security.csp;
+  const directives = new Map(csp.split(";").map((part) => part.trim().split(/\s+/)).map(([name, ...values]) => [name, values]));
+  assert.deepEqual(directives.get("connect-src"), [
+    "'self'",
+    "ipc:",
+    "http://ipc.localhost",
+    "http://127.0.0.1:8765",
+    "http://localhost:8765",
+  ]);
+  assert.ok(!csp.includes("*"), csp);
+  const main = readFileSync(repo("apps/desktop/src/main.ts"), "utf8");
+  const posted = main.match(/postMcp\(fetch, "([^"]+)"/)?.[1];
+  assert.ok(posted, "mcpCall's URL");
+  assert.ok(directives.get("connect-src")?.includes(new URL(posted).origin), posted);
+  // Only connect-src changed.
+  assert.deepEqual(directives.get("default-src"), ["'self'"]);
+  assert.deepEqual(directives.get("script-src"), ["'self'"]);
+});
