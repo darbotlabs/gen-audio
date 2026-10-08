@@ -58,6 +58,28 @@
     },
     {
       "body": {
+        "engineId": "kokoro_dayour",
+        "status": "library",
+        "summary": "dayour/kokoro torch runtime. Its real Library WAV and rev 3 cube ship here. Not vendored; this repo has no synth adapter."
+      },
+      "id": "engine-kokoro-dayour",
+      "kind": "EngineStatus",
+      "title": "dayour/kokoro",
+      "uid": "ga:card:zoap44kodcb55zvwsw5cld4qwm"
+    },
+    {
+      "body": {
+        "engineId": "misaki",
+        "status": "library",
+        "summary": "misaki is grapheme-to-phoneme for Kokoro. G2P only: it emits phonemes, not a waveform. Its audio is the misaki→kokoro clip."
+      },
+      "id": "engine-misaki",
+      "kind": "EngineStatus",
+      "title": "misaki",
+      "uid": "ga:card:axbliqbwn7uidcc4pjfbivmlli"
+    },
+    {
+      "body": {
         "authenticated": false,
         "connectorId": "mcp",
         "detail": "Stateless tool server. No vendor credential.",
@@ -285,20 +307,48 @@
       "adaptive": {
         "body": [
           {
-            "text": "Real synth: dayour/kokoro · 375.6s",
+            "text": "Real synth: dayour/kokoro · 375.6s · cube attached",
             "type": "TextBlock",
             "wrap": true
+          },
+          {
+            "facts": [
+              {
+                "title": "Duration",
+                "value": "375.625 s"
+              },
+              {
+                "title": "SR",
+                "value": "24000"
+              },
+              {
+                "title": "inv-HDR",
+                "value": "0.065"
+              },
+              {
+                "title": "Cube points",
+                "value": "3600"
+              },
+              {
+                "title": "Cube",
+                "value": "rev 3 · 395 time bins · 0:00–6:15"
+              }
+            ],
+            "type": "FactSet"
           }
         ],
         "type": "AdaptiveCard",
         "version": "1.5"
       },
       "body": {
+        "cubeJsonUrl": "/library/library_kokoro_cube3d.json",
+        "cubePngUrl": "/library/library_kokoro_cube3d.png",
         "duration_s": 375.625,
         "engineId": "kokoro_dayour",
+        "inv_hdr": 0.06455033665251082,
         "sample_rate": 24000,
         "status": "ok",
-        "summary": "Real dayour/kokoro torch synth — 375.6s Gen-Audio briefing. Not a fixture.",
+        "summary": "Real dayour/kokoro torch synth — 375.6s Gen-Audio briefing. Inverse-HDR cube attached. Not a fixture.",
         "synthesizedSpeech": true,
         "wavUrl": "/library/library_kokoro.wav"
       },
@@ -327,7 +377,7 @@
               },
               {
                 "title": "inv-HDR",
-                "value": "0.239"
+                "value": "0.070"
               },
               {
                 "title": "Cube points",
@@ -335,7 +385,7 @@
               },
               {
                 "title": "Cube",
-                "value": "rev 2 · 395 time bins · 0:00–2:19"
+                "value": "rev 3 · 395 time bins · 0:00–2:19"
               }
             ],
             "type": "FactSet"
@@ -385,7 +435,7 @@
               },
               {
                 "title": "inv-HDR",
-                "value": "0.187"
+                "value": "0.067"
               },
               {
                 "title": "Cube points",
@@ -393,7 +443,7 @@
               },
               {
                 "title": "Cube",
-                "value": "rev 1 · 399 time bins · 0.619 s/bin · 0:00–4:06"
+                "value": "rev 3 · 399 time bins · 0.619 s/bin · 0:00–4:06"
               }
             ],
             "type": "FactSet"
@@ -518,7 +568,7 @@
         "duration_s": 157.134,
         "engineId": "kokoro_onnx",
         "faceName": "Cube explainer",
-        "inv_hdr": 0.06963625142864167,
+        "inv_hdr": 0.06963625142871165,
         "sample_rate": 24000,
         "semanticName": "Spectrogram cube explainer · Optimus AgentVoice",
         "sidecarUrl": "/library/library_cube_explainer_kokoro_onnx.synth.json",

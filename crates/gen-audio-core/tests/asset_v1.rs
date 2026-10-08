@@ -131,12 +131,12 @@ fn rounding_vectors_match() {
     // (3,771,216 / 96 = 39283.5) would round to 39284.
     assert_eq!(bin_frames_inferred(157.134, 24_000, 96).unwrap(), 39_283);
     assert_eq!((3_771_216u64 * 2 + 96) / (2 * 96), 39_284);
-    let fixtures = json(FIXTURES);
-    assert_eq!(
-        fixtures["legacy_index"]["cube_ihdr:lib-cube-explainer.cube"],
-        "ga:cube_ihdr:bcuw4m76pyqanslfiugnvlxnda",
-        "lib-cube-explainer cube uid is pinned by the B1' formula"
-    );
+    // E4: every Library cube is rev 3 with downsample_sf_st and a hop, so none
+    // takes the inferred branch any more; the formula stays pinned by the vectors.
+    let catalog = json(ASSETS);
+    for cube in catalog["assets"].as_array().unwrap().iter().filter(|asset| asset["kind"] == "cube_ihdr") {
+        assert_eq!(cube["provenance"]["params"]["bins_inferred_from_shape"], false, "{}", cube["legacy_id"]);
+    }
 }
 
 #[test]

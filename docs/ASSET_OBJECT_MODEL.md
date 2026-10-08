@@ -28,7 +28,7 @@ reconciled choices listed at the end.
   "schema_version": "1.0.0",          // semver; only the major enters the uid; unknown major rejected
   "uid_scheme": "ga1",
   "kind": "cube_ihdr",                // closed enum, snake_case (see §4)
-  "uid": "ga:cube_ihdr:rjngyfqbn6q4vs6vxmuriua2xa",
+  "uid": "ga:cube_ihdr:himuxssd74afzm5eeqjfti5ple",
   "legacy_id": "lib-misaki-kokoro.cube", // old card id / tileId / clipId / persona id; never hashed
   "status": "ok",                     // ok | missing | unavailable; never hashed
   "fields":  { ... },                 // HASHED identity fields: fixed per-kind allowlist, integers only
@@ -36,7 +36,7 @@ reconciled choices listed at the end.
   "src":     ["ga:audio_clip:..."],   // HASHED derived_from parents (Merkle DAG)
   "relations": { "layer_of", "bound_to", "composes", "supersedes" }, // unhashed links
   "honesty": { "synthesized_speech", "fixture", "not_podcast", "claims": [closed vocabulary], "note" },
-  "provenance": { "generator", "engine", "voice_model", "g2p_model", "params", "created_at" },
+  "provenance": { "generator", "generator_commit", "layer_method", "engine", "voice_model", "g2p_model", "params", "created_at" },
   "display": { "title", "summary", "semantic_name", "face_name", "glyph", "display_rev" }, // display_rev: integer, unhashed
   "body": { ... },                    // per-kind payload, unhashed; float views live here
   "extensions": { "x-vendor-thing": ... } // namespaced, never hashed
@@ -117,9 +117,9 @@ uid      = "ga:" K ":" base32(digest[0..16])        RFC 4648 alphabet a-z2-7, lo
   new scheme or major mints a new uid plus `relations.supersedes: [old uid]`.
 - **Worked example (real misaki cube):**
   - `JCS(identity)` = `{"fields":{"bin_frames":8448,"covers_ms":139040,"cube_revision":3,"duration_ms":139375,...},"kind":"cube_ihdr","media":[{"role":"cube_json",...},{"role":"cube_png",...}],"schema_major":1,"src":["ga:audio_clip:vtwxksrsuci7zygslimzfy7kdy"]}`
-  - digest = `8a5a6c16…c867`
-  - uid = `ga:cube_ihdr:rjngyfqbn6q4vs6vxmuriua2xa`
-  - glyph = `⢊⡚`
+  - digest = `3a194bca…9478`
+  - uid = `ga:cube_ihdr:himuxssd74afzm5eeqjfti5ple`
+  - glyph = `⠺⠙`
 
   Darbot's earlier worked example (`…ay76z`, built from the old kokoro_onnx
   cube under a 130-bit encoding) no longer applies: this spec takes 128 bits and
@@ -144,13 +144,15 @@ Negative or non-finite inputs are an error (`bad_rounding_input`).
 **`bin_frames` (B1′).** `asset_migrate.rs` takes the branches in this order:
 when the cube JSON has `downsample_sf_st` and a hop is known, `bin_frames =
 downsample_sf_st[1] × hop`; otherwise it is inferred from the cube JSON's own
-float `duration_s` as above. Cubes without `bin_seconds` (the older library
-cubes: `lib-kokoro-onnx`, `lib-cube-explainer`) take the inferred path. The
+float `duration_s` as above. Since E4 every shipped Library cube is rev 3
+(`gen_audio.cube_layers`, `layer_method: library_r3`) and takes the first
+branch; the inferred branch remains for cube JSON without `downsample_sf_st`
+(the older library cubes took it before E4). The
 two-step order is normative: `157.134 s × 24000 = 3771215.9999999995`,
 `/ 96 = 39283.49999999999` → **39283** (vector `bin_frames_inferred`, asserted by
 cargo, npm and pytest). Exact rational arithmetic (or frames: 3,771,216 / 96 =
-39283.5) gives 39284, which would re-mint `lib-cube-explainer`'s cube; its uid
-stays `ga:cube_ihdr:bcuw4m76pyqanslfiugnvlxnda`.
+39283.5) gives 39284. (Before E4 this pinned `lib-cube-explainer`'s cube uid,
+`ga:cube_ihdr:bcuw4m76pyqanslfiugnvlxnda`; that cube is now rev 3.)
 
 "The double product" in the other rows is one IEEE-754 binary64 multiply, so
 Rust, TS and Python get bit-identical inputs to the rounding step. Examples (all in

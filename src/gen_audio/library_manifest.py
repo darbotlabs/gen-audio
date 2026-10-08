@@ -7,9 +7,11 @@ cube_revision 2 after the cube JSON moved to 3). :func:`sync_manifest` rewrites
 the mirror from the cube JSON; ``scripts/cube_revision.py manifest`` runs it and
 ``scripts/test.ps1`` (Regen) fails when the committed manifest differs.
 
-Standard library only, so it runs where numpy is not installed (CI's Windows
-scripts job). Cubes without ``cube_revision`` come from the retired generator
-and are left exactly as shipped.
+A ready clip with no cube block gets one when a four-layer cube JSON in the
+library names its WAV (``wavUrl``), so a new cube is wired by regenerating,
+not by editing the manifest. Standard library only, so it runs where numpy is
+not installed (CI's Windows scripts job). Cubes without ``cube_revision`` come
+from the retired generator and are left exactly as shipped.
 """
 
 from __future__ import annotations
@@ -62,9 +64,18 @@ def sync_manifest(manifest_path: Path | str, library_dir: Path | str | None = No
     manifest_path = Path(manifest_path)
     library = Path(library_dir) if library_dir is not None else manifest_path.parent
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    by_wav: dict[str, tuple[str, dict]] = {}
+    for path in sorted(library.glob("*_cube3d.json")):
+        doc = json.loads(path.read_text(encoding="utf-8"))
+        if "cube_revision" in doc and isinstance(doc.get("wavUrl"), str):
+            by_wav[doc["wavUrl"]] = (path.name, doc)
     changed: list[str] = []
     for clip in manifest.get("clips", []):
         block = clip.get("cube")
+        found = by_wav.get(clip.get("wavUrl")) if clip.get("status") == "ok" else None
+        if not isinstance(block, dict) and found is not None:
+            name, doc = found
+            block = clip["cube"] = {"pngUrl": doc["pngUrl"], "jsonUrl": f"/library/{name}"}
         if not isinstance(block, dict) or not isinstance(block.get("jsonUrl"), str):
             continue
         name = block["jsonUrl"].rsplit("/", 1)[-1]

@@ -252,6 +252,24 @@ pub fn migrate_v0_to_v1(bundle: &Value) -> Result<Value, AssetError> {
         if let Some(hop) = hop {
             fields["hop_frames"] = json!(hop);
         }
+        // E4: a cube JSON that names its WAV's sha256 must name this clip's WAV.
+        if let Some(cube_source) = cube_doc["source_sha256"].as_str() {
+            if cube_source != sha {
+                return fail(
+                    "cube_source_mismatch",
+                    format!("v0 clip {id}: cube JSON {json_path} was made from WAV sha256 {cube_source}, not {sha}; regenerate the cube"),
+                );
+            }
+        }
+        // Provenance comes from the cube JSON (gen_audio.cube_layers writes the
+        // generator path, its commit, layer_method and params); unhashed.
+        let mut cube_provenance = match cube_doc.get("provenance").and_then(Value::as_object) {
+            Some(recorded) => recorded.clone(),
+            None => obj(vec![("generator", json!("retired library cube generator (before gen_audio.cube_layers)"))]),
+        };
+        let mut params = cube_provenance.get("params").and_then(Value::as_object).cloned().unwrap_or_default();
+        params.insert("bins_inferred_from_shape".into(), json!(inferred));
+        cube_provenance.insert("params".into(), Value::Object(params));
         let mut cube_media = Vec::new();
         cube_media.extend(media_ref(&media, "cube_json", &json_path, "application/json"));
         cube_media.extend(media_ref(&media, "cube_png", &png_path, "image/png"));
@@ -266,12 +284,10 @@ pub fn migrate_v0_to_v1(bundle: &Value) -> Result<Value, AssetError> {
             src: vec![uid.clone()],
             relations: Map::new(),
             honesty: honesty(false, false, &["library_cube"]),
-            provenance: obj(vec![
-                ("generator", json!(if cube_doc.get("cube_revision").is_some() { "gen_audio.cube_layers (scripts/cube_revision.py layers)" } else { "retired library cube generator (before gen_audio.cube_layers)" })),
-                ("params", json!({"bins_inferred_from_shape": inferred})),
-            ]),
+            provenance: cube_provenance,
             body: json!({
                 "inv_hdr": inv_hdr,
+                "layer_score": cube_doc["layer_score"],
                 "duration_s": cube_duration_s,
                 "bin_seconds": bin_frames as f64 / cube_sr.max(1) as f64,
                 "cube_covers_s": covers_ms as f64 / 1000.0,

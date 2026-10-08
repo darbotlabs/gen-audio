@@ -141,10 +141,11 @@
           "duration_s": 139.375,
           "inv_hdr": 0.07021075781225594,
           "json_url": "/library/library_genaid_full_misaki_kokoro_cube3d.json",
+          "layer_score": 0.23948296904563904,
           "png_url": "/library/genaid_full_misaki_kokoro_cube3d.png"
         },
         "display": {
-          "glyph": "⢊⡚",
+          "glyph": "⠺⠙",
           "summary": "Inverse-HDR cube rev 3 over the full 139.375 s WAV (stft 1024/256 @ 24 kHz, downsample 5x33; signal/tonality/confidence/quality). Scrub maps by seconds: bin = floor(t / 0.352 s).",
           "title": "Inverse-HDR cube — misaki→kokoro"
         },
@@ -173,11 +174,11 @@
         "legacy_id": "lib-misaki-kokoro.cube",
         "media": [
           {
-            "bytes": 295020,
+            "bytes": 295361,
             "mime": "application/json",
             "path": "library_genaid_full_misaki_kokoro_cube3d.json",
             "role": "cube_json",
-            "sha256": "ca200a503309c31d54e6c885b1c215c97a1921a76261d7d203325a9e9eb33f62"
+            "sha256": "dfa8b2dea9a86a1b3696f2daee8b7f89e649172b64ac222c4869b8ecf50f51a9"
           },
           {
             "bytes": 1206082,
@@ -188,9 +189,17 @@
           }
         ],
         "provenance": {
-          "generator": "gen_audio.cube_layers (scripts/cube_revision.py layers)",
+          "generator": "src/gen_audio/cube_layers.py",
+          "generator_commit": "96730a38157bebae1e5e1b6a2a054170b794fbc3",
+          "layer_method": "library_r3",
           "params": {
-            "bins_inferred_from_shape": false
+            "bins_inferred_from_shape": false,
+            "hop": 256,
+            "max_f": 128,
+            "max_t": 400,
+            "n_fft": 1024,
+            "per_layer": 900,
+            "thresh": 0.12
           }
         },
         "relations": {},
@@ -199,7 +208,7 @@
           "ga:audio_clip:vtwxksrsuci7zygslimzfy7kdy"
         ],
         "status": "ok",
-        "uid": "ga:cube_ihdr:rjngyfqbn6q4vs6vxmuriua2xa",
+        "uid": "ga:cube_ihdr:himuxssd74afzm5eeqjfti5ple",
         "uid_scheme": "ga1"
       },
       "error": null,
@@ -220,7 +229,7 @@
           "std": 0.1606433093547821
         },
         "display": {
-          "glyph": "⢾⡬",
+          "glyph": "⣿⢞",
           "title": "signal layer"
         },
         "fields": {
@@ -241,14 +250,14 @@
           "generator": "cube JSON layers block (v0)"
         },
         "relations": {
-          "layer_of": "ga:cube_ihdr:rjngyfqbn6q4vs6vxmuriua2xa"
+          "layer_of": "ga:cube_ihdr:himuxssd74afzm5eeqjfti5ple"
         },
         "schema_version": "1.0.0",
         "src": [
-          "ga:cube_ihdr:rjngyfqbn6q4vs6vxmuriua2xa"
+          "ga:cube_ihdr:himuxssd74afzm5eeqjfti5ple"
         ],
         "status": "ok",
-        "uid": "ga:layer:xzwoflt2y3dqsfm52g2no2a6fm",
+        "uid": "ga:layer:76pequ5swui4lii2jsgnb2er5m",
         "uid_scheme": "ga1"
       },
       "error": null,
@@ -267,10 +276,11 @@
           "duration_s": 139.375,
           "inv_hdr": 0.07021075781225594,
           "json_url": "/library/library_genaid_full_misaki_kokoro_cube3d.json",
+          "layer_score": 0.23948296904563904,
           "png_url": "/library/genaid_full_misaki_kokoro_cube3d.png"
         },
         "display": {
-          "glyph": "⢊⡚",
+          "glyph": "⠺⠙",
           "summary": "Inverse-HDR cube rev 3 over the full 139.375 s WAV (stft 1024/256 @ 24 kHz, downsample 5x33; signal/tonality/confidence/quality). Scrub maps by seconds: bin = floor(t / 0.352 s).",
           "title": "Inverse-HDR cube — misaki→kokoro"
         },
@@ -299,11 +309,11 @@
         "legacy_id": "lib-misaki-kokoro.cube",
         "media": [
           {
-            "bytes": 295020,
+            "bytes": 295361,
             "mime": "application/json",
             "path": "library_genaid_full_misaki_kokoro_cube3d.json",
             "role": "cube_json",
-            "sha256": "ca200a503309c31d54e6c885b1c215c97a1921a76261d7d203325a9e9eb33f62"
+            "sha256": "dfa8b2dea9a86a1b3696f2daee8b7f89e649172b64ac222c4869b8ecf50f51a9"
           },
           {
             "bytes": 1206082,
@@ -314,9 +324,17 @@
           }
         ],
         "provenance": {
-          "generator": "gen_audio.cube_layers (scripts/cube_revision.py layers)",
+          "generator": "src/gen_audio/cube_layers.py",
+          "generator_commit": "96730a38157bebae1e5e1b6a2a054170b794fbc3",
+          "layer_method": "library_r3",
           "params": {
-            "bins_inferred_from_shape": false
+            "bins_inferred_from_shape": false,
+            "hop": 256,
+            "max_f": 128,
+            "max_t": 400,
+            "n_fft": 1024,
+            "per_layer": 900,
+            "thresh": 0.12
           }
         },
         "relations": {},
@@ -325,7 +343,7 @@
           "ga:audio_clip:vtwxksrsuci7zygslimzfy7kdy"
         ],
         "status": "ok",
-        "uid": "ga:cube_ihdr:rjngyfqbn6q4vs6vxmuriua2xa",
+        "uid": "ga:cube_ihdr:himuxssd74afzm5eeqjfti5ple",
         "uid_scheme": "ga1"
       },
       "error": null,
@@ -344,10 +362,11 @@
           "duration_s": 139.375,
           "inv_hdr": 0.07021075781225594,
           "json_url": "/library/library_genaid_full_misaki_kokoro_cube3d.json",
+          "layer_score": 0.23948296904563904,
           "png_url": "/library/genaid_full_misaki_kokoro_cube3d.png"
         },
         "display": {
-          "glyph": "⢊⡚",
+          "glyph": "⠺⠙",
           "summary": "Inverse-HDR cube rev 3 over the full 139.375 s WAV (stft 1024/256 @ 24 kHz, downsample 5x33; signal/tonality/confidence/quality). Scrub maps by seconds: bin = floor(t / 0.352 s).",
           "title": "Renamed cube (title is display only)"
         },
@@ -376,11 +395,11 @@
         "legacy_id": "lib-misaki-kokoro.cube",
         "media": [
           {
-            "bytes": 295020,
+            "bytes": 295361,
             "mime": "application/json",
             "path": "library_genaid_full_misaki_kokoro_cube3d.json",
             "role": "cube_json",
-            "sha256": "ca200a503309c31d54e6c885b1c215c97a1921a76261d7d203325a9e9eb33f62"
+            "sha256": "dfa8b2dea9a86a1b3696f2daee8b7f89e649172b64ac222c4869b8ecf50f51a9"
           },
           {
             "bytes": 1206082,
@@ -391,9 +410,17 @@
           }
         ],
         "provenance": {
-          "generator": "gen_audio.cube_layers (scripts/cube_revision.py layers)",
+          "generator": "src/gen_audio/cube_layers.py",
+          "generator_commit": "96730a38157bebae1e5e1b6a2a054170b794fbc3",
+          "layer_method": "library_r3",
           "params": {
-            "bins_inferred_from_shape": false
+            "bins_inferred_from_shape": false,
+            "hop": 256,
+            "max_f": 128,
+            "max_t": 400,
+            "n_fft": 1024,
+            "per_layer": 900,
+            "thresh": 0.12
           }
         },
         "relations": {},
@@ -402,7 +429,7 @@
           "ga:audio_clip:vtwxksrsuci7zygslimzfy7kdy"
         ],
         "status": "ok",
-        "uid": "ga:cube_ihdr:rjngyfqbn6q4vs6vxmuriua2xa",
+        "uid": "ga:cube_ihdr:himuxssd74afzm5eeqjfti5ple",
         "uid_scheme": "ga1"
       },
       "error": null,
@@ -517,7 +544,7 @@
         },
         "relations": {
           "bound_to": [
-            "ga:cube_ihdr:bcuw4m76pyqanslfiugnvlxnda"
+            "ga:cube_ihdr:rv6yp5lhxgo3ezeqm54rwslpty"
           ]
         },
         "schema_version": "1.0.0",
@@ -599,7 +626,7 @@
         },
         "relations": {
           "bound_to": [
-            "ga:cube_ihdr:bcuw4m76pyqanslfiugnvlxnda"
+            "ga:cube_ihdr:rv6yp5lhxgo3ezeqm54rwslpty"
           ]
         },
         "schema_version": "1.0.0",
@@ -738,7 +765,7 @@
       "envelope": {
         "body": {},
         "display": {
-          "glyph": "⡣⠻",
+          "glyph": "⢦⠭",
           "title": "cube"
         },
         "fields": {
@@ -765,11 +792,11 @@
         "kind": "cube_ihdr",
         "media": [
           {
-            "bytes": 295020,
+            "bytes": 295361,
             "mime": "application/json",
             "path": "library_genaid_full_misaki_kokoro_cube3d.json",
             "role": "cube_json",
-            "sha256": "ca200a503309c31d54e6c885b1c215c97a1921a76261d7d203325a9e9eb33f62"
+            "sha256": "dfa8b2dea9a86a1b3696f2daee8b7f89e649172b64ac222c4869b8ecf50f51a9"
           },
           {
             "bytes": 1206082,
@@ -787,7 +814,7 @@
           "ga:audio_clip:vtwxksrsuci7zygslimzfy7kdy"
         ],
         "status": "ok",
-        "uid": "ga:cube_ihdr:mm544wcwdefdr37jzxddgvonge",
+        "uid": "ga:cube_ihdr:uywqaj3lmmaxmgdih54n2eoxx4",
         "uid_scheme": "ga1"
       },
       "error": "derived_needs_one_clip",
@@ -798,7 +825,7 @@
       "envelope": {
         "body": {},
         "display": {
-          "glyph": "⣸⠀",
+          "glyph": "⡭⣎",
           "title": "cube"
         },
         "fields": {
@@ -825,11 +852,11 @@
         "kind": "cube_ihdr",
         "media": [
           {
-            "bytes": 295020,
+            "bytes": 295361,
             "mime": "application/json",
             "path": "library_genaid_full_misaki_kokoro_cube3d.json",
             "role": "cube_json",
-            "sha256": "ca200a503309c31d54e6c885b1c215c97a1921a76261d7d203325a9e9eb33f62"
+            "sha256": "dfa8b2dea9a86a1b3696f2daee8b7f89e649172b64ac222c4869b8ecf50f51a9"
           },
           {
             "bytes": 1206082,
@@ -846,7 +873,7 @@
           "ga:audio_clip:vtwxksrsuci7zygslimzfy7kdy"
         ],
         "status": "ok",
-        "uid": "ga:cube_ihdr:7aadhqbfwabbljrcvguu2vruge",
+        "uid": "ga:cube_ihdr:nxho4uqw5dgw7rstseptyebyze",
         "uid_scheme": "ga1"
       },
       "error": "covers_exceeds_duration",
@@ -857,7 +884,7 @@
       "envelope": {
         "body": {},
         "display": {
-          "glyph": "⢾⡬",
+          "glyph": "⣿⢞",
           "title": "layer"
         },
         "fields": {
@@ -875,10 +902,10 @@
         "relations": {},
         "schema_version": "1.0.0",
         "src": [
-          "ga:cube_ihdr:rjngyfqbn6q4vs6vxmuriua2xa"
+          "ga:cube_ihdr:himuxssd74afzm5eeqjfti5ple"
         ],
         "status": "ok",
-        "uid": "ga:layer:xzwoflt2y3dqsfm52g2no2a6fm",
+        "uid": "ga:layer:76pequ5swui4lii2jsgnb2er5m",
         "uid_scheme": "ga1"
       },
       "error": "layer_needs_cube",
@@ -889,7 +916,7 @@
       "envelope": {
         "body": {},
         "display": {
-          "glyph": "⣫⢘",
+          "glyph": "⠂⠎",
           "title": "layer"
         },
         "fields": {
@@ -905,14 +932,14 @@
         "media": [],
         "provenance": {},
         "relations": {
-          "layer_of": "ga:cube_ihdr:rjngyfqbn6q4vs6vxmuriua2xa"
+          "layer_of": "ga:cube_ihdr:himuxssd74afzm5eeqjfti5ple"
         },
         "schema_version": "1.0.0",
         "src": [
-          "ga:cube_ihdr:rjngyfqbn6q4vs6vxmuriua2xa"
+          "ga:cube_ihdr:himuxssd74afzm5eeqjfti5ple"
         ],
         "status": "ok",
-        "uid": "ga:layer:5omdlzhnjb5qtpoqvwbno2yhxa",
+        "uid": "ga:layer:aihok47pndcbk7oryiodmppmaq",
         "uid_scheme": "ga1"
       },
       "error": "bad_layer_name",
@@ -1227,10 +1254,11 @@
           "duration_s": 139.375,
           "inv_hdr": 0.07021075781225594,
           "json_url": "/library/library_genaid_full_misaki_kokoro_cube3d.json",
+          "layer_score": 0.23948296904563904,
           "png_url": "/library/genaid_full_misaki_kokoro_cube3d.png"
         },
         "display": {
-          "glyph": "⢊⡚",
+          "glyph": "⠺⠙",
           "summary": "Inverse-HDR cube rev 3 over the full 139.375 s WAV (stft 1024/256 @ 24 kHz, downsample 5x33; signal/tonality/confidence/quality). Scrub maps by seconds: bin = floor(t / 0.352 s).",
           "title": "Inverse-HDR cube — misaki→kokoro"
         },
@@ -1259,11 +1287,11 @@
         "legacy_id": "lib-misaki-kokoro.cube",
         "media": [
           {
-            "bytes": 295020,
+            "bytes": 295361,
             "mime": "application/json",
             "path": "library_genaid_full_misaki_kokoro_cube3d.json",
             "role": "cube_json",
-            "sha256": "ca200a503309c31d54e6c885b1c215c97a1921a76261d7d203325a9e9eb33f62"
+            "sha256": "dfa8b2dea9a86a1b3696f2daee8b7f89e649172b64ac222c4869b8ecf50f51a9"
           },
           {
             "bytes": 1206082,
@@ -1274,9 +1302,17 @@
           }
         ],
         "provenance": {
-          "generator": "gen_audio.cube_layers (scripts/cube_revision.py layers)",
+          "generator": "src/gen_audio/cube_layers.py",
+          "generator_commit": "96730a38157bebae1e5e1b6a2a054170b794fbc3",
+          "layer_method": "library_r3",
           "params": {
-            "bins_inferred_from_shape": false
+            "bins_inferred_from_shape": false,
+            "hop": 256,
+            "max_f": 128,
+            "max_t": 400,
+            "n_fft": 1024,
+            "per_layer": 900,
+            "thresh": 0.12
           }
         },
         "relations": {},
@@ -1285,7 +1321,7 @@
           "ga:audio_clip:vtwxksrsuci7zygslimzfy7kdy"
         ],
         "status": "ok",
-        "uid": "ga:cube_ihdr:rjngyfqbn6q4vs6vxmuriua2xa",
+        "uid": "ga:cube_ihdr:himuxssd74afzm5eeqjfti5ple",
         "uid_scheme": "ga1"
       },
       "error": "uid_mismatch",
@@ -1304,6 +1340,7 @@
           "duration_s": 139.375,
           "inv_hdr": 0.07021075781225594,
           "json_url": "/library/library_genaid_full_misaki_kokoro_cube3d.json",
+          "layer_score": 0.23948296904563904,
           "png_url": "/library/genaid_full_misaki_kokoro_cube3d.png"
         },
         "display": {
@@ -1336,11 +1373,11 @@
         "legacy_id": "lib-misaki-kokoro.cube",
         "media": [
           {
-            "bytes": 295020,
+            "bytes": 295361,
             "mime": "application/json",
             "path": "library_genaid_full_misaki_kokoro_cube3d.json",
             "role": "cube_json",
-            "sha256": "ca200a503309c31d54e6c885b1c215c97a1921a76261d7d203325a9e9eb33f62"
+            "sha256": "dfa8b2dea9a86a1b3696f2daee8b7f89e649172b64ac222c4869b8ecf50f51a9"
           },
           {
             "bytes": 1206082,
@@ -1351,9 +1388,17 @@
           }
         ],
         "provenance": {
-          "generator": "gen_audio.cube_layers (scripts/cube_revision.py layers)",
+          "generator": "src/gen_audio/cube_layers.py",
+          "generator_commit": "96730a38157bebae1e5e1b6a2a054170b794fbc3",
+          "layer_method": "library_r3",
           "params": {
-            "bins_inferred_from_shape": false
+            "bins_inferred_from_shape": false,
+            "hop": 256,
+            "max_f": 128,
+            "max_t": 400,
+            "n_fft": 1024,
+            "per_layer": 900,
+            "thresh": 0.12
           }
         },
         "relations": {},
@@ -1362,7 +1407,7 @@
           "ga:audio_clip:vtwxksrsuci7zygslimzfy7kdy"
         ],
         "status": "ok",
-        "uid": "ga:cube_ihdr:rjngyfqbn6q4vs6vxmuriua2xa",
+        "uid": "ga:cube_ihdr:himuxssd74afzm5eeqjfti5ple",
         "uid_scheme": "ga1"
       },
       "error": "glyph_mismatch",
@@ -1381,10 +1426,11 @@
           "duration_s": 139.375,
           "inv_hdr": 0.07021075781225594,
           "json_url": "/library/library_genaid_full_misaki_kokoro_cube3d.json",
+          "layer_score": 0.23948296904563904,
           "png_url": "/library/genaid_full_misaki_kokoro_cube3d.png"
         },
         "display": {
-          "glyph": "⢊⡚",
+          "glyph": "⠺⠙",
           "summary": "Inverse-HDR cube rev 3 over the full 139.375 s WAV (stft 1024/256 @ 24 kHz, downsample 5x33; signal/tonality/confidence/quality). Scrub maps by seconds: bin = floor(t / 0.352 s).",
           "title": "Inverse-HDR cube — misaki→kokoro"
         },
@@ -1413,11 +1459,11 @@
         "legacy_id": "lib-misaki-kokoro.cube",
         "media": [
           {
-            "bytes": 295020,
+            "bytes": 295361,
             "mime": "application/json",
             "path": "library_genaid_full_misaki_kokoro_cube3d.json",
             "role": "cube_json",
-            "sha256": "ca200a503309c31d54e6c885b1c215c97a1921a76261d7d203325a9e9eb33f62"
+            "sha256": "dfa8b2dea9a86a1b3696f2daee8b7f89e649172b64ac222c4869b8ecf50f51a9"
           },
           {
             "bytes": 1206082,
@@ -1428,9 +1474,17 @@
           }
         ],
         "provenance": {
-          "generator": "gen_audio.cube_layers (scripts/cube_revision.py layers)",
+          "generator": "src/gen_audio/cube_layers.py",
+          "generator_commit": "96730a38157bebae1e5e1b6a2a054170b794fbc3",
+          "layer_method": "library_r3",
           "params": {
-            "bins_inferred_from_shape": false
+            "bins_inferred_from_shape": false,
+            "hop": 256,
+            "max_f": 128,
+            "max_t": 400,
+            "n_fft": 1024,
+            "per_layer": 900,
+            "thresh": 0.12
           }
         },
         "relations": {},
@@ -1439,7 +1493,7 @@
           "ga:audio_clip:vtwxksrsuci7zygslimzfy7kdy"
         ],
         "status": "ok",
-        "uid": "ga:cube_ihdr:rjngyfqbn6q4vs6vxmuriua2xa",
+        "uid": "ga:cube_ihdr:himuxssd74afzm5eeqjfti5ple",
         "uid_scheme": "ga1"
       },
       "error": "kind_mismatch",
@@ -1512,10 +1566,11 @@
           "duration_s": 139.375,
           "inv_hdr": 0.07021075781225594,
           "json_url": "/library/library_genaid_full_misaki_kokoro_cube3d.json",
+          "layer_score": 0.23948296904563904,
           "png_url": "/library/genaid_full_misaki_kokoro_cube3d.png"
         },
         "display": {
-          "glyph": "⢊⡚",
+          "glyph": "⠺⠙",
           "summary": "Inverse-HDR cube rev 3 over the full 139.375 s WAV (stft 1024/256 @ 24 kHz, downsample 5x33; signal/tonality/confidence/quality). Scrub maps by seconds: bin = floor(t / 0.352 s).",
           "title": "Inverse-HDR cube — misaki→kokoro"
         },
@@ -1547,11 +1602,11 @@
         "legacy_id": "lib-misaki-kokoro.cube",
         "media": [
           {
-            "bytes": 295020,
+            "bytes": 295361,
             "mime": "application/json",
             "path": "library_genaid_full_misaki_kokoro_cube3d.json",
             "role": "cube_json",
-            "sha256": "ca200a503309c31d54e6c885b1c215c97a1921a76261d7d203325a9e9eb33f62"
+            "sha256": "dfa8b2dea9a86a1b3696f2daee8b7f89e649172b64ac222c4869b8ecf50f51a9"
           },
           {
             "bytes": 1206082,
@@ -1562,9 +1617,17 @@
           }
         ],
         "provenance": {
-          "generator": "gen_audio.cube_layers (scripts/cube_revision.py layers)",
+          "generator": "src/gen_audio/cube_layers.py",
+          "generator_commit": "96730a38157bebae1e5e1b6a2a054170b794fbc3",
+          "layer_method": "library_r3",
           "params": {
-            "bins_inferred_from_shape": false
+            "bins_inferred_from_shape": false,
+            "hop": 256,
+            "max_f": 128,
+            "max_t": 400,
+            "n_fft": 1024,
+            "per_layer": 900,
+            "thresh": 0.12
           }
         },
         "relations": {},
@@ -1573,7 +1636,7 @@
           "ga:audio_clip:vtwxksrsuci7zygslimzfy7kdy"
         ],
         "status": "ok",
-        "uid": "ga:cube_ihdr:rjngyfqbn6q4vs6vxmuriua2xa",
+        "uid": "ga:cube_ihdr:himuxssd74afzm5eeqjfti5ple",
         "uid_scheme": "ga1"
       },
       "error": "bad_extension_key",
@@ -1592,10 +1655,11 @@
           "duration_s": 139.375,
           "inv_hdr": 0.07021075781225594,
           "json_url": "/library/library_genaid_full_misaki_kokoro_cube3d.json",
+          "layer_score": 0.23948296904563904,
           "png_url": "/library/genaid_full_misaki_kokoro_cube3d.png"
         },
         "display": {
-          "glyph": "⢊⡚",
+          "glyph": "⠺⠙",
           "summary": "Inverse-HDR cube rev 3 over the full 139.375 s WAV (stft 1024/256 @ 24 kHz, downsample 5x33; signal/tonality/confidence/quality). Scrub maps by seconds: bin = floor(t / 0.352 s).",
           "title": "Inverse-HDR cube — misaki→kokoro"
         },
@@ -1624,11 +1688,11 @@
         "legacy_id": "lib-misaki-kokoro.cube",
         "media": [
           {
-            "bytes": 295020,
+            "bytes": 295361,
             "mime": "application/json",
             "path": "library_genaid_full_misaki_kokoro_cube3d.json",
             "role": "cube_json",
-            "sha256": "ca200a503309c31d54e6c885b1c215c97a1921a76261d7d203325a9e9eb33f62"
+            "sha256": "dfa8b2dea9a86a1b3696f2daee8b7f89e649172b64ac222c4869b8ecf50f51a9"
           },
           {
             "bytes": 1206082,
@@ -1640,9 +1704,17 @@
         ],
         "notes": "x",
         "provenance": {
-          "generator": "gen_audio.cube_layers (scripts/cube_revision.py layers)",
+          "generator": "src/gen_audio/cube_layers.py",
+          "generator_commit": "96730a38157bebae1e5e1b6a2a054170b794fbc3",
+          "layer_method": "library_r3",
           "params": {
-            "bins_inferred_from_shape": false
+            "bins_inferred_from_shape": false,
+            "hop": 256,
+            "max_f": 128,
+            "max_t": 400,
+            "n_fft": 1024,
+            "per_layer": 900,
+            "thresh": 0.12
           }
         },
         "relations": {},
@@ -1651,7 +1723,7 @@
           "ga:audio_clip:vtwxksrsuci7zygslimzfy7kdy"
         ],
         "status": "ok",
-        "uid": "ga:cube_ihdr:rjngyfqbn6q4vs6vxmuriua2xa",
+        "uid": "ga:cube_ihdr:himuxssd74afzm5eeqjfti5ple",
         "uid_scheme": "ga1"
       },
       "error": "unknown_root_key",
@@ -1670,6 +1742,7 @@
           "duration_s": 139.375,
           "inv_hdr": 0.07021075781225594,
           "json_url": "/library/library_genaid_full_misaki_kokoro_cube3d.json",
+          "layer_score": 0.23948296904563904,
           "png_url": "/library/genaid_full_misaki_kokoro_cube3d.png"
         },
         "display": {
@@ -1701,11 +1774,11 @@
         "legacy_id": "lib-misaki-kokoro.cube",
         "media": [
           {
-            "bytes": 295020,
+            "bytes": 295361,
             "mime": "application/json",
             "path": "library_genaid_full_misaki_kokoro_cube3d.json",
             "role": "cube_json",
-            "sha256": "ca200a503309c31d54e6c885b1c215c97a1921a76261d7d203325a9e9eb33f62"
+            "sha256": "dfa8b2dea9a86a1b3696f2daee8b7f89e649172b64ac222c4869b8ecf50f51a9"
           },
           {
             "bytes": 1206082,
@@ -1716,9 +1789,17 @@
           }
         ],
         "provenance": {
-          "generator": "gen_audio.cube_layers (scripts/cube_revision.py layers)",
+          "generator": "src/gen_audio/cube_layers.py",
+          "generator_commit": "96730a38157bebae1e5e1b6a2a054170b794fbc3",
+          "layer_method": "library_r3",
           "params": {
-            "bins_inferred_from_shape": false
+            "bins_inferred_from_shape": false,
+            "hop": 256,
+            "max_f": 128,
+            "max_t": 400,
+            "n_fft": 1024,
+            "per_layer": 900,
+            "thresh": 0.12
           }
         },
         "relations": {},
@@ -1727,7 +1808,7 @@
           "ga:audio_clip:vtwxksrsuci7zygslimzfy7kdy"
         ],
         "status": "ok",
-        "uid": "ga:cube_ihdr:rjngyfqbn6q4vs6vxmuriua2xa",
+        "uid": "ga:cube_ihdr:himuxssd74afzm5eeqjfti5ple",
         "uid_scheme": "ga1"
       },
       "error": "missing_glyph",
@@ -1746,10 +1827,11 @@
           "duration_s": 139.375,
           "inv_hdr": 0.07021075781225594,
           "json_url": "/library/library_genaid_full_misaki_kokoro_cube3d.json",
+          "layer_score": 0.23948296904563904,
           "png_url": "/library/genaid_full_misaki_kokoro_cube3d.png"
         },
         "display": {
-          "glyph": "⢊⡚",
+          "glyph": "⠺⠙",
           "summary": "Inverse-HDR cube rev 3 over the full 139.375 s WAV (stft 1024/256 @ 24 kHz, downsample 5x33; signal/tonality/confidence/quality). Scrub maps by seconds: bin = floor(t / 0.352 s).",
           "title": ""
         },
@@ -1778,11 +1860,11 @@
         "legacy_id": "lib-misaki-kokoro.cube",
         "media": [
           {
-            "bytes": 295020,
+            "bytes": 295361,
             "mime": "application/json",
             "path": "library_genaid_full_misaki_kokoro_cube3d.json",
             "role": "cube_json",
-            "sha256": "ca200a503309c31d54e6c885b1c215c97a1921a76261d7d203325a9e9eb33f62"
+            "sha256": "dfa8b2dea9a86a1b3696f2daee8b7f89e649172b64ac222c4869b8ecf50f51a9"
           },
           {
             "bytes": 1206082,
@@ -1793,9 +1875,17 @@
           }
         ],
         "provenance": {
-          "generator": "gen_audio.cube_layers (scripts/cube_revision.py layers)",
+          "generator": "src/gen_audio/cube_layers.py",
+          "generator_commit": "96730a38157bebae1e5e1b6a2a054170b794fbc3",
+          "layer_method": "library_r3",
           "params": {
-            "bins_inferred_from_shape": false
+            "bins_inferred_from_shape": false,
+            "hop": 256,
+            "max_f": 128,
+            "max_t": 400,
+            "n_fft": 1024,
+            "per_layer": 900,
+            "thresh": 0.12
           }
         },
         "relations": {},
@@ -1804,7 +1894,7 @@
           "ga:audio_clip:vtwxksrsuci7zygslimzfy7kdy"
         ],
         "status": "ok",
-        "uid": "ga:cube_ihdr:rjngyfqbn6q4vs6vxmuriua2xa",
+        "uid": "ga:cube_ihdr:himuxssd74afzm5eeqjfti5ple",
         "uid_scheme": "ga1"
       },
       "error": "bad_title",
@@ -1823,10 +1913,11 @@
           "duration_s": 139.375,
           "inv_hdr": 0.07021075781225594,
           "json_url": "/library/library_genaid_full_misaki_kokoro_cube3d.json",
+          "layer_score": 0.23948296904563904,
           "png_url": "/library/genaid_full_misaki_kokoro_cube3d.png"
         },
         "display": {
-          "glyph": "⢊⡚",
+          "glyph": "⠺⠙",
           "summary": "Inverse-HDR cube rev 3 over the full 139.375 s WAV (stft 1024/256 @ 24 kHz, downsample 5x33; signal/tonality/confidence/quality). Scrub maps by seconds: bin = floor(t / 0.352 s).",
           "title": "Inverse-HDR cube — misaki→kokoro"
         },
@@ -1855,11 +1946,11 @@
         "legacy_id": "..",
         "media": [
           {
-            "bytes": 295020,
+            "bytes": 295361,
             "mime": "application/json",
             "path": "library_genaid_full_misaki_kokoro_cube3d.json",
             "role": "cube_json",
-            "sha256": "ca200a503309c31d54e6c885b1c215c97a1921a76261d7d203325a9e9eb33f62"
+            "sha256": "dfa8b2dea9a86a1b3696f2daee8b7f89e649172b64ac222c4869b8ecf50f51a9"
           },
           {
             "bytes": 1206082,
@@ -1870,9 +1961,17 @@
           }
         ],
         "provenance": {
-          "generator": "gen_audio.cube_layers (scripts/cube_revision.py layers)",
+          "generator": "src/gen_audio/cube_layers.py",
+          "generator_commit": "96730a38157bebae1e5e1b6a2a054170b794fbc3",
+          "layer_method": "library_r3",
           "params": {
-            "bins_inferred_from_shape": false
+            "bins_inferred_from_shape": false,
+            "hop": 256,
+            "max_f": 128,
+            "max_t": 400,
+            "n_fft": 1024,
+            "per_layer": 900,
+            "thresh": 0.12
           }
         },
         "relations": {},
@@ -1881,7 +1980,7 @@
           "ga:audio_clip:vtwxksrsuci7zygslimzfy7kdy"
         ],
         "status": "ok",
-        "uid": "ga:cube_ihdr:rjngyfqbn6q4vs6vxmuriua2xa",
+        "uid": "ga:cube_ihdr:himuxssd74afzm5eeqjfti5ple",
         "uid_scheme": "ga1"
       },
       "error": "bad_legacy_id",
@@ -1900,10 +1999,11 @@
           "duration_s": 139.375,
           "inv_hdr": 0.07021075781225594,
           "json_url": "/library/library_genaid_full_misaki_kokoro_cube3d.json",
+          "layer_score": 0.23948296904563904,
           "png_url": "/library/genaid_full_misaki_kokoro_cube3d.png"
         },
         "display": {
-          "glyph": "⢊⡚",
+          "glyph": "⠺⠙",
           "summary": "Inverse-HDR cube rev 3 over the full 139.375 s WAV (stft 1024/256 @ 24 kHz, downsample 5x33; signal/tonality/confidence/quality). Scrub maps by seconds: bin = floor(t / 0.352 s).",
           "title": "Inverse-HDR cube — misaki→kokoro"
         },
@@ -1932,11 +2032,11 @@
         "legacy_id": "../../etc/passwd",
         "media": [
           {
-            "bytes": 295020,
+            "bytes": 295361,
             "mime": "application/json",
             "path": "library_genaid_full_misaki_kokoro_cube3d.json",
             "role": "cube_json",
-            "sha256": "ca200a503309c31d54e6c885b1c215c97a1921a76261d7d203325a9e9eb33f62"
+            "sha256": "dfa8b2dea9a86a1b3696f2daee8b7f89e649172b64ac222c4869b8ecf50f51a9"
           },
           {
             "bytes": 1206082,
@@ -1947,9 +2047,17 @@
           }
         ],
         "provenance": {
-          "generator": "gen_audio.cube_layers (scripts/cube_revision.py layers)",
+          "generator": "src/gen_audio/cube_layers.py",
+          "generator_commit": "96730a38157bebae1e5e1b6a2a054170b794fbc3",
+          "layer_method": "library_r3",
           "params": {
-            "bins_inferred_from_shape": false
+            "bins_inferred_from_shape": false,
+            "hop": 256,
+            "max_f": 128,
+            "max_t": 400,
+            "n_fft": 1024,
+            "per_layer": 900,
+            "thresh": 0.12
           }
         },
         "relations": {},
@@ -1958,7 +2066,7 @@
           "ga:audio_clip:vtwxksrsuci7zygslimzfy7kdy"
         ],
         "status": "ok",
-        "uid": "ga:cube_ihdr:rjngyfqbn6q4vs6vxmuriua2xa",
+        "uid": "ga:cube_ihdr:himuxssd74afzm5eeqjfti5ple",
         "uid_scheme": "ga1"
       },
       "error": "bad_legacy_id",
@@ -1977,11 +2085,12 @@
           "duration_s": 139.375,
           "inv_hdr": 0.07021075781225594,
           "json_url": "/library/library_genaid_full_misaki_kokoro_cube3d.json",
+          "layer_score": 0.23948296904563904,
           "png_url": "/library/genaid_full_misaki_kokoro_cube3d.png"
         },
         "display": {
           "display_rev": 1,
-          "glyph": "⢊⡚",
+          "glyph": "⠺⠙",
           "summary": "Inverse-HDR cube rev 3 over the full 139.375 s WAV (stft 1024/256 @ 24 kHz, downsample 5x33; signal/tonality/confidence/quality). Scrub maps by seconds: bin = floor(t / 0.352 s).",
           "title": "Renamed cube"
         },
@@ -2010,11 +2119,11 @@
         "legacy_id": "lib-misaki-kokoro.cube",
         "media": [
           {
-            "bytes": 295020,
+            "bytes": 295361,
             "mime": "application/json",
             "path": "library_genaid_full_misaki_kokoro_cube3d.json",
             "role": "cube_json",
-            "sha256": "ca200a503309c31d54e6c885b1c215c97a1921a76261d7d203325a9e9eb33f62"
+            "sha256": "dfa8b2dea9a86a1b3696f2daee8b7f89e649172b64ac222c4869b8ecf50f51a9"
           },
           {
             "bytes": 1206082,
@@ -2025,9 +2134,17 @@
           }
         ],
         "provenance": {
-          "generator": "gen_audio.cube_layers (scripts/cube_revision.py layers)",
+          "generator": "src/gen_audio/cube_layers.py",
+          "generator_commit": "96730a38157bebae1e5e1b6a2a054170b794fbc3",
+          "layer_method": "library_r3",
           "params": {
-            "bins_inferred_from_shape": false
+            "bins_inferred_from_shape": false,
+            "hop": 256,
+            "max_f": 128,
+            "max_t": 400,
+            "n_fft": 1024,
+            "per_layer": 900,
+            "thresh": 0.12
           }
         },
         "relations": {},
@@ -2036,7 +2153,7 @@
           "ga:audio_clip:vtwxksrsuci7zygslimzfy7kdy"
         ],
         "status": "ok",
-        "uid": "ga:cube_ihdr:rjngyfqbn6q4vs6vxmuriua2xa",
+        "uid": "ga:cube_ihdr:himuxssd74afzm5eeqjfti5ple",
         "uid_scheme": "ga1"
       },
       "error": null,
@@ -2055,11 +2172,12 @@
           "duration_s": 139.375,
           "inv_hdr": 0.07021075781225594,
           "json_url": "/library/library_genaid_full_misaki_kokoro_cube3d.json",
+          "layer_score": 0.23948296904563904,
           "png_url": "/library/genaid_full_misaki_kokoro_cube3d.png"
         },
         "display": {
           "display_rev": "1",
-          "glyph": "⢊⡚",
+          "glyph": "⠺⠙",
           "summary": "Inverse-HDR cube rev 3 over the full 139.375 s WAV (stft 1024/256 @ 24 kHz, downsample 5x33; signal/tonality/confidence/quality). Scrub maps by seconds: bin = floor(t / 0.352 s).",
           "title": "Inverse-HDR cube — misaki→kokoro"
         },
@@ -2088,11 +2206,11 @@
         "legacy_id": "lib-misaki-kokoro.cube",
         "media": [
           {
-            "bytes": 295020,
+            "bytes": 295361,
             "mime": "application/json",
             "path": "library_genaid_full_misaki_kokoro_cube3d.json",
             "role": "cube_json",
-            "sha256": "ca200a503309c31d54e6c885b1c215c97a1921a76261d7d203325a9e9eb33f62"
+            "sha256": "dfa8b2dea9a86a1b3696f2daee8b7f89e649172b64ac222c4869b8ecf50f51a9"
           },
           {
             "bytes": 1206082,
@@ -2103,9 +2221,17 @@
           }
         ],
         "provenance": {
-          "generator": "gen_audio.cube_layers (scripts/cube_revision.py layers)",
+          "generator": "src/gen_audio/cube_layers.py",
+          "generator_commit": "96730a38157bebae1e5e1b6a2a054170b794fbc3",
+          "layer_method": "library_r3",
           "params": {
-            "bins_inferred_from_shape": false
+            "bins_inferred_from_shape": false,
+            "hop": 256,
+            "max_f": 128,
+            "max_t": 400,
+            "n_fft": 1024,
+            "per_layer": 900,
+            "thresh": 0.12
           }
         },
         "relations": {},
@@ -2114,7 +2240,7 @@
           "ga:audio_clip:vtwxksrsuci7zygslimzfy7kdy"
         ],
         "status": "ok",
-        "uid": "ga:cube_ihdr:rjngyfqbn6q4vs6vxmuriua2xa",
+        "uid": "ga:cube_ihdr:himuxssd74afzm5eeqjfti5ple",
         "uid_scheme": "ga1"
       },
       "error": "bad_display_rev",
@@ -2133,10 +2259,11 @@
           "duration_s": 139.375,
           "inv_hdr": 0.07021075781225594,
           "json_url": "/library/library_genaid_full_misaki_kokoro_cube3d.json",
+          "layer_score": 0.23948296904563904,
           "png_url": "/library/genaid_full_misaki_kokoro_cube3d.png"
         },
         "display": {
-          "glyph": "⢊⡚",
+          "glyph": "⠺⠙",
           "summary": "Inverse-HDR cube rev 3 over the full 139.375 s WAV (stft 1024/256 @ 24 kHz, downsample 5x33; signal/tonality/confidence/quality). Scrub maps by seconds: bin = floor(t / 0.352 s).",
           "title": "Inverse-HDR cube — misaki→kokoro"
         },
@@ -2165,11 +2292,11 @@
         "legacy_id": "lib-misaki-kokoro.cube",
         "media": [
           {
-            "bytes": 295020,
+            "bytes": 295361,
             "mime": "application/json",
             "path": "library_genaid_full_misaki_kokoro_cube3d.json",
             "role": "cube_json",
-            "sha256": "ca200a503309c31d54e6c885b1c215c97a1921a76261d7d203325a9e9eb33f62"
+            "sha256": "dfa8b2dea9a86a1b3696f2daee8b7f89e649172b64ac222c4869b8ecf50f51a9"
           },
           {
             "bytes": 1206082,
@@ -2179,17 +2306,25 @@
             "sha256": "d21e741825dff7f955b49617246d6331ba0c4161af1e8b1b52fd94c459805533"
           },
           {
-            "bytes": 295020,
+            "bytes": 295361,
             "mime": "application/json",
             "path": "library_genaid_full_misaki_kokoro_cube3d.json",
             "role": "cube_json",
-            "sha256": "ca200a503309c31d54e6c885b1c215c97a1921a76261d7d203325a9e9eb33f62"
+            "sha256": "dfa8b2dea9a86a1b3696f2daee8b7f89e649172b64ac222c4869b8ecf50f51a9"
           }
         ],
         "provenance": {
-          "generator": "gen_audio.cube_layers (scripts/cube_revision.py layers)",
+          "generator": "src/gen_audio/cube_layers.py",
+          "generator_commit": "96730a38157bebae1e5e1b6a2a054170b794fbc3",
+          "layer_method": "library_r3",
           "params": {
-            "bins_inferred_from_shape": false
+            "bins_inferred_from_shape": false,
+            "hop": 256,
+            "max_f": 128,
+            "max_t": 400,
+            "n_fft": 1024,
+            "per_layer": 900,
+            "thresh": 0.12
           }
         },
         "relations": {},
@@ -2198,7 +2333,7 @@
           "ga:audio_clip:vtwxksrsuci7zygslimzfy7kdy"
         ],
         "status": "ok",
-        "uid": "ga:cube_ihdr:rjngyfqbn6q4vs6vxmuriua2xa",
+        "uid": "ga:cube_ihdr:himuxssd74afzm5eeqjfti5ple",
         "uid_scheme": "ga1"
       },
       "error": "duplicate_media_role",
@@ -2269,10 +2404,11 @@
           "duration_s": 139.375,
           "inv_hdr": 0.07021075781225594,
           "json_url": "/library/library_genaid_full_misaki_kokoro_cube3d.json",
+          "layer_score": 0.23948296904563904,
           "png_url": "/library/genaid_full_misaki_kokoro_cube3d.png"
         },
         "display": {
-          "glyph": "⢊⡚",
+          "glyph": "⠺⠙",
           "summary": "Inverse-HDR cube rev 3 over the full 139.375 s WAV (stft 1024/256 @ 24 kHz, downsample 5x33; signal/tonality/confidence/quality). Scrub maps by seconds: bin = floor(t / 0.352 s).",
           "title": "Inverse-HDR cube — misaki→kokoro"
         },
@@ -2301,11 +2437,11 @@
         "legacy_id": "lib-misaki-kokoro.cube",
         "media": [
           {
-            "bytes": 295020,
+            "bytes": 295361,
             "mime": "application/json",
             "path": "library_genaid_full_misaki_kokoro_cube3d.json",
             "role": "cube_json",
-            "sha256": "ca200a503309c31d54e6c885b1c215c97a1921a76261d7d203325a9e9eb33f62"
+            "sha256": "dfa8b2dea9a86a1b3696f2daee8b7f89e649172b64ac222c4869b8ecf50f51a9"
           },
           {
             "bytes": 1206082,
@@ -2316,9 +2452,17 @@
           }
         ],
         "provenance": {
-          "generator": "gen_audio.cube_layers (scripts/cube_revision.py layers)",
+          "generator": "src/gen_audio/cube_layers.py",
+          "generator_commit": "96730a38157bebae1e5e1b6a2a054170b794fbc3",
+          "layer_method": "library_r3",
           "params": {
-            "bins_inferred_from_shape": false
+            "bins_inferred_from_shape": false,
+            "hop": 256,
+            "max_f": 128,
+            "max_t": 400,
+            "n_fft": 1024,
+            "per_layer": 900,
+            "thresh": 0.12
           }
         },
         "relations": {},
@@ -2327,7 +2471,7 @@
           "ga:audio_clip:vtwxksrsuci7zygslimzfy7kdy"
         ],
         "status": "ok",
-        "uid": "ga:cube_ihdr:rjngyfqbn6q4vs6vxmuriua2xa",
+        "uid": "ga:cube_ihdr:himuxssd74afzm5eeqjfti5ple",
         "uid_scheme": "ga1"
       },
       "error": null,
@@ -2338,7 +2482,7 @@
       "envelope": {
         "body": {},
         "display": {
-          "glyph": "⡺⠕",
+          "glyph": "⠭⣦",
           "title": "cube"
         },
         "fields": {
@@ -2365,11 +2509,11 @@
         "kind": "cube_ihdr",
         "media": [
           {
-            "bytes": 295020,
+            "bytes": 295361,
             "mime": "application/json",
             "path": "library_genaid_full_misaki_kokoro_cube3d.json",
             "role": "cube_json",
-            "sha256": "ca200a503309c31d54e6c885b1c215c97a1921a76261d7d203325a9e9eb33f62"
+            "sha256": "dfa8b2dea9a86a1b3696f2daee8b7f89e649172b64ac222c4869b8ecf50f51a9"
           }
         ],
         "provenance": {},
@@ -2379,7 +2523,7 @@
           "ga:audio_clip:vtwxksrsuci7zygslimzfy7kdy"
         ],
         "status": "ok",
-        "uid": "ga:cube_ihdr:pikvmqrjba2jokjqxxuidjgxra",
+        "uid": "ga:cube_ihdr:fxtkax6c3h7bo6nhi5pekj3ati",
         "uid_scheme": "ga1"
       },
       "error": "missing_media_role",
@@ -2390,7 +2534,7 @@
       "envelope": {
         "body": {},
         "display": {
-          "glyph": "⡺⠕",
+          "glyph": "⠭⣦",
           "title": "cube"
         },
         "fields": {
@@ -2415,11 +2559,11 @@
         "kind": "cube_ihdr",
         "media": [
           {
-            "bytes": 295020,
+            "bytes": 295361,
             "mime": "application/json",
             "path": "library_genaid_full_misaki_kokoro_cube3d.json",
             "role": "cube_json",
-            "sha256": "ca200a503309c31d54e6c885b1c215c97a1921a76261d7d203325a9e9eb33f62"
+            "sha256": "dfa8b2dea9a86a1b3696f2daee8b7f89e649172b64ac222c4869b8ecf50f51a9"
           }
         ],
         "provenance": {},
@@ -2429,7 +2573,7 @@
           "ga:audio_clip:vtwxksrsuci7zygslimzfy7kdy"
         ],
         "status": "ok",
-        "uid": "ga:cube_ihdr:pikvmqrjba2jokjqxxuidjgxra",
+        "uid": "ga:cube_ihdr:fxtkax6c3h7bo6nhi5pekj3ati",
         "uid_scheme": "ga1"
       },
       "error": null,
@@ -2448,10 +2592,11 @@
           "duration_s": 139.375,
           "inv_hdr": 0.07021075781225594,
           "json_url": "/library/library_genaid_full_misaki_kokoro_cube3d.json",
+          "layer_score": 0.23948296904563904,
           "png_url": "/library/genaid_full_misaki_kokoro_cube3d.png"
         },
         "display": {
-          "glyph": "⢊⡚",
+          "glyph": "⠺⠙",
           "summary": "Inverse-HDR cube rev 3 over the full 139.375 s WAV (stft 1024/256 @ 24 kHz, downsample 5x33; signal/tonality/confidence/quality). Scrub maps by seconds: bin = floor(t / 0.352 s).",
           "title": "Inverse-HDR cube — misaki→kokoro"
         },
@@ -2480,11 +2625,11 @@
         "legacy_id": "lib-misaki-kokoro.cube",
         "media": [
           {
-            "bytes": 295020,
+            "bytes": 295361,
             "mime": "application/json",
             "path": "library_genaid_full_misaki_kokoro_cube3d.json",
             "role": "cube_json",
-            "sha256": "ca200a503309c31d54e6c885b1c215c97a1921a76261d7d203325a9e9eb33f62"
+            "sha256": "dfa8b2dea9a86a1b3696f2daee8b7f89e649172b64ac222c4869b8ecf50f51a9"
           },
           {
             "bytes": 1206082,
@@ -2495,9 +2640,17 @@
           }
         ],
         "provenance": {
-          "generator": "gen_audio.cube_layers (scripts/cube_revision.py layers)",
+          "generator": "src/gen_audio/cube_layers.py",
+          "generator_commit": "96730a38157bebae1e5e1b6a2a054170b794fbc3",
+          "layer_method": "library_r3",
           "params": {
-            "bins_inferred_from_shape": false
+            "bins_inferred_from_shape": false,
+            "hop": 256,
+            "max_f": 128,
+            "max_t": 400,
+            "n_fft": 1024,
+            "per_layer": 900,
+            "thresh": 0.12
           }
         },
         "relations": {},
@@ -2506,7 +2659,7 @@
           "ga:audio_clip:vtwxksrsuci7zygslimzfy7kdy"
         ],
         "status": "ok",
-        "uid": "ga:cube_ihdr:rjngyfqbn6q4vs6vxmuriua2xa",
+        "uid": "ga:cube_ihdr:himuxssd74afzm5eeqjfti5ple",
         "uid_scheme": "ga1"
       },
       "error": "float_in_identity",
@@ -2525,11 +2678,12 @@
           "duration_s": 139.375,
           "inv_hdr": 0.07021075781225594,
           "json_url": "/library/library_genaid_full_misaki_kokoro_cube3d.json",
+          "layer_score": 0.23948296904563904,
           "png_url": "/library/genaid_full_misaki_kokoro_cube3d.png"
         },
         "display": {
           "display_rev": 3.0,
-          "glyph": "⢊⡚",
+          "glyph": "⠺⠙",
           "summary": "Inverse-HDR cube rev 3 over the full 139.375 s WAV (stft 1024/256 @ 24 kHz, downsample 5x33; signal/tonality/confidence/quality). Scrub maps by seconds: bin = floor(t / 0.352 s).",
           "title": "Inverse-HDR cube — misaki→kokoro"
         },
@@ -2558,11 +2712,11 @@
         "legacy_id": "lib-misaki-kokoro.cube",
         "media": [
           {
-            "bytes": 295020,
+            "bytes": 295361,
             "mime": "application/json",
             "path": "library_genaid_full_misaki_kokoro_cube3d.json",
             "role": "cube_json",
-            "sha256": "ca200a503309c31d54e6c885b1c215c97a1921a76261d7d203325a9e9eb33f62"
+            "sha256": "dfa8b2dea9a86a1b3696f2daee8b7f89e649172b64ac222c4869b8ecf50f51a9"
           },
           {
             "bytes": 1206082,
@@ -2573,9 +2727,17 @@
           }
         ],
         "provenance": {
-          "generator": "gen_audio.cube_layers (scripts/cube_revision.py layers)",
+          "generator": "src/gen_audio/cube_layers.py",
+          "generator_commit": "96730a38157bebae1e5e1b6a2a054170b794fbc3",
+          "layer_method": "library_r3",
           "params": {
-            "bins_inferred_from_shape": false
+            "bins_inferred_from_shape": false,
+            "hop": 256,
+            "max_f": 128,
+            "max_t": 400,
+            "n_fft": 1024,
+            "per_layer": 900,
+            "thresh": 0.12
           }
         },
         "relations": {},
@@ -2584,7 +2746,7 @@
           "ga:audio_clip:vtwxksrsuci7zygslimzfy7kdy"
         ],
         "status": "ok",
-        "uid": "ga:cube_ihdr:rjngyfqbn6q4vs6vxmuriua2xa",
+        "uid": "ga:cube_ihdr:himuxssd74afzm5eeqjfti5ple",
         "uid_scheme": "ga1"
       },
       "error": "bad_display_rev",
@@ -2603,10 +2765,11 @@
           "duration_s": 139.375,
           "inv_hdr": 0.07021075781225594,
           "json_url": "/library/library_genaid_full_misaki_kokoro_cube3d.json",
+          "layer_score": 0.23948296904563904,
           "png_url": "/library/genaid_full_misaki_kokoro_cube3d.png"
         },
         "display": {
-          "glyph": "⢊⡚",
+          "glyph": "⠺⠙",
           "summary": "Inverse-HDR cube rev 3 over the full 139.375 s WAV (stft 1024/256 @ 24 kHz, downsample 5x33; signal/tonality/confidence/quality). Scrub maps by seconds: bin = floor(t / 0.352 s).",
           "title": "Inverse-HDR cube — misaki→kokoro"
         },
@@ -2636,11 +2799,11 @@
         "legacy_id": "lib-misaki-kokoro.cube",
         "media": [
           {
-            "bytes": 295020,
+            "bytes": 295361,
             "mime": "application/json",
             "path": "library_genaid_full_misaki_kokoro_cube3d.json",
             "role": "cube_json",
-            "sha256": "ca200a503309c31d54e6c885b1c215c97a1921a76261d7d203325a9e9eb33f62"
+            "sha256": "dfa8b2dea9a86a1b3696f2daee8b7f89e649172b64ac222c4869b8ecf50f51a9"
           },
           {
             "bytes": 1206082,
@@ -2651,9 +2814,17 @@
           }
         ],
         "provenance": {
-          "generator": "gen_audio.cube_layers (scripts/cube_revision.py layers)",
+          "generator": "src/gen_audio/cube_layers.py",
+          "generator_commit": "96730a38157bebae1e5e1b6a2a054170b794fbc3",
+          "layer_method": "library_r3",
           "params": {
-            "bins_inferred_from_shape": false
+            "bins_inferred_from_shape": false,
+            "hop": 256,
+            "max_f": 128,
+            "max_t": 400,
+            "n_fft": 1024,
+            "per_layer": 900,
+            "thresh": 0.12
           }
         },
         "relations": {},
@@ -2662,7 +2833,7 @@
           "ga:audio_clip:vtwxksrsuci7zygslimzfy7kdy"
         ],
         "status": "ok",
-        "uid": "ga:cube_ihdr:rjngyfqbn6q4vs6vxmuriua2xa",
+        "uid": "ga:cube_ihdr:himuxssd74afzm5eeqjfti5ple",
         "uid_scheme": "ga1"
       },
       "error": null,
@@ -2681,10 +2852,11 @@
           "duration_s": 139.375,
           "inv_hdr": 0.07021075781225594,
           "json_url": "/library/library_genaid_full_misaki_kokoro_cube3d.json",
+          "layer_score": 0.23948296904563904,
           "png_url": "/library/genaid_full_misaki_kokoro_cube3d.png"
         },
         "display": {
-          "glyph": "⢊⡚",
+          "glyph": "⠺⠙",
           "summary": "Inverse-HDR cube rev 3 over the full 139.375 s WAV (stft 1024/256 @ 24 kHz, downsample 5x33; signal/tonality/confidence/quality). Scrub maps by seconds: bin = floor(t / 0.352 s).",
           "title": "Inverse-HDR cube — misaki→kokoro"
         },
@@ -2714,11 +2886,11 @@
         "legacy_id": "lib-misaki-kokoro.cube",
         "media": [
           {
-            "bytes": 295020,
+            "bytes": 295361,
             "mime": "application/json",
             "path": "library_genaid_full_misaki_kokoro_cube3d.json",
             "role": "cube_json",
-            "sha256": "ca200a503309c31d54e6c885b1c215c97a1921a76261d7d203325a9e9eb33f62"
+            "sha256": "dfa8b2dea9a86a1b3696f2daee8b7f89e649172b64ac222c4869b8ecf50f51a9"
           },
           {
             "bytes": 1206082,
@@ -2729,9 +2901,17 @@
           }
         ],
         "provenance": {
-          "generator": "gen_audio.cube_layers (scripts/cube_revision.py layers)",
+          "generator": "src/gen_audio/cube_layers.py",
+          "generator_commit": "96730a38157bebae1e5e1b6a2a054170b794fbc3",
+          "layer_method": "library_r3",
           "params": {
-            "bins_inferred_from_shape": false
+            "bins_inferred_from_shape": false,
+            "hop": 256,
+            "max_f": 128,
+            "max_t": 400,
+            "n_fft": 1024,
+            "per_layer": 900,
+            "thresh": 0.12
           }
         },
         "relations": {},
@@ -2740,7 +2920,7 @@
           "ga:audio_clip:vtwxksrsuci7zygslimzfy7kdy"
         ],
         "status": "ok",
-        "uid": "ga:cube_ihdr:rjngyfqbn6q4vs6vxmuriua2xa",
+        "uid": "ga:cube_ihdr:himuxssd74afzm5eeqjfti5ple",
         "uid_scheme": "ga1"
       },
       "error": "bad_honesty",
@@ -3139,8 +3319,8 @@
       "media": [],
       "name": "duplicate_src",
       "src": [
-        "ga:cube_ihdr:rjngyfqbn6q4vs6vxmuriua2xa",
-        "ga:cube_ihdr:rjngyfqbn6q4vs6vxmuriua2xa"
+        "ga:cube_ihdr:himuxssd74afzm5eeqjfti5ple",
+        "ga:cube_ihdr:himuxssd74afzm5eeqjfti5ple"
       ]
     },
     {
@@ -3240,6 +3420,80 @@
     }
   ],
   "migrations": [
+    {
+      "after": null,
+      "before": {
+        "cards": [],
+        "cube_docs": {
+          "golden_cube3d.json": {
+            "cube_revision": 3,
+            "duration_s": 1.0,
+            "sample_rate": 24000,
+            "source_sha256": "0000000000000000000000000000000000000000000000000000000000000000"
+          }
+        },
+        "manifest": {
+          "clips": [
+            {
+              "absWav": "D:\\gen-audio\\artifacts\\library\\golden.wav",
+              "cube": {
+                "jsonUrl": "/library/golden_cube3d.json",
+                "pngUrl": "/library/golden_cube3d.png"
+              },
+              "duration_s": 1.0,
+              "engineId": "kokoro_onnx",
+              "id": "lib-golden",
+              "sample_rate": 24000,
+              "status": "ok",
+              "synth_wall_s": 0.42,
+              "synthesizedSpeech": true,
+              "title": "Golden clip",
+              "wav": "artifacts/library/golden.wav",
+              "wavUrl": "/library/golden.wav"
+            },
+            {
+              "engineId": "magpie",
+              "id": "lib-magpie",
+              "reason": "not built",
+              "status": "unavailable",
+              "synthesizedSpeech": false,
+              "title": "Magpie"
+            }
+          ]
+        },
+        "media": {
+          "golden.wav": {
+            "bytes": 48044,
+            "channels": 1,
+            "frames": 24000,
+            "sample_rate": 24000,
+            "sha256": "e5ea01a23fcb85fd8e608c5c672ea5c22dfab6b0e581d782242f478e4b1c5900"
+          }
+        },
+        "profiles": [],
+        "spectrograms": [],
+        "voice_models": [
+          {
+            "id": "kokoro_onnx",
+            "label": "kokoro-onnx",
+            "note": "golden",
+            "synthAdapter": true,
+            "unavailable": false,
+            "waveform": true
+          },
+          {
+            "id": "magpie",
+            "label": "Magpie (unavailable)",
+            "note": "golden",
+            "synthAdapter": false,
+            "unavailable": true,
+            "waveform": true
+          }
+        ]
+      },
+      "error": "cube_source_mismatch",
+      "name": "cube_made_from_another_wav"
+    },
     {
       "after": {
         "assets": [
@@ -3644,36 +3898,36 @@
   "mint": [
     {
       "expect": {
-        "canonical": "{\"fields\":{\"bin_frames\":8448,\"covers_ms\":139040,\"cube_revision\":3,\"duration_ms\":139375,\"freq_bins\":102,\"hop_frames\":256,\"inv_hdr_ppm\":70211,\"n_fft\":1024,\"n_points\":3600,\"sample_rate_hz\":24000,\"source_sha256\":\"61b8ca26b3f4759ce643738e2afbc80f7bf2a5eb554c5fedbfbdc2d9bfad3d38\",\"time_bins\":395},\"kind\":\"cube_ihdr\",\"media\":[{\"role\":\"cube_json\",\"sha256\":\"ca200a503309c31d54e6c885b1c215c97a1921a76261d7d203325a9e9eb33f62\"},{\"role\":\"cube_png\",\"sha256\":\"d21e741825dff7f955b49617246d6331ba0c4161af1e8b1b52fd94c459805533\"}],\"schema_major\":1,\"src\":[\"ga:audio_clip:vtwxksrsuci7zygslimzfy7kdy\"]}",
-        "digest_hex": "8a5a6c16016fa1cacbd5bb2914501ab8d67a1f1b5683fb513782ebfeb4edc867",
-        "glyph": "⢊⡚",
+        "canonical": "{\"fields\":{\"bin_frames\":8448,\"covers_ms\":139040,\"cube_revision\":3,\"duration_ms\":139375,\"freq_bins\":102,\"hop_frames\":256,\"inv_hdr_ppm\":70211,\"n_fft\":1024,\"n_points\":3600,\"sample_rate_hz\":24000,\"source_sha256\":\"61b8ca26b3f4759ce643738e2afbc80f7bf2a5eb554c5fedbfbdc2d9bfad3d38\",\"time_bins\":395},\"kind\":\"cube_ihdr\",\"media\":[{\"role\":\"cube_json\",\"sha256\":\"dfa8b2dea9a86a1b3696f2daee8b7f89e649172b64ac222c4869b8ecf50f51a9\"},{\"role\":\"cube_png\",\"sha256\":\"d21e741825dff7f955b49617246d6331ba0c4161af1e8b1b52fd94c459805533\"}],\"schema_major\":1,\"src\":[\"ga:audio_clip:vtwxksrsuci7zygslimzfy7kdy\"]}",
+        "digest_hex": "3a194bca43ff005cb3a4241259a3af59eb0459c02e669bc71440316656239478",
+        "glyph": "⠺⠙",
         "glyph_codepoints": [
-          10378,
-          10330
+          10298,
+          10265
         ],
         "glyph_dots": [
           [
             2,
             4,
-            8
+            5,
+            6
           ],
           [
-            2,
+            1,
             4,
-            5,
-            7
+            5
           ]
         ],
         "hue_class": "ga-kind-cube_ihdr",
-        "preimage_hex": "67612d61737365742d7631007b226669656c6473223a7b2262696e5f6672616d6573223a383434382c22636f766572735f6d73223a3133393034302c22637562655f7265766973696f6e223a332c226475726174696f6e5f6d73223a3133393337352c22667265715f62696e73223a3130322c22686f705f6672616d6573223a3235362c22696e765f6864725f70706d223a37303231312c226e5f666674223a313032342c226e5f706f696e7473223a333630302c2273616d706c655f726174655f687a223a32343030302c22736f757263655f736861323536223a2236316238636132366233663437353963653634333733386532616662633830663762663261356562353534633566656462666264633264396266616433643338222c2274696d655f62696e73223a3339357d2c226b696e64223a22637562655f69686472222c226d65646961223a5b7b22726f6c65223a22637562655f6a736f6e222c22736861323536223a2263613230306135303333303963333164353465366338383562316332313563393761313932316137363236316437643230333332356139653965623333663632227d2c7b22726f6c65223a22637562655f706e67222c22736861323536223a2264323165373431383235646666376639353562343936313732343664363333316261306334313631616631653862316235326664393463343539383035353333227d5d2c22736368656d615f6d616a6f72223a312c22737263223a5b2267613a617564696f5f636c69703a767477786b737273756369377a7967736c696d7a6679376b6479225d7d",
-        "uid": "ga:cube_ihdr:rjngyfqbn6q4vs6vxmuriua2xa"
+        "preimage_hex": "67612d61737365742d7631007b226669656c6473223a7b2262696e5f6672616d6573223a383434382c22636f766572735f6d73223a3133393034302c22637562655f7265766973696f6e223a332c226475726174696f6e5f6d73223a3133393337352c22667265715f62696e73223a3130322c22686f705f6672616d6573223a3235362c22696e765f6864725f70706d223a37303231312c226e5f666674223a313032342c226e5f706f696e7473223a333630302c2273616d706c655f726174655f687a223a32343030302c22736f757263655f736861323536223a2236316238636132366233663437353963653634333733386532616662633830663762663261356562353534633566656462666264633264396266616433643338222c2274696d655f62696e73223a3339357d2c226b696e64223a22637562655f69686472222c226d65646961223a5b7b22726f6c65223a22637562655f6a736f6e222c22736861323536223a2264666138623264656139613836613162333639366632646165653862376638396536343931373262363461633232326334383639623865636635306635316139227d2c7b22726f6c65223a22637562655f706e67222c22736861323536223a2264323165373431383235646666376639353562343936313732343664363333316261306334313631616631653862316235326664393463343539383035353333227d5d2c22736368656d615f6d616a6f72223a312c22737263223a5b2267613a617564696f5f636c69703a767477786b737273756369377a7967736c696d7a6679376b6479225d7d",
+        "uid": "ga:cube_ihdr:himuxssd74afzm5eeqjfti5ple"
       },
       "fields_json": "{\"bin_frames\":8448,\"covers_ms\":139040,\"cube_revision\":3,\"duration_ms\":139375,\"freq_bins\":102,\"hop_frames\":256,\"inv_hdr_ppm\":70211,\"n_fft\":1024,\"n_points\":3600,\"sample_rate_hz\":24000,\"source_sha256\":\"61b8ca26b3f4759ce643738e2afbc80f7bf2a5eb554c5fedbfbdc2d9bfad3d38\",\"time_bins\":395}",
       "kind": "cube_ihdr",
       "media": [
         {
           "role": "cube_json",
-          "sha256": "ca200a503309c31d54e6c885b1c215c97a1921a76261d7d203325a9e9eb33f62"
+          "sha256": "dfa8b2dea9a86a1b3696f2daee8b7f89e649172b64ac222c4869b8ecf50f51a9"
         },
         {
           "role": "cube_png",
@@ -3967,32 +4221,35 @@
     },
     {
       "expect": {
-        "canonical": "{\"fields\":{\"index\":0,\"name\":\"signal\"},\"kind\":\"layer\",\"media\":[],\"schema_major\":1,\"src\":[\"ga:cube_ihdr:rjngyfqbn6q4vs6vxmuriua2xa\"]}",
-        "digest_hex": "be6ce2ae7ac6c709159dd1b4d7681e2b71f17b5755417ee11897581c97ef3027",
-        "glyph": "⢾⡬",
+        "canonical": "{\"fields\":{\"index\":0,\"name\":\"signal\"},\"kind\":\"layer\",\"media\":[],\"schema_major\":1,\"src\":[\"ga:cube_ihdr:himuxssd74afzm5eeqjfti5ple\"]}",
+        "digest_hex": "ff9e4853b2b511c5a11a4c8cd0e891eba9e4f811b4fc559383502a6dac441cf6",
+        "glyph": "⣿⢞",
         "glyph_codepoints": [
-          10430,
-          10348
+          10495,
+          10398
         ],
         "glyph_dots": [
           [
+            1,
             2,
             3,
             4,
             5,
             6,
+            7,
             8
           ],
           [
+            2,
             3,
             4,
-            6,
-            7
+            5,
+            8
           ]
         ],
         "hue_class": "ga-kind-layer",
-        "preimage_hex": "67612d61737365742d7631007b226669656c6473223a7b22696e646578223a302c226e616d65223a227369676e616c227d2c226b696e64223a226c61796572222c226d65646961223a5b5d2c22736368656d615f6d616a6f72223a312c22737263223a5b2267613a637562655f696864723a726a6e67796671626e36713476733676786d7572697561327861225d7d",
-        "uid": "ga:layer:xzwoflt2y3dqsfm52g2no2a6fm"
+        "preimage_hex": "67612d61737365742d7631007b226669656c6473223a7b22696e646578223a302c226e616d65223a227369676e616c227d2c226b696e64223a226c61796572222c226d65646961223a5b5d2c22736368656d615f6d616a6f72223a312c22737263223a5b2267613a637562655f696864723a68696d7578737364373461667a6d356565716a66746935706c65225d7d",
+        "uid": "ga:layer:76pequ5swui4lii2jsgnb2er5m"
       },
       "fields_json": "{\"name\":\"signal\",\"index\":0}",
       "kind": "layer",
@@ -4000,7 +4257,7 @@
       "name": "layer_with_parent",
       "normalize_nfc": false,
       "src": [
-        "ga:cube_ihdr:rjngyfqbn6q4vs6vxmuriua2xa"
+        "ga:cube_ihdr:himuxssd74afzm5eeqjfti5ple"
       ]
     },
     {
@@ -4327,10 +4584,11 @@
             "duration_s": 139.375,
             "inv_hdr": 0.07021075781225594,
             "json_url": "/library/library_genaid_full_misaki_kokoro_cube3d.json",
+            "layer_score": 0.23948296904563904,
             "png_url": "/library/genaid_full_misaki_kokoro_cube3d.png"
           },
           "display": {
-            "glyph": "⢊⡚",
+            "glyph": "⠺⠙",
             "summary": "Inverse-HDR cube rev 3 over the full 139.375 s WAV (stft 1024/256 @ 24 kHz, downsample 5x33; signal/tonality/confidence/quality). Scrub maps by seconds: bin = floor(t / 0.352 s).",
             "title": "Inverse-HDR cube — misaki→kokoro"
           },
@@ -4359,11 +4617,11 @@
           "legacy_id": "lib-misaki-kokoro.cube",
           "media": [
             {
-              "bytes": 295020,
+              "bytes": 295361,
               "mime": "application/json",
               "path": "library_genaid_full_misaki_kokoro_cube3d.json",
               "role": "cube_json",
-              "sha256": "ca200a503309c31d54e6c885b1c215c97a1921a76261d7d203325a9e9eb33f62"
+              "sha256": "dfa8b2dea9a86a1b3696f2daee8b7f89e649172b64ac222c4869b8ecf50f51a9"
             },
             {
               "bytes": 1206082,
@@ -4374,9 +4632,17 @@
             }
           ],
           "provenance": {
-            "generator": "gen_audio.cube_layers (scripts/cube_revision.py layers)",
+            "generator": "src/gen_audio/cube_layers.py",
+            "generator_commit": "96730a38157bebae1e5e1b6a2a054170b794fbc3",
+            "layer_method": "library_r3",
             "params": {
-              "bins_inferred_from_shape": false
+              "bins_inferred_from_shape": false,
+              "hop": 256,
+              "max_f": 128,
+              "max_t": 400,
+              "n_fft": 1024,
+              "per_layer": 900,
+              "thresh": 0.12
             }
           },
           "relations": {},
@@ -4385,7 +4651,7 @@
             "ga:audio_clip:vtwxksrsuci7zygslimzfy7kdy"
           ],
           "status": "ok",
-          "uid": "ga:cube_ihdr:rjngyfqbn6q4vs6vxmuriua2xa",
+          "uid": "ga:cube_ihdr:himuxssd74afzm5eeqjfti5ple",
           "uid_scheme": "ga1"
         },
         {
@@ -4401,7 +4667,7 @@
             "std": 0.1606433093547821
           },
           "display": {
-            "glyph": "⢾⡬",
+            "glyph": "⣿⢞",
             "title": "signal layer"
           },
           "fields": {
@@ -4422,14 +4688,14 @@
             "generator": "cube JSON layers block (v0)"
           },
           "relations": {
-            "layer_of": "ga:cube_ihdr:rjngyfqbn6q4vs6vxmuriua2xa"
+            "layer_of": "ga:cube_ihdr:himuxssd74afzm5eeqjfti5ple"
           },
           "schema_version": "1.0.0",
           "src": [
-            "ga:cube_ihdr:rjngyfqbn6q4vs6vxmuriua2xa"
+            "ga:cube_ihdr:himuxssd74afzm5eeqjfti5ple"
           ],
           "status": "ok",
-          "uid": "ga:layer:xzwoflt2y3dqsfm52g2no2a6fm",
+          "uid": "ga:layer:76pequ5swui4lii2jsgnb2er5m",
           "uid_scheme": "ga1"
         }
       ],
@@ -4560,7 +4826,7 @@
         {
           "body": {},
           "display": {
-            "glyph": "⡋⠉",
+            "glyph": "⢎⣙",
             "title": "cube"
           },
           "fields": {
@@ -4585,11 +4851,11 @@
           "kind": "cube_ihdr",
           "media": [
             {
-              "bytes": 295020,
+              "bytes": 295361,
               "mime": "application/json",
               "path": "library_genaid_full_misaki_kokoro_cube3d.json",
               "role": "cube_json",
-              "sha256": "ca200a503309c31d54e6c885b1c215c97a1921a76261d7d203325a9e9eb33f62"
+              "sha256": "dfa8b2dea9a86a1b3696f2daee8b7f89e649172b64ac222c4869b8ecf50f51a9"
             },
             {
               "bytes": 1206082,
@@ -4606,7 +4872,7 @@
             "ga:audio_clip:vtwxksrsuci7zygslimzfy7kdy"
           ],
           "status": "ok",
-          "uid": "ga:cube_ihdr:jme2fza2m4g23vz5wyevjpdwha",
+          "uid": "ga:cube_ihdr:r3mrna7vqpmh26oddggsyn55vi",
           "uid_scheme": "ga1"
         }
       ],
@@ -4737,7 +5003,7 @@
         {
           "body": {},
           "display": {
-            "glyph": "⡵⢬",
+            "glyph": "⣻⠬",
             "title": "cube"
           },
           "fields": {
@@ -4762,11 +5028,11 @@
           "kind": "cube_ihdr",
           "media": [
             {
-              "bytes": 295020,
+              "bytes": 295361,
               "mime": "application/json",
               "path": "library_genaid_full_misaki_kokoro_cube3d.json",
               "role": "cube_json",
-              "sha256": "ca200a503309c31d54e6c885b1c215c97a1921a76261d7d203325a9e9eb33f62"
+              "sha256": "dfa8b2dea9a86a1b3696f2daee8b7f89e649172b64ac222c4869b8ecf50f51a9"
             },
             {
               "bytes": 1206082,
@@ -4783,7 +5049,7 @@
             "ga:audio_clip:vtwxksrsuci7zygslimzfy7kdy"
           ],
           "status": "ok",
-          "uid": "ga:cube_ihdr:owwhsq5wr6zxhrnup2hkrbjnlu",
+          "uid": "ga:cube_ihdr:7mwowxjrmztpj3n5uev26lowgy",
           "uid_scheme": "ga1"
         }
       ],
@@ -4879,7 +5145,7 @@
             "std": 0.1606433093547821
           },
           "display": {
-            "glyph": "⢾⡬",
+            "glyph": "⣿⢞",
             "title": "signal layer"
           },
           "fields": {
@@ -4900,14 +5166,14 @@
             "generator": "cube JSON layers block (v0)"
           },
           "relations": {
-            "layer_of": "ga:cube_ihdr:rjngyfqbn6q4vs6vxmuriua2xa"
+            "layer_of": "ga:cube_ihdr:himuxssd74afzm5eeqjfti5ple"
           },
           "schema_version": "1.0.0",
           "src": [
-            "ga:cube_ihdr:rjngyfqbn6q4vs6vxmuriua2xa"
+            "ga:cube_ihdr:himuxssd74afzm5eeqjfti5ple"
           ],
           "status": "ok",
-          "uid": "ga:layer:xzwoflt2y3dqsfm52g2no2a6fm",
+          "uid": "ga:layer:76pequ5swui4lii2jsgnb2er5m",
           "uid_scheme": "ga1"
         }
       ],
@@ -4957,39 +5223,39 @@
   "uid_parse": [
     {
       "error": null,
-      "uid": "ga:cube_ihdr:rjngyfqbn6q4vs6vxmuriua2xa"
+      "uid": "ga:cube_ihdr:himuxssd74afzm5eeqjfti5ple"
     },
     {
       "error": "bad_uid",
-      "uid": "GA:CUBE_IHDR:RJNGYFQBN6Q4VS6VXMURIUA2XA"
+      "uid": "GA:CUBE_IHDR:HIMUXSSD74AFZM5EEQJFTI5PLE"
     },
     {
       "error": "bad_uid_alphabet",
-      "uid": "ga:cube_ihdr:rjngyfqbn6q4vs6vxmuriua2x1"
+      "uid": "ga:cube_ihdr:himuxssd74afzm5eeqjfti5pl1"
     },
     {
       "error": "bad_uid_length",
-      "uid": "ga:cube_ihdr:rjngyfqbn6q4vs6vxmuriua2x"
+      "uid": "ga:cube_ihdr:himuxssd74afzm5eeqjfti5pl"
     },
     {
       "error": "bad_uid_length",
-      "uid": "ga:cube_ihdr:rjngyfqbn6q4vs6vxmuriua2xaa"
+      "uid": "ga:cube_ihdr:himuxssd74afzm5eeqjfti5plea"
     },
     {
       "error": "bad_uid_padding",
-      "uid": "ga:cube_ihdr:rjngyfqbn6q4vs6vxmuriua2xb"
+      "uid": "ga:cube_ihdr:himuxssd74afzm5eeqjfti5plb"
     },
     {
       "error": "unknown_kind",
-      "uid": "ga:widget:rjngyfqbn6q4vs6vxmuriua2xa"
+      "uid": "ga:widget:himuxssd74afzm5eeqjfti5ple"
     },
     {
       "error": "bad_uid",
-      "uid": "ga:agent/VoiceProfile:rjngyfqbn6q4vs6vxmuriua2xa"
+      "uid": "ga:agent/VoiceProfile:himuxssd74afzm5eeqjfti5ple"
     },
     {
       "error": "bad_uid",
-      "uid": "xx:cube_ihdr:rjngyfqbn6q4vs6vxmuriua2xa"
+      "uid": "xx:cube_ihdr:himuxssd74afzm5eeqjfti5ple"
     }
   ],
   "uid_scheme": "ga1"

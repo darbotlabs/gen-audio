@@ -105,10 +105,10 @@ mod tests {
 
     #[test]
     fn resolve_returns_library_urls_and_no_absolute_paths() {
-        let response = call("asset_resolve", json!({"uid": "ga:cube_ihdr:rjngyfqbn6q4vs6vxmuriua2xa"}));
+        let response = call("asset_resolve", json!({"uid": "ga:cube_ihdr:himuxssd74afzm5eeqjfti5ple"}));
         assert_eq!(response["result"]["isError"], false);
         let body = payload(&response);
-        assert_eq!(body["glyph"], "\u{288a}\u{285a}");
+        assert_eq!(body["glyph"], "\u{283a}\u{2819}");
         assert_eq!(body["hueClass"], "ga-kind-cube_ihdr");
         assert_eq!(body["tileId"], "lib-misaki-kokoro");
         assert_eq!(body["absolutePathsOmitted"], true);
@@ -119,14 +119,14 @@ mod tests {
 
     #[test]
     fn resolve_error_contract() {
-        assert_eq!(call("asset_resolve", json!({"uid": "ga:widget:rjngyfqbn6q4vs6vxmuriua2xa"}))["error"]["code"], -32602);
+        assert_eq!(call("asset_resolve", json!({"uid": "ga:widget:himuxssd74afzm5eeqjfti5ple"}))["error"]["code"], -32602);
         assert_eq!(call("asset_resolve", json!({"uid": "not-a-uid"}))["error"]["code"], -32602);
-        assert_eq!(call("asset_resolve", json!({"uid": "ga:cube_ihdr:rjngyfqbn6q4vs6vxmuriua2xb"}))["error"]["code"], -32602);
+        assert_eq!(call("asset_resolve", json!({"uid": "ga:cube_ihdr:himuxssd74afzm5eeqjfti5plf"}))["error"]["code"], -32602);
         let missing = call("asset_resolve", json!({"uid": "ga:cube_ihdr:aaaaaaaaaaaaaaaaaaaaaaaaaa"}));
         assert_eq!(missing["result"]["isError"], true);
         assert_eq!(payload(&missing)["code"], "asset_not_found");
-        let prefix = call("asset_resolve", json!({"uid": "ga:cube_ihdr:rjngyfqb"}));
-        assert_eq!(payload(&prefix)["uid"], "ga:cube_ihdr:rjngyfqbn6q4vs6vxmuriua2xa");
+        let prefix = call("asset_resolve", json!({"uid": "ga:cube_ihdr:himuxssd"}));
+        assert_eq!(payload(&prefix)["uid"], "ga:cube_ihdr:himuxssd74afzm5eeqjfti5ple");
     }
 
     #[test]

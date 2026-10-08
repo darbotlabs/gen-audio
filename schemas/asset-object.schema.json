@@ -951,6 +951,16 @@
         "g2p_model": {
           "$ref": "#/$defs/voice_model_uid"
         },
+        "generator_commit": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{40}$",
+          "description": "git log -1 on the generator file when the asset's media was made."
+        },
+        "layer_method": {
+          "type": "string",
+          "pattern": "^library_r[0-9]+$",
+          "description": "Cube layer method; library_r3 is gen_audio.cube_layers revision 3."
+        },
         "params": {
           "type": "object",
           "description": "Generator parameters. Unhashed; floats allowed."
@@ -1476,6 +1486,10 @@
       "properties": {
         "inv_hdr": {
           "type": "number"
+        },
+        "layer_score": {
+          "type": "number",
+          "description": "0.35 signal + 0.25 tonality + 0.20 confidence + 0.20 quality (layer means). Not inv_hdr."
         },
         "duration_s": {
           "type": "number"

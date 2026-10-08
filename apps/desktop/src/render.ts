@@ -1,5 +1,6 @@
 import { profileForPersona } from "./profiles";
 import { glyphBadge } from "./glyph";
+import type { LibraryCatalog, ModelCubes } from "./library-assets";
 import { emptyStrip } from "./livestrip";
 import { renderTransport } from "./playback";
 import { drawSpectrogram } from "./signal";
@@ -26,7 +27,7 @@ export const SLIDE_SCHEMAS: SlideSchema[] = [
     blurb: "TTS and G2P models. Magpie, VibeVoice, and Pocket stay unavailable.",
     columns: 3,
     layer: "models",
-    cardIds: ["engine-kokoro", "engine-vibevoice", "engine-magpie", "engine-pocket"],
+    cardIds: ["engine-kokoro", "engine-kokoro-dayour", "engine-misaki", "engine-vibevoice", "engine-magpie", "engine-pocket"],
   },
   {
     id: "profiles",
@@ -275,6 +276,7 @@ function backFace(card: ViewportCard): HTMLElement {
   const title = window.document.createElement("h2");
   title.textContent = card.title;
   if (card.kind === "VoiceProfile") face.append(voiceProfileBack(card));
+  else if (card.kind === "EngineStatus") face.append(engineBack(card));
   else face.append(adaptiveFace(card));
   if (card.kind === "LibraryClip") face.append(renameBlock(card));
   const flip = button("Show front");
@@ -529,6 +531,141 @@ function adaptiveFace(card: ViewportCard): HTMLElement {
     wrap.append(paragraph(fallbackBack(card.kind, card.body)));
   }
   return wrap;
+}
+
+/**
+ * Voice model (EngineStatus) back face: a Status tab (the adaptive card) and a
+ * Cube tab listing the engine's real cubes (E4). The Cube tab reads "pending"
+ * until /library/assets.json loads; fillModelCubes then fills it.
+ */
+function engineBack(card: ViewportCard): HTMLElement {
+  const engineId = String(card.body.engineId ?? card.id);
+  const wrap = window.document.createElement("div");
+  wrap.className = "engine-back";
+  const list = window.document.createElement("div");
+  list.className = "back-tabs";
+  list.setAttribute("role", "tablist");
+  list.setAttribute("aria-label", `${card.title} details`);
+  const panels: HTMLElement[] = [];
+  const tabs: HTMLButtonElement[] = [];
+  const select = (index: number, focus: boolean) => {
+    tabs.forEach((tab, i) => {
+      tab.setAttribute("aria-selected", String(i === index));
+      tab.tabIndex = i === index ? 0 : -1;
+      panels[i].hidden = i !== index;
+    });
+    if (focus) tabs[index].focus();
+  };
+  const status = adaptiveFace(card);
+  const cube = window.document.createElement("div");
+  cube.className = "model-cubes";
+  cube.dataset.modelCubes = engineId;
+  cube.append(paragraph("pending"));
+  ([["Status", status], ["Cube", cube]] as const).forEach(([label, panel], index) => {
+    const id = `${card.id}-tab-${label.toLowerCase()}`;
+    const tab = button(label);
+    tab.id = id;
+    tab.dataset.tab = label.toLowerCase();
+    tab.setAttribute("role", "tab");
+    tab.setAttribute("aria-controls", `${id}-panel`);
+    tab.addEventListener("click", (event) => {
+      event.stopPropagation();
+      select(index, false);
+    });
+    tab.addEventListener("keydown", (event) => {
+      const next = event.key === "ArrowRight" ? index + 1 : event.key === "ArrowLeft" ? index - 1 : event.key === "Home" ? 0 : event.key === "End" ? 1 : null;
+      if (next === null) return;
+      event.preventDefault();
+      event.stopPropagation();
+      select((next + 2) % 2, true);
+    });
+    panel.id = `${id}-panel`;
+    panel.setAttribute("role", "tabpanel");
+    panel.setAttribute("aria-labelledby", id);
+    tabs.push(tab);
+    panels.push(panel);
+    list.append(tab);
+  });
+  wrap.append(list, ...panels);
+  select(0, false);
+  return wrap;
+}
+
+export interface ModelCubeActions {
+  openCube(jsonUrl: string, source: string): void;
+  selectTile(tileId: string): void;
+}
+
+const fixed = (value: number | null, digits: number) => (value === null ? "pending" : value.toFixed(digits));
+
+/** Fill every voice model card's Cube tab from the asset catalog (E4). */
+export function fillModelCubes(board: HTMLElement, catalog: LibraryCatalog | null, actions: ModelCubeActions): void {
+  board.querySelectorAll<HTMLElement>("[data-model-cubes]").forEach((panel) => {
+    const view: ModelCubes = catalog ? catalog.modelCubes(panel.dataset.modelCubes ?? "") : { state: "unknown" };
+    panel.dataset.state = view.state;
+    panel.replaceChildren();
+    if (view.state === "unknown") {
+      panel.append(paragraph("pending"));
+    } else if (view.state === "none") {
+      panel.append(paragraph("no cube: no Library clip from this engine yet"));
+    } else if (view.state === "unavailable") {
+      panel.append(paragraph(`no cube: engine unavailable (${view.reason})`));
+    } else if (view.state === "g2p") {
+      const first = view.clips[0];
+      panel.append(paragraph(first ? `G2P only, see ${first.clipTitle}` : "G2P only: no clip yet"));
+      for (const clip of view.clips) {
+        const link = button(`Open ${clip.clipTitle}`);
+        link.dataset.action = "select-tile";
+        link.dataset.tileId = clip.clipId;
+        link.addEventListener("click", (event) => {
+          event.stopPropagation();
+          actions.selectTile(clip.clipId);
+        });
+        panel.append(link);
+      }
+    } else {
+      if (view.offline) panel.append(paragraph("Offline run: rendered outside this app; the engine has no adapter here."));
+      const table = window.document.createElement("table");
+      table.className = "model-cube-table";
+      const head = window.document.createElement("tr");
+      for (const label of ["Clip", "Cube uid", "rev", "shape", "inv-HDR", "layer score", ""]) {
+        const th = window.document.createElement("th");
+        th.textContent = label;
+        head.append(th);
+      }
+      table.append(head);
+      for (const row of view.rows) {
+        const tr = window.document.createElement("tr");
+        tr.dataset.cubeUid = row.cubeUid;
+        const cells = [
+          view.offline ? `${row.clipTitle} (offline run)` : row.clipTitle,
+          row.cubeUid,
+          row.revision === null ? "pending" : String(row.revision),
+          row.shape ? `${row.shape[0]}\u00d7${row.shape[1]}` : "pending",
+          fixed(row.invHdr, 4),
+          fixed(row.layerScore, 4),
+        ];
+        cells.forEach((text, i) => {
+          const td = window.document.createElement("td");
+          td.textContent = text;
+          if (i === 1) td.className = "mono";
+          tr.append(td);
+        });
+        const open = button("Open 3D cube");
+        open.dataset.action = "open-cube";
+        open.dataset.cubeJson = row.jsonUrl;
+        open.addEventListener("click", (event) => {
+          event.stopPropagation();
+          actions.openCube(row.jsonUrl, row.clipId);
+        });
+        const td = window.document.createElement("td");
+        td.append(open);
+        tr.append(td);
+        table.append(tr);
+      }
+      panel.append(table);
+    }
+  });
 }
 
 function fallbackBack(kind: string, body: Record<string, unknown>): string {

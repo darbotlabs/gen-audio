@@ -22,6 +22,7 @@ import { decorateLibraryTiles } from "./livestrip";
 import { profilePreview, type ProfilePreview, type VoiceSelection } from "./profiles";
 import {
   announceCopy,
+  fillModelCubes,
   bindSlideScroll,
   goToSlide,
   goToSlideId,
@@ -102,6 +103,7 @@ function show(documentIn: unknown): void {
   void loadLibraryCatalog(loadDevAssets()).then((catalog) => {
     libraryCatalog = catalog;
     decorateLibraryTiles(board, catalog, (uid) => glyphBadge(uid, { role: "clip", onCopy: announceCopy }));
+    fillModelCubes(board, catalog, { openCube: (url, source) => void openCube(url, source), selectTile });
     syncCubeChrome();
   });
   const n = slides(board).length;
