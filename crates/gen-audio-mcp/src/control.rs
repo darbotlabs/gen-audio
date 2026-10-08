@@ -216,9 +216,14 @@ pub fn resolve_slide(reference: &str) -> Result<(&str, bool), (i32, String)> {
         None => (reference, true),
     };
     if !catalog::SLIDES.contains(&slug) {
-        return Err((-32602, format!("unknown slide {reference}; use slide:<slug>, one of {}", catalog::SLIDES.join(", "))));
+        return Err((-32602, format!("unknown slide {reference:?}; valid slides: {}", valid_slides())));
     }
     Ok((slug, deprecated))
+}
+
+/// Every valid `ui_navigate` slide id, `slide:<slug>`, comma-separated.
+fn valid_slides() -> String {
+    catalog::SLIDES.iter().map(|slug| format!("slide:{slug}")).collect::<Vec<_>>().join(", ")
 }
 
 pub fn ui_navigate(args: &Value) -> Result<Value, (i32, String)> {
@@ -226,7 +231,7 @@ pub fn ui_navigate(args: &Value) -> Result<Value, (i32, String)> {
     let reference = args
         .get("slide")
         .and_then(Value::as_str)
-        .ok_or((-32602, "ui_navigate needs slide (slide:<slug>)".to_string()))?
+        .ok_or_else(|| (-32602, format!("ui_navigate needs slide; valid slides: {}", valid_slides())))?
         .to_string();
     let (slug, deprecated) = resolve_slide(&reference)?;
     let slug = slug.to_string();
@@ -774,6 +779,17 @@ mod tests {
         assert_eq!(ui_navigate(&json!({"slide": "slide:nope"})).unwrap_err().0, -32602);
         assert_eq!(ui_navigate(&json!({"slide": "slide:"})).unwrap_err().0, -32602);
         assert_eq!(resolve_slide("slide:spatial").unwrap(), ("spatial", false));
+    }
+
+    #[test]
+    fn unknown_or_missing_slide_lists_every_valid_slide_id() {
+        for args in [json!({"slide": "slide:nope"}), json!({"slide": "nope"}), json!({})] {
+            let (code, message) = ui_navigate(&args).unwrap_err();
+            assert_eq!(code, -32602, "{args}");
+            for slug in catalog::SLIDES {
+                assert!(message.contains(&format!("slide:{slug}")), "{args}: {message} lacks slide:{slug}");
+            }
+        }
     }
 
     #[test]
