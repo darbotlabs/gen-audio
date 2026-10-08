@@ -615,6 +615,39 @@ use std::io::{BufRead, Write};
 mod tests {
     use super::*;
 
+    const KOKORO_ENV: [&str; 2] = ["GEN_AUDIO_KOKORO_MODEL", "GEN_AUDIO_KOKORO_VOICES"];
+    static KOKORO_ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+    /// Clears the GEN_AUDIO_KOKORO_* vars for one test and puts them back on
+    /// drop, so a developer shell with real models set cannot start a real
+    /// synth from a unit test (PR #5 review, fix 6).
+    struct NoKokoroEnv {
+        saved: Vec<(&'static str, Option<std::ffi::OsString>)>,
+        _lock: std::sync::MutexGuard<'static, ()>,
+    }
+
+    impl NoKokoroEnv {
+        fn new() -> Self {
+            let lock = KOKORO_ENV_LOCK.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+            let saved = KOKORO_ENV.iter().map(|name| (*name, std::env::var_os(name))).collect();
+            for name in KOKORO_ENV {
+                std::env::remove_var(name);
+            }
+            Self { saved, _lock: lock }
+        }
+    }
+
+    impl Drop for NoKokoroEnv {
+        fn drop(&mut self) {
+            for (name, value) in &self.saved {
+                match value {
+                    Some(value) => std::env::set_var(name, value),
+                    None => std::env::remove_var(name),
+                }
+            }
+        }
+    }
+
     #[test]
     fn handshake_smoke() {
         assert_eq!(smoke().unwrap(), "acp smoke ok");
@@ -675,6 +708,7 @@ mod tests {
 
     #[test]
     fn session_persona_generate_calls_synth_and_does_not_invent_speech() {
+        let _env = NoKokoroEnv::new();
         let agent = Agent::new();
         let created = handle(
             &agent,
@@ -709,6 +743,7 @@ mod tests {
         assert!(blob.contains("No speech was invented"), "{blob}");
         assert!(blob.contains("tool_call"), "{blob}");
         assert!(!blob.contains("\"synthesizedSpeech\":true"), "{blob}");
+        assert!(blob.contains("GEN_AUDIO_KOKORO_MODEL and GEN_AUDIO_KOKORO_VOICES are unset"), "{blob}");
         let rejected = handle(
             &agent,
             json!({
