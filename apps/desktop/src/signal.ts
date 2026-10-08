@@ -155,7 +155,7 @@ export function play(audio: FixtureBuffer): void {
   source.connect(context.destination);
   source.start();
   source.onended = () => {
-    void context.close().catch((error: unknown) => surfaceUiError(error, "fixture playback"));
+    void context.close().catch((error: unknown) => surfaceUiError(error, "tone playback"));
   };
 }
 
