@@ -34,7 +34,7 @@ The board sits inside a viewport border beside a blue setup pane. Drag a green e
 
 Viewport layers jump to voice models, audio clips, an empty video layer, and the spatial cube. Library tiles with a real `wavUrl` expose play, pause, and a scrubber. If the WAV is not in this build the transport says the file is missing and does not invent audio. Magpie, VibeVoice, and Pocket stay unavailable. Flip a voice-profile tile for tone, purpose, domain, accent, traits, refs, a 2D browser map, and a 3D hook when a library cube JSON exists. Rename on a clip changes the semantic name and the face name in the window only.
 
-Each card is a live tile: the front stays compact, and Enter or Flip turns it. Arrow keys move between cards. Home and End jump. "Clear viewport" shows the empty state inside the same border. "Run Python improve on fixture" calls the Python SDK from the Tauri shell and does nothing useful in a plain browser.
+Each card is a live tile: the front stays compact, and Enter or Flip turns it. Arrow keys move between cards. Home and End jump. "Clear viewport" shows the empty state inside the same border. Dev and test builds (`VITE_GEN_AUDIO_FIXTURES=1` with a debug Tauri shell) add "Load labeled example" and "Run Python improve on fixture"; release builds have neither control, and the release exe does not register the `viewport_example` or `run_fixture_improve` commands.
 
 The card contract is `schemas/card-viewport.schema.json`. The example board is `schemas/examples/viewport.example.json`.
 

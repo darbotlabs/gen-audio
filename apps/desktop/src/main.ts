@@ -424,26 +424,40 @@ async function refreshConnectors(doc: ViewportDocument): Promise<ViewportDocumen
   }
 }
 
-document.querySelector("#show-example")?.addEventListener("click", () => {
-  if (!fixturesRequested(fixtureFlag)) {
-    status.textContent = "The labeled fixture deck is dev/test only (VITE_GEN_AUDIO_FIXTURES=1). Showing the Library deck.";
-  }
-  void loadShippedDocument().then(refreshConnectors).then(show);
-});
 document.querySelector("#show-empty")?.addEventListener("click", () => {
   show({ version: "1.0", title: "Darbot Gen-Audio", columns: 3, cards: [] });
 });
-document.querySelector("#run-improve")?.addEventListener("click", async () => {
-  try {
-    const { invoke } = await import("@tauri-apps/api/core");
-    const result = await invoke<Record<string, unknown>>("run_fixture_improve");
-    status.textContent = result.ok
-      ? "Python improve finished on the fixture tone (fixture only — not podcast speech)."
-      : `Python improve did not finish: ${JSON.stringify(result)}`;
-  } catch (error) {
-    status.textContent = `Python improve needs the desktop shell. ${String(error)}`;
-  }
-});
+// E1 addendum: the fixture controls exist only in dev/test builds. The check is
+// a literal import.meta.env comparison so Vite replaces it at build time and
+// the release bundle drops this block, labels and command name included
+// (apps/desktop/tests/viewport-source.test.ts greps dist for them).
+if (import.meta.env.VITE_GEN_AUDIO_FIXTURES === "1") {
+  const toolbar = document.querySelector(".ga-header-toolbar .toolbar");
+  const showExample = document.createElement("button");
+  showExample.type = "button";
+  showExample.id = "show-example";
+  showExample.textContent = "Load labeled example";
+  showExample.addEventListener("click", () => {
+    void loadShippedDocument().then(refreshConnectors).then(show);
+  });
+  const runImprove = document.createElement("button");
+  runImprove.type = "button";
+  runImprove.id = "run-improve";
+  runImprove.textContent = "Run Python improve on fixture";
+  runImprove.addEventListener("click", async () => {
+    try {
+      const { invoke } = await import("@tauri-apps/api/core");
+      const result = await invoke<Record<string, unknown>>("run_fixture_improve");
+      status.textContent = result.ok
+        ? "Python improve finished on the fixture tone (fixture only — not podcast speech)."
+        : `Python improve did not finish: ${JSON.stringify(result)}`;
+    } catch (error) {
+      status.textContent = `Python improve needs a debug desktop shell. ${String(error)}`;
+    }
+  });
+  toolbar?.prepend(showExample);
+  toolbar?.append(runImprove);
+}
 document.querySelector("#generate-podcast")?.addEventListener("click", () => {
   void submitGenerate();
 });
@@ -683,9 +697,12 @@ function connectControl(): void {
 }
 
 void loadShippedDocument().then(refreshConnectors).then(show);
-// Test hook: scrubs the cube and ONLY the clip the cube is bound to (never whatever played last).
-(window as unknown as { __genAudioScrub?: (f: number) => Promise<string> }).__genAudioScrub = (fraction: number) => {
-  setCubeScrub(fraction, { silent: true });
-  return cubeClipId ? seekClipFraction(cubeClipId, fraction) : Promise.resolve("no cube clip");
-};
+// Test hook (dev/test builds only, E1 addendum): scrubs the cube and ONLY the
+// clip the cube is bound to (never whatever played last).
+if (import.meta.env.VITE_GEN_AUDIO_FIXTURES === "1") {
+  (window as unknown as { __genAudioScrub?: (f: number) => Promise<string> }).__genAudioScrub = (fraction: number) => {
+    setCubeScrub(fraction, { silent: true });
+    return cubeClipId ? seekClipFraction(cubeClipId, fraction) : Promise.resolve("no cube clip");
+  };
+}
 connectControl();

@@ -1,0 +1,9 @@
+{
+  "identifier": "dev-fixtures",
+  "description": "Debug builds only (build.rs leaves this file out of release): the labeled fixture deck and Python improve on the fixture tone.",
+  "windows": ["main"],
+  "permissions": [
+    "allow-viewport-example",
+    "allow-run-fixture-improve"
+  ]
+}

@@ -3,12 +3,10 @@ use std::process::{Child, Command, Stdio};
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
-use gen_audio_core::bridge::{self, PythonTool};
-use gen_audio_core::fixture::write_fixture_tone;
 use gen_audio_mcp::http;
-use gen_audio_mcp::Server;
 use serde::Serialize;
-use serde_json::{json, Value};
+#[cfg(debug_assertions)]
+use serde_json::Value;
 use tauri::menu::{Menu, MenuItem};
 use tauri::tray::TrayIconBuilder;
 use tauri::{Manager, WindowEvent};
@@ -35,15 +33,26 @@ fn connector_statuses() -> Vec<gen_audio_connectors::HealthReport> {
     gen_audio_connectors::health_all()
 }
 
+/// Dev/test-only commands (E1 addendum): they serve the labeled fixture deck
+/// and run Python improve on the fixture tone. Compiled, and so registered,
+/// only under debug_assertions; the release exe that `tauri build` makes has
+/// neither (see `invoke_handler`).
+pub const DEV_ONLY_COMMANDS: [&str; 2] = ["viewport_example", "run_fixture_improve"];
+
+#[cfg(debug_assertions)]
 #[tauri::command]
 fn viewport_example() -> Value {
     serde_json::from_str(include_str!("../../../../schemas/examples/viewport.example.json"))
         .expect("example viewport is valid json")
 }
 
+#[cfg(debug_assertions)]
 #[tauri::command]
 fn run_fixture_improve() -> Result<Value, String> {
-    let server = Server::boot();
+    use gen_audio_core::bridge::{self, PythonTool};
+    use gen_audio_core::fixture::write_fixture_tone;
+    use serde_json::json;
+    let server = gen_audio_mcp::Server::boot();
     write_fixture_tone(&server.scratch)?;
     let repo = server.repo.ok_or("repository root not found")?;
     let plan = bridge::plan(
@@ -207,6 +216,23 @@ fn focus_main_window(app: &tauri::AppHandle) {
     }
 }
 
+/// The IPC commands this build registers. Debug builds add DEV_ONLY_COMMANDS;
+/// release builds cannot, because those functions are not compiled there.
+#[cfg(debug_assertions)]
+fn invoke_handler() -> impl Fn(tauri::ipc::Invoke) -> bool + Send + Sync + 'static {
+    tauri::generate_handler![
+        connector_statuses,
+        viewport_example,
+        run_fixture_improve,
+        mcp_status
+    ]
+}
+
+#[cfg(not(debug_assertions))]
+fn invoke_handler() -> impl Fn(tauri::ipc::Invoke) -> bool + Send + Sync + 'static {
+    tauri::generate_handler![connector_statuses, mcp_status]
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     // Placeholder until setup boots MCP (second instance exits in the plugin
@@ -237,12 +263,7 @@ pub fn run() {
     let app = builder
         .manage(Mutex::new(pending))
         .manage(SidecarChild(Mutex::new(None)))
-        .invoke_handler(tauri::generate_handler![
-            connector_statuses,
-            viewport_example,
-            run_fixture_improve,
-            mcp_status
-        ])
+        .invoke_handler(invoke_handler())
         .setup(move |app| {
             let (mcp, child) = boot_mcp();
             let tooltip = format!("Gen-Audio MCP {} ({})", mcp.addr, mcp.mode);
