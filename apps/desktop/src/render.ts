@@ -1,6 +1,9 @@
 import { profileForPersona } from "./profiles";
+import { glyphBadge } from "./glyph";
+import { emptyStrip } from "./livestrip";
 import { renderTransport } from "./playback";
 import { drawSpectrogram } from "./signal";
+import { SnapAnimator, WheelGesture, stepIndex, type SlideKey } from "./snap";
 import type { ViewportCard, ViewportDocument } from "./validate";
 
 const EMPTY_COPY =
@@ -215,6 +218,9 @@ function frontFace(card: ViewportCard): HTMLElement {
   live.className = "live-mark";
   live.textContent = liveLabel(card);
   row.append(kind, live);
+  // Asset object model v1: every card shows its uid glyph (uid on hover, copy on click).
+  const badge = glyphBadge(card.uid, { onCopy: announceCopy });
+  if (badge) row.append(badge);
   const title = window.document.createElement("h2");
   title.textContent = card.title;
   if (card.kind === "SpectrogramPanel") title.classList.add("spec-title");
@@ -425,6 +431,10 @@ function bodyFor(card: ViewportCard, kind: string, body: Record<string, unknown>
       const sr = String(body.sample_rate ?? "?");
       wrap.append(paragraph((dur ? dur.toFixed(1) : "?") + "s · " + sr + " Hz"));
       wrap.append(renderTransport(card.id, typeof body.wavUrl === "string" ? body.wavUrl : undefined, dur));
+      // Filled from /library/assets.json once it loads (spectrogram strip + clip glyph).
+      const slot = window.document.createElement("div");
+      slot.className = "spec-strip-slot";
+      wrap.append(slot);
       if (body.cubePngUrl) {
         const img = window.document.createElement("img");
         img.className = "cube-thumb";
@@ -439,6 +449,7 @@ function bodyFor(card: ViewportCard, kind: string, body: Record<string, unknown>
     } else {
       wrap.append(paragraph("No WAV — honest empty tile."));
       wrap.append(renderTransport(card.id, undefined));
+      wrap.append(emptyStrip("this clip has no WAV, so there is nothing to analyze."));
     }
   } else if (kind === "VoiceProfile") {
     wrap.append(pill(String(body.voiceModel ?? "voice"), false));
@@ -451,6 +462,11 @@ function bodyFor(card: ViewportCard, kind: string, body: Record<string, unknown>
     else wrap.append(paragraph("Authenticated: no"));
   }
   return wrap;
+}
+
+export function announceCopy(uid: string, copied: boolean): void {
+  const status = window.document.querySelector<HTMLElement>("#status");
+  if (status) status.textContent = copied ? `Copied ${uid}` : `Clipboard unavailable. uid: ${uid}`;
 }
 
 function pill(text: string, warn: boolean): HTMLElement {
@@ -675,7 +691,10 @@ function appendUtilitySlides(board: HTMLElement, startIndex: number): number {
   layersToggle.textContent = "Layers \u25be";
   layersToggle.setAttribute("aria-expanded", "true");
   layersToggle.setAttribute("aria-controls", "cube-layer-matrix");
-  picker.append(select, play, layersToggle);
+  const cubeGlyph = window.document.createElement("span");
+  cubeGlyph.id = "cube-glyph";
+  cubeGlyph.className = "cube-glyph";
+  picker.append(cubeGlyph, select, play, layersToggle);
 
   const badge = window.document.createElement("p");
   badge.id = "cube-badge";
@@ -754,33 +773,55 @@ export function currentSlide(board: HTMLElement): HTMLElement | null {
   return list[currentSlideIndex(board)] ?? null;
 }
 
-export function goToSlide(board: HTMLElement, index: number): void {
+const animators = new WeakMap<HTMLElement, SnapAnimator>();
+
+function animatorFor(board: HTMLElement): SnapAnimator {
+  let animator = animators.get(board);
+  if (!animator) {
+    animator = new SnapAnimator(board, (index) => syncSlideChrome(index, slides(board).length));
+    animators.set(board, animator);
+  }
+  return animator;
+}
+
+/** True while a slide animation is running (input lock). */
+export function isSnapping(board: HTMLElement): boolean {
+  return animatorFor(board).locked;
+}
+
+/**
+ * Jump or glide to a slide by its position in the DOM slide list. Dots, label and
+ * layer tabs update to the target immediately and again when the glide lands.
+ */
+export function goToSlide(board: HTMLElement, index: number, options: { animate?: boolean } = {}): void {
   const list = slides(board);
   if (list.length === 0) return;
   const next = Math.min(list.length - 1, Math.max(0, index));
   const slide = list[next];
-  const delta = slide.getBoundingClientRect().top - board.getBoundingClientRect().top;
-  board.style.scrollBehavior = "auto";
-  board.scrollTop += delta;
-  const slideCards = Array.from(list[next].querySelectorAll<HTMLElement>(".card"));
+  const slideCards = Array.from(slide.querySelectorAll<HTMLElement>(".card"));
   cards(board).forEach((item) => {
     item.tabIndex = -1;
   });
+  syncSlideChrome(next, list.length);
+  syncLayerTabs(slide.dataset.slide);
+  animatorFor(board).go(slide, next, options.animate === true);
   if (slideCards[0]) {
     slideCards[0].tabIndex = 0;
     slideCards[0].focus({ preventScroll: true });
   }
-  syncSlideChrome(next, list.length);
-  syncLayerTabs(slide.dataset.slide);
 }
 
-export function moveSlide(board: HTMLElement, direction: 1 | -1 | "home" | "end"): void {
+/** One slide per call (keys, wheel); ignored while the previous glide is still running. */
+export function moveSlide(board: HTMLElement, direction: 1 | -1 | Exclude<SlideKey, null>): boolean {
   const list = slides(board);
-  if (list.length === 0) return;
+  if (list.length === 0) return false;
+  const animator = animatorFor(board);
+  if (animator.locked) return false;
   const current = currentSlideIndex(board);
-  if (direction === "home") goToSlide(board, 0);
-  else if (direction === "end") goToSlide(board, list.length - 1);
-  else goToSlide(board, current + direction);
+  const target = stepIndex(current, direction, list.length);
+  if (target === current) return false;
+  goToSlide(board, target, { animate: true });
+  return true;
 }
 
 export function moveFocus(board: HTMLElement, direction: 1 | -1 | "home" | "end"): void {
@@ -814,7 +855,7 @@ function buildSlideDots(count: number): void {
     dot.dataset.slideIndex = String(i);
     dot.addEventListener("click", () => {
       const board = window.document.querySelector<HTMLElement>("#board");
-      if (board) goToSlide(board, i);
+      if (board) goToSlide(board, i, { animate: true });
     });
     host.append(dot);
   }
@@ -837,12 +878,29 @@ export function syncSlideChrome(index: number, total: number): void {
   });
 }
 
+/** Elements that keep their own wheel (cube zoom, range sliders, scrollable lists). */
+function ownsWheel(target: EventTarget | null, deltaY: number): boolean {
+  let node = target instanceof Element ? target : null;
+  while (node && !node.classList.contains("board")) {
+    if (node.matches("select, input[type='range'], textarea")) return true;
+    if (node instanceof HTMLElement && node.scrollHeight > node.clientHeight + 1) {
+      const overflow = window.getComputedStyle(node).overflowY;
+      if (overflow === "auto" || overflow === "scroll") {
+        const canScroll = deltaY > 0 ? node.scrollTop + node.clientHeight < node.scrollHeight - 1 : node.scrollTop > 0;
+        if (canScroll) return true;
+      }
+    }
+    node = node.parentElement;
+  }
+  return false;
+}
+
 export function bindSlideScroll(board: HTMLElement): void {
   let frame = 0;
   board.addEventListener(
     "scroll",
     () => {
-      if (frame) return;
+      if (frame || isSnapping(board)) return;
       frame = window.requestAnimationFrame(() => {
         frame = 0;
         const total = slides(board).length;
@@ -850,5 +908,18 @@ export function bindSlideScroll(board: HTMLElement): void {
       });
     },
     { passive: true },
+  );
+  const gesture = new WheelGesture();
+  board.addEventListener(
+    "wheel",
+    (event) => {
+      // The cube canvas zooms on wheel and calls preventDefault first.
+      if (event.defaultPrevented || event.ctrlKey || Math.abs(event.deltaY) < Math.abs(event.deltaX)) return;
+      if (ownsWheel(event.target, event.deltaY)) return;
+      event.preventDefault();
+      const step = gesture.feed(event.deltaY, event.deltaMode, event.timeStamp || performance.now(), isSnapping(board));
+      if (step !== 0) moveSlide(board, step);
+    },
+    { passive: false },
   );
 }

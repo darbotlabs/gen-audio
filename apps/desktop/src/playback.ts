@@ -7,8 +7,39 @@ let activeId: string | null = null;
 /** The clip the cube is showing. The cube clock follows only this clip, not the last one played. */
 let cubeClockClip: string | null = null;
 
-export function setCubeClockClip(clipId: string | null): void {
+/** Asset uid of the clock source clip (seconds on this uid drive the cube). */
+let cubeClockUid: string | null = null;
+const playListeners = new Set<(clipId: string) => void>();
+
+export function setCubeClockClip(clipId: string | null, uid: string | null = null): void {
   cubeClockClip = clipId;
+  cubeClockUid = clipId ? uid : null;
+}
+
+/** Shared clock source: the clip (legacy tile id and asset uid) whose seconds drive the cube. */
+export function getClockSource(): { clipId: string | null; uid: string | null } {
+  return { clipId: cubeClockClip, uid: cubeClockUid };
+}
+
+/** Called after a library clip starts playing (autoplay binds the cube to it). */
+export function onClipPlay(listener: (clipId: string) => void): () => void {
+  playListeners.add(listener);
+  return () => playListeners.delete(listener);
+}
+
+/** Seconds on the clip -> cube scrub fraction, using the cube's own WAV duration when loaded. */
+function cubeFractionAt(seconds: number, audioDuration: number): number | null {
+  const clock = getCubeMeta()?.durationS ?? (Number.isFinite(audioDuration) && audioDuration > 0 ? audioDuration : 0);
+  if (!(clock > 0) || !Number.isFinite(seconds)) return null;
+  return Math.max(0, Math.min(1, seconds / clock));
+}
+
+/** Park the cube at the clip's current second (pause, end, paused seek). */
+function syncCubeToClip(clipId: string): void {
+  const audio = player(clipId);
+  if (!audio || !drivesCube(clipId)) return;
+  const fraction = cubeFractionAt(audio.currentTime, audio.duration);
+  if (fraction !== null) setCubeScrub(fraction, { silent: true });
 }
 
 function drivesCube(clipId: string | null): boolean {
@@ -18,8 +49,8 @@ function drivesCube(clipId: string | null): boolean {
 function cubeFraction(): number | null {
   const current = activeId ? player(activeId) : undefined;
   if (!drivesCube(activeId)) return null;
-  if (!current || current.paused || !Number.isFinite(current.duration) || current.duration <= 0) return null;
-  return current.currentTime / current.duration;
+  if (!current || current.paused) return null;
+  return cubeFractionAt(current.currentTime, current.duration);
 }
 
 function formatTime(seconds: number): string {
@@ -131,6 +162,7 @@ export async function playClip(clipId: string): Promise<string> {
     await audio.play();
     syncFloater(clipId);
     startLiveCubeClock(cubeFraction);
+    for (const listener of playListeners) listener(clipId);
     return "playing";
   } catch (error) {
     if (!anyPlaying()) setPlayingChrome(false);
@@ -162,8 +194,8 @@ export function seekClip(clipId: string, seconds: number): string {
   // but only for the clip the cube is showing.
   if (drivesCube(clipId)) {
     // Before metadata loads, audio.duration is NaN; the cube JSON carries the same WAV duration.
-    const clock = Number.isFinite(duration) && duration > 0 ? duration : getCubeMeta()?.durationS ?? 0;
-    if (clock > 0) setCubeScrub(Math.min(1, seconds / clock), { silent: true });
+    const fraction = cubeFractionAt(seconds, duration);
+    if (fraction !== null) setCubeScrub(fraction, { silent: true });
   }
   syncFloater(clipId);
   if (audio.readyState > 0 && audio.seekable.length === 0) {
@@ -180,7 +212,9 @@ export function seekClipFraction(clipId: string, fraction: number): string {
   const duration = audio.duration;
   if (!Number.isFinite(duration) || duration <= 0) return "no duration";
   activeId = clipId;
-  audio.currentTime = Math.max(0, Math.min(1, fraction)) * duration;
+  // The scrub fraction is on the cube's clock (its WAV duration); convert to seconds on this clip.
+  const clock = drivesCube(clipId) ? getCubeMeta()?.durationS ?? duration : duration;
+  audio.currentTime = Math.min(duration, Math.max(0, Math.min(1, fraction)) * clock);
   syncFloater(clipId);
   return `seeked ${clipId}`;
 }
@@ -290,12 +324,14 @@ export function bindFloatingPlayback(): void {
     });
     audio.addEventListener("pause", () => {
       if (activeId === clipId) syncFloater(clipId);
+      syncCubeToClip(clipId);
       if (!anyPlaying()) {
         setPlayingChrome(false);
         stopLiveCubeClock();
       }
     });
     audio.addEventListener("ended", () => {
+      syncCubeToClip(clipId);
       if (!anyPlaying()) {
         setPlayingChrome(false);
         stopLiveCubeClock();
@@ -307,8 +343,9 @@ export function bindFloatingPlayback(): void {
         const duration = audio.duration;
         // Only a playing clip drives the cube here. A paused seek already set the cube;
         // a source without range support snaps currentTime back to 0 and must not undo it.
-        if (!audio.paused && drivesCube(clipId) && Number.isFinite(duration) && duration > 0) {
-          setCubeScrub(audio.currentTime / duration, { silent: true });
+        if (!audio.paused && drivesCube(clipId)) {
+          const fraction = cubeFractionAt(audio.currentTime, duration);
+          if (fraction !== null) setCubeScrub(fraction, { silent: true });
         }
       }
     });

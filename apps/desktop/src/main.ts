@@ -13,12 +13,17 @@ import {
 } from "./cubeview";
 import { isClipPlaying, seekActiveFraction, seekClipFraction, setCubeClockClip } from "./playback";
 import { applyClipNames, harvestNames } from "./library-meta";
-import { bindFloatingPlayback, pauseClip, playClip, seekClip } from "./playback";
+import { bindFloatingPlayback, onClipPlay, pauseClip, playClip, seekClip } from "./playback";
+import { glyphBadge } from "./glyph";
+import { loadLibraryCatalog, type LibraryCatalog } from "./library-assets";
+import { decorateLibraryTiles } from "./livestrip";
 import { profilePreview, type ProfilePreview, type VoiceSelection } from "./profiles";
 import {
+  announceCopy,
   bindSlideScroll,
   goToSlide,
   goToSlideId,
+  isSnapping,
   moveFocus,
   moveSlide,
   paintProfileCanvases,
@@ -27,6 +32,7 @@ import {
   showRejected,
   slides,
 } from "./render";
+import { slideKey } from "./snap";
 import { applySidepane, bindStudio, promptNote, readSelection, type StudioSelection } from "./studio";
 import { drawCube, drawSpectrogram, makeFixture, play } from "./signal";
 import { voiceById } from "./catalog";
@@ -75,6 +81,11 @@ function show(documentIn: unknown): void {
   bindRename();
   void harvestLibrary();
   bindFloatingPlayback();
+  void loadLibraryCatalog().then((catalog) => {
+    libraryCatalog = catalog;
+    decorateLibraryTiles(board, catalog, (uid) => glyphBadge(uid, { role: "clip", onCopy: announceCopy }));
+    syncCubeChrome();
+  });
   const n = slides(board).length;
   status.textContent = `${doc.cards.length} cards · ${n} snap slides · spectrogram follows side pane (preview, not speech)`;
   requestAnimationFrame(() => goToSlide(board, 0));
@@ -114,6 +125,18 @@ function paintProfile(): boolean {
 /** Default Cube-tab binding: the misaki\u2192kokoro Inverse-HDR cube (real WAV + cube JSON). */
 const DEFAULT_CUBE_CLIP = "lib-misaki-kokoro";
 let cubeClipId = "";
+/** Set when autoplay bound the Cube tab to a clip that has no cube: the tab says so and borrows nothing. */
+let noCubeClipId = "";
+let cubeBindSeq = 0;
+let libraryCatalog: LibraryCatalog | null = null;
+
+function clipUid(clipId: string): string | null {
+  return libraryCatalog?.clipForTile(clipId)?.uid ?? null;
+}
+
+function tileTitle(clipId: string): string {
+  return board.querySelector<HTMLElement>(`.card[data-id="${CSS.escape(clipId)}"] h2`)?.textContent?.trim() || clipId;
+}
 
 function cubeSources(): Array<{ clipId: string; url: string; label: string }> {
   return Array.from(board.querySelectorAll<HTMLElement>(".library-tile[data-cube-json]"))
@@ -128,7 +151,20 @@ function cubeSources(): Array<{ clipId: string; url: string; label: string }> {
 function syncCubeChrome(): void {
   const meta = getCubeMeta();
   const title = document.querySelector<HTMLElement>("#cube-title");
-  if (title) title.textContent = meta ? meta.title : "Inverse-HDR bitdot cube \u2014 nothing bound";
+  if (title) {
+    title.textContent = meta
+      ? meta.title
+      : noCubeClipId
+        ? `No cube for this clip \u2014 ${tileTitle(noCubeClipId)}`
+        : "Inverse-HDR bitdot cube \u2014 nothing bound";
+  }
+  const glyphSlot = document.querySelector<HTMLElement>("#cube-glyph");
+  if (glyphSlot) {
+    const cube = meta && libraryCatalog ? libraryCatalog.cubeForUrl(meta.url) : null;
+    const badge = cube ? glyphBadge(cube.uid, { role: "cube", onCopy: announceCopy }) : null;
+    if (badge) glyphSlot.replaceChildren(badge);
+    else glyphSlot.replaceChildren();
+  }
   const select = document.querySelector<HTMLSelectElement>("#cube-source");
   if (select && cubeClipId) select.value = cubeClipId;
   const play = document.querySelector<HTMLButtonElement>("#cube-play");
@@ -141,7 +177,7 @@ function syncCubeChrome(): void {
 
 /** When the Cube tab opens with nothing bound, bind the default library cube. */
 function ensureDefaultCube(): void {
-  if (boundCubeUrl()) return;
+  if (boundCubeUrl() || noCubeClipId) return;
   const sources = cubeSources();
   const preferred = sources.find((item) => item.clipId === DEFAULT_CUBE_CLIP) ?? sources[0];
   if (!preferred) {
@@ -152,13 +188,38 @@ function ensureDefaultCube(): void {
 }
 
 async function bindCubeSource(clipId: string, url: string, source: string): Promise<void> {
+  const seq = ++cubeBindSeq;
   cubeClipId = clipId;
-  setCubeClockClip(clipId);
+  noCubeClipId = "";
+  setCubeClockClip(clipId, clipUid(clipId));
   const caption = document.querySelector<HTMLElement>("#cube-caption");
   const message = await loadCube(url);
+  if (seq !== cubeBindSeq) return; // a newer binding won
   if (caption) caption.textContent = source === "default" ? message : `${source}: ${message}`;
   syncCubeChrome();
 }
+
+/**
+ * Autoplay: whichever audio-clip livetile starts playing owns the Cube tab and
+ * the shared clock. A clip without a cube clears the tab instead of borrowing one.
+ */
+function bindCubeToPlayingClip(clipId: string): void {
+  const tile = board.querySelector<HTMLElement>(`.library-tile[data-id="${CSS.escape(clipId)}"]`);
+  if (!tile) return;
+  const url = tile.dataset.cubeJson || "";
+  if (url) {
+    if (cubeClipId !== clipId || boundCubeUrl() !== url) void bindCubeSource(clipId, url, "autoplay");
+    return;
+  }
+  cubeBindSeq += 1;
+  cubeClipId = clipId;
+  noCubeClipId = clipId;
+  setCubeClockClip(clipId, clipUid(clipId));
+  clearCube(`No cube for this clip (${tileTitle(clipId)}). Nothing is drawn; another clip's cube is not borrowed.`);
+  syncCubeChrome();
+}
+
+onClipPlay(bindCubeToPlayingClip);
 
 function bindCubeCanvas(): void {
   const canvas = document.querySelector<HTMLCanvasElement>("#cube-viewport");
@@ -310,8 +371,10 @@ async function openCube(url: string, source: string): Promise<void> {
     return;
   }
   const owner = board.querySelector<HTMLElement>(`.library-tile[data-cube-json="${CSS.escape(url)}"]`);
+  cubeBindSeq += 1;
   cubeClipId = owner?.dataset.id ?? "";
-  setCubeClockClip(cubeClipId || null);
+  noCubeClipId = "";
+  setCubeClockClip(cubeClipId || null, cubeClipId ? clipUid(cubeClipId) : null);
   const message = await loadCube(url);
   if (caption) caption.textContent = `${source}: ${message}`;
   syncCubeChrome();
@@ -404,24 +467,11 @@ board.addEventListener("click", (event) => {
 document.addEventListener("keydown", (event) => {
   const target = event.target as HTMLElement | null;
   if (target && ["INPUT", "TEXTAREA", "SELECT", "BUTTON", "A"].includes(target.tagName)) return;
-  if (event.key === "PageDown" || event.key === "ArrowDown") {
+  const move = slideKey(event.key);
+  if (move) {
     event.preventDefault();
-    moveSlide(board, 1);
-    return;
-  }
-  if (event.key === "PageUp" || event.key === "ArrowUp") {
-    event.preventDefault();
-    moveSlide(board, -1);
-    return;
-  }
-  if (event.key === "Home") {
-    event.preventDefault();
-    moveSlide(board, "home");
-    return;
-  }
-  if (event.key === "End") {
-    event.preventDefault();
-    moveSlide(board, "end");
+    // Exactly one slide per press; auto-repeat while a glide runs is dropped.
+    if (!event.repeat || !isSnapping(board)) moveSlide(board, move);
     return;
   }
   if (event.key === "ArrowRight") {

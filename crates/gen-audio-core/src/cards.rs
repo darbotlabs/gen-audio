@@ -67,6 +67,14 @@ fn validate_card(card: &Value, seen: &mut std::collections::BTreeSet<String>) ->
         return Err(format!("card {id} has unknown kind {kind}"));
     }
     expect_string(obj.get("title"), "title", 1, 120)?;
+    if let Some(uid) = obj.get("uid") {
+        // Asset object model v1: the card uid sits alongside the legacy id.
+        let uid = uid.as_str().ok_or_else(|| format!("card {id} uid must be a string"))?;
+        match crate::asset::parse_uid(uid) {
+            Ok(("card", _)) => {}
+            _ => return Err(format!("card {id} uid must be ga:card:<26 base32>")),
+        }
+    }
     if let Some(span) = obj.get("span") {
         let n = span.as_u64().ok_or("span must be an integer")?;
         if !(1..=3).contains(&n) {
@@ -376,5 +384,16 @@ mod tests {
             .filter(|card| card["kind"] == "BenchmarkCompare")
             .for_each(|card| card["body"]["measuredHere"] = Value::Bool(true));
         assert!(validate_viewport(&document).is_err());
+    }
+
+    #[test]
+    fn card_uid_must_be_a_card_kind_uid() {
+        let mut doc: Value =
+            serde_json::from_str(include_str!("../../../schemas/examples/viewport.example.json")).unwrap();
+        assert!(validate_viewport(&doc).is_ok());
+        doc["cards"][0]["uid"] = Value::String("ga:audio_clip:vtwxksrsuci7zygslimzfy7kdy".into());
+        assert!(validate_viewport(&doc).is_err());
+        doc["cards"][0]["uid"] = Value::String("ga:card:not-base32".into());
+        assert!(validate_viewport(&doc).is_err());
     }
 }
