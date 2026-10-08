@@ -26,6 +26,7 @@ const PARTIAL_BELOW: f64 = 0.95;
 pub struct ReduceError {
     pub code: i32,
     pub message: String,
+    pub data: Option<Value>,
 }
 
 impl ReduceError {
@@ -33,9 +34,30 @@ impl ReduceError {
         Self {
             code: -32602,
             message: message.into(),
+            data: None,
+        }
+    }
+
+    fn faces(message: impl Into<String>, faces: &[FaceDef]) -> Self {
+        Self {
+            code: -32602,
+            message: message.into(),
+            data: Some(json!({
+                "valid_faces": faces.iter().map(|face| face.id).collect::<Vec<_>>(),
+                "aliases": ["front", "back"],
+            })),
         }
     }
 }
+
+/// `Flip` moves `face_index`. `Face("front")` is index 0 and `Face("back")` is
+/// index 1. Any other id is a position in `faces_for`.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum FlipTo {
+    Next,
+    Face(String),
+}
+
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Origin {
@@ -84,8 +106,7 @@ pub enum Action {
     },
     Flip {
         view: String,
-        face: String,
-        section: Option<String>,
+        to: FlipTo,
     },
     Rename {
         uid: String,
@@ -465,26 +486,7 @@ impl Viewport {
                     json!({"op": "pause", "playing": self.playing, "clock": {"source": self.clock_source}}),
                 )
             }
-            Action::Flip {
-                view,
-                face,
-                section,
-            } => {
-                if face != "front" && face != "back" {
-                    return Err(ReduceError::invalid("face must be front or back"));
-                }
-                if !self.views.iter().any(|item| item.id == view) {
-                    return Err(ReduceError::invalid(format!("unknown view {view}")));
-                }
-                let count = self.faces_for(&view).len();
-                let index = if face == "front" || count <= 1 {
-                    0
-                } else {
-                    1
-                };
-                self.face_index.insert(view.clone(), index);
-                Ok(json!({"op": "flip", "view": view, "face": face, "section": section}))
-            }
+            Action::Flip { view, to } => self.apply_flip(view, to),
             Action::Rename { uid, name } => {
                 let asset = self
                     .assets
@@ -822,6 +824,63 @@ impl Viewport {
         }
     }
 
+    fn apply_flip(&mut self, view: String, to: FlipTo) -> Result<Value, ReduceError> {
+        if !self.views.iter().any(|item| item.id == view) {
+            return Err(ReduceError::invalid(format!("unknown view {view}")));
+        }
+        let faces = self.faces_for(&view);
+        let count = faces.len();
+        if count == 0 {
+            return Err(ReduceError::invalid(format!("unknown view {view}")));
+        }
+        let current = self.face_index.get(&view).copied().unwrap_or(0) % count;
+        let index = match &to {
+            FlipTo::Next => (current + 1) % count,
+            FlipTo::Face(id) if id == "front" => 0,
+            FlipTo::Face(id) if id == "back" => {
+                if count < 2 {
+                    let only = faces[0].id;
+                    return Err(ReduceError::faces(
+                        format!("face \"back\" needs 2 faces; {view} has {count} ({only})"),
+                        &faces,
+                    ));
+                }
+                1
+            }
+            FlipTo::Face(id) => match faces.iter().position(|face| face.id == id) {
+                Some(found) => found,
+                None => {
+                    let list = faces
+                        .iter()
+                        .map(|face| face.id)
+                        .collect::<Vec<_>>()
+                        .join(", ");
+                    return Err(ReduceError::faces(
+                        format!(
+                            "unknown face \"{id}\" for {view}; valid faces: {list} (aliases: front, back)"
+                        ),
+                        &faces,
+                    ));
+                }
+            },
+        };
+        self.face_index.insert(view.clone(), index);
+        let face = faces[index];
+        let tile = view.strip_prefix("view:").unwrap_or(view.as_str());
+        let mut body = json!({
+            "op": "flip",
+            "view": view,
+            "tileId": tile,
+            "face_id": face.id,
+            "face_index": index,
+            "face_count": count,
+        });
+        if let Some(label) = single_face_glyph_label(&faces) {
+            body["glyph_label"] = json!(label);
+        }
+        Ok(body)
+    }
+
     /// Ordered faces that apply to this view. Omitted faces are absent, so `len()` is M.
     fn faces_for(&self, view_id: &str) -> Vec<FaceDef> {
         let Some(view) = self.views.iter().find(|item| item.id == view_id) else {
@@ -892,10 +951,12 @@ impl Viewport {
                 let kind = asset.map(|item| item.kind.as_str()).unwrap_or("");
                 let media = asset.map(|item| item.media.as_str()).unwrap_or("unresolved");
                 let display_rev = asset.map(|item| item.display_rev).unwrap_or(0);
+                let applicable = self.faces_for(&view.id);
                 json!({
                     "id": view.id,
                     "asset": view.asset,
                     "home": view.home,
+                    "faces": applicable.iter().map(|face| json!({"id": face.id, "name": face.name})).collect::<Vec<_>>(),
                     "snapshot": facts_snapshot(&view.asset, kind, title, honesty, media, display_rev)
                 })
             })
@@ -984,14 +1045,18 @@ impl Viewport {
                     let face_id = current.map(|face| face.id).unwrap_or("");
                     let face_name = current.map(|face| face.name).unwrap_or("");
                     let tile = view.id.strip_prefix("view:").unwrap_or(view.id.as_str());
-                    (view.id.clone(), json!({
+                    let mut entry = json!({
                         "tileId": tile,
                         "face_id": face_id,
                         "face_name": face_name,
                         "face_index": index,
                         "face_count": applicable.len(),
                         "ids": applicable.iter().map(|face| face.id).collect::<Vec<_>>()
-                    }))
+                    });
+                    if let Some(label) = single_face_glyph_label(&applicable) {
+                        entry["glyph_label"] = json!(label);
+                    }
+                    (view.id.clone(), entry)
                 }).collect::<serde_json::Map<String, Value>>()
             },
             "pipelineEmpty": self.slides.iter().find(|slide| slide.id == "slide:pipeline").and_then(|slide| slide.empty.clone())
@@ -1010,6 +1075,15 @@ impl Viewport {
             &asset.media,
             asset.display_rev,
         ))
+    }
+}
+
+/// Q2 label. The name is the applicable face's table name, so a one-face
+/// engine and a one-face connector cannot be special-cased apart.
+fn single_face_glyph_label(faces: &[FaceDef]) -> Option<String> {
+    match faces {
+        [only] => Some(format!("Card has 1 face: {}", only.name)),
+        _ => None,
     }
 }
 
@@ -1806,6 +1880,184 @@ mod tests {
         assert!(job["reason"].as_str().unwrap().contains("unset"));
     }
 
+    /// T17 steps 1 and 6–8, plus Q2's single-face label. `next` and the
+    /// one-selector rule are asserted through `ui_flip` in the mcp crate.
+    #[test]
+    fn t17_flip_rejects_omitted_faces_and_names_the_valid_list() {
+        let mut vp = Viewport::release();
+        let snapshots_before: Vec<Value> = vp.snapshot()["views"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|view| view["snapshot"].clone())
+            .collect();
+
+        let relations = vp
+            .apply(Action::Flip {
+                view: "view:conn-mcp".into(),
+                to: FlipTo::Face("relations".into()),
+            })
+            .unwrap_err();
+        assert_eq!(relations.code, -32602);
+        assert!(
+            relations.message.contains("valid faces: connector"),
+            "{}",
+            relations.message
+        );
+        assert!(
+            relations.message.contains("aliases: front, back"),
+            "{}",
+            relations.message
+        );
+
+        let magpie = vp
+            .apply(Action::Flip {
+                view: "view:engine-magpie".into(),
+                to: FlipTo::Face("relations".into()),
+            })
+            .unwrap_err();
+        assert!(
+            magpie.message.contains("valid faces: model"),
+            "{}",
+            magpie.message
+        );
+
+        let misaki = vp
+            .apply(Action::Flip {
+                view: "view:engine-misaki".into(),
+                to: FlipTo::Face("cubes".into()),
+            })
+            .unwrap_err();
+        assert!(
+            misaki.message.contains("valid faces: model, relations"),
+            "{}",
+            misaki.message
+        );
+
+        let back = vp
+            .apply(Action::Flip {
+                view: "view:engine-magpie".into(),
+                to: FlipTo::Face("back".into()),
+            })
+            .unwrap_err();
+        assert!(back.message.contains("needs 2 faces"), "{}", back.message);
+        assert!(
+            back.message.contains("view:engine-magpie has 1 (model)"),
+            "{}",
+            back.message
+        );
+
+        let cube = vp
+            .apply(Action::Flip {
+                view: "view:lib-magpie".into(),
+                to: FlipTo::Face("cube".into()),
+            })
+            .unwrap_err();
+        assert!(
+            cube.message.contains("valid faces: clip, relations"),
+            "{}",
+            cube.message
+        );
+
+        let moved = vp
+            .apply(Action::Flip {
+                view: "view:lib-misaki-kokoro".into(),
+                to: FlipTo::Face("spectrogram".into()),
+            })
+            .unwrap();
+        assert_eq!(moved["face_id"], "spectrogram");
+        assert_eq!(moved["face_index"], 3);
+        assert_eq!(moved["face_count"], 5);
+        let snap = vp.snapshot();
+        assert_eq!(
+            snap["ui"]["faces"]["view:lib-misaki-kokoro"]["face_id"],
+            "spectrogram"
+        );
+        assert_eq!(
+            snap["ui"]["faces"]["view:lib-misaki-kokoro"]["face_index"],
+            3
+        );
+        let snapshots_after: Vec<Value> = snap["views"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|view| view["snapshot"].clone())
+            .collect();
+        assert_eq!(snapshots_before, snapshots_after);
+        let relations_face = vp
+            .apply(Action::Flip {
+                view: "view:lib-misaki-kokoro".into(),
+                to: FlipTo::Next,
+            })
+            .unwrap();
+        assert_eq!(relations_face["face_id"], "relations");
+        assert_eq!(relations_face["face_index"], 4);
+        let wrapped = vp
+            .apply(Action::Flip {
+                view: "view:lib-misaki-kokoro".into(),
+                to: FlipTo::Next,
+            })
+            .unwrap();
+        assert_eq!(wrapped["face_id"], "clip");
+        assert_eq!(wrapped["face_index"], 0);
+        let stayed = vp
+            .apply(Action::Flip {
+                view: "view:engine-magpie".into(),
+                to: FlipTo::Next,
+            })
+            .unwrap();
+        assert_eq!(stayed["face_id"], "model");
+        assert_eq!(stayed["face_index"], 0);
+        assert_eq!(stayed["face_count"], 1);
+        assert_eq!(stayed["glyph_label"], "Card has 1 face: Model");
+
+        let fresh = Viewport::release().snapshot();
+        assert_eq!(
+            fresh["ui"]["faces"]["view:engine-magpie"]["glyph_label"],
+            "Card has 1 face: Model"
+        );
+        assert_eq!(
+            fresh["ui"]["faces"]["view:engine-pocket"]["glyph_label"],
+            "Card has 1 face: Model"
+        );
+        for id in [
+            "conn-mcp",
+            "conn-acp",
+            "conn-harness",
+            "conn-copilot",
+            "conn-claude",
+            "conn-gpt",
+            "conn-gemini",
+        ] {
+            assert_eq!(
+                fresh["ui"]["faces"][&format!("view:{id}")]["glyph_label"],
+                "Card has 1 face: Connector",
+                "{id}"
+            );
+            assert_eq!(
+                fresh["ui"]["faces"][&format!("view:{id}")]["face_count"],
+                1,
+                "{id}"
+            );
+        }
+        assert!(fresh["ui"]["faces"]["view:lib-misaki-kokoro"]
+            .get("glyph_label")
+            .is_none());
+        let misaki_view = fresh["views"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|view| view["id"] == "view:lib-misaki-kokoro")
+            .unwrap();
+        let ids: Vec<&str> = misaki_view["faces"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|face| face["id"].as_str().unwrap())
+            .collect();
+        assert_eq!(ids, ["clip", "cube", "layers", "spectrogram", "relations"]);
+    }
+
     #[test]
     fn t17_headless_actions_round_trip_through_viewport_get() {
         let mut vp = Viewport::release();
@@ -1824,8 +2076,7 @@ mod tests {
         .unwrap();
         vp.apply(Action::Flip {
             view: "view:lib-misaki-kokoro".into(),
-            face: "back".into(),
-            section: Some("honesty".into()),
+            to: FlipTo::Face("back".into()),
         })
         .unwrap();
         vp.apply(Action::Rename {

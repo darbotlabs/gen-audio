@@ -18,7 +18,7 @@ use gen_audio_core::bridge;
 use gen_audio_core::catalog::{self, MAX_AGENTS_PER_TRACK};
 use gen_audio_core::library_store;
 use gen_audio_core::paths;
-use gen_audio_core::viewport::{self, Action, CoverageInput, Origin};
+use gen_audio_core::viewport::{self, Action, CoverageInput, FlipTo, Origin};
 use serde_json::{json, Value};
 
 struct Event {
@@ -618,47 +618,65 @@ fn flip_view(raw: &str) -> Result<String, (i32, String)> {
     Ok(format!("view:{raw}"))
 }
 
-pub fn ui_flip(args: &Value) -> Result<Value, (i32, String)> {
-    let args = &with_uid_tile(args)?;
+pub fn ui_flip(args: &Value) -> Result<Value, (i32, String, Option<Value>)> {
+    let args = &with_uid_tile(args).map_err(|(code, message)| (code, message, None))?;
     let raw = args
         .get("tileId")
         .or_else(|| args.get("view"))
         .and_then(Value::as_str)
-        .ok_or((-32602, "ui_flip needs tileId or uid".to_string()))?;
-    let view = flip_view(raw)?;
-    let flipped = args.get("flipped").and_then(Value::as_bool).unwrap_or(true);
-    let face = args
-        .get("face")
-        .and_then(Value::as_str)
-        .unwrap_or(if flipped { "back" } else { "front" });
-    if face != "front" && face != "back" {
-        return Err((-32602, "face must be front or back".into()));
+        .ok_or((-32602, "ui_flip needs tileId or uid".to_string(), None))?;
+    let view = flip_view(raw).map_err(|(code, message)| (code, message, None))?;
+    let has_next = args.get("next").is_some();
+    let has_face = args.get("face").is_some();
+    let has_flipped = args.get("flipped").is_some();
+    if usize::from(has_next) + usize::from(has_face) + usize::from(has_flipped) > 1 {
+        return Err((
+            -32602,
+            "ui_flip takes one of next, face, flipped".into(),
+            None,
+        ));
     }
+    let to = if has_next {
+        if args.get("next").and_then(Value::as_bool) != Some(true) {
+            return Err((-32602, "next must be true".into(), None));
+        }
+        FlipTo::Next
+    } else if let Some(face) = args.get("face").and_then(Value::as_str) {
+        FlipTo::Face(face.to_string())
+    } else {
+        let flipped = args.get("flipped").and_then(Value::as_bool).unwrap_or(true);
+        FlipTo::Face(if flipped { "back" } else { "front" }.into())
+    };
     let section = args
         .get("section")
         .and_then(Value::as_str)
         .map(str::to_string);
-    viewport::apply_global(Action::Flip {
-        view,
-        face: face.to_string(),
-        section: section.clone(),
-    })
-    .map_err(|err| (err.code, err.message))?;
+    let mut event = viewport::apply_global(Action::Flip { view, to })
+        .map_err(|err| (err.code, err.message, err.data))?;
     let tile = raw.strip_prefix("view:").unwrap_or(raw);
-    let mut payload =
-        json!({"tileId": tile, "flipped": face == "back", "face": face, "section": section});
+    event["tileId"] = json!(tile);
+    if let Some(section) = section {
+        event["section"] = json!(section);
+    }
     if let Some(persona) = args.get("personaId").and_then(Value::as_str) {
         if catalog::persona(persona).is_none() {
-            return Err((-32602, format!("unknown persona {persona}")));
+            return Err((-32602, format!("unknown persona {persona}"), None));
         }
-        payload["personaId"] = json!(persona);
-        payload["profile"] = voice_profile_get(&json!({"personaId": persona}))?;
+        event["personaId"] = json!(persona);
+        event["profile"] = voice_profile_get(&json!({"personaId": persona}))
+            .map_err(|(code, message)| (code, message, None))?;
     }
-    Ok(queued(
+    let mut payload = queued(
         "flip",
-        payload,
+        event,
         "Queued a flipcard. The payload is the voice profile when a persona is named. This does not render audio.",
-    ))
+    );
+    for key in ["face_id", "face_index", "face_count", "glyph_label"] {
+        if let Some(value) = payload["args"].get(key) {
+            payload[key] = value.clone();
+        }
+    }
+    Ok(payload)
 }
 
 pub fn ui_set_sidepane(args: &Value) -> Result<Value, (i32, String)> {
@@ -1773,6 +1791,161 @@ mod tests {
         let renamed_text = renamed.to_string();
         assert!(!renamed_text.contains("catalog.json"), "{renamed_text}");
         assert!(!renamed_text.contains("/.local/"), "{renamed_text}");
+    }
+
+    #[test]
+    fn t17_ui_flip_next_face_aliases_and_one_selector() {
+        let _viewport = fresh_viewport();
+        let server = crate::Server::boot();
+        let omitted = crate::handle(
+            &server,
+            json!({"jsonrpc":"2.0","id":8,"method":"tools/call","params":{"name":"ui_flip","arguments":{"tileId":"conn-mcp","face":"relations"}}}),
+        )
+        .unwrap()
+        .unwrap();
+        assert_eq!(omitted["error"]["code"], -32602, "{omitted}");
+        assert_eq!(
+            omitted["error"]["data"]["valid_faces"],
+            json!(["connector"]),
+            "{omitted}"
+        );
+        assert_eq!(
+            omitted["error"]["data"]["aliases"],
+            json!(["front", "back"]),
+            "{omitted}"
+        );
+
+        let rejected = crate::handle(
+            &server,
+            json!({"jsonrpc":"2.0","id":7,"method":"tools/call","params":{"name":"ui_flip","arguments":{"tileId":"lib-kokoro","next":true}}}),
+        )
+        .unwrap()
+        .unwrap();
+        let text = rejected["result"]["content"][0]["text"]
+            .as_str()
+            .unwrap_or("");
+        let parsed: Value = serde_json::from_str(text).unwrap_or(Value::Null);
+        assert_eq!(parsed["face_id"], "cube", "{rejected}");
+
+        let next = ui_flip(&json!({"tileId": "lib-misaki-kokoro", "next": true})).unwrap();
+        assert_eq!(next["face_id"], "cube");
+        assert_eq!(next["face_index"], 1);
+        assert_eq!(next["face_count"], 5);
+        assert_eq!(
+            viewport_get()["ui"]["faces"]["view:lib-misaki-kokoro"]["face_id"],
+            "cube"
+        );
+
+        let spectrogram =
+            ui_flip(&json!({"tileId": "lib-misaki-kokoro", "face": "spectrogram"})).unwrap();
+        assert_eq!(spectrogram["face_id"], "spectrogram");
+        assert_eq!(spectrogram["face_index"], 3);
+        assert_eq!(spectrogram["face_count"], 5);
+
+        let relations = ui_flip(&json!({"tileId": "lib-misaki-kokoro", "next": true})).unwrap();
+        assert_eq!(relations["face_id"], "relations");
+        assert_eq!(relations["face_index"], 4);
+        let wrapped = ui_flip(&json!({"tileId": "lib-misaki-kokoro", "next": true})).unwrap();
+        assert_eq!(wrapped["face_id"], "clip");
+        assert_eq!(wrapped["face_index"], 0);
+
+        let back = ui_flip(&json!({"tileId": "lib-misaki-kokoro", "face": "back"})).unwrap();
+        assert_eq!(back["face_id"], "cube");
+        assert_eq!(back["face_index"], 1);
+        let front = ui_flip(&json!({"tileId": "lib-misaki-kokoro", "flipped": false})).unwrap();
+        assert_eq!(front["face_id"], "clip");
+        assert_eq!(front["face_index"], 0);
+        let bare = ui_flip(&json!({"tileId": "lib-misaki-kokoro"})).unwrap();
+        assert_eq!(bare["face_id"], "cube");
+        assert_eq!(bare["face_index"], 1);
+
+        let waveform =
+            ui_flip(&json!({"tileId": "lib-misaki-kokoro", "face": "waveform"})).unwrap_err();
+        assert_eq!(waveform.0, -32602);
+        assert!(
+            waveform
+                .1
+                .contains("clip, cube, layers, spectrogram, relations"),
+            "{}",
+            waveform.1
+        );
+        assert_eq!(
+            viewport_get()["ui"]["faces"]["view:lib-misaki-kokoro"]["face_id"],
+            "cube"
+        );
+
+        let omitted = ui_flip(&json!({"tileId": "lib-magpie", "face": "cube"})).unwrap_err();
+        assert!(
+            omitted.1.contains("valid faces: clip, relations"),
+            "{}",
+            omitted.1
+        );
+        let magpie = ui_flip(&json!({"tileId": "lib-magpie", "next": true})).unwrap();
+        assert_eq!(magpie["face_id"], "relations");
+        assert_eq!(magpie["face_index"], 1);
+        assert_eq!(magpie["face_count"], 2);
+
+        for (tile, face_id, count) in [
+            ("engine-kokoro", "cubes", 3),
+            ("engine-vibevoice", "cubes", 3),
+            ("engine-kokoro-dayour", "cubes", 3),
+        ] {
+            let moved = ui_flip(&json!({"tileId": tile, "next": true})).unwrap();
+            assert_eq!(moved["face_id"], face_id, "{tile}");
+            assert_eq!(moved["face_index"], 1, "{tile}");
+            assert_eq!(moved["face_count"], count, "{tile}");
+        }
+
+        let model = ui_flip(&json!({"tileId": "engine-magpie", "next": true})).unwrap();
+        assert_eq!(model["face_id"], "model");
+        assert_eq!(model["face_index"], 0);
+        assert_eq!(model["face_count"], 1);
+        assert_eq!(model["glyph_label"], "Card has 1 face: Model");
+        let pocket = ui_flip(&json!({"tileId": "engine-pocket", "next": true})).unwrap();
+        assert_eq!(pocket["glyph_label"], "Card has 1 face: Model");
+        let model_relations =
+            ui_flip(&json!({"tileId": "engine-magpie", "face": "relations"})).unwrap_err();
+        assert!(
+            model_relations.1.contains("valid faces: model"),
+            "{}",
+            model_relations.1
+        );
+        let g2p = ui_flip(&json!({"tileId": "engine-misaki", "face": "cubes"})).unwrap_err();
+        assert!(g2p.1.contains("valid faces: model, relations"), "{}", g2p.1);
+        let one = ui_flip(&json!({"tileId": "engine-magpie", "face": "back"})).unwrap_err();
+        assert!(one.1.contains("needs 2 faces"), "{}", one.1);
+
+        let snap = viewport_get();
+        for id in [
+            "conn-mcp",
+            "conn-acp",
+            "conn-harness",
+            "conn-copilot",
+            "conn-claude",
+            "conn-gpt",
+            "conn-gemini",
+        ] {
+            let face = &snap["ui"]["faces"][&format!("view:{id}")];
+            assert_eq!(face["face_count"], 1, "{id}");
+            assert_eq!(face["ids"][0], "connector", "{id}");
+            assert_eq!(face["glyph_label"], "Card has 1 face: Connector", "{id}");
+        }
+        let connector = ui_flip(&json!({"tileId": "conn-mcp", "face": "relations"})).unwrap_err();
+        assert_eq!(connector.0, -32602);
+        assert!(
+            connector.1.contains("valid faces: connector"),
+            "{}",
+            connector.1
+        );
+
+        let two = ui_flip(&json!({
+            "tileId": "lib-misaki-kokoro",
+            "next": true,
+            "face": "cube"
+        }))
+        .unwrap_err();
+        assert_eq!(two.0, -32602);
+        assert_eq!(two.1, "ui_flip takes one of next, face, flipped");
     }
 
     #[test]

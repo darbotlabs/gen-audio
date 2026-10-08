@@ -355,7 +355,7 @@ fn mcp_tool(name: &str, args: Value) -> Result<Value, String> {
     }
     let server = gen_audio_mcp::Server::boot();
     let result = gen_audio_mcp::call_tool(&server, &json!({"name": name, "arguments": args}))
-        .map_err(|(_, message)| message);
+        .map_err(|err| err.message);
     let _ = std::fs::remove_dir_all(&server.scratch.dir);
     result
 }

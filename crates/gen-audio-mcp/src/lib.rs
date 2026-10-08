@@ -16,6 +16,23 @@ use gen_audio_core::redact::redact_secrets;
 use gen_audio_core::serve::{self, health_url, node_base_url, ready_url};
 use serde_json::{json, Value};
 
+#[derive(Clone, Debug)]
+pub struct ToolError {
+    pub code: i32,
+    pub message: String,
+    pub data: Option<Value>,
+}
+
+impl From<(i32, String)> for ToolError {
+    fn from((code, message): (i32, String)) -> Self {
+        Self {
+            code,
+            message,
+            data: None,
+        }
+    }
+}
+
 pub struct Server {
     pub scratch: Scratch,
     pub repo: Option<PathBuf>,
@@ -150,22 +167,30 @@ pub fn handle(server: &Server, message: Value) -> Result<Option<Value>, String> 
     };
     let method = obj.get("method").and_then(Value::as_str).unwrap_or("");
     let params = obj.get("params").cloned().unwrap_or(json!({}));
-    let result = match method {
-        "initialize" => initialize_result(&params),
+    let result: Result<Value, ToolError> = match method {
+        "initialize" => initialize_result(&params).map_err(ToolError::from),
         "notifications/initialized" | "initialized" => {
             return Ok(None);
         }
         "ping" => Ok(json!({})),
         "tools/list" => Ok(json!({"tools": tool_defs()})),
         "tools/call" => call_tool(server, &params),
-        _ => Err((-32601, format!("method not found: {method}"))),
+        _ => Err(ToolError::from((
+            -32601,
+            format!("method not found: {method}"),
+        ))),
     };
     if notification {
         return Ok(None);
     }
     match result {
         Ok(value) => Ok(Some(json!({"jsonrpc":"2.0","id": id, "result": value}))),
-        Err((code, message)) => Ok(Some(error_response(id, code, &message))),
+        Err(err) => Ok(Some(error_response_data(
+            id,
+            err.code,
+            &err.message,
+            err.data.as_ref(),
+        ))),
     }
 }
 
@@ -201,7 +226,7 @@ fn tool_defs() -> Vec<Value> {
         tool("harness_plan", "Parse the sample script and return a harness-style plan. Does not synthesize."),
         tool("ui_navigate", "Queue a viewport slide change for the local Gen-Audio window. Does not render audio."),
         tool("ui_select_tile", "Queue selection of a card id. Loads a 3D cube only when that tile has cube JSON."),
-        tool("ui_flip", "Queue a flipcard. Optional personaId attaches the voice-profile payload. Does not render audio."),
+        tool("ui_flip", "Queue a flipcard. next:true advances one face and wraps. face selects an applicable id, or the front/back aliases. A bare call still means back. Optional personaId attaches the voice-profile payload. Does not render audio."),
         tool("ui_playback", "Queue play, pause, or seek for a library tile. A seek waits (waitMs, default 2000) for the window and returns {requested_t, landed_t, ok, reason}. Does not open the WAV in this process."),
         tool("ui_seek_report", "Desktop window only: report where a queued ui_playback seek (bus seq) landed. Records the result ui_playback returns."),
         tool("ui_set_sidepane", "Queue Agent personas (max 8) and a Voice TTS model. Connector ids are rejected."),
@@ -257,7 +282,7 @@ fn tool(name: &str, description: &str) -> Value {
             json!(["slide"]),
         ),
         "ui_select_tile" => (json!({"tileId": {"type": "string"}, "uid": UID_PROP.clone()}), json!([])),
-        "ui_flip" => (json!({"tileId": {"type": "string"}, "uid": UID_PROP.clone(), "view": {"type": "string"}, "flipped": {"type": "boolean"}, "face": {"type": "string"}, "section": {"type": "string"}, "personaId": {"type": "string"}}), json!([])),
+        "ui_flip" => (json!({"tileId": {"type": "string"}, "uid": UID_PROP.clone(), "view": {"type": "string"}, "next": {"type": "boolean"}, "flipped": {"type": "boolean"}, "face": {"type": "string"}, "section": {"type": "string"}, "personaId": {"type": "string"}}), json!([])),
         "ui_playback" => (json!({"tileId": {"type": "string"}, "uid": UID_PROP.clone(), "action": {"type": "string"}, "seconds": {"type": "number"}, "origin": {"type": "string", "enum": ["user", "auto"], "description": "play only; default user"}, "waitMs": {"type": "integer", "minimum": 0, "maximum": 10000, "description": "seek only; default 2000"}}), json!(["action"])),
         "ui_seek_report" => (
             json!({"seq": {"type": "integer", "minimum": 1}, "requested_t": {"type": "number"}, "landed_t": {"type": ["number", "null"]}, "ok": {"type": "boolean"}, "reason": {"type": "string", "maxLength": 240}}),
@@ -311,7 +336,7 @@ fn tool(name: &str, description: &str) -> Value {
     })
 }
 
-pub fn call_tool(server: &Server, params: &Value) -> Result<Value, (i32, String)> {
+pub fn call_tool(server: &Server, params: &Value) -> Result<Value, ToolError> {
     let name = params
         .get("name")
         .and_then(Value::as_str)
@@ -336,7 +361,10 @@ pub fn call_tool(server: &Server, params: &Value) -> Result<Value, (i32, String)
         "harness_plan" => harness_plan(server)?,
         "ui_navigate" => control::ui_navigate(&args)?,
         "ui_select_tile" => control::ui_select_tile(&args)?,
-        "ui_flip" => control::ui_flip(&args)?,
+        "ui_flip" => match control::ui_flip(&args) {
+            Ok(value) => value,
+            Err((code, message, data)) => return Err(ToolError { code, message, data }),
+        },
         "ui_playback" => control::ui_playback(&args)?,
         "ui_seek_report" => control::ui_seek_report(&args)?,
         "ui_set_sidepane" => control::ui_set_sidepane(&args)?,
@@ -353,7 +381,7 @@ pub fn call_tool(server: &Server, params: &Value) -> Result<Value, (i32, String)
         "asset_resolve" => assets::asset_resolve(&args)?,
         "asset_list" => assets::asset_list(&args)?,
         "asset_glyph" => assets::asset_glyph(&args)?,
-        _ => return Err((-32602, format!("unknown tool {name}"))),
+        _ => return Err(ToolError::from((-32602, format!("unknown tool {name}")))),
     };
     Ok(json!({
         "content": [{"type": "text", "text": payload.to_string()}],
@@ -380,7 +408,7 @@ fn allowed_arguments(name: &str) -> &'static [&'static str] {
         | "voice_profile_list" => &[],
         "ui_navigate" => &["slide", "tileId", "uid"],
         "ui_select_tile" => &["tileId", "uid"],
-        "ui_flip" => &["tileId", "uid", "view", "flipped", "face", "section", "personaId"],
+        "ui_flip" => &["tileId", "uid", "view", "next", "flipped", "face", "section", "personaId"],
         "ui_playback" => &["tileId", "uid", "action", "seconds", "origin", "waitMs"],
         "ui_seek_report" => &["seq", "requested_t", "landed_t", "ok", "reason"],
         "asset_resolve" | "asset_glyph" => &["uid"],
@@ -590,10 +618,18 @@ fn harness_plan(server: &Server) -> Result<Value, (i32, String)> {
 }
 
 fn error_response(id: Option<Value>, code: i32, message: &str) -> Value {
+    error_response_data(id, code, message, None)
+}
+
+fn error_response_data(id: Option<Value>, code: i32, message: &str, data: Option<&Value>) -> Value {
+    let mut error = json!({"code": code, "message": redact_secrets(message)});
+    if let Some(data) = data {
+        error["data"] = data.clone();
+    }
     json!({
         "jsonrpc": "2.0",
         "id": id.unwrap_or(Value::Null),
-        "error": {"code": code, "message": redact_secrets(message)}
+        "error": error
     })
 }
 
