@@ -289,6 +289,19 @@ out of the reducer (converged v1 FINAL 3a: no per-frame events over SSE).
 The snapshot changes only when the asset, its `display_rev` or its media presence changes (converged
 rebuttal 4). A flip or a play never rewrites a snapshot.
 
+### 7.1 `face_index` mutations (Optimus Q10)
+
+`face_index` changes **only** on an explicit Flip (`Action::Flip` / MCP `ui_flip` / the glyph).
+Every other data mutation leaves it unchanged, including:
+
+- `library_harvest` with `apply: true` (Attach to profile)
+- rename, harvest metadata, voice-profile field writes
+- cube mode / compare enter-exit, playback, seek, navigate, select
+- catalog or media-presence refreshes that rewrite `views[].snapshot`
+
+The desktop already honours this for Attach (`applyProfileUpdate` / bus `flipcard` update the
+profile and never call `setCardFlip`). Core on PR #4 must keep the same invariant in the reducer.
+
 ## 8. T17 acceptance script (headless, no webview)
 
 These run as a cargo test in core, which extends `t17_headless_actions_round_trip_through_viewport_get`,
@@ -312,6 +325,10 @@ Each step reads back through `viewport_get`.
    `conn-claude` reads back with its own `face_count`.
 9. Two selectors: `ui_flip {"tileId": "lib-misaki-kokoro", "next": true, "face": "cube"}` → -32602.
 10. Snapshot stability: steps 2–5 leave every `views[].snapshot` byte-identical (§7).
+11. **face_index stability under data mutation (Q10):** with `view:lib-misaki-kokoro` on face
+    `cube` (index 1), run `library_harvest {clipId: "lib-misaki-kokoro", personaId: "anton", apply: true}`
+    (and any other non-Flip mutation under §7.1). `viewport_get` still reads
+    `face_id: "cube", face_index: 1`. A following `ui_flip {next: true}` is the only step that moves it.
 
 ## 9. Open questions
 
