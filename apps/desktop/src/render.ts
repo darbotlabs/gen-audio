@@ -474,8 +474,8 @@ function bodyFor(card: ViewportCard, kind: string, body: Record<string, unknown>
 }
 
 /**
- * The spatial slide's cube identity (second ruling 5): a passive glyph mark
- * plus its own labelled "Copy uid" button. The glyph has one meaning
+ * The spatial slide's cube identity (second ruling 5 + Q12): a passive glyph mark
+ * plus its own labelled "Copy cube uid" button. The glyph has one meaning
  * everywhere; it never copies. With no bound cube the slot is emptied, never
  * filled with a stand-in uid.
  */
@@ -485,7 +485,7 @@ export function fillCubeGlyph(
   onCopy?: (uid: string, copied: boolean) => void,
 ): void {
   const mark = uid ? glyphMark(uid, { role: "cube" }) : null;
-  const copy = mark ? copyUidButton(uid, { label: "Copy uid", onCopy }) : null;
+  const copy = mark ? copyUidButton(uid, { label: "Copy cube uid", onCopy }) : null;
   if (mark && copy) slot.replaceChildren(mark, copy);
   else slot.replaceChildren();
 }

@@ -1,8 +1,8 @@
 // livetile-faces v2, Optimus rulings 1 and 2 (2026-10-08), rendered in a real
 // DOM (happy-dom) from the release deck (schemas/examples/viewport.release.json)
 // and the committed asset catalog (public/library/assets.json). No fixtures.
-//  1. The glyph has one meaning: flip. Copy uid is a labelled button on the
-//     Clip face only.
+//  1. The glyph has one meaning: flip. Copy clip uid is a labelled button on the
+//     Clip face; Copy cube uid is the spatial cube's labelled button.
 //  2. No Flip / Show front buttons, no body click or body Enter flip, no timer
 //     flips (engine and connector tiles included). The glyph is a real button
 //     in the same top-right corner on every face; click, Enter and Space step
@@ -263,7 +263,7 @@ test("reduced motion: the flip turns with no transition, and still turns", () =>
   void reduced.happyDOM.close();
 });
 
-test("second ruling 5: the spatial cube's glyph never copies; its labelled 'Copy uid' button does", async () => {
+test("second ruling 5 + Q12: the spatial cube's glyph never copies; its labelled 'Copy cube uid' button does", async () => {
   const board = mount();
   const catalog = await loadLibraryCatalog();
   const cube = catalog!.assets.find((asset) => asset.kind === "cube_ihdr" && asset.legacy_id === "lib-misaki-kokoro.cube");
@@ -282,7 +282,7 @@ test("second ruling 5: the spatial cube's glyph never copies; its labelled 'Copy
   assert.deepEqual(copied, [], "clicking the glyph copied nothing");
   const buttons = Array.from(slot!.querySelectorAll<HTMLButtonElement>("button"));
   assert.equal(buttons.length, 1, "one control in the slot");
-  assert.equal(buttons[0].textContent, "Copy uid");
+  assert.equal(buttons[0].textContent, "Copy cube uid");
   click(buttons[0]);
   await new Promise((resolve) => setImmediate(resolve));
   assert.deepEqual(copied, [cube!.uid], "the labelled button copied the cube uid");

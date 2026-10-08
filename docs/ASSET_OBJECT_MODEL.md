@@ -261,7 +261,7 @@ through `src`.
     meaning, flip (`aria-label` "Flip card, face N of M: <next face>"); it
     never copies. Elsewhere it is a passive mark whose `aria-label` and
     tooltip carry the kind and the uid. Copying is the labelled "Copy clip uid"
-    button on an Audio Clips tile's Clip face and the labelled "Copy uid"
+    button on an Audio Clips tile's Clip face and the labelled "Copy cube uid"
     button beside the spatial slide's cube mark; MCP reads uids on its own
     path.
   - No style attributes are used (CSP `style-src 'self'`).

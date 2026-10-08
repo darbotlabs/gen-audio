@@ -206,6 +206,9 @@ comparison cubes never count.
 | `cube_revision`, `layer_method` | int, string | — | `fields` |
 | `cube_json` | `{path, sha256}` | — | `media[role=cube_json]` |
 
+The desktop draws the `Copy cube uid` button next to `cube_uid` on the spatial slide (Optimus Q12);
+the cube glyph itself never copies.
+
 - **The partial rule.** If `coverage.ratio < PARTIAL_BELOW` (0.95), then `status = "partial"`, `partial`
   is set, and the face is **led** by the qualifier `partial (<covered_s> s of <of_s> s)`.
   - Example: misaki at 139.04 / 139.375 = 99.8% is `real` with no qualifier (converged T19).

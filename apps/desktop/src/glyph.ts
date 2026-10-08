@@ -1,7 +1,7 @@
 // Glyph badge: a 2-cell braille SVG drawn from the first 16 bits of an asset uid.
 // On a card the glyph is the flip control and nothing else (Optimus ruling 1,
 // 2026-10-08); elsewhere it is a passive mark. Copying a uid is the labelled
-// "Copy clip uid" button on a tile's Clip face (and "Copy uid" on the
+// "Copy clip uid" button on a tile's Clip face (and "Copy cube uid" on the
 // spatial slide's cube).
 // CSP: no style attributes. Hue comes from the fixed per-kind class (ga-kind-<kind>).
 
@@ -102,7 +102,7 @@ export function flipGlyphLabel(index: number, faces: readonly string[]): string 
 }
 
 export interface CopyOptions {
-  /** Visible label; it names whose uid is copied ("Copy clip uid", "Copy uid"). */
+  /** Visible label; it names whose uid is copied ("Copy clip uid", "Copy cube uid"). */
   label: string;
   onCopy?: (uid: string, copied: boolean) => void;
 }
