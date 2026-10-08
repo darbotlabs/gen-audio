@@ -257,8 +257,9 @@ fn validate_voice_profile(id: &str, obj: &serde_json::Map<String, Value>) -> Res
     }
     expect_const(obj.get("spectrogram2d"), "none", "spectrogram2d")?;
     let spatial = expect_string(obj.get("spectrogram3d"), "spectrogram3d", 1, 40)?;
-    // AP-OPT-1: only what the product renders; nothing renders a persona cube.
-    if !matches!(spatial.as_str(), "none" | "fixture-cube") {
+    // AP-OPT-1: only what the product renders; nothing renders a persona
+    // cube, so "none" is the only value.
+    if spatial != "none" {
         return Err(format!("card {id} spectrogram3d is not a known hook"));
     }
     expect_const(obj.get("notPodcast"), true, "notPodcast")?;
@@ -339,18 +340,19 @@ mod tests {
     }
 
     /// AP-OPT-1 parity with validate.ts: nothing renders a persona cube, so
-    /// spectrogram3d "library-cube-hook" (with or without cubeJsonUrl) is refused.
+    /// spectrogram3d "library-cube-hook" (with or without cubeJsonUrl) and
+    /// "fixture-cube" are refused; "none" is the only value left.
     #[test]
     fn voice_profile_refuses_the_library_cube_hook() {
         let raw = include_str!("../../../schemas/examples/voice_profile.optimus.json");
         let value: Value = serde_json::from_str(raw).unwrap();
-        for with_url in [true, false] {
+        for (hook, with_url) in [("library-cube-hook", true), ("library-cube-hook", false), ("fixture-cube", false)] {
             let mut hooked = value.as_object().unwrap().clone();
-            hooked.insert("spectrogram3d".into(), Value::from("library-cube-hook"));
+            hooked.insert("spectrogram3d".into(), Value::from(hook));
             if with_url {
                 hooked.insert("cubeJsonUrl".into(), Value::from("/library/library_kokoro_cube3d.json"));
             }
-            let error = validate_voice_profile("profile-optimus", &hooked).expect_err("library-cube-hook accepted");
+            let error = validate_voice_profile("profile-optimus", &hooked).expect_err(hook);
             assert!(error.contains("spectrogram3d"), "{error}");
         }
     }
