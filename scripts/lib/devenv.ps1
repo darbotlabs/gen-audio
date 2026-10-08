@@ -34,6 +34,26 @@ function Invoke-Checked {
     }
 }
 
+function Get-Sha256 {
+    # Lower-case hex SHA-256 of a file, straight from .NET. Get-FileHash is a
+    # script function in Windows PowerShell 5.1's Utility module, and it goes
+    # missing when 5.1 inherits PowerShell 7's PSModulePath (Start-Process
+    # from pwsh 7 does that), so the canonical scripts do not depend on it.
+    [CmdletBinding()]
+    [OutputType([string])]
+    param([Parameter(Mandatory = $true)][string]$LiteralPath)
+    $full = (Resolve-Path -LiteralPath $LiteralPath).ProviderPath
+    $stream = [System.IO.File]::Open($full, [System.IO.FileMode]::Open, [System.IO.FileAccess]::Read, [System.IO.FileShare]::Read)
+    $sha = [System.Security.Cryptography.SHA256]::Create()
+    try {
+        $bytes = $sha.ComputeHash($stream)
+    } finally {
+        $sha.Dispose()
+        $stream.Dispose()
+    }
+    return (($bytes | ForEach-Object { $_.ToString('x2') }) -join '')
+}
+
 function Test-IsWindowsHost {
     [CmdletBinding()]
     [OutputType([bool])]

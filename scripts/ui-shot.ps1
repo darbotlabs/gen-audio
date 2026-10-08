@@ -85,5 +85,5 @@ try {
 } finally {
     $bitmap.Dispose()
 }
-$hash = (Get-FileHash -LiteralPath $outPath -Algorithm SHA256).Hash.ToLowerInvariant()
+$hash = Get-Sha256 -LiteralPath $outPath
 Write-Output "SHOT path=$outPath sha256=$hash size=${width}x${height} pid=$($process.Id)"
