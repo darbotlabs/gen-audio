@@ -120,6 +120,84 @@ def _label_value(value, repo_root: Path, web_root: frozenset[str], found: dict[s
     return value
 
 
+# Sidecar keys whose string value is a recorded filesystem path (a trailing
+# " (note)" is allowed: `python: "venvs/x (CPython 3.14.8, ...)"`), plus
+# every value under `inputs`. `model` is not one: it may be a hub id
+# (microsoft/VibeVoice-1.5B); an absolute or ../ model path is still
+# labelled by the rule above, like any path in any string.
+SIDECAR_PATH_KEYS = frozenset({
+    "model_path", "inference_code", "voices_bin", "source", "cast_map", "out",
+    "raw_output", "output", "log", "prompt_wav", "script", "python",
+})
+# Outputs a run may not keep. When one is gone it gets an explicit
+# {"transient": true, "unhashed": ...} entry, never an invented sha256.
+TRANSIENT_KEYS = frozenset({"log", "raw_output"})
+UNHASHED = {"transient": True, "unhashed": "not on this machine"}
+
+
+def _path_part(value: str) -> tuple[str, str]:
+    """``("venvs/x", " (CPython ...)")`` for a path with a trailing note."""
+    if " (" in value and value.endswith(")"):
+        at = value.index(" (")
+        return value[:at], value[at:]
+    return value, ""
+
+
+def _path_fields(doc, where: str = "$", under_inputs: bool = False):
+    """(container, key, where) for every recorded path field in a sidecar."""
+    if isinstance(doc, dict):
+        for key, item in doc.items():
+            if key == "outside_repo":
+                continue
+            if isinstance(item, str) and (under_inputs or key in SIDECAR_PATH_KEYS):
+                yield doc, key, f"{where}.{key}"
+            else:
+                yield from _path_fields(item, f"{where}.{key}", key == "inputs")
+    elif isinstance(doc, list):
+        for index, item in enumerate(doc):
+            if isinstance(item, str) and under_inputs:
+                yield doc, index, f"{where}[{index}]"
+            else:
+                yield from _path_fields(item, f"{where}[{index}]", under_inputs)
+
+
+def _is_label(path: str) -> bool:
+    return path.startswith(OUTSIDE + "/")
+
+
+def label_work_dir_paths(doc: dict, repo_root: Path, work_dir: Path | None, found: dict[str, Path], name: str) -> list[str]:
+    """C1: a recorded path that neither resolves from the repo root nor is a
+    label was written relative to the run's work dir. With ``work_dir`` it is
+    relabelled from there (``found`` gets label -> file); without it, the
+    returned problems name each one (no guessing a base)."""
+    problems: list[str] = []
+    for container, key, where in list(_path_fields(doc)):
+        path, note = _path_part(container[key])
+        if not path or _is_label(path) or (repo_root / path).exists():
+            continue
+        if work_dir is None:
+            problems.append(f"{name}: {where} {path!r} does not resolve from the repo root; "
+                            f"rerun `cube_revision.py manifest --work-dir {name}=<the dir it was recorded in>`")
+            continue
+        source = Path(os.path.abspath(os.path.join(os.fspath(work_dir), path)))
+        label = outside_repo_label(os.fspath(source), os.path.abspath(os.fspath(repo_root)))
+        if found.get(label, source) != source:
+            raise ValueError(f"{label} names two files: {found[label]} and {source}")
+        if _is_label(label):
+            found[label] = source
+        container[key] = label + note
+    return problems
+
+
+def _transient_labels(doc: dict) -> set[str]:
+    labels = set()
+    for container, key, _ in _path_fields(doc):
+        path, _ = _path_part(container[key])
+        if key in TRANSIENT_KEYS and _is_label(path):
+            labels.add(path)
+    return labels
+
+
 def file_facts(path: Path) -> dict:
     """``{"sha256", "bytes"}`` of a file, ``{"kind": "directory"}`` for a
     directory (no single sha256); FileNotFoundError when it is not here."""
@@ -134,7 +212,7 @@ def file_facts(path: Path) -> dict:
     return {"sha256": digest.hexdigest(), "bytes": size}
 
 
-def sync_synth_sidecars(library: Path, repo_root: Path | None = None) -> list[str]:
+def sync_synth_sidecars(library: Path, repo_root: Path | None = None, work_dirs: dict[str, Path] | None = None) -> list[str]:
     """Relabel every absolute or ``../`` path in each ``*.synth.json`` under
     ``library`` (:func:`outside_repo_label`) and record each outside file's
     facts in the sidecar's ``outside_repo`` map. Returns the file names it
@@ -142,22 +220,37 @@ def sync_synth_sidecars(library: Path, repo_root: Path | None = None) -> list[st
     second sync changes 0 bytes and CI (which has none of those files) only
     ever reads the committed labels. A path that is not on this machine can't
     be hashed, so the sync fails and names it rather than ship a label
-    nobody can check."""
+    nobody can check; only a transient output (``log``, ``raw_output``) that
+    is gone gets an explicit unhashed entry instead.
+
+    C1: every recorded path field (:data:`SIDECAR_PATH_KEYS`, ``inputs``)
+    must resolve from the repo root or be a label. One written relative to
+    the run's work dir is relabelled from ``work_dirs[<sidecar name>]``
+    (``cube_revision.py manifest --work-dir NAME=DIR``); without it the sync
+    fails and names the field, rather than guess a base."""
     library = Path(library)
     repo_root = Path(repo_root) if repo_root is not None else library.parents[3]
     web_root = frozenset(entry.name for entry in library.parent.iterdir())
+    work_dirs = work_dirs or {}
     changed: list[str] = []
     for path in sorted(library.glob("*.synth.json")):
         doc = json.loads(path.read_text(encoding="utf-8"))
         found: dict[str, Path] = {}
         labelled = _label_value(doc, repo_root, web_root, found)
+        problems = label_work_dir_paths(labelled, repo_root, work_dirs.get(path.name), found, path.name)
+        if problems:
+            raise ValueError("\n".join(problems))
         if labelled == doc:
             continue
+        transient = _transient_labels(labelled)
         facts = dict(labelled.get("outside_repo", {}))
         for label, source in found.items():
             try:
                 facts[label] = file_facts(source)
             except OSError as exc:
+                if label in transient:
+                    facts[label] = dict(UNHASHED)
+                    continue
                 raise FileNotFoundError(f"{path.name}: {label} ({source}) is not on this machine, so its sha256 can't be recorded; run the sync where it is") from exc
         if facts:
             labelled["outside_repo"] = dict(sorted(facts.items()))
@@ -203,7 +296,7 @@ def render(manifest: dict) -> str:
     return json.dumps(manifest, indent=2) + "\n"
 
 
-def sync_manifest(manifest_path: Path | str, library_dir: Path | str | None = None) -> list[str]:
+def sync_manifest(manifest_path: Path | str, library_dir: Path | str | None = None, work_dirs: dict[str, Path] | None = None) -> list[str]:
     """Rewrite the cube mirror of every clip whose cube JSON has cube_revision,
     drop machine-specific ``absWav`` paths (``wav`` is the repo-relative one),
     and relabel the synth sidecars' outside-repo paths with their sha256
@@ -246,7 +339,7 @@ def sync_manifest(manifest_path: Path | str, library_dir: Path | str | None = No
     text = render(manifest)
     if text != manifest_path.read_text(encoding="utf-8"):
         manifest_path.write_text(text, encoding="utf-8")
-    return changed + sync_synth_sidecars(library)
+    return changed + sync_synth_sidecars(library, work_dirs=work_dirs)
 
 
 def normalized_sha256(data: bytes) -> str:
