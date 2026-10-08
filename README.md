@@ -15,7 +15,13 @@ Release builds embed `apps/desktop/dist` (`frontendDist`: `../dist`). `devUrl` i
 ```bash
 # Windows: scripts\build-tauri-windows.ps1 -Mode Full|NoBundle (see Scripts below), the only build script.
 # There is no Linux or macOS build script; CI's rust job runs `cargo check -p gen-audio-desktop` on Linux.
+
+scripts/build-tauri.sh                 # Linux: mcp handshake, npm run build, then tauri build --bundles deb
+# Windows, from Windows PowerShell 5.1 or PowerShell 7:
+# scripts/build-tauri-windows.ps1      # mcp handshake, npm run build, then tauri build --bundles nsis,msi
 ```
+
+`scripts/build-tauri-windows.ps1` pins `@tauri-apps/cli` at 2.12.1 (the `tauri` version in `Cargo.lock`) and prints the newest NSIS and MSI by last write time.
 
 ```bash
 # library crates and ACP / MCP / harness tests

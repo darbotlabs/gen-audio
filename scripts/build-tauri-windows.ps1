@@ -45,6 +45,19 @@ function Get-FreeLoopbackPort {
     $listener = New-Object System.Net.Sockets.TcpListener ([System.Net.IPAddress]::Loopback), 0
     $listener.Start()
     try { return $listener.LocalEndpoint.Port } finally { $listener.Stop() }
+function Invoke-Checked {
+    # Simple function on purpose. A param() block with [Parameter()] is an
+    # advanced function, so PowerShell binds a single-dash token itself:
+    # -p is -PipelineVariable on Windows PowerShell 5.1 (cargo never sees the
+    # package) and is ambiguous with -ProgressAction on PowerShell 7.4+
+    # (the call throws before cargo starts). $args forwards every token.
+    if ($args.Count -lt 1) { throw "Invoke-Checked requires a command" }
+    $file = [string]$args[0]
+    $commandArgs = [string[]]@($args | Select-Object -Skip 1)
+    & $file @commandArgs
+    if ($LASTEXITCODE -ne 0) {
+        throw "$file $($commandArgs -join ' ') failed with exit $LASTEXITCODE"
+    }
 }
 
 # The whole run, native tool output included (Invoke-Checked and
@@ -219,6 +232,15 @@ try {
         }
     }
     Write-Step "no dev cfg in gen-audio-desktop build-script output ($($outputs.Count) checked)"
+Write-Host "package NSIS and MSI (tauri build embeds frontendDist; no bare desktop cargo build)"
+Push-Location (Join-Path $root "apps\desktop\src-tauri")
+try {
+    # Same Tauri version as the tauri crate in Cargo.lock. An unpinned npx
+    # package resolves latest on every build.
+    Invoke-Checked npx --yes "@tauri-apps/cli@2.12.1" build --bundles "nsis,msi"
+} finally {
+    Pop-Location
+}
 
     # Fingerprint gate: one desktop lib fingerprint in target\release. More than
     # one means the desktop crate was built under a second configuration
@@ -229,6 +251,11 @@ try {
     if ($fingerprints.Count -ne 1) {
         throw "expected exactly one gen-audio-desktop lib fingerprint under target\release\.fingerprint, found $($fingerprints.Count)"
     }
+}
+if ($nsis.Count -lt 1) { throw "NSIS setup.exe was not produced under target\release\bundle" }
+if ($msi.Count -lt 1) { throw "MSI was not produced under target\release\bundle" }
+$nsis = @($nsis | Sort-Object -Property LastWriteTime -Descending)
+$msi = @($msi | Sort-Object -Property LastWriteTime -Descending)
 
     $exe = Assert-BuildOutput -LiteralPath $exePath -What 'target\release\gen-audio.exe' -Before $before.exe
     Write-Step "exe $($exe.Path) sha256 $($exe.Sha256) ($($exe.State))"
