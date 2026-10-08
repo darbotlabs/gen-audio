@@ -151,17 +151,18 @@ export function spectrogramStrip(spec: AssetEnvelope, clip: AssetEnvelope, audio
  * audio_clip glyph. Tiles keep their legacy id; the clip uid is added beside it.
  */
 export interface DecorateOptions {
-  /** Status line after a Copy uid press (copied, or the clipboard refused). */
+  /** Status line after a Copy clip uid press (copied, or the clipboard refused). */
   onCopy?: (uid: string, copied: boolean) => void;
 }
 
 /**
  * The clip's identity row on the Clip (front) face: its glyph as a passive
- * mark, the uid, and the labelled Copy uid button (Optimus ruling 1). The
+ * mark, the uid, and the labelled Copy clip uid button (Optimus ruling 1). The
  * card's own glyph in the corner is the flip control and copies nothing.
  */
 function clipIdentity(uid: string, options: DecorateOptions): HTMLElement | null {
-  const copy = copyUidButton(uid, options.onCopy);
+  // Second ruling 4: the button says whose uid it copies (the clip's, not the card's).
+  const copy = copyUidButton(uid, { label: "Copy clip uid", onCopy: options.onCopy });
   if (!copy) return null;
   const row = document.createElement("div");
   row.className = "clip-identity";

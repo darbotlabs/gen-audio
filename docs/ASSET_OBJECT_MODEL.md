@@ -260,7 +260,7 @@ through `src`.
   - The SVG is `aria-hidden`. On a card the glyph is a button with one
     meaning, flip (`aria-label` "Flip card, face N of M: <next face>"); it
     never copies. Elsewhere it is a passive mark whose `aria-label` and
-    tooltip carry the kind and the uid. Copying is the labelled "Copy uid"
+    tooltip carry the kind and the uid. Copying is the labelled "Copy clip uid"
     button on an Audio Clips tile's Clip face; MCP reads uids on its own path.
   - No style attributes are used (CSP `style-src 'self'`).
 

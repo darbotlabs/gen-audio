@@ -1,7 +1,8 @@
 // Glyph badge: a 2-cell braille SVG drawn from the first 16 bits of an asset uid.
 // On a card the glyph is the flip control and nothing else (Optimus ruling 1,
 // 2026-10-08); elsewhere it is a passive mark. Copying a uid is the labelled
-// "Copy uid" button on a tile's Clip face.
+// "Copy clip uid" button on a tile's Clip face (and "Copy uid" on the
+// spatial slide's cube).
 // CSP: no style attributes. Hue comes from the fixed per-kind class (ga-kind-<kind>).
 
 import { glyphBytesFromUid, glyphFromUid, hueClass, isUid, parseUid } from "./asset";
@@ -100,18 +101,25 @@ export function flipGlyphLabel(index: number, faces: readonly string[]): string 
   return `Flip card, face ${index + 1} of ${count}: ${faces[(index + 1) % count]}`;
 }
 
+export interface CopyOptions {
+  /** Visible label; it names whose uid is copied ("Copy clip uid", "Copy uid"). */
+  label: string;
+  onCopy?: (uid: string, copied: boolean) => void;
+}
+
 /**
- * The explicit, labelled copy control (ruling 1). It lives on a tile's Clip
- * face only; MCP keeps its own path to uids.
+ * The explicit, labelled copy control (rulings 1, 4, 5). Copy is always a
+ * labelled button, never the glyph. MCP keeps its own path to uids.
  */
-export function copyUidButton(uid: unknown, onCopy?: (uid: string, copied: boolean) => void): HTMLButtonElement | null {
+export function copyUidButton(uid: unknown, options: CopyOptions): HTMLButtonElement | null {
   if (!isUid(uid)) return null;
+  const { label, onCopy } = options;
   const button = document.createElement("button");
   button.type = "button";
   button.className = "copy-uid";
   button.dataset.action = "copy-uid";
   button.dataset.uid = uid;
-  button.textContent = "Copy uid";
+  button.textContent = label;
   button.title = uid;
   button.addEventListener("click", (event) => {
     event.stopPropagation();

@@ -190,7 +190,7 @@ test("ruling 1: clicking the glyph flips and never copies", async () => {
   assert.deepEqual(copied, [], "no glyph click wrote the clipboard");
 });
 
-test("ruling 1: 'Copy uid' exists only on the Clip face of Audio Clips tiles and copies the clip uid", async () => {
+test("ruling 1 + second ruling 4: 'Copy clip uid' exists only on the Clip face of Audio Clips tiles and copies the clip uid", async () => {
   const board = mount();
   const catalog = await loadLibraryCatalog();
   assert.ok(catalog, "assets.json loaded");
@@ -205,9 +205,10 @@ test("ruling 1: 'Copy uid' exists only on the Clip face of Audio Clips tiles and
       continue;
     }
     withClip += 1;
-    assert.equal(buttons.length, 1, `${tile.dataset.id}: one Copy uid button`);
+    assert.equal(buttons.length, 1, `${tile.dataset.id}: one Copy clip uid button`);
     const copy = buttons[0];
-    assert.equal(copy.textContent, "Copy uid");
+    assert.equal(copy.textContent, "Copy clip uid", "it copies the clip's uid, not the card's, and says so");
+    assert.equal(copy.dataset.uid, clip.uid);
     assert.ok(copy.closest(".face.front"), "on the Clip (front) face");
     assert.equal(tile.querySelector(".face.back button[data-action='copy-uid']"), null);
     // The only top-right glyph on the tile is the flip glyph.
