@@ -19,7 +19,7 @@ from pathlib import Path
 import numpy as np
 
 from gen_audio.audio_io import read_wav
-from gen_audio.rounding import ms_from_frames
+from gen_audio.identity import ms_from_frames
 
 # Fixed 5-anchor colormap ("ga-ember"): near-black -> indigo -> magenta -> orange -> pale yellow.
 ANCHORS = np.array(

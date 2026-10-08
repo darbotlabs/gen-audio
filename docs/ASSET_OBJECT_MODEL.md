@@ -133,13 +133,13 @@ Negative or non-finite inputs are an error (`bad_rounding_input`).
 
 | field | from | rule | implementation |
 |---|---|---|---|
-| `audio_clip.duration_ms`, `spectrogram_2d.duration_ms`, any `*_ms` from frames | frames, sample rate | `(frames·1000 + rate div 2) div rate`, exact integers | Rust `ms_from_frames`, TS `msFromFrames`, Python `gen_audio.rounding.ms_from_frames` |
+| `audio_clip.duration_ms`, `spectrogram_2d.duration_ms`, any `*_ms` from frames | frames, sample rate | `(frames·1000 + rate div 2) div rate`, exact integers | Rust `ms_from_frames`, TS `msFromFrames`, Python `gen_audio.identity.ms_from_frames` |
 | `spectrogram_2d.covers_ms` | columns·hop frames | same integer rule | same |
-| `cube_ihdr.duration_ms` | `duration_s` (float view) | round half up of the IEEE-754 double `duration_s × 1000` | Rust `round_half_up`, TS `roundHalfUp`, Python `gen_audio.rounding.round_half_up` |
+| `cube_ihdr.duration_ms` | `duration_s` (float view) | round half up of the IEEE-754 double `duration_s × 1000` | Rust `round_half_up`, TS `roundHalfUp`, Python `gen_audio.identity.round_half_up` |
 | `cube_ihdr.covers_ms` | `cube_covers_s` | round half up of `cube_covers_s × 1000`; without it, the integer rule on `time_bins·bin_frames` | same |
 | `cube_ihdr.inv_hdr_ppm` | `inv_hdr` | round half up of `inv_hdr × 1e6` | same |
 | `cube_ihdr.bin_frames` | cube JSON `downsample_sf_st[1]` and the STFT hop | `downsample_sf_st[1] × hop`, exact integers (`asset_migrate.rs`, first branch) | Rust `asset_migrate` |
-| `cube_ihdr.bin_frames` (inferred, second branch) | cube JSON `duration_s` (float), `sr`, `time_bins` | `round_half_up(fl(fl(duration_s × sr) / time_bins))`: two binary64 ops, multiply first, then divide; never from frames | Rust `bin_frames_inferred`, TS `binFramesInferred`, Python `gen_audio.rounding.bin_frames_inferred` |
+| `cube_ihdr.bin_frames` (inferred, second branch) | cube JSON `duration_s` (float), `sr`, `time_bins` | `round_half_up(fl(fl(duration_s × sr) / time_bins))`: two binary64 ops, multiply first, then divide; never from frames | Rust `bin_frames_inferred`, TS `binFramesInferred`, Python `gen_audio.identity.bin_frames_inferred` |
 
 **`bin_frames` (B1′).** `asset_migrate.rs` takes the branches in this order:
 when the cube JSON has `downsample_sf_st` and a hop is known, `bin_frames =

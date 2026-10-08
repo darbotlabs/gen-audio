@@ -1,4 +1,9 @@
-"""Identity-integer rounding, the Python leg of ASSET_OBJECT_MODEL.md "rounding (B1)".
+"""Asset object model v1 identity helpers: identity-integer rounding, the
+Python leg of ASSET_OBJECT_MODEL.md "rounding (B1)".
+
+Module path and names match PR #4's ``gen_audio/identity.py``
+(``ms_from_frames``, ``round_half_up``) so the two collapse to one
+implementation when PR #4 rebases.
 
 Same results as Rust ``asset::{ms_from_frames, round_half_up,
 bin_frames_inferred}`` and TS ``msFromFrames`` / ``roundHalfUp`` /

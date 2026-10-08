@@ -1,5 +1,5 @@
 """Flat 2D spectrogram strip used by audio-clip livetiles (gen_audio.spectrogram_strip)
-and the shared identity-integer rounding (gen_audio.rounding)."""
+and the shared identity-integer rounding (gen_audio.identity)."""
 
 from __future__ import annotations
 
@@ -11,7 +11,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from gen_audio import rounding
+from gen_audio import identity
 from gen_audio import spectrogram_strip as module
 from gen_audio.audio_io import read_wav
 from gen_audio.cli import spectrogram_strip as cli
@@ -80,33 +80,33 @@ def test_rounding_matches_every_shared_vector():
         op = row["op"]
         by_op[op] = by_op.get(op, 0) + 1
         if op == "ms_from_frames":
-            got = rounding.ms_from_frames(row["frames"], row["rate"])
+            got = identity.ms_from_frames(row["frames"], row["rate"])
         elif op == "round_half_up":
-            got = rounding.round_half_up(row["value"] * row["scale"])
+            got = identity.round_half_up(row["value"] * row["scale"])
         elif op == "bin_frames_inferred":
-            got = rounding.bin_frames_inferred(row["duration_s"], row["sample_rate_hz"], row["time_bins"])
+            got = identity.bin_frames_inferred(row["duration_s"], row["sample_rate_hz"], row["time_bins"])
         else:
             raise AssertionError(f"unknown rounding op {op}")
         assert got == row["expect"], row
     assert by_op == {"ms_from_frames": 7, "round_half_up": 8, "bin_frames_inferred": 1}, by_op
-    assert rounding.ms_from_frames(24008, 16000) == 1501  # exact .5 tie rounds up
+    assert identity.ms_from_frames(24008, 16000) == 1501  # exact .5 tie rounds up
 
 
 def test_bin_frames_near_tie_uses_the_binary64_two_step():
     # B1': fl(157.134 * 24000) = 3771215.9999999995, / 96 = 39283.49999999999.
     assert 157.134 * 24000 / 96 < 39283.5
-    assert rounding.bin_frames_inferred(157.134, 24000, 96) == 39283
+    assert identity.bin_frames_inferred(157.134, 24000, 96) == 39283
     assert (3_771_216 * 2 + 96) // (2 * 96) == 39284  # exact rational math would round up
 
 
 def test_round_half_up_rejects_what_rust_rejects():
-    assert rounding.round_half_up(0.5) == 1 and rounding.round_half_up(2.5) == 3
-    assert rounding.round_half_up(0.49999999999999994) == 0
+    assert identity.round_half_up(0.5) == 1 and identity.round_half_up(2.5) == 3
+    assert identity.round_half_up(0.49999999999999994) == 0
     for bad in (-0.5, float("nan"), float("inf")):
         with pytest.raises(ValueError, match="bad_rounding_input"):
-            rounding.round_half_up(bad)
+            identity.round_half_up(bad)
     with pytest.raises(ValueError, match="integer_out_of_range"):
-        rounding.round_half_up(2.0**53)
+        identity.round_half_up(2.0**53)
 
 
 def _png_pixels(path: Path) -> tuple[bytes, bytes]:

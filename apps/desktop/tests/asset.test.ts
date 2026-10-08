@@ -85,7 +85,7 @@ test("identity rejects: duplicate media role, duplicate src, src fan-out", () =>
   }
 });
 
-test("rounding: half up, same table as Rust and gen_audio.rounding", () => {
+test("rounding: half up, same table as Rust and gen_audio.identity", () => {
   for (const vector of vectors.rounding) {
     const got =
       vector.op === "ms_from_frames"
