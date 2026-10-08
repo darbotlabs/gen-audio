@@ -7,7 +7,9 @@ import { fileURLToPath } from "node:url";
 import { Ajv2020 } from "ajv/dist/2020.js";
 import {
   AssetError,
+  binFramesInferred,
   checkEnvelopeShape,
+  floatTokenPaths,
   checkMediaPath,
   envelopeIdentityUid,
   glyphBytesFromUid,
@@ -24,7 +26,11 @@ import {
 
 const repo = (path: string) => fileURLToPath(new URL(`../../../${path}`, import.meta.url));
 const load = (path: string) => JSON.parse(readFileSync(repo(path), "utf8"));
-const vectors = load("schemas/asset-object/vectors/v1.json");
+const vectorsText = readFileSync(repo("schemas/asset-object/vectors/v1.json"), "utf8");
+const vectors = JSON.parse(vectorsText);
+const vectorFloatPaths = floatTokenPaths(vectorsText);
+/** Float-token paths inside one subtree, relative to it (`envelopes.12.envelope.` -> `fields.x`). */
+const floatPathsUnder = (paths: string[], prefix: string) => paths.filter((path) => path.startsWith(prefix)).map((path) => path.slice(prefix.length));
 
 function codeOf(run: () => unknown): string | null {
   try {
@@ -81,7 +87,12 @@ test("identity rejects: duplicate media role, duplicate src, src fan-out", () =>
 
 test("rounding: half up, same table as Rust and spectrogram_strip.py", () => {
   for (const vector of vectors.rounding) {
-    const got = vector.op === "ms_from_frames" ? msFromFrames(vector.frames, vector.rate) : roundHalfUp(vector.value * vector.scale);
+    const got =
+      vector.op === "ms_from_frames"
+        ? msFromFrames(vector.frames, vector.rate)
+        : vector.op === "bin_frames_inferred"
+          ? binFramesInferred(vector.duration_s, vector.sample_rate_hz, vector.time_bins)
+          : roundHalfUp(vector.value * vector.scale);
     assert.equal(got, vector.expect, JSON.stringify(vector));
   }
   for (const vector of vectors.mint.filter((item: { derived_from?: unknown }) => item.derived_from)) {
@@ -89,6 +100,7 @@ test("rounding: half up, same table as Rust and spectrogram_strip.py", () => {
     assert.equal(fields.duration_ms, msFromFrames(vector.derived_from.frames, vector.derived_from.sample_rate_hz), vector.name);
   }
   assert.equal(msFromFrames(24_008, 16_000), 1501);
+  assert.equal(binFramesInferred(157.134, 24_000, 96), 39_283, "B1' near-tie: binary64 two-step");
 });
 
 test("uid grammar and media paths", () => {
@@ -98,12 +110,14 @@ test("uid grammar and media paths", () => {
 
 const TS_SHAPE_CODES = new Set([
   "unknown_root_key", "bad_legacy_id", "uid_mismatch", "missing_glyph", "bad_title", "glyph_mismatch", "bad_display_rev",
-  "unknown_display_key", "bad_wav_url", "fan_out_exceeded", "missing_media_role", "duplicate_media_role",
+  "unknown_display_key", "bad_wav_url", "fan_out_exceeded", "missing_media_role", "duplicate_media_role", "float_in_identity",
+  "bad_honesty",
 ]);
 
 test("envelopes: Ajv2020 agrees with schema_valid; uids recompute", () => {
   const validate = schemaValidator();
-  for (const vector of vectors.envelopes) {
+  vectors.envelopes.forEach((vector: { name: string; envelope: Record<string, unknown> & { uid: string }; schema_valid: boolean; error: string | null }, index: number) => {
+    const floatPaths = floatPathsUnder(vectorFloatPaths, `envelopes.${index}.envelope.`);
     const valid = validate(vector.envelope) as boolean;
     assert.equal(valid, vector.schema_valid, `${vector.name}: ${JSON.stringify(validate.errors?.slice(0, 3))}`);
     if (vector.error === null) assert.equal(envelopeIdentityUid(vector.envelope), vector.envelope.uid, `${vector.name} uid`);
@@ -111,23 +125,29 @@ test("envelopes: Ajv2020 agrees with schema_valid; uids recompute", () => {
     if (vector.name === "title_change_keeps_uid") assert.equal(envelopeIdentityUid(vector.envelope), vector.envelope.uid);
     // The TS structural checks agree with Rust wherever they speak; the codes
     // they own must match exactly.
-    const tsCode = codeOf(() => checkEnvelopeShape(vector.envelope));
+    const tsCode = codeOf(() => checkEnvelopeShape(vector.envelope, floatPaths));
     if (tsCode !== null) assert.equal(tsCode, vector.error, `${vector.name} TS shape`);
-    if (TS_SHAPE_CODES.has(vector.error)) assert.equal(tsCode, vector.error, `${vector.name} TS shape owns ${vector.error}`);
-  }
+    if (vector.error !== null && TS_SHAPE_CODES.has(vector.error)) assert.equal(tsCode, vector.error, `${vector.name} TS shape owns ${vector.error}`);
+  });
+});
+
+test("floatTokenPaths finds fraction and exponent tokens by path", () => {
+  assert.deepEqual(floatTokenPaths('{"a":1,"b":[1.0,{"c":1e3}],"d":"2.5","e":-0.0,"f":true}'), ["b.0", "b.1.c", "e"]);
 });
 
 test("library assets.json: schema-valid, uids and glyphs recompute, legacy index pinned", () => {
   const validate = schemaValidator();
-  const catalog = load("apps/desktop/public/library/assets.json");
+  const catalogText = readFileSync(repo("apps/desktop/public/library/assets.json"), "utf8");
+  const catalog = JSON.parse(catalogText);
+  const catalogFloats = floatTokenPaths(catalogText);
   const fixtures = load("schemas/asset-object/vectors/fixtures_v1.json");
   assert.deepEqual(catalog.legacy_index, fixtures.legacy_index);
-  for (const asset of catalog.assets) {
+  catalog.assets.forEach((asset: Record<string, unknown> & { uid: string; legacy_id?: string; display: { glyph: string } }, index: number) => {
     assert.ok(validate(asset), `${asset.uid}: ${JSON.stringify(validate.errors?.slice(0, 3))}`);
     assert.equal(envelopeIdentityUid(asset), asset.uid, `${asset.legacy_id} uid`);
     assert.equal(glyphFromUid(asset.uid), asset.display.glyph);
-    checkEnvelopeShape(asset);
-  }
+    checkEnvelopeShape(asset, floatPathsUnder(catalogFloats, `assets.${index}.`));
+  });
   const viewport = load("schemas/examples/viewport.example.json");
   for (const card of viewport.cards) assert.equal(card.uid, fixtures.legacy_index[`card:${card.id}`], card.id);
 });

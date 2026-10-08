@@ -51,7 +51,10 @@ containing `..` (`bad_legacy_id`, so no `/` and no traversal).
 **`display.display_rev` (C2)** is an optional non-negative integer inside
 `display` (absent = 0). It counts renames/retitles for UI caches and is never
 hashed, so bumping it never changes the uid (`display_rev_bump_keeps_uid`); a
-non-integer is `bad_display_rev`. Per-kind dispatch is
+non-integer is `bad_display_rev`. That includes the token `3.0`: Rust and TS
+(`checkEnvelopeShape` with `floatTokenPaths` from the raw JSON text) reject it,
+but JSON Schema cannot tell `3.0` from `3`, so Ajv and the jsonschema crate
+accept it (vector `display_rev_integral_float`, `schema_valid: true`). Per-kind dispatch is
 `allOf: [{ if: {properties:{kind:{const:K}}, required:["kind"]}, then: {...$defs/K_fields, K_body, uid pattern, media roles} }]`.
 This is equivalent to a `oneOf` over `$defs/<kind>` (the `kind` enum is closed),
 but ajv and the jsonschema crate report much more readable errors. Payloads reuse
@@ -128,15 +131,27 @@ Negative or non-finite inputs are an error (`bad_rounding_input`).
 
 | field | from | rule | implementation |
 |---|---|---|---|
-| `audio_clip.duration_ms`, `spectrogram_2d.duration_ms`, any `*_ms` from frames | frames, sample rate | `(frames·1000 + rate div 2) div rate`, exact integers | Rust `ms_from_frames`, TS `msFromFrames`, Python `spectrogram_strip.ms_from_frames` |
+| `audio_clip.duration_ms`, `spectrogram_2d.duration_ms`, any `*_ms` from frames | frames, sample rate | `(frames·1000 + rate div 2) div rate`, exact integers | Rust `ms_from_frames`, TS `msFromFrames`, Python `gen_audio.rounding.ms_from_frames` |
 | `spectrogram_2d.covers_ms` | columns·hop frames | same integer rule | same |
-| `cube_ihdr.duration_ms` | `duration_s` (float view) | round half up of the IEEE-754 double `duration_s × 1000` | Rust `round_half_up`, TS `roundHalfUp` |
+| `cube_ihdr.duration_ms` | `duration_s` (float view) | round half up of the IEEE-754 double `duration_s × 1000` | Rust `round_half_up`, TS `roundHalfUp`, Python `gen_audio.rounding.round_half_up` |
 | `cube_ihdr.covers_ms` | `cube_covers_s` | round half up of `cube_covers_s × 1000`; without it, the integer rule on `time_bins·bin_frames` | same |
 | `cube_ihdr.inv_hdr_ppm` | `inv_hdr` | round half up of `inv_hdr × 1e6` | same |
-| `cube_ihdr.bin_frames` (inferred) | `bin_seconds × sample_rate_hz` | round half up of the double product | same |
+| `cube_ihdr.bin_frames` | cube JSON `downsample_sf_st[1]` and the STFT hop | `downsample_sf_st[1] × hop`, exact integers (`asset_migrate.rs`, first branch) | Rust `asset_migrate` |
+| `cube_ihdr.bin_frames` (inferred, second branch) | cube JSON `duration_s` (float), `sr`, `time_bins` | `round_half_up(fl(fl(duration_s × sr) / time_bins))`: two binary64 ops, multiply first, then divide; never from frames | Rust `bin_frames_inferred`, TS `binFramesInferred`, Python `gen_audio.rounding.bin_frames_inferred` |
 
-"The double product" is one IEEE-754 binary64 multiply, so Rust, TS and
-Python get bit-identical inputs to the rounding step. Examples (all in
+**`bin_frames` (B1′).** `asset_migrate.rs` takes the branches in this order:
+when the cube JSON has `downsample_sf_st` and a hop is known, `bin_frames =
+downsample_sf_st[1] × hop`; otherwise it is inferred from the cube JSON's own
+float `duration_s` as above. Cubes without `bin_seconds` (the older library
+cubes: `lib-kokoro-onnx`, `lib-cube-explainer`) take the inferred path. The
+two-step order is normative: `157.134 s × 24000 = 3771215.9999999995`,
+`/ 96 = 39283.49999999999` → **39283** (vector `bin_frames_inferred`, asserted by
+cargo, npm and pytest). Exact rational arithmetic (or frames: 3,771,216 / 96 =
+39283.5) gives 39284, which would re-mint `lib-cube-explainer`'s cube; its uid
+stays `ga:cube_ihdr:bcuw4m76pyqanslfiugnvlxnda`.
+
+"The double product" in the other rows is one IEEE-754 binary64 multiply, so
+Rust, TS and Python get bit-identical inputs to the rounding step. Examples (all in
 `v1.json` → `rounding`, asserted by cargo test, npm test and pytest):
 24008 frames @ 16 kHz = 1500.5 ms exactly → **1501** (the tie); 33447 @ 24 kHz
 = 1393.625 → 1394; 12 @ 24 kHz = 0.5 → 1; 11 @ 24 kHz → 0. The mint vectors
@@ -167,9 +182,19 @@ rejected at mint time, so a duplicate can never reach a uid). Required roles:
 |---|---|---|---|
 | audio_clip | wav | | `clip_missing_wav` |
 | spectrogram_2d | spectrogram_png | | `missing_media_role` |
-| cube_ihdr | cube_json | cube_png | `missing_media_role` |
+| cube_ihdr, real (`claims` has `library_cube`, `fixture: false`) | cube_json **and** cube_png | | `missing_media_role` |
+| cube_ihdr, pending (no `library_cube` claim yet) | cube_json | cube_png | `missing_media_role` |
 | podcast_script | script_txt | | `missing_media_role` |
 | transcript | one of transcript_json / transcript_txt | the other | `missing_media_role` |
+
+"Real" and "pending" are not new honesty values: a cube is **real** when its
+honesty says it is analysis of a real clip (`claims` contains `library_cube`
+and `fixture` is false, see C3) and **pending** otherwise. The schema encodes
+this as a nested `if/then` inside the cube_ihdr branch; Rust
+(`check_required_media`) and TS (`checkEnvelopeShape`) raise
+`missing_media_role` (vectors `cube_real_with_json_and_png`,
+`cube_real_missing_png`, `cube_pending_missing_png`). Every library cube
+(misaki, cube-explainer, kokoro-onnx, bitdot) carries both roles.
 | voice_profile | | profile_json | |
 | voice_model, layer, card, mcp_tool | (no media) | | |
 
@@ -262,7 +287,8 @@ the rest (V). Every invariant has a failing vector in `v1.json`:
 | `src` ≤ 16 without duplicates; each relation list ≤ 8 (fan-out) | S+V+TS | `duplicate_src`, `fan_out_exceeded` |
 | `body.wav_url` = `/library/` + a valid media path (same segment rules) | S+V+TS | `bad_wav_url` |
 | every relation target (`composes`, `bound_to`, `supersedes`, `layer_of`) resolves in the set | V (set) | `dangling_relation` (`layer_cube_missing` for `layer_of`) |
-| identity integers are integer tokens (no `1.0`, `1e3`) | V+TS | `float_in_identity` |
+| identity integers are integer tokens (no `1.0`, `1e3`), at mint and in a full envelope's `fields` | V+TS (TS via `floatTokenPaths`) | `float_in_identity` |
+| `honesty.note` is a string of at most 400 chars | S+V+TS | `bad_honesty` |
 
 ### status → honesty (C3)
 
@@ -301,7 +327,8 @@ not_a_podcast_render, engine_unavailable, g2p_only, status_only`.
   `[A-Za-z0-9_-][A-Za-z0-9_.-]*`. Each of these is rejected with its own error
   code:
   - empty path
-  - `..` anywhere
+  - `..` anywhere, including inside a segment (`a..b.wav`; schema
+    `not: {pattern: "\\.\\."}` on `media_path` and `wav_url`)
   - absolute paths (`/x`)
   - UNC paths (`\\server`, `//server`)
   - drive letters (`C:`)

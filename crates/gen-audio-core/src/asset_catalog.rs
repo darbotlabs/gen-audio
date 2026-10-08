@@ -8,7 +8,7 @@ use std::sync::OnceLock;
 
 use serde_json::{json, Value};
 
-use crate::asset::{glyph_bytes_from_uid, glyph_dots, glyph_from_uid, hue_class, is_kind, parse_uid, validate_envelope, AssetError};
+use crate::asset::{glyph_bytes_from_uid, glyph_dots, glyph_from_uid, hue_class, is_kind, parse_uid, validate_envelope, validate_set, AssetError};
 
 const CATALOG_JSON: &str = include_str!("../../../apps/desktop/public/library/assets.json");
 pub const MIN_PREFIX_CHARS: usize = 8;
@@ -17,14 +17,37 @@ pub const LIST_DEFAULT: usize = 50;
 pub const LIST_MAX: usize = 100;
 pub const MAX_SESSION_ASSETS: usize = 8;
 
-fn catalog() -> &'static Vec<Value> {
-    static CATALOG: OnceLock<Vec<Value>> = OnceLock::new();
-    CATALOG.get_or_init(|| {
-        let doc: Value = serde_json::from_str(CATALOG_JSON).unwrap_or(Value::Null);
-        let mut assets = doc.get("assets").and_then(Value::as_array).cloned().unwrap_or_default();
-        assets.sort_by(|a, b| uid_of(a).cmp(uid_of(b)));
-        assets
-    })
+/// Parse a catalog document and run the set checks (`validate_set`: every
+/// envelope, unique uids, relations resolve, no cycles) before anything is
+/// served. A catalog that fails is not served at all.
+pub fn load_catalog(text: &str) -> Result<Vec<Value>, String> {
+    let doc: Value = serde_json::from_str(text).map_err(|error| format!("bad_json: assets.json does not parse: {error}"))?;
+    let mut assets = doc
+        .get("assets")
+        .and_then(Value::as_array)
+        .cloned()
+        .ok_or_else(|| "bad_catalog: assets.json has no assets array".to_string())?;
+    validate_set(&assets).map_err(|error| format!("catalog set check failed: {error}"))?;
+    assets.sort_by(|a, b| uid_of(a).cmp(uid_of(b)));
+    Ok(assets)
+}
+
+fn loaded() -> &'static Result<Vec<Value>, String> {
+    static CATALOG: OnceLock<Result<Vec<Value>, String>> = OnceLock::new();
+    CATALOG.get_or_init(|| load_catalog(CATALOG_JSON))
+}
+
+/// Ok(asset count) when the embedded catalog passed the set checks.
+pub fn catalog_health() -> Result<usize, String> {
+    loaded().as_ref().map(Vec::len).map_err(Clone::clone)
+}
+
+fn catalog() -> &'static [Value] {
+    loaded().as_deref().unwrap_or(&[])
+}
+
+fn served() -> Result<&'static [Value], CatalogError> {
+    loaded().as_deref().map_err(|error| CatalogError::Corrupt(error.clone()))
 }
 
 fn uid_of(asset: &Value) -> &str {
@@ -81,7 +104,7 @@ pub fn resolve(text: &str) -> Result<Resolve, CatalogError> {
             "bad_uid: prefix needs at least {MIN_PREFIX_CHARS} lowercase base32 chars after ga:{kind}:"
         )));
     }
-    let matches: Vec<&'static Value> = catalog().iter().filter(|asset| uid_of(asset).starts_with(text)).collect();
+    let matches: Vec<&'static Value> = served()?.iter().filter(|asset| uid_of(asset).starts_with(text)).collect();
     let found = match matches.as_slice() {
         [] => return Ok(Resolve::NotFound),
         [one] => *one,
@@ -181,7 +204,7 @@ pub fn list(kind: Option<&str>, cursor: Option<&str>, limit: usize) -> Result<(V
     if !(1..=LIST_MAX).contains(&limit) {
         return Err(CatalogError::Invalid(format!("limit must be 1 to {LIST_MAX}")));
     }
-    let mut page: Vec<&Value> = catalog()
+    let mut page: Vec<&Value> = served()?
         .iter()
         .filter(|asset| kind.is_none_or(|kind| asset.get("kind").and_then(Value::as_str) == Some(kind)))
         .filter(|asset| cursor.is_none_or(|cursor| uid_of(asset) > cursor))
@@ -243,6 +266,23 @@ mod tests {
                 assert!(media.get("path").is_none());
             }
         }
+    }
+
+    #[test]
+    fn runtime_load_runs_the_set_check() {
+        assert_eq!(catalog_health().unwrap(), assets().len());
+        let mut doc: Value = serde_json::from_str(CATALOG_JSON).unwrap();
+        // Drop the misaki clip: every envelope is still valid on its own, but
+        // its cube and spectrogram now derive from a uid outside the set.
+        let clip = resolve(MISAKI_CUBE).ok().and_then(|found| match found {
+            Resolve::Found(cube) => cube["src"][0].as_str().map(str::to_string),
+            _ => None,
+        });
+        let clip = clip.unwrap();
+        doc["assets"].as_array_mut().unwrap().retain(|asset| asset["uid"] != clip.as_str());
+        let error = load_catalog(&doc.to_string()).unwrap_err();
+        assert!(error.contains("derived_source_missing"), "{error}");
+        assert!(load_catalog("{}").is_err());
     }
 
     #[test]

@@ -3,7 +3,7 @@
 use std::path::Path;
 
 use gen_audio_core::asset::{
-    check_media_path, glyph_from_uid, mint, ms_from_frames, normalize_nfc, parse_uid, round_half_up, validate_envelope,
+    bin_frames_inferred, check_media_path, glyph_from_uid, mint, ms_from_frames, normalize_nfc, parse_uid, round_half_up, validate_envelope,
     validate_set, verify_media, MediaCheck, MediaDigest,
 };
 use gen_audio_core::asset_migrate::migrate_to_v1;
@@ -107,6 +107,12 @@ fn rounding_vectors_match() {
     for vector in doc["rounding"].as_array().unwrap() {
         let got = match vector["op"].as_str().unwrap() {
             "ms_from_frames" => ms_from_frames(vector["frames"].as_u64().unwrap(), vector["rate"].as_u64().unwrap()),
+            "bin_frames_inferred" => bin_frames_inferred(
+                vector["duration_s"].as_f64().unwrap(),
+                vector["sample_rate_hz"].as_u64().unwrap(),
+                vector["time_bins"].as_u64().unwrap(),
+            )
+            .unwrap(),
             _ => round_half_up(vector["value"].as_f64().unwrap() * vector["scale"].as_f64().unwrap()).unwrap(),
         };
         assert_eq!(Value::from(got), vector["expect"], "{vector}");
@@ -119,6 +125,16 @@ fn rounding_vectors_match() {
         }
     }
     assert_eq!(ms_from_frames(24_008, 16_000), 1501, "exact .5 tie rounds up");
+    // B1' near-tie: binary64 two-step gives 39283; the exact frame count
+    // (3,771,216 / 96 = 39283.5) would round to 39284.
+    assert_eq!(bin_frames_inferred(157.134, 24_000, 96).unwrap(), 39_283);
+    assert_eq!((3_771_216u64 * 2 + 96) / (2 * 96), 39_284);
+    let fixtures = json(FIXTURES);
+    assert_eq!(
+        fixtures["legacy_index"]["cube_ihdr:lib-cube-explainer.cube"],
+        "ga:cube_ihdr:bcuw4m76pyqanslfiugnvlxnda",
+        "lib-cube-explainer cube uid is pinned by the B1' formula"
+    );
 }
 
 #[test]

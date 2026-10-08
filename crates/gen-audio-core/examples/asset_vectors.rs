@@ -12,7 +12,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use gen_audio_core::asset::{
-    build_envelope, check_media_path, glyph_dots, hue_class, mint, ms_from_frames, normalize_nfc, parse_uid, round_half_up,
+    bin_frames_inferred, build_envelope, check_media_path, glyph_dots, hue_class, mint, ms_from_frames, normalize_nfc, parse_uid, round_half_up,
     sha256_hex, validate_envelope, validate_set, AssetError, EnvelopeParts, MediaDigest,
 };
 use gen_audio_core::asset_migrate::migrate_to_v1;
@@ -211,6 +211,16 @@ fn main() {
         let product: f64 = value * scale;
         rounding.push(json!({"op": "round_half_up", "value": value, "scale": scale, "expect": round_half_up(product).unwrap()}));
     }
+    // B1': inferred cube bin_frames, two binary64 ops (multiply, then divide).
+    // 157.134 * 24000 = 3771215.9999999995, / 96 = 39283.49999999999 -> 39283.
+    // Exact rational math gives 39283.5 -> 39284; lib-cube-explainer's cube uid
+    // (ga:cube_ihdr:bcuw4m76pyqanslfiugnvlxnda) depends on the binary64 result.
+    let near_tie = bin_frames_inferred(157.134, 24_000, 96).unwrap();
+    assert_eq!(near_tie, 39_283, "B1' near-tie");
+    rounding.push(json!({
+        "op": "bin_frames_inferred", "duration_s": 157.134, "sample_rate_hz": 24_000, "time_bins": 96, "expect": near_tie,
+        "note": "near-tie: fl(fl(157.134*24000)/96) = 39283.49999999999 -> 39283; exact rational 39283.5 would give 39284"
+    }));
     for vector in &mut mint_vectors {
         vector["expect"]["canonical"] = vector["expect"]["canonical"].clone();
     }
@@ -309,7 +319,8 @@ fn main() {
         p.honesty = json!({"synthesized_speech": true, "fixture": false, "claims": ["synthesized_speech"]});
         build_envelope(p).unwrap()
     };
-    let wav = json!({"role": "wav", "path": "x.wav", "sha256": wav_sha, "bytes": 44, "mime": "audio/wav"});
+    // The misaki WAV's real sha256 with its real byte count (bytes is unhashed).
+    let wav = json!({"role": "wav", "path": "x.wav", "sha256": wav_sha, "bytes": clip["media"][0]["bytes"].clone(), "mime": "audio/wav"});
     let full_prov: Map<String, Value> = [("engine".to_string(), json!("kokoro_onnx")), ("voice_model".to_string(), json!(kokoro_uid))].into_iter().collect();
     push("clip_missing_wav", clip_parts(vec![], full_prov.clone()), false);
     push("clip_missing_engine", clip_parts(vec![wav.clone()], [("voice_model".to_string(), json!(kokoro_uid))].into_iter().collect()), false);
@@ -357,7 +368,7 @@ fn main() {
     push("uid_mismatch_tampered_field", { let mut c = cube.clone(); c["fields"]["n_points"] = json!(3601); c }, true);
     push("glyph_mismatch", { let mut c = cube.clone(); c["display"]["glyph"] = json!("\u{2800}\u{2800}"); c }, true);
     push("kind_mismatch", { let mut c = cube.clone(); c["kind"] = json!("spectrogram_2d"); c }, false);
-    push("media_path_dotdot_inside_segment", { let mut p = clip.clone(); p["media"][0]["path"] = json!("a..b.wav"); p }, true);
+    push("media_path_dotdot_inside_segment", { let mut p = clip.clone(); p["media"][0]["path"] = json!("a..b.wav"); p }, false);
     push("bad_extension_key", { let mut c = cube.clone(); c["extensions"] = json!({"vendor": 1}); c }, false);
     // D1: root/display/legacy_id rules enforced by the validator as well as the schema.
     push("unknown_root_key", { let mut c = cube.clone(); c["notes"] = json!("x"); c }, false);
@@ -381,6 +392,26 @@ fn main() {
         build_envelope(p).unwrap()
     };
     push("cube_missing_cube_json", png_only, false);
+    // B2 ruling: a real cube (claims library_cube, not a fixture) needs cube_json
+    // AND cube_png; a pending cube (no library_cube claim) may lack the png.
+    let json_only = |honesty: Value| {
+        let mut p = parts("cube_ihdr", "cube", cube["fields"].clone());
+        p.media = cube["media"].as_array().unwrap().iter().filter(|m| m["role"] == "cube_json").cloned().collect();
+        p.src = strings(&cube["src"]);
+        p.honesty = honesty;
+        build_envelope(p).unwrap()
+    };
+    push("cube_real_with_json_and_png", cube.clone(), true);
+    push("cube_real_missing_png", json_only(cube["honesty"].clone()), false);
+    push("cube_pending_missing_png", json_only(json!({"synthesized_speech": false, "fixture": false, "claims": []})), true);
+    // D2: identity integers are integer tokens in the envelope too (Rust code
+    // float_in_identity, same as mint). JSON Schema cannot see the token.
+    push("envelope_integral_float_field", { let mut c = cube.clone(); c["fields"]["duration_ms"] = json!(139_375.0); c }, true);
+    // C2: display_rev 3.0 is rejected by Rust and TS (raw token); Ajv cannot tell.
+    push("display_rev_integral_float", { let mut c = cube.clone(); c["display"]["display_rev"] = json!(3.0); c }, true);
+    // D1: honesty.note is capped at 400 chars everywhere.
+    push("honesty_note_400_ok", { let mut c = cube.clone(); c["honesty"]["note"] = json!("n".repeat(400)); c }, true);
+    push("honesty_note_401", { let mut c = cube.clone(); c["honesty"]["note"] = json!("n".repeat(401)); c }, false);
     // D3: channels 1..32, wav_url follows media_path rules, relation fan-out 8.
     let clip_with_channels = |channels: u64| {
         let mut fields = clip["fields"].clone();
@@ -394,6 +425,7 @@ fn main() {
     push("channels_zero", clip_with_channels(0), false);
     push("channels_33", clip_with_channels(33), false);
     push("wav_url_dotdot", { let mut c = clip.clone(); c["body"]["wav_url"] = json!("/library/../secrets.wav"); c }, false);
+    push("wav_url_dotdot_inside_segment", { let mut c = clip.clone(); c["body"]["wav_url"] = json!("/library/a..b.wav"); c }, false);
     push("wav_url_nested_ok", { let mut c = clip.clone(); c["body"]["wav_url"] = json!("/library/clips/2026/x.wav"); c }, true);
     push("wav_url_not_library", { let mut c = clip.clone(); c["body"]["wav_url"] = json!("https://example.com/x.wav"); c }, false);
     push("relations_fan_out_9", { let mut c = card("fan-out"); c["relations"] = json!({"composes": many[..9]}); c }, false);

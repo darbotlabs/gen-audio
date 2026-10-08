@@ -26,6 +26,8 @@ const MAX_SAFE = Number.MAX_SAFE_INTEGER;
 export const MAX_SRC = 16;
 /** Max targets per relation list (composes, bound_to, supersedes). */
 export const MAX_FAN_OUT = 8;
+/** `honesty.note` cap in code points (schema `maxLength: 400`, Rust `MAX_HONESTY_NOTE_CHARS`). */
+export const MAX_HONESTY_NOTE_CHARS = 400;
 export const ROOT_KEYS = [
   "schema_version", "uid_scheme", "kind", "uid", "legacy_id", "status", "fields", "media", "src", "relations", "honesty",
   "provenance", "display", "body", "extensions",
@@ -112,7 +114,82 @@ export function parseIdentityJson(text: string): unknown {
   return JSON.parse(text);
 }
 
+/**
+ * Paths (dot-joined, array indexes as numbers) of every number token in
+ * `text` that has a fraction or exponent, such as `fields.duration_ms` for
+ * `"duration_ms": 139375.0`. JSON.parse loses that distinction, so the
+ * envelope checks below take these paths alongside the parsed object.
+ */
+export function floatTokenPaths(text: string): string[] {
+  const out: string[] = [];
+  let index = 0;
+  const skipWs = () => {
+    while (index < text.length && " \t\r\n".includes(text[index])) index += 1;
+  };
+  const readString = (): string => {
+    const start = index;
+    index += 1;
+    while (index < text.length && text[index] !== '"') index += text[index] === "\\" ? 2 : 1;
+    index += 1;
+    return JSON.parse(text.slice(start, index)) as string;
+  };
+  const value = (path: string): void => {
+    skipWs();
+    const ch = text[index];
+    if (ch === "{") {
+      index += 1;
+      skipWs();
+      if (text[index] === "}") {
+        index += 1;
+        return;
+      }
+      for (;;) {
+        skipWs();
+        const key = readString();
+        skipWs();
+        index += 1; // ':'
+        value(path ? `${path}.${key}` : key);
+        skipWs();
+        if (text[index++] === "}") return;
+      }
+    }
+    if (ch === "[") {
+      index += 1;
+      skipWs();
+      if (text[index] === "]") {
+        index += 1;
+        return;
+      }
+      for (let item = 0; ; item += 1) {
+        value(path ? `${path}.${item}` : String(item));
+        skipWs();
+        if (text[index++] === "]") return;
+      }
+    }
+    if (ch === '"') {
+      readString();
+      return;
+    }
+    const match = /^-?\d+(\.\d+)?([eE][+-]?\d+)?|^(true|false|null)/.exec(text.slice(index, index + 64));
+    if (!match) throw new AssetError("bad_json", `unexpected token at offset ${index}`);
+    if (match[1] || match[2]) out.push(path);
+    index += match[0].length;
+  };
+  value("");
+  return out;
+}
+
 // ------------------------------------------------------------ rounding (normative)
+
+/**
+ * Inferred cube bin_frames (B1'): roundHalfUp(fl(fl(duration_s * sample_rate_hz) / time_bins)),
+ * exactly two binary64 ops, multiply first, from the cube JSON's float duration_s.
+ * 157.134 s, 24 kHz, 96 bins -> 39283 (exact rational math would give 39284).
+ */
+export function binFramesInferred(durationS: number, sampleRateHz: number, timeBins: number): number {
+  const product = durationS * sampleRateHz;
+  return roundHalfUp(product / Math.max(1, timeBins));
+}
 
 /** Whole ms from frames: round half up in exact integer arithmetic, (frames*1000 + rate div 2) div rate. */
 export function msFromFrames(frames: number, rate: number): number {
@@ -395,13 +472,24 @@ const REQUIRED_MEDIA: Record<string, string[]> = {
   podcast_script: ["script_txt"],
 };
 
+/** A cube_ihdr is "real" when it claims library_cube and is not a fixture (B2 ruling: then cube_png is required too). */
+export function cubeIsReal(envelope: Record<string, unknown>): boolean {
+  const honesty = (envelope.honesty ?? {}) as { fixture?: unknown; claims?: unknown };
+  return Array.isArray(honesty.claims) && honesty.claims.includes("library_cube") && honesty.fixture !== true;
+}
+
 /**
  * The structural subset of Rust `validate_envelope` (D1/B2/D3): root keys,
  * legacy_id, kind/uid prefix, channels, uid recompute, display (title, glyph, display_rev),
- * wav_url, relation fan-out and required media roles. Honesty and per-kind
- * field typing stay Rust-side; the schema covers them for Ajv.
+ * wav_url, relation fan-out, required media roles (a real cube needs cube_png)
+ * and the honesty.note cap. Per-kind field typing stays Rust-side; the schema
+ * covers it for Ajv.
+ *
+ * `floatPaths` are the envelope-relative paths from `floatTokenPaths` on the
+ * raw JSON text. With them, a `139375.0` token in `fields` is
+ * `float_in_identity` and a `3.0` display_rev is `bad_display_rev`, as in Rust.
  */
-export function checkEnvelopeShape(envelope: Record<string, unknown>): void {
+export function checkEnvelopeShape(envelope: Record<string, unknown>, floatPaths: readonly string[] = []): void {
   const unknownKey = Object.keys(envelope).find((key) => !(ROOT_KEYS as readonly string[]).includes(key));
   if (unknownKey) throw new AssetError("unknown_root_key", `envelope key ${JSON.stringify(unknownKey)} is not in the v1 schema`);
   const legacy = envelope.legacy_id;
@@ -413,6 +501,8 @@ export function checkEnvelopeShape(envelope: Record<string, unknown>): void {
   const parsed = parseUid(String(envelope.uid));
   if (parsed.kind !== kind) throw new AssetError("kind_mismatch", `uid prefix ${parsed.kind} != kind ${kind}`);
   const fields = (envelope.fields ?? {}) as Record<string, unknown>;
+  const floatField = floatPaths.find((path) => path.startsWith("fields."));
+  if (floatField) throw new AssetError("float_in_identity", `${kind}.${floatField} is not an integer token; keep float views outside identity`);
   if (kind === "audio_clip" && fields.channels !== undefined) {
     const channels = fields.channels;
     if (!(typeof channels === "number" && Number.isInteger(channels) && channels >= 1 && channels <= 32)) {
@@ -431,7 +521,7 @@ export function checkEnvelopeShape(envelope: Record<string, unknown>): void {
   if (typeof display.glyph !== "string") throw new AssetError("missing_glyph", "display.glyph is required");
   if (display.glyph !== minted.glyph) throw new AssetError("glyph_mismatch", `glyph ${display.glyph} != ${minted.glyph}`);
   const rev = display.display_rev;
-  if (rev !== undefined && !(typeof rev === "number" && Number.isInteger(rev) && rev >= 0 && rev <= MAX_SAFE)) {
+  if (rev !== undefined && (!(typeof rev === "number" && Number.isInteger(rev) && rev >= 0 && rev <= MAX_SAFE) || floatPaths.includes("display.display_rev"))) {
     throw new AssetError("bad_display_rev", "display.display_rev must be a non-negative integer");
   }
   const body = envelope.body as Record<string, unknown> | undefined;
@@ -457,4 +547,11 @@ export function checkEnvelopeShape(envelope: Record<string, unknown>): void {
     }
   }
   if (kind === "transcript" && media.length === 0) throw new AssetError("missing_media_role", "transcript needs transcript_json or transcript_txt");
+  if (kind === "cube_ihdr" && cubeIsReal(envelope) && !media.some((item) => item.role === "cube_png")) {
+    throw new AssetError("missing_media_role", "a real cube_ihdr (claims library_cube) needs a cube_png media entry");
+  }
+  const note = ((envelope.honesty ?? {}) as { note?: unknown }).note;
+  if (note !== undefined && !(typeof note === "string" && [...note].length <= MAX_HONESTY_NOTE_CHARS)) {
+    throw new AssetError("bad_honesty", `honesty.note must be a string of at most ${MAX_HONESTY_NOTE_CHARS} chars`);
+  }
 }

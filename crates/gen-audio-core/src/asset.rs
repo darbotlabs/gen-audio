@@ -37,6 +37,8 @@ pub const MAX_SAFE_INTEGER: i64 = 9_007_199_254_740_991;
 pub const MAX_SRC: usize = 16;
 /// Max targets per relation list (composes, bound_to, supersedes).
 pub const MAX_FAN_OUT: usize = 8;
+/// `honesty.note` cap, in Unicode scalar values (schema `maxLength: 400`).
+pub const MAX_HONESTY_NOTE_CHARS: usize = 400;
 /// Envelope root keys (schema `additionalProperties: false`).
 pub const ROOT_KEYS: &[&str] = &[
     "schema_version", "uid_scheme", "kind", "uid", "legacy_id", "status", "fields", "media", "src", "relations", "honesty",
@@ -195,8 +197,10 @@ pub fn ms_from_frames(frames: u64, rate: u64) -> u64 {
 
 /// Round a non-negative IEEE-754 double half up (ties away from zero, which
 /// is the same thing for x >= 0). Used for `covers_ms = round(cube_covers_s *
-/// 1000)`, `inv_hdr_ppm = round(inv_hdr * 1e6)` and `bin_frames =
-/// round(bin_seconds * sample_rate_hz)`; the product is one IEEE-754 multiply.
+/// 1000)` and `inv_hdr_ppm = round(inv_hdr * 1e6)` (one IEEE-754 multiply),
+/// and for the inferred cube `bin_frames = round(fl(fl(duration_s *
+/// sample_rate_hz) / time_bins))` (two binary64 ops, multiply first); see
+/// `asset_migrate` and docs/ASSET_OBJECT_MODEL.md (B1').
 pub fn round_half_up(value: f64) -> Result<u64, AssetError> {
     if !value.is_finite() || value < 0.0 {
         return err("bad_rounding_input", format!("{value} must be finite and >= 0"));
@@ -206,6 +210,17 @@ pub fn round_half_up(value: f64) -> Result<u64, AssetError> {
         return err("integer_out_of_range", format!("{value} rounds outside 2^53-1"));
     }
     Ok(rounded as u64)
+}
+
+/// Inferred cube `bin_frames` for a cube JSON without `downsample_sf_st`:
+/// `round_half_up(fl(fl(duration_s * sample_rate_hz) / time_bins))`, exactly
+/// two binary64 operations, multiply first (B1'). Uses the cube JSON's float
+/// `duration_s`, never frames: 157.134 s at 24 kHz over 96 bins is
+/// 39283.49999999999 in binary64, so 39283 (exact rational math says 39283.5,
+/// which would round to 39284 and re-mint lib-cube-explainer's cube).
+pub fn bin_frames_inferred(duration_s: f64, sample_rate_hz: u64, time_bins: u64) -> Result<u64, AssetError> {
+    let product = duration_s * sample_rate_hz as f64;
+    round_half_up(product / time_bins.max(1) as f64)
 }
 
 fn check_identity_string(text: &str, path: &str) -> Result<(), AssetError> {
@@ -566,6 +581,7 @@ fn media_roles(kind: &str) -> &'static [&'static str] {
 }
 
 /// Media roles every envelope of `kind` must carry (exactly once).
+/// A real cube_ihdr also needs cube_png; see `check_required_media` (B2 ruling).
 fn required_media_roles(kind: &str) -> &'static [&'static str] {
     match kind {
         "audio_clip" => &["wav"],
@@ -591,6 +607,11 @@ fn check_fields(kind: &str, fields: &Value) -> Result<(), AssetError> {
             }
             continue;
         };
+        // A non-integer number token (139375.0, 1.39375e5, 1.5) is the same
+        // error the minter raises, whatever the field's declared type.
+        if value.is_f64() {
+            return err("float_in_identity", format!("{kind}.fields.{} is not an integer token; keep float views outside identity", spec.name));
+        }
         let ok = match spec.ty {
             Str => value.as_str().is_some_and(|text| !text.is_empty()),
             Int => value.as_i64().is_some(),
@@ -864,7 +885,22 @@ fn check_required_media(kind: &str, envelope: &Value) -> Result<(), AssetError> 
     if kind == "transcript" && media.is_empty() {
         return err("missing_media_role", "transcript needs transcript_json or transcript_txt");
     }
+    // B2 ruling: a real cube (analysis of a real clip: claims library_cube,
+    // not a fixture) ships both its JSON and its PNG. A pending cube (no
+    // library_cube claim yet) may carry the JSON alone.
+    if kind == "cube_ihdr" && cube_is_real(envelope) && !media.iter().any(|item| item.get("role").and_then(Value::as_str) == Some("cube_png")) {
+        return err("missing_media_role", "a real cube_ihdr (claims library_cube) needs a cube_png media entry");
+    }
     Ok(())
+}
+
+/// A cube_ihdr is "real" when it claims `library_cube` and is not a fixture.
+pub fn cube_is_real(envelope: &Value) -> bool {
+    let claims_cube = envelope
+        .pointer("/honesty/claims")
+        .and_then(Value::as_array)
+        .is_some_and(|claims| claims.iter().any(|claim| claim.as_str() == Some("library_cube")));
+    claims_cube && bool_at(envelope, &["honesty", "fixture"]) != Some(true)
 }
 
 fn check_honesty(kind: &str, envelope: &Value) -> Result<(), AssetError> {
@@ -884,6 +920,11 @@ fn check_honesty(kind: &str, envelope: &Value) -> Result<(), AssetError> {
     }
     if fixture && synthesized {
         return err("fixture_claims_speech", "fixture:true requires synthesized_speech:false");
+    }
+    if let Some(note) = envelope.pointer("/honesty/note") {
+        if !note.as_str().is_some_and(|text| text.chars().count() <= MAX_HONESTY_NOTE_CHARS) {
+            return err("bad_honesty", format!("honesty.note must be a string of at most {MAX_HONESTY_NOTE_CHARS} chars"));
+        }
     }
     let status = envelope.get("status").and_then(Value::as_str).unwrap_or("ok");
     match kind {

@@ -14,7 +14,7 @@ use std::collections::BTreeMap;
 
 use serde_json::{json, Map, Value};
 
-use crate::asset::{build_envelope, ms_from_frames, parse_schema_major, round_half_up, AssetError, EnvelopeParts, SCHEMA_VERSION};
+use crate::asset::{bin_frames_inferred, build_envelope, ms_from_frames, parse_schema_major, round_half_up, AssetError, EnvelopeParts, SCHEMA_VERSION};
 
 fn fail<T>(code: &'static str, detail: impl Into<String>) -> Result<T, AssetError> {
     Err(AssetError { code, detail: detail.into() })
@@ -223,7 +223,8 @@ pub fn migrate_v0_to_v1(bundle: &Value) -> Result<Value, AssetError> {
         let hop = cube_doc["hop"].as_u64();
         let (bin_frames, inferred) = match (cube_doc["downsample_sf_st"].get(1).and_then(Value::as_u64), hop) {
             (Some(step), Some(hop)) => (step * hop, false),
-            _ => (round_half_up(cube_duration_s * cube_sr as f64 / time_bins as f64).unwrap_or(0), true),
+            // No downsample step: infer from the float duration (B1'; two binary64 ops).
+            _ => (bin_frames_inferred(cube_duration_s, cube_sr, time_bins).unwrap_or(0), true),
         };
         let covers_ms = cube_doc["cube_covers_s"]
             .as_f64()

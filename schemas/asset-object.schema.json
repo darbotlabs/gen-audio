@@ -421,7 +421,48 @@
               "$ref": "#/$defs/audio_clip_uid"
             }
           }
-        }
+        },
+        "if": {
+          "properties": {
+            "honesty": {
+              "properties": {
+                "fixture": {
+                  "const": false
+                },
+                "claims": {
+                  "contains": {
+                    "const": "library_cube"
+                  }
+                }
+              },
+              "required": [
+                "fixture",
+                "claims"
+              ]
+            }
+          },
+          "required": [
+            "honesty"
+          ]
+        },
+        "then": {
+          "properties": {
+            "media": {
+              "contains": {
+                "properties": {
+                  "role": {
+                    "const": "cube_png"
+                  }
+                },
+                "required": [
+                  "role"
+                ]
+              },
+              "minContains": 1
+            }
+          }
+        },
+        "$comment": "B2 ruling: a real cube (honesty.fixture false and claims library_cube) carries cube_json AND cube_png; a pending cube (no library_cube claim) may lack cube_png."
       }
     },
     {
@@ -780,7 +821,10 @@
     "media_path": {
       "type": "string",
       "pattern": "^[A-Za-z0-9_-][A-Za-z0-9_.-]{0,127}(/[A-Za-z0-9_-][A-Za-z0-9_.-]{0,127}){0,3}$",
-      "description": "Relative to the library root. No '..', no leading '/', no '\\\\', no drive letter, no UNC, no URL scheme (the validators also reject '..' inside a segment)."
+      "description": "Relative to the library root. No '..' anywhere (also inside a segment), no leading '/', no '\\\\', no drive letter, no UNC, no URL scheme.",
+      "not": {
+        "pattern": "\\.\\."
+      }
     },
     "media": {
       "type": "object",
@@ -969,7 +1013,8 @@
           "type": "integer",
           "minimum": 0,
           "maximum": 9007199254740991,
-          "description": "Display-only revision counter. Bumped on rename/retitle; never hashed, so it never changes the uid. Absent means 0."
+          "description": "Display-only revision counter. Bumped on rename/retitle; never hashed, so it never changes the uid. Absent means 0.",
+          "$comment": "JSON Schema cannot tell 3.0 from 3; the Rust validator and TS checkEnvelopeShape (raw-token paths) reject the token 3.0."
         }
       }
     },
@@ -1411,7 +1456,10 @@
         "wav_url": {
           "type": "string",
           "pattern": "^/library/[A-Za-z0-9_-][A-Za-z0-9_.-]{0,127}(/[A-Za-z0-9_-][A-Za-z0-9_.-]{0,127}){0,3}$",
-          "description": "/library/ + a media_path (same segment rules, up to 4 segments)."
+          "description": "/library/ + a media_path (same segment rules, up to 4 segments, no '..').",
+          "not": {
+            "pattern": "\\.\\."
+          }
         },
         "n_words": {
           "type": "integer"
