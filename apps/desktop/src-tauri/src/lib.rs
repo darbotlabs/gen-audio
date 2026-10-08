@@ -4,6 +4,8 @@ use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
 use gen_audio_mcp::http;
+
+pub mod sidecar_log;
 use serde::Serialize;
 #[cfg(debug_assertions)]
 use serde_json::Value;
@@ -111,18 +113,36 @@ fn wait_for_handshake(addr: &str) -> bool {
     false
 }
 
-fn spawn_hidden(mut cmd: Command) -> std::io::Result<Child> {
-    cmd.stdin(Stdio::null())
-        .stdout(Stdio::null())
-        .stderr(Stdio::null());
+fn hide_console(cmd: &mut Command) {
     #[cfg(windows)]
     {
         cmd.creation_flags(CREATE_NO_WINDOW);
     }
+    let _ = cmd;
+}
+
+/// Hidden helper process with every stdio stream closed (reg add).
+#[cfg(windows)]
+fn spawn_hidden(mut cmd: Command) -> std::io::Result<Child> {
+    cmd.stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::null());
+    hide_console(&mut cmd);
     cmd.spawn()
 }
 
-fn boot_mcp() -> (McpRuntime, Option<Child>) {
+/// The MCP sidecar, hidden, with its stderr (one line per rejected request,
+/// startup errors) drained into the rotating gen-audio-mcp.log in the app log
+/// dir instead of thrown away (see sidecar_log).
+fn spawn_sidecar(mut cmd: Command, log_dir: Option<PathBuf>) -> std::io::Result<Child> {
+    cmd.stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::piped());
+    hide_console(&mut cmd);
+    let mut child = cmd.spawn()?;
+    if let Some(stderr) = child.stderr.take() {
+        sidecar_log::spawn_pump(stderr, log_dir);
+    }
+    Ok(child)
+}
+
+fn boot_mcp(log_dir: Option<PathBuf>) -> (McpRuntime, Option<Child>) {
     let addr = preferred_addr();
     if http::initialize_handshake(&addr).is_ok() {
         return (
@@ -133,7 +153,7 @@ fn boot_mcp() -> (McpRuntime, Option<Child>) {
     if let Some(bin) = sidecar_binary() {
         let mut cmd = Command::new(&bin);
         cmd.args(["--http", &addr]);
-        match spawn_hidden(cmd) {
+        match spawn_sidecar(cmd, log_dir) {
             Ok(child) => {
                 if wait_for_handshake(&addr) {
                     register_login_autostart();
@@ -265,7 +285,7 @@ pub fn run() {
         .manage(SidecarChild(Mutex::new(None)))
         .invoke_handler(invoke_handler())
         .setup(move |app| {
-            let (mcp, child) = boot_mcp();
+            let (mcp, child) = boot_mcp(app.path().app_log_dir().ok());
             let tooltip = format!("Gen-Audio MCP {} ({})", mcp.addr, mcp.mode);
             if let Ok(mut guard) = app.state::<Mutex<McpRuntime>>().lock() {
                 *guard = mcp;

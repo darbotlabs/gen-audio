@@ -251,7 +251,8 @@ fn validate_voice_profile(id: &str, obj: &serde_json::Map<String, Value>) -> Res
     }
     expect_const(obj.get("spectrogram2d"), "none", "spectrogram2d")?;
     let spatial = expect_string(obj.get("spectrogram3d"), "spectrogram3d", 1, 40)?;
-    if !matches!(spatial.as_str(), "none" | "library-cube-hook" | "fixture-cube") {
+    // AP-OPT-1: only what the product renders; nothing renders a persona cube.
+    if !matches!(spatial.as_str(), "none" | "fixture-cube") {
         return Err(format!("card {id} spectrogram3d is not a known hook"));
     }
     expect_const(obj.get("notPodcast"), true, "notPodcast")?;
@@ -265,15 +266,8 @@ fn validate_voice_profile(id: &str, obj: &serde_json::Map<String, Value>) -> Res
     if !disclaimer.to_ascii_lowercase().contains("not") {
         return Err(format!("card {id} disclaimer must say the profile is not a podcast render"));
     }
-    match spatial.as_str() {
-        "library-cube-hook" => {
-            expect_string(obj.get("cubeJsonUrl"), "cubeJsonUrl", 1, 260)?;
-        }
-        _ => {
-            if obj.get("cubeJsonUrl").is_some() {
-                return Err(format!("card {id} cubeJsonUrl is only set for a library-cube-hook"));
-            }
-        }
+    if obj.get("cubeJsonUrl").is_some() {
+        return Err(format!("card {id} must not link a cube on a voice profile"));
     }
     Ok(())
 }
@@ -336,6 +330,23 @@ mod tests {
         let document: Value = serde_json::from_str(raw).unwrap();
         validate_viewport(&document).unwrap();
         assert!(document["cards"].as_array().unwrap().iter().all(|card| !matches!(card["id"].as_str(), Some("spec-fixture" | "cube-fixture" | "bench-ref" | "cast-sample" | "serve-node" | "serve-gateway"))));
+    }
+
+    /// AP-OPT-1 parity with validate.ts: nothing renders a persona cube, so
+    /// spectrogram3d "library-cube-hook" (with or without cubeJsonUrl) is refused.
+    #[test]
+    fn voice_profile_refuses_the_library_cube_hook() {
+        let raw = include_str!("../../../schemas/examples/voice_profile.optimus.json");
+        let value: Value = serde_json::from_str(raw).unwrap();
+        for with_url in [true, false] {
+            let mut hooked = value.as_object().unwrap().clone();
+            hooked.insert("spectrogram3d".into(), Value::from("library-cube-hook"));
+            if with_url {
+                hooked.insert("cubeJsonUrl".into(), Value::from("/library/library_kokoro_cube3d.json"));
+            }
+            let error = validate_voice_profile("profile-optimus", &hooked).expect_err("library-cube-hook accepted");
+            assert!(error.contains("spectrogram3d"), "{error}");
+        }
     }
 
     #[test]

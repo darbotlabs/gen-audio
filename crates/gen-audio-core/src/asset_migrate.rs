@@ -543,3 +543,34 @@ pub fn migrate_v0_to_v1(bundle: &Value) -> Result<Value, AssetError> {
         "legacy_index": index,
     }))
 }
+
+/// build_assets --from-lock cannot regenerate a cube (no WAVs), so it verifies
+/// what the WAV-backed regen made: `locked` is media.lock.json "cubes" and
+/// `actual` the on-disk facts of every cube file the manifest names, both
+/// `path -> {"sha256", "bytes"}`. Every cube file must match its lock entry,
+/// and every lock entry must name a cube file still in use. Returns one line
+/// per problem.
+pub fn verify_cube_lock(locked: &Map<String, Value>, actual: &Map<String, Value>) -> Result<(), Vec<String>> {
+    let mut errors = Vec::new();
+    for (path, facts) in actual {
+        match locked.get(path) {
+            None => errors.push(format!("{path} is not pinned in media.lock.json \"cubes\"; rerun the WAV-backed build_assets")),
+            Some(lock) if lock["sha256"] != facts["sha256"] || lock["bytes"] != facts["bytes"] => errors.push(format!(
+                "{path} is sha256 {} ({} bytes) but media.lock.json pins {} ({} bytes); a cube is regenerated with cube_revision.py layers, never hand-edited",
+                facts["sha256"].as_str().unwrap_or("?"),
+                facts["bytes"],
+                lock["sha256"].as_str().unwrap_or("?"),
+                lock["bytes"]
+            )),
+            Some(_) => {}
+        }
+    }
+    for path in locked.keys().filter(|path| !actual.contains_key(*path)) {
+        errors.push(format!("media.lock.json pins {path}, which no clip uses"));
+    }
+    if errors.is_empty() {
+        Ok(())
+    } else {
+        Err(errors)
+    }
+}

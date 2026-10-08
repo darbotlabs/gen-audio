@@ -16,7 +16,10 @@
 //!   --from-lock  CI, which has no WAVs: a missing WAV takes its facts from
 //!                media.lock.json; a WAV that is present must match its lock
 //!                entry; every cube JSON's source_sha256 must be its clip's
-//!                locked sha256. media.lock.json is read, not written.
+//!                locked sha256; every cube file (JSON + PNG) must match the
+//!                bytes media.lock.json "cubes" pins (a mode that can't
+//!                regenerate verifies what was generated). media.lock.json
+//!                is read, not written.
 //! Any other missing media (cube JSON/PNG, strips, profile) is an error.
 //! Then `git diff --exit-code` over the outputs is the regen gate.
 //!
@@ -26,13 +29,13 @@
 //!   schemas/asset-object/vectors/fixtures_v1.json   (legacy_id -> uid pins, release + dev)
 //!   schemas/examples/viewport.example.json          (card "uid" alongside "id"; dev deck)
 //!   schemas/examples/viewport.release.json          (the shipped deck: example minus dev cards)
-//!   schemas/asset-object/media.lock.json            (WAV identity facts; default mode only)
+//!   schemas/asset-object/media.lock.json            (WAV identity facts + cube file sha256; default mode only)
 
 use std::fs;
 use std::path::{Path, PathBuf};
 
 use gen_audio_core::asset::{is_dev_fixture, sha256_hex, validate_set};
-use gen_audio_core::asset_migrate::migrate_to_v1;
+use gen_audio_core::asset_migrate::{migrate_to_v1, verify_cube_lock};
 use gen_audio_core::catalog;
 use serde_json::{json, Map, Value};
 
@@ -93,11 +96,9 @@ fn main() {
     let root = repo();
     let library = root.join("apps/desktop/public/library");
     let lock_path = root.join("schemas/asset-object/media.lock.json");
-    let lock: Map<String, Value> = if from_lock {
-        read_json(&lock_path)["media"].as_object().cloned().unwrap_or_default()
-    } else {
-        Map::new()
-    };
+    let lock_doc = if from_lock { read_json(&lock_path) } else { json!({}) };
+    let lock: Map<String, Value> = lock_doc["media"].as_object().cloned().unwrap_or_default();
+    let locked_cubes: Map<String, Value> = lock_doc["cubes"].as_object().cloned().unwrap_or_default();
     let manifest = read_json(&library.join("manifest.json"));
     let viewport_path = root.join("schemas/examples/viewport.example.json");
     let viewport = read_json(&viewport_path);
@@ -136,6 +137,7 @@ fn main() {
     };
 
     let mut cube_docs = Map::new();
+    let mut cube_files: Vec<String> = Vec::new();
     for clip in manifest["clips"].as_array().cloned().unwrap_or_default() {
         if let Some(path) = clip["wavUrl"].as_str().and_then(|url| url.strip_prefix("/library/")) {
             hash(path);
@@ -147,6 +149,7 @@ fn main() {
             for key in ["jsonUrl", "pngUrl"] {
                 if let Some(path) = block[key].as_str().and_then(|url| url.strip_prefix("/library/")) {
                     hash(path);
+                    cube_files.push(path.to_string());
                     if key == "jsonUrl" {
                         cube_docs.insert(path.to_string(), read_json(&library.join(path)));
                     }
@@ -172,6 +175,15 @@ fn main() {
     drop(hash);
     if !missing.is_empty() {
         fail(format!("missing or mismatched media:\n  {}", missing.join("\n  ")));
+    }
+    let cube_facts: Map<String, Value> = cube_files
+        .iter()
+        .filter_map(|path| media.get(path).map(|info| (path.clone(), json!({"sha256": info["sha256"], "bytes": info["bytes"]}))))
+        .collect();
+    if from_lock {
+        if let Err(errors) = verify_cube_lock(&locked_cubes, &cube_facts) {
+            fail(format!("cube bytes differ from media.lock.json:\n  {}", errors.join("\n  ")));
+        }
     }
     // The cube regen check without WAVs: each cube JSON names the sha256 of
     // the WAV it was made from; it must be the WAV (or locked WAV) of its clip.
@@ -296,8 +308,9 @@ fn main() {
     if !from_lock {
         let wavs: Map<String, Value> = media.iter().filter(|(path, _)| path.ends_with(".wav")).map(|(k, v)| (k.clone(), v.clone())).collect();
         let lock_doc = json!({
-            "note": "Identity facts of the gitignored library WAVs, written by build_assets when every WAV is on disk. CI has no WAVs and runs build_assets --from-lock, which takes these facts for a missing WAV and checks each cube JSON's source_sha256 against them.",
+            "note": "Identity facts of the gitignored library WAVs, and the sha256 of every cube file made from them, written by build_assets when every WAV is on disk. CI has no WAVs and runs build_assets --from-lock, which takes these facts for a missing WAV, checks each cube JSON's source_sha256 against them, and fails when a cube file's bytes differ from \"cubes\".",
             "media": wavs,
+            "cubes": cube_facts,
         });
         fs::write(&lock_path, pretty(&lock_doc)).expect("write media.lock.json");
     }
