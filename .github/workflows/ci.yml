@@ -50,8 +50,10 @@ jobs:
       - run: npm run build
 
   windows-scripts:
-    # PSScriptAnalyzer (pinned 1.24.0, any finding fails) and the script-sprawl
-    # gate, under both PowerShell 7 and Windows PowerShell 5.1.
+    # PSScriptAnalyzer (pinned 1.24.0, any finding fails), the script-sprawl
+    # gate and the regen check (asset_vectors -> v1.json must match; the
+    # library WAVs are gitignored, so build_assets reports SKIPPED here),
+    # under both PowerShell 7 and Windows PowerShell 5.1.
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
@@ -64,9 +66,9 @@ jobs:
           Install-PackageProvider -Name NuGet -MinimumVersion 2.8.5.201 -Scope CurrentUser -Force | Out-Null
           Set-PSRepository PSGallery -InstallationPolicy Trusted
           Install-Module PSScriptAnalyzer -RequiredVersion 1.24.0 -Scope CurrentUser -Force
-      - name: PSSA + sprawl gate (pwsh 7)
+      - name: PSSA + sprawl gate + regen (pwsh 7)
         shell: pwsh
         run: ./scripts/test.ps1 -Tag ci-pwsh -Skip Cargo,Npm,Python
-      - name: PSSA + sprawl gate (Windows PowerShell 5.1)
+      - name: PSSA + sprawl gate + regen (Windows PowerShell 5.1)
         shell: powershell
         run: .\scripts\test.ps1 -Tag ci-winps -Skip Cargo,Npm,Python

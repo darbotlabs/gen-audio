@@ -180,7 +180,7 @@ Windows tooling has exactly four entry points. Each one runs under Windows Power
 | Entry point | What it does |
 |---|---|
 | `scripts\build-tauri-windows.ps1 [-Mode Full\|NoBundle]` | The only build path. Imports the MSVC environment (`Import-VsDevEnv`), builds and handshakes `gen-audio-mcp`, stages it for `externalBin`, runs `npm ci`, then the pinned tauri CLI (`@tauri-apps/cli@2.12.1`). `Full` (default) makes NSIS and MSI. `NoBundle` runs `tauri build --no-bundle`, which still embeds `frontendDist`. It checks that `dist` and every output are from this run, that `dist/index.html` has the header markers, that the build is not a dev build (`cargo:rustc-cfg=dev`, which would load `localhost:1420`), and that `target\release` holds one `gen-audio-desktop` fingerprint. It prints one `BUILD_OK` line, and only on success. |
-| `scripts\test.ps1 [-Tag name] [-Skip Pssa,Sprawl,Cargo,Npm,Python] [-SprawlExclude path]` | PSScriptAnalyzer 1.24.0 with `PSScriptAnalyzerSettings.psd1` (any finding fails), the sprawl gate, `cargo test --workspace`, `npm test` and `tsc --noEmit` in `apps/desktop`, and `pytest`. Prints a `TEST_SUMMARY` line. Logs go to `artifacts/test-logs/`. |
+| `scripts\test.ps1 [-Tag name] [-Skip Pssa,Sprawl,Regen,Cargo,Npm,Python] [-SprawlExclude path]` | PSScriptAnalyzer 1.24.0 with `PSScriptAnalyzerSettings.psd1` (any finding fails), the sprawl gate, a regen check (reruns the `build_assets` and `asset_vectors` examples, then `git diff --exit-code` over `assets.json`, `assets.dev.json`, `fixtures_v1.json`, `v1.json` and `viewport.{example,release}.json`; `build_assets` is skipped, and says so, when the gitignored library WAVs are absent; PNGs are checked by pixels in pytest because zlib-ng makes their bytes vary), `cargo test --workspace`, `npm test` and `tsc --noEmit` in `apps/desktop`, and `pytest`. Prints a `TEST_SUMMARY` line. Logs go to `artifacts/test-logs/`. |
 | `scripts\mcp-call.ps1 -Tool <name> [-ArgsJson <json>] [-Port <n>]` | One MCP `tools/call` over HTTP. Finds the server from `-Port`, `GEN_AUDIO_MCP_ADDR`, `127.0.0.1:8765`, then the loopback ports a `gen-audio` process listens on, and checks `initialize` says `gen-audio`. Example: `scripts\mcp-call.ps1 -Tool ui_navigate -ArgsJson '{"slide":"slide:library"}'`. |
 | `scripts\ui-shot.ps1 -Out <png>` | Captures the Gen-Audio window with Win32 `PrintWindow`. No input injection and no screen-scrape fallback. Fails on a blank capture and prints the PNG's sha256. |
 
@@ -198,7 +198,7 @@ src/gen_audio/          installable package
   gateway.py            /health versus /ready and proxy status classes
   node_http.py          loopback genaid-audio health and ready routes
   cube_revision.py      serial inv-HDR / BW95 / clip_frac sketch
-  cube_layers.py        four-layer inverse-HDR Library cube (cube_revision.py layers)
+  cube_layers.py        four-layer Library cube; inv_hdr is rms/peak, layer_score the composite (cube_revision.py layers)
   compare.py            measure existing WAVs
   engines.py            compare-list registry
   serve.py              per-node URL and health-body helpers
