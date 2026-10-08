@@ -39,6 +39,17 @@ fn repo() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("../..").canonicalize().expect("repo root")
 }
 
+/// Source bytes with every CRLF pair replaced by LF (generator identity).
+fn crlf_to_lf(bytes: &[u8]) -> Vec<u8> {
+    let mut out = Vec::with_capacity(bytes.len());
+    for (i, &byte) in bytes.iter().enumerate() {
+        if !(byte == b'\r' && bytes.get(i + 1) == Some(&b'\n')) {
+            out.push(byte);
+        }
+    }
+    out
+}
+
 fn read_json(path: &Path) -> Value {
     serde_json::from_str(&fs::read_to_string(path).unwrap_or_else(|e| panic!("{}: {e}", path.display())))
         .unwrap_or_else(|e| panic!("{}: {e}", path.display()))
@@ -171,6 +182,20 @@ fn main() {
             Some(got) => fail(format!("{cube} was made from WAV sha256 {got}, but {wav} is {want}; regenerate the cube")),
             None if from_lock => fail(format!("{cube} has no source_sha256, so CI cannot tie it to {wav}; regenerate it with cube_revision.py layers")),
             None => {}
+        }
+    }
+    // Cube identity (item 2): a cube JSON names the CRLF-normalized sha256 of
+    // its generator source; it must be the generator in this checkout.
+    for (name, doc) in &cube_docs {
+        let (Some(generator), Some(recorded)) =
+            (doc.pointer("/provenance/generator").and_then(Value::as_str), doc.pointer("/provenance/generator_sha256").and_then(Value::as_str))
+        else {
+            continue;
+        };
+        let source = fs::read(root.join(generator)).unwrap_or_else(|e| fail(format!("{name}: generator {generator}: {e}")));
+        let current = sha256_hex(&crlf_to_lf(&source));
+        if current != recorded {
+            fail(format!("{name} was made by {generator} sha256 {recorded}, but it now hashes to {current} (CRLF->LF); regenerate cubes with cube_revision.py layers"));
         }
     }
     let mut profiles = vec![json!({"path": optimus_path, "profile": read_json(&library.join(optimus_path))})];

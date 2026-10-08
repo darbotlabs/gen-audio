@@ -10,8 +10,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          # tests/test_cube_layers.py checks each cube's generator_commit
-          # against git log -1 on src/gen_audio/cube_layers.py.
+          # Cube identity is generator_sha256 and needs no history; full
+          # history only lets tests/test_cube_layers.py check that each
+          # informational manifest generator_commit holds those bytes.
           fetch-depth: 0
       - uses: actions/setup-python@v5
         with:

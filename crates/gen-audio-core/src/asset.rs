@@ -542,6 +542,10 @@ fn field_specs(kind: &str) -> &'static [FieldSpec] {
             req("n_points", NonNegInt),
             opt("n_fft", NonNegInt),
             opt("hop_frames", NonNegInt),
+            // Cube identity (item 2): the generator's CRLF-normalized source
+            // sha256 and its layer method, never a commit SHA.
+            opt("generator_sha256", Sha),
+            opt("layer_method", Str),
         ];
             F
         },

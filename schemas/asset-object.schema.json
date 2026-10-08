@@ -954,7 +954,11 @@
         "generator_commit": {
           "type": "string",
           "pattern": "^[0-9a-f]{40}$",
-          "description": "git log -1 on the generator file when the asset's media was made."
+          "description": "Information only, never in the uid: a commit whose generator file hashes to generator_sha256 (manifest cube block, written by cube_revision.py manifest --record-generator-commit)."
+        },
+        "generator_sha256": {
+          "$ref": "#/$defs/sha256",
+          "description": "sha256 of the generator source with CRLF normalized to LF, as recorded in the cube JSON (also fields.generator_sha256)."
         },
         "layer_method": {
           "type": "string",
@@ -1281,6 +1285,15 @@
           "type": "integer",
           "minimum": 0,
           "maximum": 9007199254740991
+        },
+        "generator_sha256": {
+          "$ref": "#/$defs/sha256",
+          "description": "sha256 of the generator source (provenance.generator) with CRLF normalized to LF. Cube identity comes from this content, not from a commit."
+        },
+        "layer_method": {
+          "type": "string",
+          "pattern": "^library_r[0-9]+$",
+          "description": "Cube layer method; library_r3 is gen_audio.cube_layers revision 3."
         }
       }
     },

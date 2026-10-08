@@ -28,7 +28,7 @@ reconciled choices listed at the end.
   "schema_version": "1.0.0",          // semver; only the major enters the uid; unknown major rejected
   "uid_scheme": "ga1",
   "kind": "cube_ihdr",                // closed enum, snake_case (see §4)
-  "uid": "ga:cube_ihdr:himuxssd74afzm5eeqjfti5ple",
+  "uid": "ga:cube_ihdr:26plzjawolfu5es5gab5agoxte",
   "legacy_id": "lib-misaki-kokoro.cube", // old card id / tileId / clipId / persona id; never hashed
   "status": "ok",                     // ok | missing | unavailable; never hashed
   "fields":  { ... },                 // HASHED identity fields: fixed per-kind allowlist, integers only
@@ -36,7 +36,7 @@ reconciled choices listed at the end.
   "src":     ["ga:audio_clip:..."],   // HASHED derived_from parents (Merkle DAG)
   "relations": { "layer_of", "bound_to", "composes", "supersedes" }, // unhashed links
   "honesty": { "synthesized_speech", "fixture", "not_podcast", "claims": [closed vocabulary], "note" },
-  "provenance": { "generator", "generator_commit", "layer_method", "engine", "voice_model", "g2p_model", "params", "created_at" },
+  "provenance": { "generator", "generator_sha256", "generator_commit", "layer_method", "engine", "voice_model", "g2p_model", "params", "created_at" },
   "display": { "title", "summary", "semantic_name", "face_name", "glyph", "display_rev" }, // display_rev: integer, unhashed
   "body": { ... },                    // per-kind payload, unhashed; float views live here
   "extensions": { "x-vendor-thing": ... } // namespaced, never hashed
@@ -116,10 +116,10 @@ uid      = "ga:" K ":" base32(digest[0..16])        RFC 4648 alphabet a-z2-7, lo
   (`control.rs`). `uid_scheme: "ga1"`. Rehashing in place is never allowed: a
   new scheme or major mints a new uid plus `relations.supersedes: [old uid]`.
 - **Worked example (real misaki cube):**
-  - `JCS(identity)` = `{"fields":{"bin_frames":8448,"covers_ms":139040,"cube_revision":3,"duration_ms":139375,...},"kind":"cube_ihdr","media":[{"role":"cube_json",...},{"role":"cube_png",...}],"schema_major":1,"src":["ga:audio_clip:vtwxksrsuci7zygslimzfy7kdy"]}`
-  - digest = `3a194bca…9478`
-  - uid = `ga:cube_ihdr:himuxssd74afzm5eeqjfti5ple`
-  - glyph = `⠺⠙`
+  - `JCS(identity)` = `{"fields":{"bin_frames":8448,"covers_ms":139040,"cube_revision":3,"duration_ms":139375,"freq_bins":102,"generator_sha256":"68d0f9ff…71af9",...,"layer_method":"library_r3",...},"kind":"cube_ihdr","media":[{"role":"cube_json",...},{"role":"cube_png",...}],"schema_major":1,"src":["ga:audio_clip:vtwxksrsuci7zygslimzfy7kdy"]}`
+  - digest = `d79ebca4…9090`
+  - uid = `ga:cube_ihdr:26plzjawolfu5es5gab5agoxte`
+  - glyph = `⣗⢞`
 
   Darbot's earlier worked example (`…ay76z`, built from the old kokoro_onnx
   cube under a 130-bit encoding) no longer applies: this spec takes 128 bits and
@@ -171,12 +171,36 @@ frames so both languages re-derive `duration_ms` before hashing. None of the
 | voice_profile | persona_id, voice_model (uid), tone, purpose, domain, accent, traits, refs | | profile_json | |
 | audio_clip | engine, sample_rate_hz, duration_ms | channels (1..32) | wav | |
 | spectrogram_2d | source_sha256, sample_rate_hz, n_fft, hop_frames, n_bands, width_px, height_px, duration_ms, covers_ms, db_floor, colormap | | spectrogram_png | exactly 1 audio_clip |
-| cube_ihdr | source_sha256, sample_rate_hz, bin_frames, time_bins, freq_bins, duration_ms, covers_ms, inv_hdr_ppm, cube_revision, n_points | n_fft, hop_frames | cube_json, cube_png | exactly 1 audio_clip |
+| cube_ihdr | source_sha256, sample_rate_hz, bin_frames, time_bins, freq_bins, duration_ms, covers_ms, inv_hdr_ppm, cube_revision, n_points | n_fft, hop_frames, generator_sha256, layer_method | cube_json, cube_png | exactly 1 audio_clip |
 | layer | name (signal/tonality/confidence/quality), index | | | exactly 1 cube_ihdr (= relations.layer_of) |
 | podcast_script | format, n_turns, n_words | | script_txt | |
 | transcript | language, n_words | | transcript_json, transcript_txt | (audio_clip) |
 | card | card_id, view (old card kind) | | | |
 | mcp_tool | name, input_schema | | | |
+
+### Cube identity: generator content, not history
+
+A Library cube's uid says which generator **bytes** made it, never which
+commit:
+
+- `gen_audio.cube_layers` writes `provenance.generator_sha256` into the cube
+  JSON: the sha256 of `src/gen_audio/cube_layers.py` with CRLF normalized to
+  LF, so a Windows `core.autocrlf=true` checkout hashes the same. The JSON also
+  keeps `generator` (the path), `layer_method` (`library_r3`) and `params`.
+- The cube JSON is hashed as the `cube_json` media, and the migration also
+  copies `generator_sha256` and `layer_method` into `fields`. Both routes put
+  the generator's content and method in the preimage; `params` reach it
+  through the cube JSON bytes.
+- No commit SHA is written into the cube JSON or `fields`. A rebase, squash or
+  cherry-pick keeps every cube uid; editing the generator changes them after a
+  regen. `tests/test_cube_layers.py` and `build_assets` fail with "regenerate
+  cubes" when the generator no longer hashes to the recorded value.
+- The commit is information only. `cube_revision.py manifest
+  --record-generator-commit`, run after the regen is committed, writes the
+  newest commit whose generator file has those bytes to the manifest cube block
+  (`generator_commit`). `build_assets` copies it into the cube envelope's
+  `provenance`, which is unhashed. A test checks that a recorded commit holds
+  those bytes, and skips when the commit is not in the clone.
 
 **Media roles (B2).** Each role appears **at most once** per envelope
 (`duplicate_media_role`; schema `contains` + `maxContains: 1` per role; also

@@ -9,14 +9,24 @@ the mirror from the cube JSON; ``scripts/cube_revision.py manifest`` runs it and
 
 A ready clip with no cube block gets one when a four-layer cube JSON in the
 library names its WAV (``wavUrl``), so a new cube is wired by regenerating,
-not by editing the manifest. Standard library only, so it runs where numpy is
+not by editing the manifest.
+
+A cube block may also carry ``generator_commit``: the commit whose generator
+file hashes to the cube's ``provenance.generator_sha256``. It is information
+only (build_assets copies it into the cube envelope's unhashed provenance; the
+uid never sees it). :func:`sync_manifest` keeps it as it is;
+:func:`record_generator_commits` (``cube_revision.py manifest
+--record-generator-commit``) fills it from git history once the regen is
+committed. Standard library only, so it runs where numpy is
 not installed (CI's Windows scripts job). Cubes without ``cube_revision`` come
 from the retired generator and are left exactly as shipped.
 """
 
 from __future__ import annotations
 
+import hashlib
 import json
+import subprocess
 from pathlib import Path
 
 # Mirror keys, in the order they appear in a manifest cube block.
@@ -85,6 +95,70 @@ def sync_manifest(manifest_path: Path | str, library_dir: Path | str | None = No
         before = dict(block)
         block.update(cube_mirror(doc))
         if block != before:
+            changed.append(str(clip.get("id")))
+    text = render(manifest)
+    if text != manifest_path.read_text(encoding="utf-8"):
+        manifest_path.write_text(text, encoding="utf-8")
+    return changed
+
+
+def normalized_sha256(data: bytes) -> str:
+    """sha256 of source bytes with CRLF normalized to LF (generator identity)."""
+    return hashlib.sha256(data.replace(b"\r\n", b"\n")).hexdigest()
+
+
+def _git(repo: Path, *args: str) -> subprocess.CompletedProcess[bytes]:
+    return subprocess.run(["git", "-C", str(repo), *args], capture_output=True, check=False)
+
+
+def generator_commit_for(repo: Path | str, generator: str, sha256: str) -> str | None:
+    """Newest commit that changed ``generator`` to bytes hashing to ``sha256``."""
+    log = _git(Path(repo), "log", "--format=%H", "--", generator)
+    if log.returncode != 0:
+        return None
+    for commit in log.stdout.decode().split():
+        blob = _git(Path(repo), "show", f"{commit}:{generator}")
+        if blob.returncode == 0 and normalized_sha256(blob.stdout) == sha256:
+            return commit
+    return None
+
+
+def commit_holds_generator(repo: Path | str, commit: str, generator: str, sha256: str) -> bool | None:
+    """True/False if ``commit`` is in this clone; None when it is not (shallow, rebased)."""
+    blob = _git(Path(repo), "show", f"{commit}:{generator}")
+    if blob.returncode != 0:
+        return None
+    return normalized_sha256(blob.stdout) == sha256
+
+
+def record_generator_commits(manifest_path: Path | str, repo: Path | str, library_dir: Path | str | None = None) -> list[str]:
+    """Set each cube block's ``generator_commit`` from history (information only).
+
+    A recorded commit that still holds the cube's generator bytes is kept.
+    Otherwise the newest commit that does is written; when none does yet (the
+    regen is not committed), the key is left out. Returns the changed clip ids.
+    """
+    manifest_path = Path(manifest_path)
+    library = Path(library_dir) if library_dir is not None else manifest_path.parent
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    changed: list[str] = []
+    for clip in manifest.get("clips", []):
+        block = clip.get("cube")
+        if not isinstance(block, dict) or not isinstance(block.get("jsonUrl"), str):
+            continue
+        provenance = json.loads((library / block["jsonUrl"].rsplit("/", 1)[-1]).read_text(encoding="utf-8")).get("provenance") or {}
+        generator, sha = provenance.get("generator"), provenance.get("generator_sha256")
+        if not isinstance(generator, str) or not isinstance(sha, str):
+            continue
+        current = block.get("generator_commit")
+        if isinstance(current, str) and commit_holds_generator(repo, current, generator, sha):
+            continue
+        found = generator_commit_for(repo, generator, sha)
+        if found is None:
+            block.pop("generator_commit", None)
+        else:
+            block["generator_commit"] = found
+        if block.get("generator_commit") != current:
             changed.append(str(clip.get("id")))
     text = render(manifest)
     if text != manifest_path.read_text(encoding="utf-8"):

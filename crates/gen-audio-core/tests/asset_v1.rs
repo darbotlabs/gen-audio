@@ -265,3 +265,26 @@ fn media_lock_pins_every_library_wav() {
     }
     assert_eq!(wavs, lock.len(), "media.lock.json has entries no clip uses");
 }
+
+/// Item 2: a cube uid comes from the generator's content (generator_sha256,
+/// layer_method in fields; params via the cube JSON bytes), never a commit.
+#[test]
+fn cube_uid_is_generator_content_and_a_commit_is_provenance_only() {
+    let catalog = json(ASSETS);
+    let cubes: Vec<&Value> = catalog["assets"].as_array().unwrap().iter().filter(|asset| asset["kind"] == "cube_ihdr").collect();
+    assert_eq!(cubes.len(), 5);
+    for cube in cubes {
+        let id = &cube["legacy_id"];
+        let sha = cube["fields"]["generator_sha256"].as_str().unwrap_or_default();
+        assert!(gen_audio_core::asset::is_sha256_hex(sha), "{id}: fields.generator_sha256");
+        assert_eq!(cube["provenance"]["generator_sha256"], sha, "{id}");
+        assert_eq!(cube["fields"]["layer_method"], "library_r3", "{id}");
+        assert!(cube["fields"].as_object().unwrap().keys().all(|key| !key.contains("commit")), "{id}: no commit in identity");
+        let mut moved = cube.clone();
+        moved["provenance"]["generator_commit"] = Value::from("0123456789abcdef0123456789abcdef01234567");
+        assert_eq!(validate_envelope(&moved).unwrap().uid, cube["uid"].as_str().unwrap(), "{id}: a commit change keeps the uid");
+        let mut edited = cube.clone();
+        edited["fields"]["generator_sha256"] = Value::from("f".repeat(64));
+        assert_ne!(gen_audio_core::asset::envelope_identity(&edited).unwrap(), gen_audio_core::asset::envelope_identity(cube).unwrap(), "{id}");
+    }
+}
