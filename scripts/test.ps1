@@ -6,6 +6,19 @@ Run every Gen-Audio check from one entry point and exit non-zero on any failure.
 Steps, in order (skip any with -Skip):
   Pssa    PSScriptAnalyzer over scripts/ with ./PSScriptAnalyzerSettings.psd1; any finding fails.
   Sprawl  the script-sprawl gate (see Invoke-SprawlGate below).
+  Regen   rerun the committed-output generators and fail on any drift:
+          cargo run -p gen-audio-core --example build_assets   (assets*.json,
+            fixtures_v1.json, viewport.example/release.json)
+          cargo run -p gen-audio-core --example asset_vectors  (v1.json)
+          then git diff --exit-code over those files. build_assets hashes the
+          library WAVs into clip uids, and the WAVs are gitignored, so it runs
+          only when every WAV that assets.json names is on disk (otherwise the
+          step says SKIPPED build_assets and still checks v1.json).
+          PNGs (*_spec2d.png, cube PNGs) are not byte-diffed: CPython on
+          Windows ships zlib-ng, so the same pixels compress to different bytes.
+          tests/test_spectrogram_strip.py regenerates each strip and compares
+          decoded pixels, and tests/test_cube_layers.py regenerates the
+          four-layer cube JSON byte for byte (both skip without the WAV).
   Cargo   cargo test --workspace (Windows; elsewhere the Tauri crate is excluded,
           the same as the Linux CI job, because it needs the GTK/WebKit libs).
   Npm     apps/desktop: npm test, then tsc --noEmit.
@@ -26,7 +39,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts\test.ps1 -Skip Cargo
 [CmdletBinding()]
 param(
     [string]$Tag = 'local',
-    # Pssa, Sprawl, Cargo, Npm, Python. Comma-separated also works with -File.
+    # Pssa, Sprawl, Regen, Cargo, Npm, Python. Comma-separated also works with -File.
     [string[]]$Skip = @(),
     [string[]]$SprawlExclude = @(),
     [string]$Python = ''
@@ -41,7 +54,7 @@ Set-Location $root
 # Script-scope copies; the step bodies below read these.
 $script:skipSteps = @($Skip | ForEach-Object { $_ -split ',' } | ForEach-Object { $_.Trim() } | Where-Object { $_ })
 foreach ($name in $script:skipSteps) {
-    if (@('Pssa', 'Sprawl', 'Cargo', 'Npm', 'Python') -notcontains $name) { throw "-Skip $name is not a step (Pssa, Sprawl, Cargo, Npm, Python)" }
+    if (@('Pssa', 'Sprawl', 'Regen', 'Cargo', 'Npm', 'Python') -notcontains $name) { throw "-Skip $name is not a step (Pssa, Sprawl, Regen, Cargo, Npm, Python)" }
 }
 $script:sprawlExcludes = @($SprawlExclude | ForEach-Object { $_ -split ',' } | ForEach-Object { $_.Trim() } | Where-Object { $_ })
 $script:pythonExe = $Python
@@ -203,6 +216,35 @@ Invoke-Step 'Sprawl' {
     $lines | Select-Object -SkipLast 1 | Add-LogLine -Log $log | Out-Host
     if ($count -gt 0) { throw "sprawl findings=$count" }
     'findings=0'
+}
+
+Invoke-Step 'Regen' {
+    param($log)
+    $library = 'apps/desktop/public/library'
+    $generated = @("$library/assets.json", "$library/assets.dev.json", 'schemas/asset-object/vectors/fixtures_v1.json',
+        'schemas/asset-object/vectors/v1.json', 'schemas/examples/viewport.example.json', 'schemas/examples/viewport.release.json')
+    # Start from the committed bytes, or the diff below would blame the generators for hand edits.
+    $dirty = @(& git status --porcelain -- @generated)
+    if ($LASTEXITCODE -ne 0) { throw 'git status failed' }
+    if ($dirty.Count -gt 0) { throw "generated files already differ from HEAD (commit or restore them first): $($dirty -join '; ')" }
+    $wavs = @()
+    foreach ($asset in @((Get-Content -LiteralPath (Join-Path $root "$library/assets.json") -Raw | ConvertFrom-Json).assets)) {
+        if (-not ($asset.PSObject.Properties.Name -contains 'media')) { continue }
+        foreach ($media in @($asset.media)) { if ($media.role -eq 'wav') { $wavs += [string]$media.path } }
+    }
+    $missing = @($wavs | Sort-Object -Unique | Where-Object { -not (Test-Path -LiteralPath (Join-Path $root "$library/$_")) })
+    $ran = @()
+    if ($missing.Count -eq 0) {
+        if ((Invoke-Logged -Log $log -File 'cargo' -Arguments @('run', '-q', '-p', 'gen-audio-core', '--example', 'build_assets')) -ne 0) { throw 'build_assets failed' }
+        $ran += 'build_assets'
+    } else {
+        "SKIPPED build_assets: library WAVs not on disk ($($missing -join ', ')); assets*.json, fixtures_v1.json and viewport.*.json not regenerated" | Add-LogLine -Log $log | Out-Host
+    }
+    if ((Invoke-Logged -Log $log -File 'cargo' -Arguments @('run', '-q', '-p', 'gen-audio-core', '--example', 'asset_vectors')) -ne 0) { throw 'asset_vectors failed' }
+    $ran += 'asset_vectors'
+    $code = Invoke-Logged -Log $log -File 'git' -Arguments (@('diff', '--exit-code', '--stat', '--') + $generated)
+    if ($code -ne 0) { throw "generated files drifted after $($ran -join ' + '); see git diff (exit $code)" }
+    "$($ran -join ' + ') reproduce the committed files$(if ($missing.Count) { "; build_assets SKIPPED ($($missing.Count) WAVs absent)" })"
 }
 
 Invoke-Step 'Cargo' {
