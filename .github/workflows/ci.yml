@@ -68,8 +68,9 @@ jobs:
 
   windows-scripts:
     # PSScriptAnalyzer (pinned 1.24.0, any finding fails), the script-sprawl
-    # gate and the regen check (asset_vectors -> v1.json must match; the
-    # library WAVs are gitignored, so build_assets reports SKIPPED here),
+    # gate and the regen check (build_assets -FromLock: the library WAVs are
+    # gitignored, so their identity comes from media.lock.json; then
+    # asset_vectors, the manifest cube mirror and git diff --exit-code),
     # under both PowerShell 7 and Windows PowerShell 5.1.
     runs-on: windows-latest
     steps:
@@ -85,7 +86,7 @@ jobs:
           Install-Module PSScriptAnalyzer -RequiredVersion 1.24.0 -Scope CurrentUser -Force
       - name: PSSA + sprawl gate + regen (pwsh 7)
         shell: pwsh
-        run: ./scripts/test.ps1 -Tag ci-pwsh -Skip Cargo,Npm,Python
+        run: ./scripts/test.ps1 -Tag ci-pwsh -FromLock -Skip Cargo,Npm,Python
       - name: PSSA + sprawl gate + regen (Windows PowerShell 5.1)
         shell: powershell
-        run: .\scripts\test.ps1 -Tag ci-winps -Skip Cargo,Npm,Python
+        run: .\scripts\test.ps1 -Tag ci-winps -FromLock -Skip Cargo,Npm,Python
