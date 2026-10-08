@@ -56,7 +56,7 @@
       "body": {
         "engineId": "pocket_tts",
         "status": "external",
-        "summary": "Kyutai Pocket TTS stand-in used when PersonaPlex weights are unavailable. No adapter in this app."
+        "summary": "Kyutai Pocket TTS, used in place of PersonaPlex when its weights are unavailable. No adapter in this app."
       }
     },
     {

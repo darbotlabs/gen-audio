@@ -8,7 +8,7 @@ import { DEV_FIXTURE_CLAIMS, fixturesRequested, isDevFixture, selectViewport } f
 
 const repo = (path: string) => fileURLToPath(new URL(`../../../${path}`, import.meta.url));
 const load = (path: string) => JSON.parse(readFileSync(repo(path), "utf8"));
-const DEV_ONLY = ["bench-ref", "cube-fixture", "spec-fixture"];
+const DEV_ONLY = ["bench-ref", "cast-sample", "cube-fixture", "serve-gateway", "serve-node", "spec-fixture"];
 
 test("only the exact flag value 1 requests fixtures", () => {
   assert.equal(fixturesRequested("1"), true);
@@ -17,7 +17,7 @@ test("only the exact flag value 1 requests fixtures", () => {
   assert.equal(selectViewport("1", "release", "example"), "example");
 });
 
-test("release assets.json and the release deck leave out spec-fixture, cube-fixture and bench-ref", () => {
+test("release assets.json and the release deck leave out the fixture, reference and sample/stub cards", () => {
   const release = load("apps/desktop/public/library/assets.json");
   const dev = load("schemas/asset-object/fixtures/assets.dev.json");
   assert.deepEqual(release.assets.filter(isDevFixture), []);
@@ -37,4 +37,12 @@ test("release assets.json and the release deck leave out spec-fixture, cube-fixt
     "viewport.release.json is the example minus the dev fixtures (rerun build_assets)",
   );
   assert.ok(ids.includes("lib-bitdot-braille-vibevoice") && ids.includes("lib-misaki-kokoro"));
+});
+
+test("E1: no stub ids and no stand-in / not-remeasured text in the release catalog or deck", () => {
+  for (const path of ["apps/desktop/public/library/assets.json", "schemas/examples/viewport.release.json"]) {
+    const text = readFileSync(repo(path), "utf8");
+    for (const id of ["cast-sample", "serve-node", "serve-gateway"]) assert.ok(!text.includes(`"${id}"`), `${id} in ${path}`);
+    assert.doesNotMatch(text, /stand-in|not remeasured|<node>/i, path);
+  }
 });

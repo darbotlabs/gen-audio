@@ -320,12 +320,13 @@ does through `relations.bound_to`.
 
 **Claims vocabulary:** `real_wav, synthesized_speech, library_cube,
 library_spectrogram, fixture_tone, profile_preview, reference_only,
-not_a_podcast_render, engine_unavailable, g2p_only, status_only`.
+not_a_podcast_render, engine_unavailable, g2p_only, status_only, sample_content`.
 
 **Release vs dev (PR #5 review).** An asset is dev/test-only when
-`honesty.fixture` is true or it claims `fixture_tone` or `reference_only`
-(Rust `is_dev_fixture`, TS `isDevFixture`): today the `spec-fixture`,
-`cube-fixture` and `bench-ref` cards. `build_assets` writes them to
+`honesty.fixture` is true or it claims `fixture_tone`, `reference_only` or
+`sample_content` (Rust `is_dev_fixture`, TS `isDevFixture`): today the
+`spec-fixture`, `cube-fixture`, `bench-ref`, `cast-sample` (sample script),
+`serve-node` and `serve-gateway` (never-probed placeholder endpoints) cards. `build_assets` writes them to
 `schemas/asset-object/fixtures/assets.dev.json` instead of the public
 `assets.json`, and writes `viewport.release.json` (the example deck minus
 those cards). Release builds boot `viewport.release.json`; only

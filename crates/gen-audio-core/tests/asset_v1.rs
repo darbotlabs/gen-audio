@@ -209,7 +209,7 @@ fn release_catalog_and_deck_leave_out_dev_fixtures() {
     let mut dev_cards: Vec<String> =
         dev.iter().filter_map(|asset| asset.pointer("/fields/card_id").and_then(Value::as_str).map(str::to_string)).collect();
     dev_cards.sort_unstable();
-    assert_eq!(dev_cards, ["bench-ref", "cube-fixture", "spec-fixture"]);
+    assert_eq!(dev_cards, ["bench-ref", "cast-sample", "cube-fixture", "serve-gateway", "serve-node", "spec-fixture"]);
     // Dev + release is the full migrated set and is valid as one set.
     let mut all = release.clone();
     all.extend(dev);

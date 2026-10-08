@@ -49,61 +49,12 @@
       "body": {
         "engineId": "pocket_tts",
         "status": "external",
-        "summary": "Kyutai Pocket TTS stand-in used when PersonaPlex weights are unavailable. No adapter in this app."
+        "summary": "Kyutai Pocket TTS, used in place of PersonaPlex when its weights are unavailable. No adapter in this app."
       },
       "id": "engine-pocket",
       "kind": "EngineStatus",
       "title": "Pocket TTS",
       "uid": "ga:card:nmfqip53e5thxk43egqjzl27da"
-    },
-    {
-      "body": {
-        "sampleScript": true,
-        "speakers": [
-          {
-            "id": "1",
-            "name": "Alice",
-            "voice": "af_heart"
-          },
-          {
-            "id": "2",
-            "name": "Frank",
-            "voice": "am_michael"
-          }
-        ]
-      },
-      "id": "cast-sample",
-      "kind": "PodcastCast",
-      "title": "Sample cast",
-      "uid": "ga:card:u73p3l6n7w2lelaz6kzpflydjy"
-    },
-    {
-      "body": {
-        "baseUrl": "http://<node>:8002/genaid-audio",
-        "healthUrl": "http://<node>:8002/genaid-audio/health",
-        "host": "<node>",
-        "port": 8002,
-        "probed": false,
-        "role": "node"
-      },
-      "id": "serve-node",
-      "kind": "ServeHealth",
-      "title": "Node health",
-      "uid": "ga:card:3kc35sblccksmpuwia6s5xobae"
-    },
-    {
-      "body": {
-        "baseUrl": "http://10.1.8.70:8002/genaid-audio",
-        "healthUrl": "http://10.1.8.70:8002/genaid-audio/health",
-        "host": "10.1.8.70",
-        "port": 8002,
-        "probed": false,
-        "role": "shared-gateway"
-      },
-      "id": "serve-gateway",
-      "kind": "ServeHealth",
-      "title": "Shared gateway",
-      "uid": "ga:card:ayvizyvubrzigxewm2bjzjmvam"
     },
     {
       "body": {

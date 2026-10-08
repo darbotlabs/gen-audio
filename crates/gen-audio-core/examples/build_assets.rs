@@ -149,7 +149,7 @@ fn main() {
     fs::write(library.join("assets.json"), pretty(&release)).expect("write assets.json");
     let dev_doc = json!({
         "schema_version": migrated["schema_version"],
-        "note": "Dev/test-only assets (honesty.fixture or fixture_tone / reference_only claims). Never shipped; the desktop shows these cards only with VITE_GEN_AUDIO_FIXTURES=1. Regenerate with build_assets.",
+        "note": "Dev/test-only assets (honesty.fixture or fixture_tone / reference_only / sample_content claims). Never shipped; the desktop shows these cards only with VITE_GEN_AUDIO_FIXTURES=1. Regenerate with build_assets.",
         "assets": dev_assets,
         "legacy_index": split_index(true),
     });

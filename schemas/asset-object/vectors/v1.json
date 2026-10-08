@@ -188,7 +188,7 @@
           }
         ],
         "provenance": {
-          "generator": "scripts/cube_spectrogram_3d.py (inverse-HDR bitdot cube)",
+          "generator": "gen_audio.cube_layers (scripts/cube_revision.py layers)",
           "params": {
             "bins_inferred_from_shape": false
           }
@@ -314,7 +314,7 @@
           }
         ],
         "provenance": {
-          "generator": "scripts/cube_spectrogram_3d.py (inverse-HDR bitdot cube)",
+          "generator": "gen_audio.cube_layers (scripts/cube_revision.py layers)",
           "params": {
             "bins_inferred_from_shape": false
           }
@@ -391,7 +391,7 @@
           }
         ],
         "provenance": {
-          "generator": "scripts/cube_spectrogram_3d.py (inverse-HDR bitdot cube)",
+          "generator": "gen_audio.cube_layers (scripts/cube_revision.py layers)",
           "params": {
             "bins_inferred_from_shape": false
           }
@@ -1274,7 +1274,7 @@
           }
         ],
         "provenance": {
-          "generator": "scripts/cube_spectrogram_3d.py (inverse-HDR bitdot cube)",
+          "generator": "gen_audio.cube_layers (scripts/cube_revision.py layers)",
           "params": {
             "bins_inferred_from_shape": false
           }
@@ -1351,7 +1351,7 @@
           }
         ],
         "provenance": {
-          "generator": "scripts/cube_spectrogram_3d.py (inverse-HDR bitdot cube)",
+          "generator": "gen_audio.cube_layers (scripts/cube_revision.py layers)",
           "params": {
             "bins_inferred_from_shape": false
           }
@@ -1428,7 +1428,7 @@
           }
         ],
         "provenance": {
-          "generator": "scripts/cube_spectrogram_3d.py (inverse-HDR bitdot cube)",
+          "generator": "gen_audio.cube_layers (scripts/cube_revision.py layers)",
           "params": {
             "bins_inferred_from_shape": false
           }
@@ -1562,7 +1562,7 @@
           }
         ],
         "provenance": {
-          "generator": "scripts/cube_spectrogram_3d.py (inverse-HDR bitdot cube)",
+          "generator": "gen_audio.cube_layers (scripts/cube_revision.py layers)",
           "params": {
             "bins_inferred_from_shape": false
           }
@@ -1640,7 +1640,7 @@
         ],
         "notes": "x",
         "provenance": {
-          "generator": "scripts/cube_spectrogram_3d.py (inverse-HDR bitdot cube)",
+          "generator": "gen_audio.cube_layers (scripts/cube_revision.py layers)",
           "params": {
             "bins_inferred_from_shape": false
           }
@@ -1716,7 +1716,7 @@
           }
         ],
         "provenance": {
-          "generator": "scripts/cube_spectrogram_3d.py (inverse-HDR bitdot cube)",
+          "generator": "gen_audio.cube_layers (scripts/cube_revision.py layers)",
           "params": {
             "bins_inferred_from_shape": false
           }
@@ -1793,7 +1793,7 @@
           }
         ],
         "provenance": {
-          "generator": "scripts/cube_spectrogram_3d.py (inverse-HDR bitdot cube)",
+          "generator": "gen_audio.cube_layers (scripts/cube_revision.py layers)",
           "params": {
             "bins_inferred_from_shape": false
           }
@@ -1870,7 +1870,7 @@
           }
         ],
         "provenance": {
-          "generator": "scripts/cube_spectrogram_3d.py (inverse-HDR bitdot cube)",
+          "generator": "gen_audio.cube_layers (scripts/cube_revision.py layers)",
           "params": {
             "bins_inferred_from_shape": false
           }
@@ -1947,7 +1947,7 @@
           }
         ],
         "provenance": {
-          "generator": "scripts/cube_spectrogram_3d.py (inverse-HDR bitdot cube)",
+          "generator": "gen_audio.cube_layers (scripts/cube_revision.py layers)",
           "params": {
             "bins_inferred_from_shape": false
           }
@@ -2025,7 +2025,7 @@
           }
         ],
         "provenance": {
-          "generator": "scripts/cube_spectrogram_3d.py (inverse-HDR bitdot cube)",
+          "generator": "gen_audio.cube_layers (scripts/cube_revision.py layers)",
           "params": {
             "bins_inferred_from_shape": false
           }
@@ -2103,7 +2103,7 @@
           }
         ],
         "provenance": {
-          "generator": "scripts/cube_spectrogram_3d.py (inverse-HDR bitdot cube)",
+          "generator": "gen_audio.cube_layers (scripts/cube_revision.py layers)",
           "params": {
             "bins_inferred_from_shape": false
           }
@@ -2187,7 +2187,7 @@
           }
         ],
         "provenance": {
-          "generator": "scripts/cube_spectrogram_3d.py (inverse-HDR bitdot cube)",
+          "generator": "gen_audio.cube_layers (scripts/cube_revision.py layers)",
           "params": {
             "bins_inferred_from_shape": false
           }
@@ -2316,7 +2316,7 @@
           }
         ],
         "provenance": {
-          "generator": "scripts/cube_spectrogram_3d.py (inverse-HDR bitdot cube)",
+          "generator": "gen_audio.cube_layers (scripts/cube_revision.py layers)",
           "params": {
             "bins_inferred_from_shape": false
           }
@@ -2495,7 +2495,7 @@
           }
         ],
         "provenance": {
-          "generator": "scripts/cube_spectrogram_3d.py (inverse-HDR bitdot cube)",
+          "generator": "gen_audio.cube_layers (scripts/cube_revision.py layers)",
           "params": {
             "bins_inferred_from_shape": false
           }
@@ -2573,7 +2573,7 @@
           }
         ],
         "provenance": {
-          "generator": "scripts/cube_spectrogram_3d.py (inverse-HDR bitdot cube)",
+          "generator": "gen_audio.cube_layers (scripts/cube_revision.py layers)",
           "params": {
             "bins_inferred_from_shape": false
           }
@@ -2651,7 +2651,7 @@
           }
         ],
         "provenance": {
-          "generator": "scripts/cube_spectrogram_3d.py (inverse-HDR bitdot cube)",
+          "generator": "gen_audio.cube_layers (scripts/cube_revision.py layers)",
           "params": {
             "bins_inferred_from_shape": false
           }
@@ -2729,7 +2729,7 @@
           }
         ],
         "provenance": {
-          "generator": "scripts/cube_spectrogram_3d.py (inverse-HDR bitdot cube)",
+          "generator": "gen_audio.cube_layers (scripts/cube_revision.py layers)",
           "params": {
             "bins_inferred_from_shape": false
           }
@@ -4374,7 +4374,7 @@
             }
           ],
           "provenance": {
-            "generator": "scripts/cube_spectrogram_3d.py (inverse-HDR bitdot cube)",
+            "generator": "gen_audio.cube_layers (scripts/cube_revision.py layers)",
             "params": {
               "bins_inferred_from_shape": false
             }

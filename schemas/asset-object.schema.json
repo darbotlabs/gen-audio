@@ -903,7 +903,8 @@
               "not_a_podcast_render",
               "engine_unavailable",
               "g2p_only",
-              "status_only"
+              "status_only",
+              "sample_content"
             ]
           }
         },

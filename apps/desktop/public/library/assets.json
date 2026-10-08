@@ -308,48 +308,6 @@
     {
       "body": {
         "body": {
-          "baseUrl": "http://<node>:8002/genaid-audio",
-          "healthUrl": "http://<node>:8002/genaid-audio/health",
-          "host": "<node>",
-          "port": 8002,
-          "probed": false,
-          "role": "node"
-        },
-        "id": "serve-node",
-        "kind": "ServeHealth",
-        "title": "Node health"
-      },
-      "display": {
-        "glyph": "⣚⢅",
-        "title": "Node health"
-      },
-      "fields": {
-        "card_id": "serve-node",
-        "view": "ServeHealth"
-      },
-      "honesty": {
-        "claims": [
-          "status_only"
-        ],
-        "fixture": false,
-        "synthesized_speech": false
-      },
-      "kind": "card",
-      "legacy_id": "serve-node",
-      "media": [],
-      "provenance": {
-        "generator": "viewport.example.json card (v0)"
-      },
-      "relations": {},
-      "schema_version": "1.0.0",
-      "src": [],
-      "status": "ok",
-      "uid": "ga:card:3kc35sblccksmpuwia6s5xobae",
-      "uid_scheme": "ga1"
-    },
-    {
-      "body": {
-        "body": {
           "accent": "General American",
           "agentName": "Optimus Timelarp",
           "cubeJsonUrl": "/library/library_cube_explainer_kokoro_onnx_cube3d.json",
@@ -546,48 +504,6 @@
       "src": [],
       "status": "ok",
       "uid": "ga:card:a2ti6pijkx6p2qp46yrsaxvwve",
-      "uid_scheme": "ga1"
-    },
-    {
-      "body": {
-        "body": {
-          "baseUrl": "http://10.1.8.70:8002/genaid-audio",
-          "healthUrl": "http://10.1.8.70:8002/genaid-audio/health",
-          "host": "10.1.8.70",
-          "port": 8002,
-          "probed": false,
-          "role": "shared-gateway"
-        },
-        "id": "serve-gateway",
-        "kind": "ServeHealth",
-        "title": "Shared gateway"
-      },
-      "display": {
-        "glyph": "⠆⠪",
-        "title": "Shared gateway"
-      },
-      "fields": {
-        "card_id": "serve-gateway",
-        "view": "ServeHealth"
-      },
-      "honesty": {
-        "claims": [
-          "status_only"
-        ],
-        "fixture": false,
-        "synthesized_speech": false
-      },
-      "kind": "card",
-      "legacy_id": "serve-gateway",
-      "media": [],
-      "provenance": {
-        "generator": "viewport.example.json card (v0)"
-      },
-      "relations": {},
-      "schema_version": "1.0.0",
-      "src": [],
-      "status": "ok",
-      "uid": "ga:card:ayvizyvubrzigxewm2bjzjmvam",
       "uid_scheme": "ga1"
     },
     {
@@ -1072,7 +988,7 @@
         "body": {
           "engineId": "pocket_tts",
           "status": "external",
-          "summary": "Kyutai Pocket TTS stand-in used when PersonaPlex weights are unavailable. No adapter in this app."
+          "summary": "Kyutai Pocket TTS, used in place of PersonaPlex when its weights are unavailable. No adapter in this app."
         },
         "id": "engine-pocket",
         "kind": "EngineStatus",
@@ -1398,53 +1314,6 @@
       "src": [],
       "status": "ok",
       "uid": "ga:card:tpwzqqirpudx6ovxgar7wts2dy",
-      "uid_scheme": "ga1"
-    },
-    {
-      "body": {
-        "body": {
-          "sampleScript": true,
-          "speakers": [
-            {
-              "id": "1",
-              "name": "Alice",
-              "voice": "af_heart"
-            },
-            {
-              "id": "2",
-              "name": "Frank",
-              "voice": "am_michael"
-            }
-          ]
-        },
-        "id": "cast-sample",
-        "kind": "PodcastCast",
-        "title": "Sample cast"
-      },
-      "display": {
-        "glyph": "⢧⣶",
-        "title": "Sample cast"
-      },
-      "fields": {
-        "card_id": "cast-sample",
-        "view": "PodcastCast"
-      },
-      "honesty": {
-        "claims": [],
-        "fixture": false,
-        "synthesized_speech": false
-      },
-      "kind": "card",
-      "legacy_id": "cast-sample",
-      "media": [],
-      "provenance": {
-        "generator": "viewport.example.json card (v0)"
-      },
-      "relations": {},
-      "schema_version": "1.0.0",
-      "src": [],
-      "status": "ok",
-      "uid": "ga:card:u73p3l6n7w2lelaz6kzpflydjy",
       "uid_scheme": "ga1"
     },
     {
@@ -3488,7 +3357,6 @@
     "audio_clip:lib-kokoro": "ga:audio_clip:suixeici2fik7yjih5qlave3kq",
     "audio_clip:lib-kokoro-onnx": "ga:audio_clip:tlpralovoabmu44zazgsxm62uy",
     "audio_clip:lib-misaki-kokoro": "ga:audio_clip:vtwxksrsuci7zygslimzfy7kdy",
-    "card:cast-sample": "ga:card:u73p3l6n7w2lelaz6kzpflydjy",
     "card:conn-acp": "ga:card:pwlbnygt4dzqdyvwc6fwj6basy",
     "card:conn-claude": "ga:card:tg4uitpjeeazn7rnuxtxyxag2m",
     "card:conn-copilot": "ga:card:oxeufq3ckwj4dxcvnv2uyih7ce",
@@ -3513,8 +3381,6 @@
     "card:profile-khortana": "ga:card:f34lg4dv277pdlfsede7sr7ulm",
     "card:profile-optimus": "ga:card:4qprunbbtl3h3teawtaq5agmc4",
     "card:profile-rocky": "ga:card:pj4ogcnj42gzli7ql2daqz53em",
-    "card:serve-gateway": "ga:card:ayvizyvubrzigxewm2bjzjmvam",
-    "card:serve-node": "ga:card:3kc35sblccksmpuwia6s5xobae",
     "cube_ihdr:lib-bitdot-braille-vibevoice.cube": "ga:cube_ihdr:lmisx3j3fhlwxd5isq5tdhgtqa",
     "cube_ihdr:lib-cube-explainer.cube": "ga:cube_ihdr:bcuw4m76pyqanslfiugnvlxnda",
     "cube_ihdr:lib-kokoro-onnx.cube": "ga:cube_ihdr:uzkw5dq5jjubbqdlaz2pzm4rv4",

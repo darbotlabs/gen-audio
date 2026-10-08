@@ -398,6 +398,10 @@ pub fn migrate_v0_to_v1(bundle: &Value) -> Result<Value, AssetError> {
         let fixture = body_in["source"] == "fixture-tone";
         let claims: &[&str] = match view.as_str() {
             _ if fixture => &["fixture_tone"],
+            // PR #5 verification E1: sample scripts and never-probed placeholder
+            // endpoints are not product content; they ship in dev only.
+            "PodcastCast" if body_in["sampleScript"] == true => &["sample_content"],
+            "ServeHealth" if body_in["probed"] != true => &["status_only", "sample_content"],
             "EngineStatus" | "ServeHealth" | "ConnectorStatus" => &["status_only"],
             "BenchmarkCompare" => &["reference_only"],
             "VoiceProfile" => &["profile_preview", "not_a_podcast_render"],
