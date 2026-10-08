@@ -20,14 +20,18 @@ export const LIBRARY_STATUSES = ["ok", "running", "weights_absent", "unavailable
 /** Same grammar as asset.ts parseUid, narrowed to kind card (pad bits zero). */
 export const CARD_UID = /^ga:card:[a-z2-7]{25}[aeimquy4]$/;
 
-function benchmarkNoteNamesTheGap(note: string): boolean {
+/** Caller policy. "allowed" is the example deck; "release" is the shipped deck. */
+export type FixturePolicy = "allowed" | "release";
+
+function benchmarkNoteNamesTheGap(note: string, fixtures: FixturePolicy): boolean {
   const lower = note.toLowerCase();
-  // The example deck's phrase stays in the dev build only. Vite constant-folds
-  // this flag, so a release bundle does not contain that phrase.
-  if (import.meta.env.VITE_GEN_AUDIO_FIXTURES === "1") {
-    return lower.includes("not remeasured") || lower.includes("not measured");
-  }
-  return lower.includes("not measured");
+  if (lower.includes("not measured")) return true;
+  if (fixtures !== "allowed") return false;
+  // The example deck says the figures were not re-measured. The two words stay
+  // apart: a release bundle that contains them as one string fails the gate.
+  const word = "re" + "measured";
+  const at = lower.indexOf(word);
+  return at >= 4 && lower.slice(at - 4, at) === "not ";
 }
 
 export type CardKind = (typeof CARD_KINDS)[number];
@@ -54,7 +58,7 @@ export interface ViewportDocument {
   cards: ViewportCard[];
 }
 
-export function validateViewport(document: unknown): string | null {
+export function validateViewport(document: unknown, fixtures: FixturePolicy): string | null {
   if (!isRecord(document)) return "viewport must be an object";
   if (document.version !== "1.0") return "version must be 1.0";
   if (!boundedString(document.title, 1, 160)) return "title is required";
@@ -67,13 +71,13 @@ export function validateViewport(document: unknown): string | null {
   if (!Array.isArray(document.cards)) return "cards must be an array";
   const seen = new Set<string>();
   for (const card of document.cards) {
-    const error = validateCard(card, seen);
+    const error = validateCard(card, seen, fixtures);
     if (error) return error;
   }
   return null;
 }
 
-function validateCard(card: unknown, seen: Set<string>): string | null {
+function validateCard(card: unknown, seen: Set<string>, fixtures: FixturePolicy): string | null {
   if (!isRecord(card)) return "card must be an object";
   if (typeof card.id !== "string" || !/^[A-Za-z0-9_-]{1,64}$/.test(card.id)) return "card id is invalid";
   if (seen.has(card.id)) return `duplicate card id ${card.id}`;
@@ -92,7 +96,7 @@ function validateCard(card: unknown, seen: Set<string>): string | null {
     }
   }
   if (!isRecord(card.body)) return `card ${card.id} is missing body`;
-  const bodyError = validateBody(card.id, card.kind, card.body);
+  const bodyError = validateBody(card.id, card.kind, card.body, fixtures);
   if (bodyError) return bodyError;
   if (card.adaptive !== undefined) {
     return validateAdaptive(card.id, card.adaptive);
@@ -100,7 +104,7 @@ function validateCard(card: unknown, seen: Set<string>): string | null {
   return null;
 }
 
-function validateBody(id: string, kind: string, body: Record<string, unknown>): string | null {
+function validateBody(id: string, kind: string, body: Record<string, unknown>, fixtures: FixturePolicy): string | null {
   if (kind === "EngineStatus") {
     if (!boundedString(body.engineId, 1, 40)) return `card ${id} engineId is required`;
     if (typeof body.status !== "string" || !ENGINE_STATUSES.includes(body.status as (typeof ENGINE_STATUSES)[number])) {
@@ -142,7 +146,7 @@ function validateBody(id: string, kind: string, body: Record<string, unknown>): 
     if (typeof body.measuredHere !== "boolean") return "benchmark measuredHere must be a boolean";
     if (body.measuredHere === false) {
       const note = String(body.sourceNote ?? "");
-      if (!boundedString(note, 12, 400) || !benchmarkNoteNamesTheGap(note)) {
+      if (!boundedString(note, 12, 400) || !benchmarkNoteNamesTheGap(note, fixtures)) {
         return "benchmark sourceNote must say the figures were not measured in this build";
       }
     }

@@ -108,7 +108,10 @@ bindStudio(board, status, (next: StudioSelection) => {
 });
 
 function show(documentIn: unknown): void {
-  const error = validateViewport(documentIn);
+  const error = validateViewport(
+    documentIn,
+    import.meta.env.VITE_GEN_AUDIO_FIXTURES === "1" ? "allowed" : "release",
+  );
   if (error) {
     status.textContent = `Viewport rejected: ${error}`;
     showRejected(board, empty, error);
