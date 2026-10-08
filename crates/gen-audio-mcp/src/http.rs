@@ -255,7 +255,7 @@ pub fn handle_connection(server: &Server, mut stream: TcpStream) -> std::io::Res
     }
     if method == "GET" {
         if let Some(rel) = library_rel(path) {
-            return write_library(&mut stream, rel, &cors);
+            return write_library(&mut stream, method, path, rel, &cors);
         }
     }
     if method != "POST" || path != "/mcp" {
@@ -503,18 +503,18 @@ fn library_rel(path: &str) -> Option<&str> {
     Some(rel)
 }
 
-fn write_library(stream: &mut TcpStream, rel: &str, cors: &str) -> std::io::Result<()> {
+fn write_library(stream: &mut TcpStream, method: &str, path: &str, rel: &str, cors: &str) -> std::io::Result<()> {
     const CAP: u64 = 64 * 1024 * 1024;
     match gen_audio_core::library_store::open_library_media(rel) {
-        Ok((path, mime)) => {
-            let meta = std::fs::metadata(&path).map_err(|_| std::io::Error::other("library media"))?;
+        Ok((file, mime)) => {
+            let meta = std::fs::metadata(&file).map_err(|_| std::io::Error::other("library media"))?;
             if meta.len() > CAP {
-                return write_response(stream, 413, br#"{"error":"library media is too large"}"#, cors);
+                return reject(stream, method, path, 413, br#"{"error":"library media is too large"}"#, cors, "library");
             }
-            let body = std::fs::read(&path).map_err(|_| std::io::Error::other("library media"))?;
+            let body = std::fs::read(&file).map_err(|_| std::io::Error::other("library media"))?;
             write_typed(stream, 200, mime, &body, cors)
         }
-        Err(_) => write_response(stream, 404, br#"{"error":"not found"}"#, cors),
+        Err(_) => reject(stream, method, path, 404, br#"{"error":"not found"}"#, cors, "library"),
     }
 }
 
@@ -789,6 +789,49 @@ mod tests {
         let (status, _text, peer) = roundtrip_peer(|port| post(port, "Content-Type: application/json\r\n", NAVIGATE));
         assert_eq!(status, 200);
         assert!(logged(&peer).is_empty());
+    }
+
+    #[test]
+    fn library_404_and_413_are_one_rejection_line() {
+        let (status, text, peer) = roundtrip_peer(|port| {
+            format!("GET /library/missing.wav HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\nConnection: close\r\n\r\n")
+        });
+        assert_eq!(status, 404, "{text}");
+        let lines = logged(&peer);
+        assert_eq!(lines.len(), 1, "{lines:?} {text}");
+        assert!(
+            lines[0].starts_with("gen-audio-mcp http: rejected GET /library/missing.wav 404 "),
+            "{lines:?}"
+        );
+
+        let dir = std::env::temp_dir().join(format!(
+            "gen-audio-lib-413-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_nanos())
+                .unwrap_or(0)
+        ));
+        std::fs::create_dir_all(&dir).unwrap();
+        let wav = dir.join("big.wav");
+        std::fs::File::create(&wav).unwrap().set_len(64 * 1024 * 1024 + 1).unwrap();
+        let saved = std::env::var("GEN_AUDIO_LIBRARY").ok();
+        std::env::set_var("GEN_AUDIO_LIBRARY", &dir);
+        let (status, text, peer) = roundtrip_peer(|port| {
+            format!("GET /library/big.wav HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\nConnection: close\r\n\r\n")
+        });
+        match saved {
+            Some(value) => std::env::set_var("GEN_AUDIO_LIBRARY", value),
+            None => std::env::remove_var("GEN_AUDIO_LIBRARY"),
+        }
+        let _ = std::fs::remove_dir_all(&dir);
+        assert_eq!(status, 413, "{text}");
+        let lines = logged(&peer);
+        assert_eq!(lines.len(), 1, "{lines:?} {text}");
+        assert!(
+            lines[0].starts_with("gen-audio-mcp http: rejected GET /library/big.wav 413 "),
+            "{lines:?}"
+        );
     }
 
     #[test]
