@@ -12,6 +12,8 @@ import json
 import os
 import posixpath
 import re
+import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -583,4 +585,42 @@ def test_a_model_dir_in_the_work_dir_is_a_path_even_when_shaped_like_a_hub_id(tm
     assert model_is_hub_id("microsoft/VibeVoice-1.5B", (repo, work))
     for not_hub in ["microsoft/VibeVoice-1.5B/x", "models\\VibeVoice", "~/m", "C:/m", "./m/x", "a/model.onnx", "<outside-repo>/m"]:
         assert not model_is_hub_id(not_hub, (repo,)), not_hub
+
+
+def test_the_synth_writer_refuses_a_recorded_path_that_does_not_resolve(tmp_path):
+    """M5: cli/synth.py's writer check had no test. A manifest field that
+    neither resolves from the repo root nor is a label (a dangling `out`) is
+    refused and named; the same field once the file is there is accepted."""
+    from gen_audio.cli.synth import sidecar_payload
+
+    repo = tmp_path / "work" / "gen-audio"
+    repo.mkdir(parents=True)
+    manifest = {"engine": "kokoro_onnx", "out": "out/x.wav"}
+    with pytest.raises(ValueError, match=r"sidecar: \$\.out 'out/x\.wav' does not resolve from the repo root"):
+        sidecar_payload(manifest, "PCM_16", {}, repo)
+    _file(repo / "out" / "x.wav", b"RIFF x")
+    assert sidecar_payload(manifest, "PCM_16", {}, repo)["out"] == "out/x.wav"
+
+
+def test_cube_revision_manifest_cli_passes_work_dir_to_the_sync(tmp_path):
+    """M10: `cube_revision.py manifest --work-dir SIDECAR=DIR`, run as a
+    process: without it the sync exits 1 and names the field; with it the
+    field becomes an <outside-repo>/ label with facts, and a rerun is a no-op."""
+    repo, library = _work(tmp_path)
+    work = repo.parent / "genaid-podcast-compare"
+    code = _file(work / "models" / "demo" / "run.py", b"print('hi')\n")
+    sidecar = library / "v.synth.json"
+    sidecar.write_text(json.dumps({"engine": "vibevoice", "inference_code": "models/demo/run.py"}, indent=2), encoding="utf-8")
+    cli = [sys.executable, str(REPO / "scripts" / "cube_revision.py"), "manifest", "--manifest", str(library / "manifest.json")]
+    refused = subprocess.run(cli, capture_output=True, text=True)
+    assert refused.returncode == 1, refused
+    assert "v.synth.json: $.inference_code 'models/demo/run.py' does not resolve from the repo root" in refused.stderr, refused.stderr
+    done = subprocess.run(cli + ["--work-dir", f"v.synth.json={work}"], capture_output=True, text=True)
+    assert done.returncode == 0, done.stderr
+    assert "v.synth.json" in done.stdout, done.stdout
+    doc = json.loads(sidecar.read_text(encoding="utf-8"))
+    assert doc["inference_code"] == "<outside-repo>/genaid-podcast-compare/models/demo/run.py"
+    assert doc["outside_repo"] == {"<outside-repo>/genaid-podcast-compare/models/demo/run.py": code}
+    again = subprocess.run(cli, capture_output=True, text=True)
+    assert again.returncode == 0 and again.stdout.strip() == "manifest cube mirror: up to date", again
 
