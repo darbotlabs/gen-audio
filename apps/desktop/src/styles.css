@@ -639,6 +639,18 @@ body.is-dragging { cursor: grabbing; user-select: none; }
 .clip-uid { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted); }
 .copy-uid { flex: 0 0 auto; padding: 0.12rem 0.45rem; font-size: 0.66rem; cursor: copy; }
 .copy-uid.is-copied { background: rgba(62, 224, 197, 0.25); }
+/* Second ruling 6: Attach to profile reports here; the tile does not flip. */
+.card > .profile-status {
+  position: absolute;
+  left: 0.45rem;
+  bottom: 0.35rem;
+  z-index: 3;
+  margin: 0;
+  padding: 0.1rem 0.4rem;
+  border-radius: 0.3rem;
+  font-size: 0.66rem;
+  background: rgba(62, 224, 197, 0.18);
+}
 
 @media (prefers-reduced-motion: reduce) {
   .board { scroll-behavior: auto; }

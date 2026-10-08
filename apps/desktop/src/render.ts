@@ -299,6 +299,53 @@ export function setCardFlip(board: HTMLElement, tileId: string, flipped: boolean
   return true;
 }
 
+/**
+ * A voice-profile update from Attach to profile (library_harvest apply) or its
+ * "flipcard" bus event (second ruling 6): write the refs, then say so with a
+ * status badge that is a polite live region. It never flips; the face stays
+ * where the user left it. Only an explicit ui_flip (the "flip" op) flips.
+ */
+export function applyProfileUpdate(board: HTMLElement, profile: Record<string, unknown>): boolean {
+  const personaId = String(profile.personaId ?? "");
+  if (!personaId) return false;
+  const tile = board.querySelector<HTMLElement>(`.card[data-id="profile-${CSS.escape(personaId)}"]`);
+  if (!tile) return false;
+  const refs = Array.isArray(profile.refs) ? profile.refs.map((item) => String(item)) : [];
+  const slot = tile.querySelector<HTMLElement>('[data-field="refs"]');
+  const before = new Set((slot?.textContent ?? "").split(", ").filter(Boolean));
+  if (slot && refs.length) slot.textContent = refs.join(", ");
+  const added = refs.filter((ref) => !before.has(ref));
+  let badge = tile.querySelector<HTMLElement>(":scope > .profile-status");
+  // The attach reply and its bus event carry the same profile; the second
+  // one adds nothing, so it keeps the badge that named the new ref.
+  if (badge && !added.length) return true;
+  if (!badge) {
+    badge = window.document.createElement("p");
+    badge.className = "profile-status";
+    badge.setAttribute("role", "status");
+    tile.append(badge);
+  }
+  badge.textContent = added.length
+    ? `Ref attached: ${added.join(", ")}. Refs are on face 2.`
+    : "Profile refs up to date.";
+  return true;
+}
+
+/**
+ * The card ops on the MCP control bus. "flip" (ui_flip) is the explicit flip:
+ * flipped defaults to true, and false is honoured even with a profile payload.
+ * "flipcard" (library_harvest apply) only updates the profile.
+ */
+export function applyCardOp(board: HTMLElement, op: string, args: Record<string, unknown>): boolean {
+  const profile = args.profile && typeof args.profile === "object" ? (args.profile as Record<string, unknown>) : null;
+  if (op === "flip" && typeof args.tileId === "string") {
+    if (profile) applyProfileUpdate(board, profile);
+    return setCardFlip(board, args.tileId, args.flipped !== false);
+  }
+  if (op === "flipcard" && profile) return applyProfileUpdate(board, profile);
+  return false;
+}
+
 function syncLayerTabs(slideId: string | undefined): void {
   const layer =
     slideId === "models" ? "models" : slideId === "library" ? "clips" : slideId === "video" ? "video" : slideId === "spatial" ? "cube" : "";

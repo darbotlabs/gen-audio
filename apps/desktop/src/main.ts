@@ -25,6 +25,8 @@ import { decorateLibraryTiles } from "./livestrip";
 import { profilePreview, type ProfilePreview, type VoiceSelection } from "./profiles";
 import {
   announceCopy,
+  applyCardOp,
+  applyProfileUpdate,
   fillCubeGlyph,
   fillModelCubes,
   bindSlideScroll,
@@ -34,7 +36,6 @@ import {
   moveFocus,
   moveSlide,
   renderBoard,
-  setCardFlip,
   showRejected,
   slides,
 } from "./render";
@@ -471,8 +472,9 @@ function bindRename(): void {
           return;
         }
         status.textContent = `Attached clip:${id} to persona ${personaId}. Audio was not decoded. synthesizedSpeech is false.`;
+        // Second ruling 6: attach updates the profile tile and announces it; it does not flip.
         if (body.profile && typeof body.profile === "object") {
-          applyFlipcard(body.profile as Record<string, unknown>);
+          applyProfileUpdate(board, body.profile as Record<string, unknown>);
         }
       });
     });
@@ -703,17 +705,6 @@ function showRun(voice: string, phase: string, detail: string, speech: boolean):
     : `${safePhase} for ${voice}. synthesizedSpeech is false. ${detail}`;
 }
 
-function applyFlipcard(profile: Record<string, unknown>): void {
-  const personaId = String(profile.personaId ?? "");
-  if (!personaId) return;
-  const card = board.querySelector<HTMLElement>(`.card[data-id="profile-${CSS.escape(personaId)}"]`);
-  if (!card) return;
-  const refs = Array.isArray(profile.refs) ? profile.refs.map((item) => String(item)).join(", ") : "";
-  const slot = card.querySelector<HTMLElement>('[data-field="refs"]');
-  if (slot && refs) slot.textContent = refs;
-  setCardFlip(board, `profile-${personaId}`, true);
-}
-
 // Window->MCP failures are counted, not swallowed. This branch's viewport_get
 // is the interim Cube-mode read (cube_mode / cube_compare, folded into PR #4's
 // reducer later) and takes no window reports, so the counts live on
@@ -759,11 +750,8 @@ function applyControl(event: { seq?: number; op?: string; args?: Record<string, 
     if (typeof args.tileId === "string") selectTile(args.tileId);
   } else if (event.op === "select" && typeof args.tileId === "string") {
     selectTile(args.tileId);
-  } else if (event.op === "flip" && typeof args.tileId === "string") {
-    setCardFlip(board, args.tileId, args.flipped !== false);
-    if (args.profile && typeof args.profile === "object") applyFlipcard(args.profile as Record<string, unknown>);
-  } else if (event.op === "flipcard" && args.profile && typeof args.profile === "object") {
-    applyFlipcard(args.profile as Record<string, unknown>);
+  } else if (event.op === "flip" || event.op === "flipcard") {
+    applyCardOp(board, event.op, args);
   } else if (event.op === "progress" && typeof args.voice === "string") {
     showRun(args.voice, String(args.phase ?? "unavailable"), String(args.detail ?? ""), args.synthesizedSpeech === true);
   } else if (event.op === "playback" && typeof args.tileId === "string") {

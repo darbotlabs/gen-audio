@@ -290,3 +290,45 @@ test("second ruling 5: the spatial cube's glyph never copies; its labelled 'Copy
   render.fillCubeGlyph(slot!, null, () => {});
   assert.equal(slot!.childElementCount, 0, "nothing bound: the slot is empty, no stand-in uid");
 });
+
+function profileTile(board: HTMLElement): HTMLElement {
+  const tile = board.querySelector<HTMLElement>('.card[data-id="profile-anton"]');
+  assert.ok(tile, "the release doc has the Anton profile tile");
+  return tile!;
+}
+
+const attachedProfile = { personaId: "anton", refs: ["persona:anton", "clip:lib-misaki-kokoro"] };
+
+test("second ruling 6: Attach to profile updates the profile tile and announces it, but never flips it", () => {
+  for (const leftOn of ["front", "back"]) {
+    const board = mount();
+    const tile = profileTile(board);
+    if (leftOn === "back") click(glyphOf(tile));
+    assert.equal(face(tile), leftOn, "the user left the tile on this face");
+    // The Attach to profile button's path (main.ts bindRename) ...
+    render.applyProfileUpdate(board, attachedProfile);
+    assert.equal(face(tile), leftOn, "attach left the face where the user left it");
+    assert.equal(tile.classList.contains("is-flipped"), leftOn === "back");
+    // ... and the library_harvest apply bus event ("flipcard" op).
+    assert.equal(render.applyCardOp(board, "flipcard", { personaId: "anton", tileId: "profile-anton", profile: attachedProfile }), true);
+    assert.equal(face(tile), leftOn, "the flipcard bus event did not flip either");
+    const badge = tile.querySelector<HTMLElement>(":scope > .profile-status");
+    assert.ok(badge, "a status badge sits on the tile, outside the faces, so it shows on any face");
+    assert.equal(badge!.getAttribute("role"), "status", "the badge is a polite live region");
+    assert.match(badge!.textContent ?? "", /clip:lib-misaki-kokoro/);
+    assert.equal(tile.querySelector('[data-field="refs"]')?.textContent, "persona:anton, clip:lib-misaki-kokoro");
+  }
+});
+
+test("second ruling 6: an explicit ui_flip (the flip op) still flips the profile tile", () => {
+  const board = mount();
+  const tile = profileTile(board);
+  assert.equal(face(tile), "front");
+  assert.equal(render.applyCardOp(board, "flip", { tileId: "profile-anton", flipped: true, profile: attachedProfile }), true);
+  assert.equal(face(tile), "back", "ui_flip flipped:true shows face 2");
+  assert.equal(tile.querySelector('[data-field="refs"]')?.textContent, "persona:anton, clip:lib-misaki-kokoro");
+  assert.equal(render.applyCardOp(board, "flip", { tileId: "profile-anton", flipped: false, profile: attachedProfile }), true);
+  assert.equal(face(tile), "front", "ui_flip flipped:false is honoured even with a profile payload");
+  assert.equal(render.applyCardOp(board, "flip", { tileId: "profile-anton" }), true);
+  assert.equal(face(tile), "back", "flipped defaults to true, as ui_flip documents");
+});
