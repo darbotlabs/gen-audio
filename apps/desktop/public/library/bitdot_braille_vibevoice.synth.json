@@ -58,7 +58,8 @@
       "bytes": 11859244
     },
     "<outside-repo>/genaid-podcast-compare/audio/vv_bitdot_braille": {
-      "kind": "directory"
+      "kind": "directory",
+      "content_identity": "none"
     },
     "<outside-repo>/genaid-podcast-compare/audio/vv_bitdot_braille/podcast_bitdot_braille_generated.wav": {
       "sha256": "63490e16e5841d4e7db6db5a5800f64c0fabdc76a2544997694708c03726439f",
@@ -69,10 +70,12 @@
       "bytes": 330039
     },
     "<outside-repo>/genaid-podcast-compare/models/VibeVoice-1.5B": {
-      "kind": "directory"
+      "kind": "directory",
+      "content_identity": "none"
     },
     "<outside-repo>/genaid-podcast-compare/models/VibeVoice-community": {
-      "kind": "directory"
+      "kind": "directory",
+      "content_identity": "none"
     },
     "<outside-repo>/genaid-podcast-compare/models/VibeVoice-community/demo/inference_from_file.py": {
       "sha256": "ee300e57ed3e76f5b463f1f4ea73b3304300df1f3e15f7caa2d50fc084da87c6",
@@ -91,7 +94,8 @@
       "bytes": 4368
     },
     "<outside-repo>/genaid-podcast-compare/venvs/vibevoice": {
-      "kind": "directory"
+      "kind": "directory",
+      "content_identity": "none"
     },
     "<outside-repo>/genaid-podcast-compare/venvs/vibevoice/bin/python": {
       "sha256": "4b67d7e58e4e3f58339106f9192dbd66421608dc2fcc6a705b20115ba588232b",

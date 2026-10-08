@@ -111,6 +111,11 @@ BITDOT_RECORDED = (
 )
 SIDECARS = sorted((REPO / "apps" / "desktop" / "public" / "library").glob("*.synth.json"))
 
+# L4: a directory has no single sha256, and a digest over its files would bind
+# the provenance to one machine's install (a venv's wheels, .pyc files and
+# absolute shebangs differ per machine). Its entry says so explicitly.
+DIRECTORY = {"kind": "directory", "content_identity": "none"}
+
 
 def _work(tmp_path):
     """A repo at <tmp>/work/gen-audio with a library, beside sibling work dirs."""
@@ -189,7 +194,7 @@ def test_manifest_sync_marks_outside_repo_inputs_with_sha256_and_is_idempotent(t
         "<outside-repo>/gen-audio-library/out/script.txt": script,
         "<outside-repo>/genaid-podcast-compare/forks/m.onnx": model,
         "<outside-repo>/genaid-podcast-compare/voices/cast_map.json": cast,
-        "<outside-repo>/m/VibeVoice": {"kind": "directory"},
+        "<outside-repo>/m/VibeVoice": DIRECTORY,
         "<outside-repo>/v/bin/python": {"sha256": hashlib.sha256(b"#!python").hexdigest(), "bytes": 8},
     }
     assert sidecar.read_text(encoding="utf-8") == render(doc)
@@ -252,7 +257,7 @@ def test_shipped_sidecars_label_every_outside_path_and_record_its_sha256(path):
     recorded = doc.get("outside_repo", {})
     assert labels == set(recorded), f"{path.name}: labels without facts {labels - set(recorded)}, facts without labels {set(recorded) - labels}"
     for label, fact in recorded.items():
-        assert fact == {"kind": "directory"} or (re.fullmatch(r"[0-9a-f]{64}", fact["sha256"]) and fact["bytes"] > 0), (label, fact)
+        assert fact == DIRECTORY or (re.fullmatch(r"[0-9a-f]{64}", fact["sha256"]) and fact["bytes"] > 0), (label, fact)
 
 
 def test_the_shipped_bitdot_command_runs_as_written_from_the_repo_root():
@@ -323,7 +328,7 @@ def _path_ok(value: str, outside: dict) -> str | None:
         fact = outside.get(path)
         if fact is None:
             return f"label {path!r} has no outside_repo entry"
-        if fact == {"kind": "directory"}:
+        if fact == DIRECTORY:
             return None
         if fact.get("transient") is True and "sha256" not in fact:
             return None  # explicitly unhashed; never invent a sha
@@ -427,7 +432,7 @@ def test_work_dir_relative_paths_are_relabelled_only_from_a_named_work_dir(tmp_p
         "<outside-repo>/genaid-podcast-compare/audio/gone.wav": {"transient": True, "unhashed": "not on this machine"},
         "<outside-repo>/genaid-podcast-compare/models/demo/a.wav": {"sha256": hashlib.sha256(b"RIFF a").hexdigest(), "bytes": 6},
         "<outside-repo>/genaid-podcast-compare/models/demo/run.py": code,
-        "<outside-repo>/genaid-podcast-compare/venvs/vv": {"kind": "directory"},
+        "<outside-repo>/genaid-podcast-compare/venvs/vv": DIRECTORY,
     }
     once = sidecar.read_bytes()
     assert sync_manifest(library / "manifest.json") == [] and sidecar.read_bytes() == once, "a second sync changes 0 bytes"
@@ -443,3 +448,37 @@ def test_the_shipped_bitdot_labels_agree_with_its_recorded_shas_and_the_lock():
     assert facts[doc["raw_output"]]["sha256"] == doc["raw_sha256"]
     assert facts[doc["output"]] == {"sha256": doc["output_sha256"], "bytes": lock["bytes"]}
     assert doc["output_sha256"] == lock["sha256"]
+
+
+@pytest.mark.parametrize("path", SIDECARS, ids=lambda path: path.name)
+def test_a_directory_entry_claims_no_content_identity(path):
+    """L4: every outside directory says `content_identity: none`: no sha256,
+    no bytes, no digest of its files that would only ever match one machine."""
+    recorded = json.loads(path.read_text(encoding="utf-8")).get("outside_repo", {})
+    for label, fact in recorded.items():
+        if fact.get("kind") == "directory" or "content_identity" in fact:
+            assert fact == DIRECTORY, (label, fact)
+
+
+def test_an_old_directory_entry_is_upgraded_without_the_directory(tmp_path):
+    """A sidecar already labelled with the old `{"kind": "directory"}` is
+    upgraded by the sync on a machine that has none of the outside files (CI),
+    and a second sync changes 0 bytes. A fresh directory gets the same entry."""
+    from gen_audio.library_manifest import file_facts, sync_manifest
+
+    repo, library = _work(tmp_path)
+    side = {
+        "engine": "vibevoice",
+        "python": "<outside-repo>/genaid-podcast-compare/venvs/vv (CPython 3.14.8)",
+        "outside_repo": {"<outside-repo>/genaid-podcast-compare/venvs/vv": {"kind": "directory"}},
+    }
+    sidecar = library / "old.synth.json"
+    sidecar.write_text(json.dumps(side, indent=2) + "\n", encoding="utf-8")
+    assert not (repo.parent / "genaid-podcast-compare").exists()
+    assert "old.synth.json" in sync_manifest(library / "manifest.json")
+    doc = json.loads(sidecar.read_text(encoding="utf-8"))
+    assert doc["outside_repo"] == {"<outside-repo>/genaid-podcast-compare/venvs/vv": DIRECTORY}
+    once = sidecar.read_bytes()
+    assert sync_manifest(library / "manifest.json") == [] and sidecar.read_bytes() == once, "a second sync changes 0 bytes"
+    (tmp_path / "venv").mkdir()
+    assert file_facts(tmp_path / "venv") == DIRECTORY
