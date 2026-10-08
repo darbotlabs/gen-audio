@@ -35,7 +35,11 @@ Steps, in order (skip any with -Skip):
           rev 3 cube JSON files byte for byte (both need the WAVs).
   Cargo   cargo test --workspace (Windows; elsewhere the Tauri crate is excluded,
           the same as the Linux CI job, because it needs the GTK/WebKit libs).
-  Npm     apps/desktop: npm test, then tsc --noEmit.
+  Npm     apps/desktop: npm test, tsc --noEmit, npm run build, then
+          python -m gen_audio.cli.release_gate --dist apps/desktop/dist
+          (the same command the desktop-ui CI job runs, from the repo root).
+          Windows CI skips Npm, so this is what makes the local script able
+          to catch a dist-gate failure CI would catch.
   Python  pytest over tests/ (covers src/gen_audio and the scripts/*.py shims).
 
 Modes:
@@ -406,11 +410,25 @@ Invoke-Step 'Npm' {
         if ($code -ne 0) { throw "npm test exit $code" }
         $code = Invoke-Logged -Log $log -File 'npx' -Arguments @('--no-install', 'tsc', '--noEmit', '-p', '.')
         if ($code -ne 0) { throw "tsc --noEmit exit $code" }
+        $code = Invoke-Logged -Log $log -File 'npm' -Arguments @('run', 'build')
+        if ($code -ne 0) { throw "npm run build exit $code" }
     } finally {
         Pop-Location
     }
+    # Same command as ci.yml's "Dist release gate", from the repo root.
+    # PYTHONPATH=src so the module resolves without a one-off wrapper.
+    $py = Get-PythonExe
+    $sep = [System.IO.Path]::PathSeparator
+    $saved = $env:PYTHONPATH
+    $env:PYTHONPATH = (Join-Path $root 'src') + $(if ($saved) { "$sep$saved" } else { '' })
+    try {
+        $code = Invoke-Logged -Log $log -File $py -Arguments @('-m', 'gen_audio.cli.release_gate', '--dist', 'apps/desktop/dist')
+    } finally {
+        $env:PYTHONPATH = $saved
+    }
+    if ($code -ne 0) { throw "release gate exit $code" }
     $pass = Select-String -LiteralPath $log -Pattern '^# pass (\d+)' | Select-Object -Last 1
-    "npm test + tsc --noEmit ok$(if ($pass) { ', ' + $pass.Matches[0].Value.TrimStart('# ') })"
+    "npm test + tsc --noEmit + dist release gate ok$(if ($pass) { ', ' + $pass.Matches[0].Value.TrimStart('# ') })"
 }
 
 Invoke-Step 'Python' {

@@ -212,6 +212,73 @@ def test_regen_diffs_the_synth_sidecars_like_ci(tmp_path):
     assert "a.synth.json" in out and "generated files drifted" in out, out
 
 
+def _stub_npm_and_gate(tmp_path: Path, *, fail_gate: bool) -> dict[str, str]:
+    """npm, npx and python3 that record their arguments. The gate exits 1 when asked."""
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir(exist_ok=True)
+    calls = tmp_path / "calls.txt"
+    (bin_dir / "npm").write_text(
+        "#!/bin/sh\n"
+        f"printf '%s\\n' \"npm $*\" >> '{calls}'\n"
+        "exit 0\n",
+        encoding="utf-8",
+    )
+    (bin_dir / "npx").write_text(
+        "#!/bin/sh\n"
+        f"printf '%s\\n' \"npx $*\" >> '{calls}'\n"
+        "exit 0\n",
+        encoding="utf-8",
+    )
+    fail = "exit 1" if fail_gate else "echo 'release gate ok'\nexit 0"
+    (bin_dir / "python3").write_text(
+        "#!/bin/sh\n"
+        f"printf '%s\\n' \"python3 $*\" >> '{calls}'\n"
+        f"printf '%s\\n' \"PYTHONPATH=$PYTHONPATH\" >> '{calls}'\n"
+        f"{fail}\n",
+        encoding="utf-8",
+    )
+    for name in ("npm", "npx", "python3"):
+        (bin_dir / name).chmod(0o755)
+    return {**os.environ, "PATH": f"{bin_dir}{os.pathsep}{os.environ.get('PATH', '')}"}
+
+
+@pytest.mark.skipif(SHELL is None or shutil.which("git") is None, reason="needs PowerShell and git")
+def test_npm_step_builds_dist_and_runs_the_ci_release_gate(tmp_path):
+    """The default Npm step is the dist gate. CI's command is
+    `python -m gen_audio.cli.release_gate --dist apps/desktop/dist`.
+    A gate failure fails the step; deleting the command leaves the step green.
+    """
+    text = (REPO / "scripts" / "test.ps1").read_text(encoding="utf-8")
+    help_text = text[: text.index("#>")]
+    assert "gen_audio.cli.release_gate" in help_text
+    assert "apps/desktop/dist" in help_text
+    repo = _temp_repo(tmp_path)
+    (repo / "apps" / "desktop").mkdir(parents=True)
+    steps = "Pssa,Sprawl,Regen,Cargo,Python"
+
+    def run(fail_gate: bool) -> tuple[subprocess.CompletedProcess[str], str]:
+        env = _stub_npm_and_gate(tmp_path, fail_gate=fail_gate)
+        result = subprocess.run(
+            [SHELL, "-NoProfile", "-File", str(repo / "scripts" / "test.ps1"), "-Tag", "t", "-Skip", steps],
+            cwd=repo, capture_output=True, text=True, timeout=300, env=env,
+        )
+        calls = (tmp_path / "calls.txt").read_text(encoding="utf-8") if (tmp_path / "calls.txt").exists() else ""
+        return result, calls
+
+    failed = run(True)
+    out = failed[0].stdout + failed[0].stderr
+    assert failed[0].returncode != 0, out
+    assert "python3 -m gen_audio.cli.release_gate --dist apps/desktop/dist" in failed[1], failed[1]
+    assert "npm run build" in failed[1], failed[1]
+    src = str(repo / "src")
+    assert any(line.startswith("PYTHONPATH=") and src in line for line in failed[1].splitlines()), failed[1]
+    (tmp_path / "calls.txt").unlink()
+    passed = run(False)
+    ok = passed[0].stdout + passed[0].stderr
+    assert passed[0].returncode == 0, ok
+    assert "python3 -m gen_audio.cli.release_gate --dist apps/desktop/dist" in passed[1]
+
+
 def test_from_lock_help_says_it_checks_the_cube_bytes():
     """Since M8, -FromLock verifies every cube file against media.lock.json
     "cubes"; the help must not still say it cannot see a hand-edited cube."""
