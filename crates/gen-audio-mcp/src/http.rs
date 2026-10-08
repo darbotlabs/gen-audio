@@ -758,16 +758,35 @@ mod tests {
         ));
         std::fs::write(&blocker, b"not-a-directory").unwrap();
         let target = blocker.join("mcp.addr");
+        // The child is killed, so its Drop and atexit never run. The parent
+        // owns the scratch directory and removes it when this guard drops,
+        // including when the assertion below panics.
+        let work = gen_audio_core::paths::make_work_dir().expect("work dir");
+        let work_path = work.path().to_path_buf();
+        // Count before spawn. The child's pid is not known yet; keep every
+        // gen-audio-* path and filter to that pid afterwards. A snapshot taken
+        // after spawn already contains a directory serve() created itself.
+        let preexisting = work_dirs_for_prefix("gen-audio-");
         let mut child = std::process::Command::new(std::env::current_exe().expect("test exe"))
             .arg("serve_logs_mcp_addr_write_failure")
             .arg("--test-threads=1")
             .env("GEN_AUDIO_MCP_ADDR_SERVE_FAIL", "1")
             .env("GEN_AUDIO_MCP_ADDR_FILE", &target)
+            .env("GEN_AUDIO_WORK_DIR", &work_path)
             .stdin(std::process::Stdio::null())
             .stdout(std::process::Stdio::null())
             .stderr(std::process::Stdio::piped())
             .spawn()
             .expect("spawn serve");
+        let pid = child.id();
+        let before: std::collections::BTreeSet<_> = preexisting
+            .into_iter()
+            .filter(|path| {
+                path.file_name()
+                    .and_then(|name| name.to_str())
+                    .is_some_and(|name| name.starts_with(&format!("gen-audio-{pid}-")))
+            })
+            .collect();
         let mut stderr = child.stderr.take().expect("stderr");
         let (tx, rx) = std::sync::mpsc::channel();
         std::thread::spawn(move || {
@@ -788,14 +807,49 @@ mod tests {
             }
         });
         let logged = rx.recv_timeout(std::time::Duration::from_secs(10));
+        // The failure line is written before accept_loop boots the scratch.
+        // Wait until that directory exists, then kill. Killing is SIGKILL, so
+        // the child's Drop and atexit do not run.
+        let appeared = std::time::Instant::now();
+        while work_dirs_for_prefix(&format!("gen-audio-{pid}-")).difference(&before).next().is_none() {
+            if appeared.elapsed() > std::time::Duration::from_millis(300) {
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
         let _ = child.kill();
         let _ = child.wait();
+        drop(work);
         let _ = std::fs::remove_file(&blocker);
         let text = logged.expect("serve did not log the mcp.addr write failure");
         assert!(
             text.contains("gen-audio-mcp: mcp.addr write failed:"),
             "{text}"
         );
+        assert!(!work_path.exists(), "parent TempWorkDir did not remove {work_path:?}");
+        let after = work_dirs_for_prefix(&format!("gen-audio-{pid}-"));
+        let leaked: Vec<_> = after.difference(&before).cloned().collect();
+        assert!(
+            leaked.is_empty(),
+            "serve_logs_mcp_addr_write_failure left {} work dir(s): {leaked:?}",
+            leaked.len()
+        );
+    }
+
+    /// Temp directories whose name starts with `prefix`. The before-count is
+    /// taken before the child is spawned; the after-count is taken after it
+    /// has been killed.
+    fn work_dirs_for_prefix(prefix: &str) -> std::collections::BTreeSet<std::path::PathBuf> {
+        let mut found = std::collections::BTreeSet::new();
+        let Ok(entries) = std::fs::read_dir(std::env::temp_dir()) else {
+            return found;
+        };
+        for entry in entries.flatten() {
+            if entry.file_name().to_string_lossy().starts_with(prefix) {
+                found.insert(entry.path());
+            }
+        }
+        found
     }
 
     #[test]
