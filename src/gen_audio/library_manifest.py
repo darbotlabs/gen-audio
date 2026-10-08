@@ -38,6 +38,7 @@ import json
 import os
 import posixpath
 import re
+import shlex
 import subprocess
 from pathlib import Path, PurePosixPath, PureWindowsPath
 
@@ -201,6 +202,100 @@ def leaves_repo(path: str) -> bool:
     return posixpath.normpath(path.replace("\\", "/")).split("/", 1)[0] == ".."
 
 
+# C1 Low 5: what a path looks like inside free text. A key with no path rule
+# (`venv_note`, `post`, any new one) is prose, and prose is split on whitespace:
+# a token is path-like when it starts with "/", "~", a drive (C:\ or C:/), a
+# UNC "\\", "./" or "../", or is a file: URI. A `<label>/` prefix is already
+# redacted. Bare relative prose (`venv/`, `trim/EQ/normalize`) names no host
+# and no user, so it passes. Per token, not per value: a path wrapped in a
+# sentence is still a path. An opening bracket or quote does not hide a token,
+# and `NAME=/x` (`PYTHONPATH=`, `--out=`) is checked on both sides of the "=".
+# A "/" token whose first segment is a top-level entry of the app's web root
+# (`/library/x.wav`) is a URL dist serves, not a machine path: the same
+# exception the label walk (:func:`_label_text`) and the shipped check make.
+_PATH_TOKEN = re.compile(r"(?:/|~|[A-Za-z]:[\\/]|\\\\|\.\.?/|file:)", re.IGNORECASE)
+_LABEL_TOKEN = re.compile(r"<[\w.-]+>/")
+_OPENERS = "([{\"'`"
+
+
+def _token_parts(token: str) -> list[str]:
+    """The parts of one token that are tested: the token without opening
+    brackets or quotes, and what follows its first "=", if any."""
+    bare = token.lstrip(_OPENERS)
+    parts = [bare]
+    if "=" in bare:
+        parts.append(bare.split("=", 1)[1].lstrip(_OPENERS))
+    return parts
+
+
+def _public_dir(repo_root: Path) -> Path:
+    """The folder dist serves from: the one place src spells it."""
+    return Path(repo_root) / "apps" / "desktop" / "public"
+
+
+def _web_root(repo_root: Path) -> frozenset[str]:
+    public = _public_dir(repo_root)
+    return frozenset(entry.name for entry in public.iterdir()) if public.is_dir() else frozenset()
+
+
+def path_like_tokens(text: str, split=str.split, web_root: frozenset[str] = frozenset()) -> list[str]:
+    """C1 Low 5: the path-like parts of ``text``'s tokens (see above);
+    ``split`` is ``str.split`` for prose, ``shlex.split`` for a command."""
+    return [
+        part for token in split(text) for part in _token_parts(token)
+        if _PATH_TOKEN.match(part) and not _LABEL_TOKEN.match(part) and not (part.startswith("/") and part[1:].split("/", 1)[0] in web_root)
+    ]
+
+
+def _command_problems(command: str, where: str, repo_root: Path, name: str) -> list[str]:
+    """C1 Low 5: `command` is split the way a shell splits it (shlex, POSIX
+    quoting) and every path-like token gets the path-field rule: a label
+    passes, `./` or `../` must stay inside the repo and resolve from its root,
+    and anything absolute (/, ~, a drive, UNC, file:) is an unredacted path."""
+    try:
+        tokens = path_like_tokens(command, lambda text: shlex.split(text, posix=True), _web_root(repo_root))
+    except ValueError as exc:
+        return [f"{name}: {where} can't be split the way a shell would ({exc}), so its paths can't be checked"]
+    problems: list[str] = []
+    for token in tokens:
+        if not token.startswith(("./", "../")):
+            problems.append(f"{name}: {where} has an unredacted absolute path {token!r}; record it as an <outside-repo>/ label")
+        elif leaves_repo(token):
+            problems.append(f"{name}: {where} path {token!r} leaves the repo root through '..'; record it as an <outside-repo>/ label")
+        elif not (repo_root / token).exists():
+            problems.append(f"{name}: {where} path {token!r} does not resolve from the repo root and is not an <outside-repo>/ label")
+    return problems
+
+
+def free_text_path_problems(doc, repo_root: Path, name: str, where: str = "$") -> list[str]:
+    """C1 Low 5: every string the path-field rule does not check, checked per
+    token. A key with no path rule fails closed on any path-like token; so
+    does the trailing note of a path field (`python: "venvs/x (note)"`);
+    `command` gets :func:`_command_problems`. `outside_repo` (labels -> facts)
+    and `inputs` (all path fields) are the path rule's."""
+    problems: list[str] = []
+    web_root = _web_root(repo_root)
+    if isinstance(doc, dict):
+        items = [(key, item, f"{where}.{key}") for key, item in doc.items() if key not in ("outside_repo", "inputs")]
+    elif isinstance(doc, list):
+        items = [(None, item, f"{where}[{index}]") for index, item in enumerate(doc)]
+    else:
+        return problems
+    for key, item, at in items:
+        if not isinstance(item, str):
+            problems += free_text_path_problems(item, repo_root, name, at)
+            continue
+        if key == "command":
+            problems += _command_problems(item, at, repo_root, name)
+            continue
+        if key in SIDECAR_PATH_KEYS or key == "model":
+            item = _path_part(item)[1]  # the path itself is the path rule's
+        for token in path_like_tokens(item, web_root=web_root):
+            problems.append(f"{name}: {at} token {token!r} is path-like in free text, where it can be neither resolved nor labelled; "
+                            f"record that path in a path field (it becomes an <outside-repo>/ label with its sha256) or leave it out")
+    return problems
+
+
 # What to do about a recorded path that does not resolve, by who meets it:
 # the sync (after the run, the work dir is known) or the writer (the run is
 # writing its own sidecar now, so the fix is in what it records).
@@ -237,7 +332,7 @@ def label_work_dir_paths(doc: dict, repo_root: Path, work_dir: Path | None, foun
         if _is_label(label):
             found[label] = source
         container[key] = label + note
-    return problems
+    return problems + free_text_path_problems(doc, repo_root, name)
 
 
 def _transient_labels(doc: dict) -> set[str]:
@@ -285,7 +380,14 @@ def sync_synth_sidecars(library: Path, repo_root: Path | None = None, work_dirs:
     fails and names the field, rather than guess a base."""
     library = Path(library)
     repo_root = Path(repo_root) if repo_root is not None else library.parents[3]
-    web_root = frozenset(entry.name for entry in library.parent.iterdir())
+    # One web root: the label walk and the free-text rule both read
+    # _web_root(repo_root). A library outside it would make the two disagree,
+    # so it fails closed and names both paths rather than pick one.
+    public = _public_dir(repo_root)
+    if library.resolve().parent != public.resolve():
+        raise ValueError(f"library {library} is not in the app's web root {public}, so the label walk and the free-text rule "
+                         f"would read different web roots; pass the library in {public}, or the repo root that holds {library}")
+    web_root = _web_root(repo_root)
     work_dirs = work_dirs or {}
     changed: list[str] = []
     for path in sorted(library.glob("*.synth.json")):

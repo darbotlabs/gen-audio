@@ -27,17 +27,20 @@ SHIPPED = sorted((REPO / "apps" / "desktop" / "public" / "library").glob("*.json
 # a leading "/" that starts a path rather than continuing a URL or a relative
 # path. A leading "/" is allowed only when it is a URL into the app's own web
 # root, i.e. its first segment is a top-level entry of apps/desktop/public
-# (/library/...): that is where dist serves from, not a machine path. The
-# "/" after an <outside-repo> label (B3) is not one either.
+# (/library/...): that is where dist serves from, not a machine path. The web
+# root is src's own answer (_web_root), not a copy of it here. The "/" after
+# an <outside-repo> label (B3) is not one either.
 DRIVE_OR_UNC = re.compile(r"(?<![A-Za-z0-9])[A-Za-z]:[\\/]|(?<!\\)\\\\(?=[\w.$-])")
 POSIX_ABS = re.compile(r"(?<![\w.:/~-])(?<!<outside-repo>)/([\w.~-][^\s\"'<>]*)")
-WEB_ROOT = {path.name for path in (REPO / "apps" / "desktop" / "public").iterdir()}
 
 
 def machine_paths(text: str) -> list[str]:
+    from gen_audio.library_manifest import _web_root
+
+    web_root = _web_root(REPO)
     hits = [match.group(0) for match in DRIVE_OR_UNC.finditer(text)]
     for match in POSIX_ABS.finditer(text):
-        if match.group(1).split("/", 1)[0] not in WEB_ROOT:
+        if match.group(1).split("/", 1)[0] not in web_root:
             hits.append(match.group(0))
     return hits
 
@@ -58,6 +61,13 @@ def test_the_shipped_set_is_what_we_think():
     names = {path.name for path in SHIPPED}
     assert {"assets.json", "manifest.json", "viewport.release.json", "viewport.example.json"} <= names
     assert any(name.endswith("_cube3d.json") for name in names)
+
+
+def test_the_web_root_is_what_we_think():
+    """The one independent oracle: it pins src's answer and drives nothing."""
+    from gen_audio.library_manifest import _web_root
+
+    assert _web_root(REPO) == {"library"}
 
 
 @pytest.mark.parametrize("path", SHIPPED, ids=lambda path: path.name)
@@ -90,8 +100,8 @@ def test_manifest_generator_drops_abswav(tmp_path):
 
     manifest = json.loads((REPO / "apps" / "desktop" / "public" / "library" / "manifest.json").read_text(encoding="utf-8"))
     manifest["clips"][0]["absWav"] = "D:\\gen-audio\\artifacts\\library\\x.wav"
-    library = tmp_path / "library"
-    library.mkdir()
+    library = tmp_path / "apps" / "desktop" / "public" / "library"
+    library.mkdir(parents=True)
     for path in (REPO / "apps" / "desktop" / "public" / "library").glob("*_cube3d.json"):
         (library / path.name).write_bytes(path.read_bytes())
     target = library / "manifest.json"
@@ -364,6 +374,11 @@ def test_every_recorded_path_in_a_synth_sidecar_resolves_or_is_labelled(path):
     if isinstance(command, str):
         if "../" in command or machine_paths(command):
             problems.append(f"$.command still has a ../ or absolute path")
+    # C1 Low 5: and the writer's own rule over the shipped file, not a copy of
+    # it: path fields, per-token paths in free text, the shell-split command.
+    from gen_audio.library_manifest import label_work_dir_paths
+
+    problems += label_work_dir_paths(json.loads(path.read_text(encoding="utf-8")), REPO, None, {}, path.name)
     assert problems == [], f"{path.name}:\n  " + "\n  ".join(problems)
 
 
@@ -648,3 +663,116 @@ def test_a_missing_file_named_by_a_transient_and_a_kept_key_is_not_waved_through
     assert "t.synth.json" in sync_manifest(library / "manifest.json")
     assert json.loads(sidecar.read_text(encoding="utf-8"))["outside_repo"] == {"<outside-repo>/genaid-podcast-compare/audio/gone.wav": UNHASHED_FACT}
 
+
+
+# C1 Low 5: a path inside free text. Keys with no path rule were not checked
+# at all, so a sentence could carry a machine path into dist. The rule is per
+# token: (key, value, the token the refusal names).
+LOW5_MUST_FAIL = [
+    pytest.param("notes", "trained from /home/dayour/models/x", "/home/dayour/models/x", id="posix-in-prose"),
+    pytest.param("notes", "see C:\\Users\\dayour\\x", "C:\\Users\\dayour\\x", id="drive-in-prose"),
+    pytest.param("notes", "\\\\smax\\share\\x.wav", "\\\\smax\\share\\x.wav", id="unc"),
+    pytest.param("notes", "~/x", "~/x", id="home-tilde"),
+    pytest.param("notes", "file:///home/dayour/x.wav", "file:///home/dayour/x.wav", id="file-uri"),
+    pytest.param("command", "cd <outside-repo>/m && python /home/dayour/run.py --seed 42", "/home/dayour/run.py", id="abs-in-command"),
+    # Same rule, the forms a token can hide behind: "NAME=", a bracket, a
+    # path field's trailing note.
+    pytest.param("command", "PYTHONPATH=/home/dayour/m python run.py", "/home/dayour/m", id="assignment-in-command"),
+    pytest.param("notes", "see (/home/dayour/x)", "/home/dayour/x)", id="bracketed-in-prose"),
+    pytest.param("python", "<outside-repo>/venvs/x (built from /home/dayour/y)", "/home/dayour/y)", id="path-field-note"),
+]
+
+
+@pytest.mark.parametrize("key, value, token", LOW5_MUST_FAIL)
+def test_a_path_like_token_in_free_text_or_command_is_refused_at_write_time(tmp_path, key, value, token):
+    """C1 Low 5: the writer refuses, naming the field and the token, and the
+    shipped-sidecar check (the same function) reports it."""
+    from gen_audio.cli.synth import sidecar_payload
+    from gen_audio.library_manifest import label_work_dir_paths
+
+    repo = tmp_path / "work" / "gen-audio"
+    repo.mkdir(parents=True)
+    with pytest.raises(ValueError, match=rf"\$\.{key} .*{re.escape(repr(token))}"):
+        sidecar_payload({"engine": "vibevoice", key: value}, "PCM_16", {}, repo)
+    reported = label_work_dir_paths({"engine": "vibevoice", key: value}, REPO, None, {}, "x.synth.json")
+    assert any(repr(token) in problem for problem in reported), reported
+
+
+@pytest.mark.parametrize("value", ["~/x", "file:///home/dayour/x.wav"])
+def test_the_sync_refuses_a_path_like_token_the_label_walk_does_not_relabel(tmp_path, value):
+    """The sync relabels absolute paths anywhere in a sidecar (B3), but `~` and
+    file: are not absolute paths to it: they now fail closed and name the
+    token, and the sidecar is left byte for byte."""
+    from gen_audio.library_manifest import sync_manifest
+
+    _, library = _work(tmp_path)
+    sidecar = library / "p.synth.json"
+    sidecar.write_text(json.dumps({"engine": "vibevoice", "notes": value}, indent=2), encoding="utf-8")
+    before = sidecar.read_bytes()
+    with pytest.raises(ValueError, match=rf"p\.synth\.json: \$\.notes token {re.escape(repr(value))} is path-like"):
+        sync_manifest(library / "manifest.json")
+    assert sidecar.read_bytes() == before
+
+
+def test_a_web_root_url_in_free_text_is_not_a_machine_path(tmp_path):
+    """`/library/x.wav` is a URL into the app's web root (what the label walk
+    and the shipped check already allow); `/libraryx/x.wav` is not."""
+    from gen_audio.cli.synth import sidecar_payload
+
+    repo, _ = _work(tmp_path)
+    assert sidecar_payload({"engine": "vibevoice", "wavUrl": "/library/x.wav"}, "PCM_16", {}, repo)["wavUrl"] == "/library/x.wav"
+    with pytest.raises(ValueError, match=r"\$\.wavUrl token '/libraryx/x\.wav' is path-like"):
+        sidecar_payload({"engine": "vibevoice", "wavUrl": "/libraryx/x.wav"}, "PCM_16", {}, repo)
+
+
+@pytest.mark.parametrize("key", ["venv_note", "post", "command", "model"])
+def test_the_shipped_vibevoice_free_text_passes_the_writer(tmp_path, key):
+    """The real values: `root venv/` and `trim/EQ/normalize` are relative
+    prose that names no host or user; the command's paths are <outside-repo>/
+    labels (and `PYTHONPATH=<outside-repo>/...`); `model` is a hub id."""
+    from gen_audio.cli.synth import sidecar_payload
+
+    doc = json.loads((REPO / "apps" / "desktop" / "public" / "library" / "bitdot_braille_vibevoice.synth.json").read_text(encoding="utf-8"))
+    if key == "model":
+        assert doc[key] == "microsoft/VibeVoice-1.5B"
+    repo = tmp_path / "work" / "gen-audio"
+    repo.mkdir(parents=True)
+    assert sidecar_payload({"engine": "vibevoice", key: doc[key]}, "PCM_16", {}, repo)[key] == doc[key]
+
+
+def test_a_library_outside_the_web_root_fails_closed_and_names_both_paths(tmp_path):
+    """A library that is not in <repo root>/apps/desktop/public would give the
+    label walk one web root and the free-text rule another. The sync does not
+    pick one: it fails closed, names the library and the web root, and leaves
+    the sidecar byte for byte, with the repo root passed or derived."""
+    from gen_audio.library_manifest import sync_synth_sidecars
+
+    repo, _ = _work(tmp_path)
+    stray = tmp_path / "stray" / "library"
+    stray.mkdir(parents=True)
+    (stray.parent / "media").mkdir()
+    sidecar = stray / "s.synth.json"
+    sidecar.write_text(json.dumps({"engine": "vibevoice", "wavUrl": "/media/x.wav"}, indent=2), encoding="utf-8")
+    before = sidecar.read_bytes()
+    public = repo / "apps" / "desktop" / "public"
+    with pytest.raises(ValueError, match=rf"library {re.escape(str(stray))} is not in the app's web root {re.escape(str(public))}"):
+        sync_synth_sidecars(stray, repo)
+    with pytest.raises(ValueError, match=rf"library {re.escape(str(stray))} is not in the app's web root "):
+        sync_synth_sidecars(stray)
+    assert sidecar.read_bytes() == before
+
+
+def test_the_label_walk_and_the_free_text_rule_read_one_web_root(tmp_path, monkeypatch):
+    """Whatever _web_root answers, both rules hear it: a /media/ URL in a web
+    root that holds media/ is left as written by the label walk and passes
+    the free-text rule, so the sync changes 0 bytes."""
+    import gen_audio.library_manifest as manifest
+    from gen_audio.library_manifest import render
+
+    repo, library = _work(tmp_path)
+    monkeypatch.setattr(manifest, "_web_root", lambda repo_root: frozenset({"library", "media"}))
+    sidecar = library / "w.synth.json"
+    sidecar.write_text(render({"engine": "vibevoice", "wavUrl": "/media/x.wav", "notes": "served at /media/x.wav"}), encoding="utf-8")
+    before = sidecar.read_bytes()
+    assert manifest.sync_synth_sidecars(library, repo) == []
+    assert sidecar.read_bytes() == before
