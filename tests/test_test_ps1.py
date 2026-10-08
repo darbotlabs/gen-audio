@@ -8,6 +8,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import shlex
 import shutil
 import subprocess
 import sys
@@ -54,9 +55,42 @@ def test_preflight_fails_and_names_a_crlf_file_under_an_eol_lf_rule(tmp_path):
     out = dirty.stdout + dirty.stderr
     assert dirty.returncode != 0, out
     assert "EOL_CRLF data.json (index lf)" in out
-    assert "git rm --cached -r . ; git reset --hard" in out and "WARNING" in out
+    # Per-file fix only: rewrite just the listed files from HEAD. Never a tree-wide reset.
+    fix = [line.strip() for line in dirty.stdout.splitlines() if line.startswith("    git ")]
+    assert fix == ["git rm -q --cached -- data.json", "git restore --source=HEAD --staged --worktree -- data.json"], dirty.stdout
+    assert "reset --hard" not in out and "git rm --cached -r ." not in out
     assert "Eol preflight failed" in out  # later steps are skipped, not run
     assert (repo / "data.json").read_bytes() == b'{\r\n  "a": 1\r\n}\r\n', "the preflight must not rewrite files"
+    # The printed fix works, even on an index whose stat already matches the CRLF file: run it and the preflight passes.
+    subprocess.run(["git", "update-index", "-q", "--refresh"], cwd=repo, capture_output=True)
+    for line in fix:
+        _git(repo, *shlex.split(line)[1:])
+    assert (repo / "data.json").read_bytes() == b'{\n  "a": 1\n}\n'
+    assert _run(repo).returncode == 0
+
+
+@pytest.mark.skipif(SHELL is None or shutil.which("git") is None, reason="needs PowerShell and git")
+def test_preflight_fix_for_a_crlf_index_is_renormalize_and_commit_per_file(tmp_path):
+    repo = _temp_repo(tmp_path)
+    (repo / "data.json").write_bytes(b'{\r\n  "a": 2\r\n}\r\n')
+    (repo / ".gitattributes").write_bytes(b"*.ps1 -text\n")
+    _git(repo, "add", ".")
+    _git(repo, "commit", "-q", "-m", "crlf in the index")
+    (repo / ".gitattributes").write_bytes(b"*.json text eol=lf\n*.ps1 -text\n")
+    _git(repo, "add", ".gitattributes")
+    _git(repo, "commit", "-q", "-m", "eol=lf rule")
+    out = _run(repo)
+    text = out.stdout + out.stderr
+    assert out.returncode != 0 and "EOL_CRLF data.json (index crlf)" in text, text
+    fix = [line.strip() for line in out.stdout.splitlines() if line.startswith("    git ")]
+    # HEAD holds the CRLF bytes here, so restoring from it comes only after the renormalize commit.
+    assert fix == ["git add --renormalize -- data.json", "git commit -m 'Renormalize line endings' -- data.json",
+                   "git rm -q --cached -- data.json", "git restore --source=HEAD --staged --worktree -- data.json"], out.stdout
+    assert "reset --hard" not in text
+    for line in fix:
+        _git(repo, *shlex.split(line)[1:])
+    assert (repo / "data.json").read_bytes() == b'{\n  "a": 2\n}\n'
+    assert _run(repo).returncode == 0
 
 
 @pytest.mark.skipif(SHELL is None or shutil.which("git") is None, reason="needs PowerShell and git")
