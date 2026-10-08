@@ -14,8 +14,7 @@ Release builds embed `apps/desktop/dist` (`frontendDist`: `../dist`). `devUrl` i
 
 ```bash
 scripts/build-tauri.sh                 # Linux: mcp handshake, npm run build, then tauri build --bundles deb
-# Windows, from PowerShell:
-# scripts/build-tauri-windows.ps1      # mcp handshake, npm run build, then tauri build --bundles nsis,msi
+# Windows: scripts\build-tauri-windows.ps1 -Mode Full|NoBundle (see Scripts below)
 ```
 
 ```bash
@@ -174,6 +173,19 @@ Health: `http://<node>:8002/genaid-audio/health`
 
 `10.1.8.70:8002` is the shared gateway row in the Power Table, not a stand-in for each node. See [docs/SERVE_APIM.md](docs/SERVE_APIM.md).
 
+## Scripts
+
+Windows tooling has exactly four entry points. Each one runs under Windows PowerShell 5.1 and PowerShell 7, checks every native exit code, and exits non-zero on failure. Extend these with a parameter instead of adding a new script: `scripts/test.ps1` fails on any other `*.ps1`, `*.bat`, `*.cmd` or `*.py` outside the allowlist, including untracked and gitignored files such as anything under `artifacts/`.
+
+| Entry point | What it does |
+|---|---|
+| `scripts\build-tauri-windows.ps1 [-Mode Full\|NoBundle]` | The only build path. Imports the MSVC environment (`Import-VsDevEnv`), builds and handshakes `gen-audio-mcp`, stages it for `externalBin`, runs `npm ci`, then the pinned tauri CLI (`@tauri-apps/cli@2.12.1`). `Full` (default) makes NSIS and MSI. `NoBundle` runs `tauri build --no-bundle`, which still embeds `frontendDist`. It checks that `dist` and every output are from this run, that `dist/index.html` has the header markers, that the build is not a dev build (`cargo:rustc-cfg=dev`, which would load `localhost:1420`), and that `target\release` holds one `gen-audio-desktop` fingerprint. It prints one `BUILD_OK` line, and only on success. |
+| `scripts\test.ps1 [-Tag name] [-Skip Pssa,Sprawl,Cargo,Npm,Python] [-SprawlExclude path]` | PSScriptAnalyzer 1.24.0 with `PSScriptAnalyzerSettings.psd1` (any finding fails), the sprawl gate, `cargo test --workspace`, `npm test` and `tsc --noEmit` in `apps/desktop`, and `pytest`. Prints a `TEST_SUMMARY` line. Logs go to `artifacts/test-logs/`. |
+| `scripts\mcp-call.ps1 -Tool <name> [-ArgsJson <json>] [-Port <n>]` | One MCP `tools/call` over HTTP. Finds the server from `-Port`, `GEN_AUDIO_MCP_ADDR`, `127.0.0.1:8765`, then the loopback ports a `gen-audio` process listens on, and checks `initialize` says `gen-audio`. Example: `scripts\mcp-call.ps1 -Tool ui_navigate -ArgsJson '{"slide":"slide:library"}'`. |
+| `scripts\ui-shot.ps1 -Out <png>` | Captures the Gen-Audio window with Win32 `PrintWindow`. No input injection and no screen-scrape fallback. Fails on a blank capture and prints the PNG's sha256. |
+
+`scripts/lib/devenv.ps1` holds the shared helpers (`Import-VsDevEnv`, `Invoke-Checked`) and is the only file that may source `vcvars64.bat`. The `scripts/*.py` files are thin CLI shims into `gen_audio.cli`. The Library cube JSON comes from `python scripts/cube_revision.py layers WAV OUT_JSON --stem STEM --engine ENGINE --revision N --png PNG`. The Library manifest has one home, `apps/desktop/public/library/manifest.json`. Vite copies it into `dist` at build time.
+
 ## Layout
 
 ```text
@@ -186,6 +198,7 @@ src/gen_audio/          installable package
   gateway.py            /health versus /ready and proxy status classes
   node_http.py          loopback genaid-audio health and ready routes
   cube_revision.py      serial inv-HDR / BW95 / clip_frac sketch
+  cube_layers.py        four-layer inverse-HDR Library cube (cube_revision.py layers)
   compare.py            measure existing WAVs
   engines.py            compare-list registry
   serve.py              per-node URL and health-body helpers

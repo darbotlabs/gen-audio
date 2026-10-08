@@ -72,3 +72,25 @@ jobs:
       - name: Asset object golden vectors + Ajv2020 (shared with cargo test)
         run: npm test
       - run: npm run build
+
+  windows-scripts:
+    # PSScriptAnalyzer (pinned 1.24.0, any finding fails) and the script-sprawl
+    # gate, under both PowerShell 7 and Windows PowerShell 5.1.
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install PSScriptAnalyzer 1.24.0 (pwsh)
+        shell: pwsh
+        run: Install-Module PSScriptAnalyzer -RequiredVersion 1.24.0 -Scope CurrentUser -Force
+      - name: Install PSScriptAnalyzer 1.24.0 (Windows PowerShell 5.1)
+        shell: powershell
+        run: |
+          Install-PackageProvider -Name NuGet -MinimumVersion 2.8.5.201 -Scope CurrentUser -Force | Out-Null
+          Set-PSRepository PSGallery -InstallationPolicy Trusted
+          Install-Module PSScriptAnalyzer -RequiredVersion 1.24.0 -Scope CurrentUser -Force
+      - name: PSSA + sprawl gate (pwsh 7)
+        shell: pwsh
+        run: ./scripts/test.ps1 -Tag ci-pwsh -Skip Cargo,Npm,Python
+      - name: PSSA + sprawl gate (Windows PowerShell 5.1)
+        shell: powershell
+        run: .\scripts\test.ps1 -Tag ci-winps -Skip Cargo,Npm,Python
