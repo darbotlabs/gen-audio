@@ -7,14 +7,16 @@
 //! sidecars, hashes every referenced media file under
 //! apps/desktop/public/library (the gitignored WAVs must be staged there),
 //! and writes:
-//!   apps/desktop/public/library/assets.json        (v1 envelopes)
-//!   schemas/asset-object/vectors/fixtures_v1.json   (legacy_id -> uid pins)
-//!   schemas/examples/viewport.example.json          (card "uid" alongside "id")
+//!   apps/desktop/public/library/assets.json        (release v1 envelopes: no dev fixtures)
+//!   schemas/asset-object/fixtures/assets.dev.json   (dev/test-only envelopes, never shipped)
+//!   schemas/asset-object/vectors/fixtures_v1.json   (legacy_id -> uid pins, release + dev)
+//!   schemas/examples/viewport.example.json          (card "uid" alongside "id"; dev deck)
+//!   schemas/examples/viewport.release.json          (the shipped deck: example minus dev cards)
 
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use gen_audio_core::asset::{sha256_hex, validate_set};
+use gen_audio_core::asset::{is_dev_fixture, sha256_hex, validate_set};
 use gen_audio_core::asset_migrate::migrate_to_v1;
 use gen_audio_core::catalog;
 use serde_json::{json, Map, Value};
@@ -127,7 +129,33 @@ fn main() {
     validate_set(&assets).unwrap_or_else(|e| panic!("migrated set is invalid: {e}"));
 
     let pretty = |value: &Value| serde_json::to_string_pretty(value).expect("json") + "\n";
-    fs::write(library.join("assets.json"), pretty(&migrated)).expect("write assets.json");
+    // Release vs dev split (PR #5 review, fix 5): fixture-tone and
+    // reference-only assets never reach public/library (and so never dist).
+    let (dev_assets, release_assets): (Vec<Value>, Vec<Value>) = assets.iter().cloned().partition(is_dev_fixture);
+    validate_set(&release_assets).unwrap_or_else(|e| panic!("release set is invalid without the dev fixtures: {e}"));
+    let dev_uids: Vec<&str> = dev_assets.iter().filter_map(|asset| asset["uid"].as_str()).collect();
+    let split_index = |dev: bool| -> Map<String, Value> {
+        migrated["legacy_index"]
+            .as_object()
+            .cloned()
+            .unwrap_or_default()
+            .into_iter()
+            .filter(|(_, uid)| dev_uids.contains(&uid.as_str().unwrap_or_default()) == dev)
+            .collect()
+    };
+    let mut release = migrated.clone();
+    release["assets"] = json!(release_assets);
+    release["legacy_index"] = json!(split_index(false));
+    fs::write(library.join("assets.json"), pretty(&release)).expect("write assets.json");
+    let dev_doc = json!({
+        "schema_version": migrated["schema_version"],
+        "note": "Dev/test-only assets (honesty.fixture or fixture_tone / reference_only claims). Never shipped; the desktop shows these cards only with VITE_GEN_AUDIO_FIXTURES=1. Regenerate with build_assets.",
+        "assets": dev_assets,
+        "legacy_index": split_index(true),
+    });
+    let dev_dir = root.join("schemas/asset-object/fixtures");
+    fs::create_dir_all(&dev_dir).expect("fixtures dir");
+    fs::write(dev_dir.join("assets.dev.json"), pretty(&dev_doc)).expect("write assets.dev.json");
     let fixtures = json!({
         "schema_version": migrated["schema_version"],
         "note": "Pinned uid of every migrated v0 fixture. Regenerate with `cargo run -p gen-audio-core --example build_assets`.",
@@ -155,6 +183,20 @@ fn main() {
             }
         }
     }
-    fs::write(&viewport_path, out).expect("write viewport");
+    fs::write(&viewport_path, &out).expect("write viewport");
+
+    // The shipped deck: the example minus every card whose asset is a dev fixture.
+    let dev_card_ids: Vec<String> = dev_assets
+        .iter()
+        .filter(|asset| asset["kind"] == "card")
+        .filter_map(|asset| asset.pointer("/fields/card_id").and_then(Value::as_str).map(str::to_string))
+        .collect();
+    let mut release_viewport: Value = serde_json::from_str(&out).expect("viewport json");
+    release_viewport["cards"]
+        .as_array_mut()
+        .expect("cards")
+        .retain(|card| !dev_card_ids.iter().any(|id| card["id"] == id.as_str()));
+    fs::write(root.join("schemas/examples/viewport.release.json"), pretty(&release_viewport)).expect("write viewport.release.json");
+    println!("release: {} assets, {} cards; dev-only: {dev_card_ids:?}", release_assets.len(), release_viewport["cards"].as_array().map_or(0, Vec::len));
     println!("{} assets; legacy_index {} entries", assets.len(), index.len());
 }

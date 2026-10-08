@@ -3,7 +3,7 @@
 use std::path::Path;
 
 use gen_audio_core::asset::{
-    bin_frames_inferred, check_media_path, glyph_from_uid, mint, ms_from_frames, normalize_nfc, parse_uid, round_half_up, validate_envelope,
+    bin_frames_inferred, check_media_path, glyph_from_uid, is_dev_fixture, mint, ms_from_frames, normalize_nfc, parse_uid, round_half_up, validate_envelope,
     validate_set, verify_media, MediaCheck, MediaDigest,
 };
 use gen_audio_core::asset_migrate::migrate_to_v1;
@@ -16,6 +16,8 @@ const CARD_SCHEMA: &str = include_str!("../../../schemas/card-viewport.schema.js
 const PROFILE_SCHEMA: &str = include_str!("../../../schemas/voice_profile.schema.json");
 const ASSETS: &str = include_str!("../../../apps/desktop/public/library/assets.json");
 const VIEWPORT: &str = include_str!("../../../schemas/examples/viewport.example.json");
+const RELEASE_VIEWPORT: &str = include_str!("../../../schemas/examples/viewport.release.json");
+const DEV_ASSETS: &str = include_str!("../../../schemas/asset-object/fixtures/assets.dev.json");
 
 fn json(text: &str) -> Value {
     serde_json::from_str(text).expect("json")
@@ -186,12 +188,39 @@ fn library_catalog_is_valid_and_pinned() {
         assert_eq!(glyph_from_uid(asset["uid"].as_str().unwrap()).unwrap(), asset["display"]["glyph"]);
     }
     let fixtures = json(FIXTURES);
-    assert_eq!(catalog["legacy_index"], fixtures["legacy_index"], "fixtures_v1.json is stale; rerun build_assets");
+    // fixtures_v1.json pins release + dev; assets.json carries the release half.
+    let mut union = catalog["legacy_index"].as_object().unwrap().clone();
+    union.extend(json(DEV_ASSETS)["legacy_index"].as_object().unwrap().clone());
+    assert_eq!(Value::Object(union), fixtures["legacy_index"], "fixtures_v1.json is stale; rerun build_assets");
     // viewport.example.json keeps id and carries the card uid alongside.
     let index = fixtures["legacy_index"].as_object().unwrap();
     for card in json(VIEWPORT)["cards"].as_array().unwrap() {
         let id = card["id"].as_str().unwrap();
         assert_eq!(card["uid"], index[&format!("card:{id}")], "card {id} uid");
+    }
+}
+
+#[test]
+fn release_catalog_and_deck_leave_out_dev_fixtures() {
+    let release = json(ASSETS)["assets"].as_array().unwrap().clone();
+    assert!(release.iter().all(|asset| !is_dev_fixture(asset)), "release assets.json carries a dev fixture");
+    let dev = json(DEV_ASSETS)["assets"].as_array().unwrap().clone();
+    assert!(!dev.is_empty() && dev.iter().all(is_dev_fixture));
+    let mut dev_cards: Vec<String> =
+        dev.iter().filter_map(|asset| asset.pointer("/fields/card_id").and_then(Value::as_str).map(str::to_string)).collect();
+    dev_cards.sort_unstable();
+    assert_eq!(dev_cards, ["bench-ref", "cube-fixture", "spec-fixture"]);
+    // Dev + release is the full migrated set and is valid as one set.
+    let mut all = release.clone();
+    all.extend(dev);
+    validate_set(&all).expect("release + dev is a valid set");
+    let example = json(VIEWPORT);
+    let shipped = json(RELEASE_VIEWPORT);
+    let expected: Vec<Value> =
+        example["cards"].as_array().unwrap().iter().filter(|card| !dev_cards.iter().any(|id| card["id"] == id.as_str())).cloned().collect();
+    assert_eq!(shipped["cards"], Value::Array(expected), "viewport.release.json is stale; rerun build_assets");
+    for key in ["version", "title", "columns"] {
+        assert_eq!(shipped[key], example[key]);
     }
 }
 

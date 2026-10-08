@@ -636,46 +636,6 @@
     {
       "body": {
         "body": {
-          "disclaimer": "WebGL point cloud of the same fixture tone. Not a measured podcast cube.",
-          "notPodcast": true,
-          "source": "fixture-tone"
-        },
-        "id": "cube-fixture",
-        "kind": "Cube3D",
-        "span": 2,
-        "title": "Inverse-HDR cube"
-      },
-      "display": {
-        "glyph": "⠠⢖",
-        "title": "Inverse-HDR cube"
-      },
-      "fields": {
-        "card_id": "cube-fixture",
-        "view": "Cube3D"
-      },
-      "honesty": {
-        "claims": [
-          "fixture_tone"
-        ],
-        "fixture": true,
-        "synthesized_speech": false
-      },
-      "kind": "card",
-      "legacy_id": "cube-fixture",
-      "media": [],
-      "provenance": {
-        "generator": "viewport.example.json card (v0)"
-      },
-      "relations": {},
-      "schema_version": "1.0.0",
-      "src": [],
-      "status": "ok",
-      "uid": "ga:card:eclezl34uhr3fuj6pukt7r6wkm",
-      "uid_scheme": "ga1"
-    },
-    {
-      "body": {
-        "body": {
           "accent": "General American",
           "agentName": "Khortana",
           "disclaimer": "Browser profile map for persona Khortana. Not a podcast render.",
@@ -1289,82 +1249,6 @@
     {
       "body": {
         "body": {
-          "measuredHere": false,
-          "rows": [
-            {
-              "engine": "pocket_tts",
-              "metric": "teaser_wer",
-              "note": "Short teaser ASR in those notes.",
-              "unit": "WER",
-              "value": "22.22%"
-            },
-            {
-              "engine": "vibevoice",
-              "metric": "teaser_wer",
-              "note": "Full improved WAV was the preferred publish in those notes.",
-              "unit": "WER",
-              "value": "30.00%"
-            },
-            {
-              "engine": "magpie",
-              "metric": "teaser_wer",
-              "note": "Short teaser. Hypothesis was short of the reference.",
-              "unit": "WER",
-              "value": "42.22%"
-            },
-            {
-              "engine": "vibevoice",
-              "metric": "bw95_hz",
-              "note": "Full improved final. Not a new measurement.",
-              "unit": "Hz",
-              "value": "2670.5"
-            },
-            {
-              "engine": "kokoro_onnx",
-              "metric": "bw95_hz_raw",
-              "note": "Raw file in those notes. Do not rank publish on inv-HDR alone.",
-              "unit": "Hz",
-              "value": "826.9"
-            }
-          ],
-          "sourceNote": "Reference figures from the 2026-10-06 GenAID podcast compare notes. Not remeasured in this repository."
-        },
-        "id": "bench-ref",
-        "kind": "BenchmarkCompare",
-        "span": 3,
-        "title": "Compare notes"
-      },
-      "display": {
-        "glyph": "⢃⡌",
-        "title": "Compare notes"
-      },
-      "fields": {
-        "card_id": "bench-ref",
-        "view": "BenchmarkCompare"
-      },
-      "honesty": {
-        "claims": [
-          "reference_only"
-        ],
-        "fixture": false,
-        "synthesized_speech": false
-      },
-      "kind": "card",
-      "legacy_id": "bench-ref",
-      "media": [],
-      "provenance": {
-        "generator": "viewport.example.json card (v0)"
-      },
-      "relations": {},
-      "schema_version": "1.0.0",
-      "src": [],
-      "status": "ok",
-      "uid": "ga:card:qngf7e45ixbikcdywhenhtoibe",
-      "uid_scheme": "ga1"
-    },
-    {
-      "body": {
-        "body": {
           "accent": "General American",
           "agentName": "Alice",
           "cubeJsonUrl": "/library/library_kokoro_onnx_cube3d.json",
@@ -1418,46 +1302,6 @@
       "src": [],
       "status": "ok",
       "uid": "ga:card:qulz3iikyxho672tdit55u6zeu",
-      "uid_scheme": "ga1"
-    },
-    {
-      "body": {
-        "body": {
-          "disclaimer": "Browser spectrogram of the selected voice profile, not a podcast render and not a Python spectrogram.",
-          "notPodcast": true,
-          "source": "fixture-tone"
-        },
-        "id": "spec-fixture",
-        "kind": "SpectrogramPanel",
-        "span": 2,
-        "title": "Spectrogram panel"
-      },
-      "display": {
-        "glyph": "⢌⣼",
-        "title": "Spectrogram panel"
-      },
-      "fields": {
-        "card_id": "spec-fixture",
-        "view": "SpectrogramPanel"
-      },
-      "honesty": {
-        "claims": [
-          "fixture_tone"
-        ],
-        "fixture": true,
-        "synthesized_speech": false
-      },
-      "kind": "card",
-      "legacy_id": "spec-fixture",
-      "media": [],
-      "provenance": {
-        "generator": "viewport.example.json card (v0)"
-      },
-      "relations": {},
-      "schema_version": "1.0.0",
-      "src": [],
-      "status": "ok",
-      "uid": "ga:card:rt6iial7o6xf7oetud56lcmv54",
       "uid_scheme": "ga1"
     },
     {
@@ -3644,7 +3488,6 @@
     "audio_clip:lib-kokoro": "ga:audio_clip:suixeici2fik7yjih5qlave3kq",
     "audio_clip:lib-kokoro-onnx": "ga:audio_clip:tlpralovoabmu44zazgsxm62uy",
     "audio_clip:lib-misaki-kokoro": "ga:audio_clip:vtwxksrsuci7zygslimzfy7kdy",
-    "card:bench-ref": "ga:card:qngf7e45ixbikcdywhenhtoibe",
     "card:cast-sample": "ga:card:u73p3l6n7w2lelaz6kzpflydjy",
     "card:conn-acp": "ga:card:pwlbnygt4dzqdyvwc6fwj6basy",
     "card:conn-claude": "ga:card:tg4uitpjeeazn7rnuxtxyxag2m",
@@ -3653,7 +3496,6 @@
     "card:conn-gpt": "ga:card:vyjhtyqvyqntcapxjbpgdhdd7i",
     "card:conn-harness": "ga:card:ihkozqfhv44hffgriz6cu2rqre",
     "card:conn-mcp": "ga:card:3hv5wsdt3mrcylczexvlnfk6li",
-    "card:cube-fixture": "ga:card:eclezl34uhr3fuj6pukt7r6wkm",
     "card:engine-kokoro": "ga:card:wgi2proc543zzqzfa2ydlfbnl4",
     "card:engine-magpie": "ga:card:fijqhsk7xhpcgehxdeexal6jnm",
     "card:engine-pocket": "ga:card:nmfqip53e5thxk43egqjzl27da",
@@ -3673,7 +3515,6 @@
     "card:profile-rocky": "ga:card:pj4ogcnj42gzli7ql2daqz53em",
     "card:serve-gateway": "ga:card:ayvizyvubrzigxewm2bjzjmvam",
     "card:serve-node": "ga:card:3kc35sblccksmpuwia6s5xobae",
-    "card:spec-fixture": "ga:card:rt6iial7o6xf7oetud56lcmv54",
     "cube_ihdr:lib-bitdot-braille-vibevoice.cube": "ga:cube_ihdr:meih3uudlorg35xxhape5d5psq",
     "cube_ihdr:lib-cube-explainer.cube": "ga:cube_ihdr:bcuw4m76pyqanslfiugnvlxnda",
     "cube_ihdr:lib-kokoro-onnx.cube": "ga:cube_ihdr:uzkw5dq5jjubbqdlaz2pzm4rv4",

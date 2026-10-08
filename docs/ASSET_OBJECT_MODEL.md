@@ -9,7 +9,9 @@ podcast scripts, transcripts, cards/livetiles and MCP tools.
 | Contract (source of truth, hand-written JSON Schema 2020-12) | `schemas/asset-object.schema.json` |
 | Golden vectors shared by Rust and TS | `schemas/asset-object/vectors/v1.json` |
 | Pinned uid of every migrated fixture | `schemas/asset-object/vectors/fixtures_v1.json` |
-| Library catalog (v1 envelopes, generated) | `apps/desktop/public/library/assets.json` |
+| Library catalog (release v1 envelopes, generated; no dev fixtures) | `apps/desktop/public/library/assets.json` |
+| Dev/test-only envelopes (never shipped) | `schemas/asset-object/fixtures/assets.dev.json` |
+| Shipped deck / dev fixture deck | `schemas/examples/viewport.release.json` / `viewport.example.json` |
 | Rust: canonical JSON, uid, glyph, validator, media checks | `crates/gen-audio-core/src/asset.rs` |
 | Rust: pure v0 -> v1 migration | `crates/gen-audio-core/src/asset_migrate.rs` |
 | TS mirror (display + parity tests; the UI never mints) | `apps/desktop/src/asset.ts` |
@@ -319,6 +321,17 @@ does through `relations.bound_to`.
 **Claims vocabulary:** `real_wav, synthesized_speech, library_cube,
 library_spectrogram, fixture_tone, profile_preview, reference_only,
 not_a_podcast_render, engine_unavailable, g2p_only, status_only`.
+
+**Release vs dev (PR #5 review).** An asset is dev/test-only when
+`honesty.fixture` is true or it claims `fixture_tone` or `reference_only`
+(Rust `is_dev_fixture`, TS `isDevFixture`): today the `spec-fixture`,
+`cube-fixture` and `bench-ref` cards. `build_assets` writes them to
+`schemas/asset-object/fixtures/assets.dev.json` instead of the public
+`assets.json`, and writes `viewport.release.json` (the example deck minus
+those cards). Release builds boot `viewport.release.json`; only
+`VITE_GEN_AUDIO_FIXTURES=1` (PR #4's flag) loads the example deck and the dev
+envelopes, through dynamic imports that a release build does not emit.
+`fixtures_v1.json` still pins every uid (release and dev).
 
 ## 6. Media references
 

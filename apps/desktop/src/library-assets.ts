@@ -52,12 +52,12 @@ export function mediaUrl(asset: AssetEnvelope, role: string): string | null {
   return item ? `/library/${item.path}` : null;
 }
 
-export function loadLibraryCatalog(): Promise<LibraryCatalog | null> {
-  pending ??= fetch("/library/assets.json")
-    .then((response) => (response.ok ? response.json() : null))
-    .then((doc: { assets?: unknown[] } | null) => {
+/** `extraAssets`: dev/test-only envelopes (VITE_GEN_AUDIO_FIXTURES=1); release passes none. */
+export function loadLibraryCatalog(extraAssets: Promise<unknown[]> = Promise.resolve([])): Promise<LibraryCatalog | null> {
+  pending ??= Promise.all([fetch("/library/assets.json").then((response) => (response.ok ? response.json() : null)), extraAssets.catch(() => [])])
+    .then(([doc, extra]: [{ assets?: unknown[] } | null, unknown[]]) => {
       if (!doc || !Array.isArray(doc.assets)) return null;
-      const assets = doc.assets.filter(safe);
+      const assets = [...doc.assets, ...extra].filter(safe);
       const byUid = new Map(assets.map((asset) => [asset.uid, asset]));
       return {
         byUid,

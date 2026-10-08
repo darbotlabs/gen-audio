@@ -141,7 +141,9 @@ test("library assets.json: schema-valid, uids and glyphs recompute, legacy index
   const catalog = JSON.parse(catalogText);
   const catalogFloats = floatTokenPaths(catalogText);
   const fixtures = load("schemas/asset-object/vectors/fixtures_v1.json");
-  assert.deepEqual(catalog.legacy_index, fixtures.legacy_index);
+  // fixtures_v1.json pins release + dev; assets.json carries the release half.
+  const dev = load("schemas/asset-object/fixtures/assets.dev.json");
+  assert.deepEqual({ ...catalog.legacy_index, ...dev.legacy_index }, fixtures.legacy_index);
   catalog.assets.forEach((asset: Record<string, unknown> & { uid: string; legacy_id?: string; display: { glyph: string } }, index: number) => {
     assert.ok(validate(asset), `${asset.uid}: ${JSON.stringify(validate.errors?.slice(0, 3))}`);
     assert.equal(envelopeIdentityUid(asset), asset.uid, `${asset.legacy_id} uid`);

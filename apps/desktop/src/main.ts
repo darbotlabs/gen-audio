@@ -1,4 +1,4 @@
-import example from "../../../schemas/examples/viewport.example.json";
+import releaseDoc from "../../../schemas/examples/viewport.release.json";
 import {
   bindCube,
   boundCubeUrl,
@@ -15,6 +15,7 @@ import { isClipPlaying, seekActiveFraction, seekClipFraction, setCubeClockClip }
 import { applyClipNames, harvestNames } from "./library-meta";
 import { bindFloatingPlayback, pauseClip, playClip, seekClip, setUserPlayReporter } from "./playback";
 import { controlPlayOrigin, userPlayControl } from "./play-control";
+import { fixturesRequested, selectViewport } from "./viewport-source";
 import { glyphBadge } from "./glyph";
 import { loadLibraryCatalog, type LibraryCatalog } from "./library-assets";
 import { decorateLibraryTiles } from "./livestrip";
@@ -44,6 +45,22 @@ function required(id: string): HTMLElement {
   if (!node) throw new Error(`missing ${id}`);
   return node;
 }
+
+/**
+ * Release builds boot the real Library deck (viewport.release.json) and serve
+ * an assets.json without the dev fixtures (spec-fixture, cube-fixture,
+ * bench-ref). VITE_GEN_AUDIO_FIXTURES=1 (dev/test only) loads the example
+ * deck and the dev assets instead; both stay out of the release bundle's
+ * main chunk (dynamic import).
+ */
+const fixtureFlag: string | undefined = import.meta.env.VITE_GEN_AUDIO_FIXTURES;
+const loadShippedDocument: () => Promise<ViewportDocument> = selectViewport(
+  fixtureFlag,
+  async () => releaseDoc as ViewportDocument,
+  async () => (await import("../../../schemas/examples/viewport.example.json")).default as ViewportDocument,
+);
+const loadDevAssets = async (): Promise<unknown[]> =>
+  fixturesRequested(fixtureFlag) ? (await import("../../../schemas/asset-object/fixtures/assets.dev.json")).default.assets : [];
 
 const board = required("#board");
 const empty = required("#empty");
@@ -82,7 +99,7 @@ function show(documentIn: unknown): void {
   bindRename();
   void harvestLibrary();
   bindFloatingPlayback();
-  void loadLibraryCatalog().then((catalog) => {
+  void loadLibraryCatalog(loadDevAssets()).then((catalog) => {
     libraryCatalog = catalog;
     decorateLibraryTiles(board, catalog, (uid) => glyphBadge(uid, { role: "clip", onCopy: announceCopy }));
     syncCubeChrome();
@@ -405,7 +422,10 @@ async function refreshConnectors(doc: ViewportDocument): Promise<ViewportDocumen
 }
 
 document.querySelector("#show-example")?.addEventListener("click", () => {
-  void refreshConnectors(example as ViewportDocument).then(show);
+  if (!fixturesRequested(fixtureFlag)) {
+    status.textContent = "The labeled fixture deck is dev/test only (VITE_GEN_AUDIO_FIXTURES=1). Showing the Library deck.";
+  }
+  void loadShippedDocument().then(refreshConnectors).then(show);
 });
 document.querySelector("#show-empty")?.addEventListener("click", () => {
   show({ version: "1.0", title: "Darbot Gen-Audio", columns: 3, cards: [] });
@@ -657,7 +677,7 @@ function connectControl(): void {
   };
 }
 
-void refreshConnectors(example as ViewportDocument).then(show);
+void loadShippedDocument().then(refreshConnectors).then(show);
 // Test hook: scrubs the cube and ONLY the clip the cube is bound to (never whatever played last).
 (window as unknown as { __genAudioScrub?: (f: number) => string }).__genAudioScrub = (fraction: number) => {
   setCubeScrub(fraction, { silent: true });

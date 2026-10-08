@@ -894,6 +894,22 @@ fn check_required_media(kind: &str, envelope: &Value) -> Result<(), AssetError> 
     Ok(())
 }
 
+/// Claims that mark dev/test-only assets (fixture tones, reference numbers).
+pub const DEV_FIXTURE_CLAIMS: [&str; 2] = ["fixture_tone", "reference_only"];
+
+/// True for an asset that ships only in dev/test builds (the fixture cards
+/// `spec-fixture`, `cube-fixture` and `bench-ref` today): `honesty.fixture`
+/// is true or a claim is in `DEV_FIXTURE_CLAIMS`. Release `assets.json` and
+/// `viewport.release.json` leave these out (VITE_GEN_AUDIO_FIXTURES=1 brings
+/// the example deck back in dev).
+pub fn is_dev_fixture(envelope: &Value) -> bool {
+    let claims_dev = envelope
+        .pointer("/honesty/claims")
+        .and_then(Value::as_array)
+        .is_some_and(|claims| claims.iter().any(|claim| claim.as_str().is_some_and(|claim| DEV_FIXTURE_CLAIMS.contains(&claim))));
+    claims_dev || bool_at(envelope, &["honesty", "fixture"]) == Some(true)
+}
+
 /// A cube_ihdr is "real" when it claims `library_cube` and is not a fixture.
 pub fn cube_is_real(envelope: &Value) -> bool {
     let claims_cube = envelope
