@@ -304,7 +304,7 @@ pub fn migrate_v0_to_v1(bundle: &Value) -> Result<Value, AssetError> {
         }
     }
 
-    // 2D spectrogram strips (sidecars written by scripts/spectrogram_strip.py).
+    // 2D spectrogram strips (sidecars written by gen_audio.spectrogram_strip).
     for sidecar in bundle.get("spectrograms").and_then(Value::as_array).cloned().unwrap_or_default() {
         let clip_id = sidecar["clip_id"].as_str().unwrap_or_default();
         let Some(parent) = clip_uid.get(clip_id) else {
@@ -328,7 +328,7 @@ pub fn migrate_v0_to_v1(bundle: &Value) -> Result<Value, AssetError> {
             relations: Map::new(),
             honesty: honesty(false, false, &["library_spectrogram"]),
             provenance: obj(vec![
-                ("generator", json!("scripts/spectrogram_strip.py")),
+                ("generator", json!("gen_audio.spectrogram_strip")),
                 ("params", sidecar["params"].clone()),
             ]),
             body: json!({"png_url": format!("/library/{path}"), "seconds_per_px": sidecar["params"]["seconds_per_px"]}),

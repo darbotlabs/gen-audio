@@ -1,25 +1,23 @@
-"""Flat 2D spectrogram strip used by audio-clip livetiles (scripts/spectrogram_strip.py)."""
+"""Flat 2D spectrogram strip used by audio-clip livetiles (gen_audio.spectrogram_strip)
+and the shared identity-integer rounding (gen_audio.rounding)."""
 
 from __future__ import annotations
 
-import importlib.util
 import json
 import struct
-import sys
 import zlib
 from pathlib import Path
 
 import numpy as np
+import pytest
+
+from gen_audio import rounding
+from gen_audio import spectrogram_strip as module
+from gen_audio.audio_io import read_wav
+from gen_audio.cli import spectrogram_strip as cli
 
 ROOT = Path(__file__).resolve().parents[1]
-
-
-def _load():
-    spec = importlib.util.spec_from_file_location("spectrogram_strip", ROOT / "scripts" / "spectrogram_strip.py")
-    module = importlib.util.module_from_spec(spec)
-    assert spec.loader is not None
-    spec.loader.exec_module(module)
-    return module
+VECTORS = json.loads((ROOT / "schemas/asset-object/vectors/v1.json").read_text(encoding="utf-8"))
 
 
 def _write_wav(path: Path, samples: np.ndarray, rate: int, float32: bool) -> None:
@@ -40,16 +38,14 @@ def _png_size(path: Path) -> tuple[int, int]:
     return width, height
 
 
-def test_tone_lands_in_its_band_and_sidecar_is_integer_identity(tmp_path, monkeypatch):
-    module = _load()
+def test_tone_lands_in_its_band_and_sidecar_is_integer_identity(tmp_path):
     rate = 24_000
     t = np.arange(rate * 2) / rate
     for float32 in (False, True):
         wav = tmp_path / ("tone_f32.wav" if float32 else "tone.wav")
         _write_wav(wav, 0.5 * np.sin(2 * np.pi * 1000 * t), rate, float32)
         out = tmp_path / "out"
-        monkeypatch.setattr(sys, "argv", ["spectrogram_strip.py", str(wav), "--clip-id", "tone", "--out-dir", str(out)])
-        assert module.main() == 0
+        assert cli.main([str(wav), "--clip-id", "tone", "--out-dir", str(out)]) == 0
         stem = wav.stem
         sidecar = json.loads((out / f"library_{stem}_spec2d.json").read_text())
         fields = sidecar["fields"]
@@ -58,7 +54,7 @@ def test_tone_lands_in_its_band_and_sidecar_is_integer_identity(tmp_path, monkey
         assert fields["covers_ms"] <= fields["duration_ms"] == 2000
         assert _png_size(out / sidecar["path"]) == (20, 64)
 
-    samples, got_rate = module.read_wav(tmp_path / "tone.wav")
+    samples, got_rate = read_wav(tmp_path / "tone.wav")
     scaled, columns = module.strip(samples, got_rate, 2048, 2400, 64, 60.0, 8000.0, -80)
     loudest_row = int(np.argmax(scaled[:, columns // 2]))
     edges = np.geomspace(60.0, 8000.0, 65)
@@ -67,7 +63,6 @@ def test_tone_lands_in_its_band_and_sidecar_is_integer_identity(tmp_path, monkey
 
 
 def test_png_writer_round_trips_pixels(tmp_path):
-    module = _load()
     rgb = np.zeros((2, 3, 3), dtype=np.uint8)
     rgb[0, 0] = (255, 0, 0)
     path = tmp_path / "x.png"
@@ -79,11 +74,46 @@ def test_png_writer_round_trips_pixels(tmp_path):
     assert pixels[:4] == b"\x00\xff\x00\x00"
 
 
-def test_ms_rounding_matches_the_shared_vectors():
-    module = _load()
-    vectors = json.loads((Path(__file__).resolve().parents[1] / "schemas/asset-object/vectors/v1.json").read_text(encoding="utf-8"))
-    cases = [row for row in vectors["rounding"] if row["op"] == "ms_from_frames"]
-    assert cases, "rounding vectors missing"
-    for row in cases:
-        assert module.ms_from_frames(row["frames"], row["rate"]) == row["expect"], row
-    assert module.ms_from_frames(24008, 16000) == 1501  # exact .5 tie rounds up
+def test_rounding_matches_every_shared_vector():
+    by_op: dict[str, int] = {}
+    for row in VECTORS["rounding"]:
+        op = row["op"]
+        by_op[op] = by_op.get(op, 0) + 1
+        if op == "ms_from_frames":
+            got = rounding.ms_from_frames(row["frames"], row["rate"])
+        elif op == "round_half_up":
+            got = rounding.round_half_up(row["value"] * row["scale"])
+        elif op == "bin_frames_inferred":
+            got = rounding.bin_frames_inferred(row["duration_s"], row["sample_rate_hz"], row["time_bins"])
+        else:
+            raise AssertionError(f"unknown rounding op {op}")
+        assert got == row["expect"], row
+    assert by_op == {"ms_from_frames": 7, "round_half_up": 8, "bin_frames_inferred": 1}, by_op
+    assert rounding.ms_from_frames(24008, 16000) == 1501  # exact .5 tie rounds up
+
+
+def test_bin_frames_near_tie_uses_the_binary64_two_step():
+    # B1': fl(157.134 * 24000) = 3771215.9999999995, / 96 = 39283.49999999999.
+    assert 157.134 * 24000 / 96 < 39283.5
+    assert rounding.bin_frames_inferred(157.134, 24000, 96) == 39283
+    assert (3_771_216 * 2 + 96) // (2 * 96) == 39284  # exact rational math would round up
+
+
+def test_round_half_up_rejects_what_rust_rejects():
+    assert rounding.round_half_up(0.5) == 1 and rounding.round_half_up(2.5) == 3
+    assert rounding.round_half_up(0.49999999999999994) == 0
+    for bad in (-0.5, float("nan"), float("inf")):
+        with pytest.raises(ValueError, match="bad_rounding_input"):
+            rounding.round_half_up(bad)
+    with pytest.raises(ValueError, match="integer_out_of_range"):
+        rounding.round_half_up(2.0**53)
+
+
+@pytest.mark.parametrize("stem", ["bitdot_braille_vibevoice", "genaid_full_misaki_kokoro"])
+def test_committed_strips_reproduce_byte_for_byte(tmp_path, stem):
+    library = ROOT / "apps/desktop/public/library"
+    wav = library / f"{stem}.wav"
+    if not wav.exists():
+        pytest.skip(f"{wav.name} is gitignored and not staged here")
+    summary = module.write_strip(wav, "x", tmp_path)
+    assert (tmp_path / summary["png"]).read_bytes() == (library / summary["png"]).read_bytes()

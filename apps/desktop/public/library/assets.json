@@ -2848,7 +2848,7 @@
         }
       ],
       "provenance": {
-        "generator": "scripts/spectrogram_strip.py",
+        "generator": "gen_audio.spectrogram_strip",
         "params": {
           "band_spacing": "geometric",
           "f_max_hz": 8000.0,
@@ -2907,7 +2907,7 @@
         }
       ],
       "provenance": {
-        "generator": "scripts/spectrogram_strip.py",
+        "generator": "gen_audio.spectrogram_strip",
         "params": {
           "band_spacing": "geometric",
           "f_max_hz": 8000.0,
@@ -2966,7 +2966,7 @@
         }
       ],
       "provenance": {
-        "generator": "scripts/spectrogram_strip.py",
+        "generator": "gen_audio.spectrogram_strip",
         "params": {
           "band_spacing": "geometric",
           "f_max_hz": 8000.0,
@@ -3025,7 +3025,7 @@
         }
       ],
       "provenance": {
-        "generator": "scripts/spectrogram_strip.py",
+        "generator": "gen_audio.spectrogram_strip",
         "params": {
           "band_spacing": "geometric",
           "f_max_hz": 8000.0,
@@ -3084,7 +3084,7 @@
         }
       ],
       "provenance": {
-        "generator": "scripts/spectrogram_strip.py",
+        "generator": "gen_audio.spectrogram_strip",
         "params": {
           "band_spacing": "geometric",
           "f_max_hz": 8000.0,

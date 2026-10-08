@@ -1,7 +1,7 @@
 // Flat 2D spectrogram strip on an audio-clip livetile.
 //
 // Data: the clip's spectrogram_2d asset (a PNG computed from the real WAV by
-// scripts/spectrogram_strip.py). The playhead is transport-local: it reads this
+// gen_audio.spectrogram_strip). The playhead is transport-local: it reads this
 // tile's own <audio>.currentTime in seconds every frame while playing, and is
 // placed against the clip duration. Past the strip's coverage it is marked
 // "beyond". Clips without data say so; nothing is drawn in their place.
