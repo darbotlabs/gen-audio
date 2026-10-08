@@ -92,10 +92,15 @@ $triple = ((& rustc -vV) | Select-String -Pattern '^host: ').ToString().Split(':
 if ($LASTEXITCODE -ne 0 -or -not $triple) { throw 'could not read the rustc host triple' }
 Write-Step "host triple $triple"
 
+# Sidecar freshness is cargo's fingerprint verdict plus a content hash, never
+# the file mtime: a no-op rebuild does not rewrite gen-audio-mcp.exe, so the
+# old mtime check called an up-to-date binary stale (SMAX had to run a scoped
+# clean of the two crates to get past it).
 Write-Step 'build gen-audio-mcp sidecar'
-Invoke-Checked cargo build -p gen-audio-mcp --release
-$sidecar = Assert-Fresh -Path (Join-Path $releaseDir 'gen-audio-mcp.exe') -What 'gen-audio-mcp.exe'
-Write-Step "sidecar $($sidecar.FullName) $($sidecar.Length) bytes"
+$artifact = Invoke-CargoBinBuild -Package gen-audio-mcp -Bin gen-audio-mcp -ExtraArgs @('--release')
+$sidecar = Get-Item -LiteralPath $artifact.Executable
+$sidecarHash = Get-Sha256 -LiteralPath $sidecar.FullName
+Write-Step "sidecar $($sidecar.FullName) $($sidecar.Length) bytes sha256 $sidecarHash; cargo: $(if ($artifact.Fresh) { 'up to date (fingerprint fresh)' } else { 'rebuilt' })"
 
 # Handshake on a free loopback port. 8765 may belong to an installed app.
 $port = Get-FreeLoopbackPort
@@ -133,7 +138,9 @@ New-Item -ItemType Directory -Force -Path $binDir | Out-Null
 $staged = Join-Path $binDir "gen-audio-mcp-$triple.exe"
 if ([System.IO.Path]::GetFullPath($staged) -eq [System.IO.Path]::GetFullPath($sidecar.FullName)) { throw "refusing to copy $staged onto itself" }
 Copy-Item -LiteralPath $sidecar.FullName -Destination $staged -Force
-Write-Step "staged sidecar $staged"
+$stagedHash = Get-Sha256 -LiteralPath $staged
+if ($stagedHash -ne $sidecarHash) { throw "staged sidecar $staged has sha256 $stagedHash, but cargo's binary has $sidecarHash" }
+Write-Step "staged sidecar $staged (sha256 $stagedHash, same bytes as cargo's binary)"
 
 Write-Step 'frontend dependencies (npm ci)'
 Push-Location $desktop
