@@ -22,6 +22,15 @@ export type AssetKind = (typeof KINDS)[number];
 
 const BASE32 = "abcdefghijklmnopqrstuvwxyz234567";
 const MAX_SAFE = Number.MAX_SAFE_INTEGER;
+/** Max parents in `src` (schema maxItems). */
+export const MAX_SRC = 16;
+/** Max targets per relation list (composes, bound_to, supersedes). */
+export const MAX_FAN_OUT = 8;
+export const ROOT_KEYS = [
+  "schema_version", "uid_scheme", "kind", "uid", "legacy_id", "status", "fields", "media", "src", "relations", "honesty",
+  "provenance", "display", "body", "extensions",
+] as const;
+const DISPLAY_KEYS = ["title", "summary", "semantic_name", "face_name", "glyph", "display_rev"];
 
 export class AssetError extends Error {
   constructor(
@@ -68,6 +77,57 @@ function canonicalInteger(value: number, path: string): string {
   if (!Number.isInteger(value)) throw new AssetError("float_in_identity", `${path} is not an integer; keep float views outside identity`);
   if (Math.abs(value) > MAX_SAFE) throw new AssetError("integer_out_of_range", `${path} is outside +/-(2^53-1)`);
   return String(value);
+}
+
+/**
+ * JSON.parse for identity text. JS numbers cannot tell `139375.0` from
+ * `139375`, so integral floats are rejected on the raw tokens before parsing
+ * (Rust sees them as f64 and rejects them in canonicalize). Same codes as Rust:
+ * a fraction or exponent is `float_in_identity`; `-0` / `-0.0` is `negative_zero`.
+ */
+export function parseIdentityJson(text: string): unknown {
+  let inString = false;
+  for (let index = 0; index < text.length; index += 1) {
+    const ch = text[index];
+    if (inString) {
+      if (ch === "\\") index += 1;
+      else if (ch === '"') inString = false;
+      continue;
+    }
+    if (ch === '"') {
+      inString = true;
+      continue;
+    }
+    if (ch === "-" || (ch >= "0" && ch <= "9")) {
+      const match = /^-?\d+(\.\d+)?([eE][+-]?\d+)?/.exec(text.slice(index));
+      if (!match) continue;
+      const token = match[0];
+      if (match[1] || match[2]) {
+        if (Number(token) === 0 && token.startsWith("-")) throw new AssetError("negative_zero", `${token} is -0`);
+        throw new AssetError("float_in_identity", `${token} is not an integer token; keep float views outside identity`);
+      }
+      index += token.length - 1;
+    }
+  }
+  return JSON.parse(text);
+}
+
+// ------------------------------------------------------------ rounding (normative)
+
+/** Whole ms from frames: round half up in exact integer arithmetic, (frames*1000 + rate div 2) div rate. */
+export function msFromFrames(frames: number, rate: number): number {
+  if (rate <= 0) return 0;
+  const result = (BigInt(frames) * 1000n + BigInt(rate) / 2n) / BigInt(rate);
+  return Number(result);
+}
+
+/** Round a non-negative double half up (== ties away from zero for x >= 0); matches Rust f64::round. */
+export function roundHalfUp(value: number): number {
+  if (!Number.isFinite(value) || value < 0) throw new AssetError("bad_rounding_input", `${value} must be finite and >= 0`);
+  const floor = Math.floor(value);
+  const rounded = value - floor >= 0.5 ? floor + 1 : floor;
+  if (rounded > MAX_SAFE) throw new AssetError("integer_out_of_range", `${value} rounds outside 2^53-1`);
+  return rounded;
 }
 
 /** RFC 8785 JCS restricted to the v1 identity subset (integers, ASCII keys, NFC strings). */
@@ -264,11 +324,18 @@ export function identityValue(kind: string, fields: unknown, media: MediaDigest[
     if (!/^[0-9a-f]{64}$/.test(item.sha256)) throw new AssetError("bad_sha256", `media ${item.role} sha256 must be 64 lowercase hex`);
     if (!/^[a-z0-9_]+$/.test(item.role)) throw new AssetError("bad_media_role", `media role ${JSON.stringify(item.role)} must be snake_case`);
   }
+  const roles = new Set<string>();
+  for (const item of media) {
+    if (roles.has(item.role)) throw new AssetError("duplicate_media_role", `${kind} carries media role ${JSON.stringify(item.role)} twice`);
+    roles.add(item.role);
+  }
   const sortedMedia = [...media]
     .map(({ role, sha256: digest }) => ({ role, sha256: digest }))
     .sort((a, b) => (a.role < b.role ? -1 : a.role > b.role ? 1 : a.sha256 < b.sha256 ? -1 : a.sha256 > b.sha256 ? 1 : 0));
+  if (src.length > MAX_SRC) throw new AssetError("fan_out_exceeded", `src has ${src.length} parents (max ${MAX_SRC})`);
   src.forEach((uid) => parseUid(uid));
-  const parents = [...new Set(src)].sort();
+  if (new Set(src).size !== src.length) throw new AssetError("duplicate_src", "src lists a parent twice");
+  const parents = [...src].sort();
   return { kind, schema_major: SCHEMA_MAJOR, fields, media: sortedMedia, src: parents };
 }
 
@@ -317,4 +384,77 @@ export function checkMediaPath(path: string): void {
 export function libraryUrl(path: string): string {
   checkMediaPath(path);
   return `/library/${path}`;
+}
+
+// ------------------------------------------------------------ envelope shape
+
+const REQUIRED_MEDIA: Record<string, string[]> = {
+  audio_clip: ["wav"],
+  spectrogram_2d: ["spectrogram_png"],
+  cube_ihdr: ["cube_json"],
+  podcast_script: ["script_txt"],
+};
+
+/**
+ * The structural subset of Rust `validate_envelope` (D1/B2/D3): root keys,
+ * legacy_id, kind/uid prefix, channels, uid recompute, display (title, glyph, display_rev),
+ * wav_url, relation fan-out and required media roles. Honesty and per-kind
+ * field typing stay Rust-side; the schema covers them for Ajv.
+ */
+export function checkEnvelopeShape(envelope: Record<string, unknown>): void {
+  const unknownKey = Object.keys(envelope).find((key) => !(ROOT_KEYS as readonly string[]).includes(key));
+  if (unknownKey) throw new AssetError("unknown_root_key", `envelope key ${JSON.stringify(unknownKey)} is not in the v1 schema`);
+  const legacy = envelope.legacy_id;
+  if (legacy !== undefined && !(typeof legacy === "string" && /^[A-Za-z0-9_.-]{1,96}$/.test(legacy) && !legacy.includes(".."))) {
+    throw new AssetError("bad_legacy_id", `legacy_id ${JSON.stringify(legacy)} must match [A-Za-z0-9_.-]{1,96} without '..'`);
+  }
+  const kind = String(envelope.kind);
+  if (!isKind(kind)) throw new AssetError("unknown_kind", `kind ${JSON.stringify(kind)} is not in the v1 enum`);
+  const parsed = parseUid(String(envelope.uid));
+  if (parsed.kind !== kind) throw new AssetError("kind_mismatch", `uid prefix ${parsed.kind} != kind ${kind}`);
+  const fields = (envelope.fields ?? {}) as Record<string, unknown>;
+  if (kind === "audio_clip" && fields.channels !== undefined) {
+    const channels = fields.channels;
+    if (!(typeof channels === "number" && Number.isInteger(channels) && channels >= 1 && channels <= 32)) {
+      throw new AssetError("bad_field_type", "audio_clip.fields.channels must be an integer in 1..32");
+    }
+  }
+  const media = (Array.isArray(envelope.media) ? envelope.media : []) as MediaDigest[];
+  const minted = mint(kind, fields, media, (envelope.src as string[] | undefined) ?? []);
+  if (minted.uid !== envelope.uid) throw new AssetError("uid_mismatch", `uid ${String(envelope.uid)} != recomputed ${minted.uid}`);
+  const display = envelope.display as Record<string, unknown> | undefined;
+  if (!display || typeof display !== "object") throw new AssetError("missing_glyph", "display with title and glyph is required");
+  const badKey = Object.keys(display).find((key) => !DISPLAY_KEYS.includes(key));
+  if (badKey) throw new AssetError("unknown_display_key", `display.${badKey} is not in the v1 schema`);
+  const title = display.title;
+  if (!(typeof title === "string" && title.length > 0 && [...title].length <= 160)) throw new AssetError("bad_title", "display.title must be a 1..160 char string");
+  if (typeof display.glyph !== "string") throw new AssetError("missing_glyph", "display.glyph is required");
+  if (display.glyph !== minted.glyph) throw new AssetError("glyph_mismatch", `glyph ${display.glyph} != ${minted.glyph}`);
+  const rev = display.display_rev;
+  if (rev !== undefined && !(typeof rev === "number" && Number.isInteger(rev) && rev >= 0 && rev <= MAX_SAFE)) {
+    throw new AssetError("bad_display_rev", "display.display_rev must be a non-negative integer");
+  }
+  const body = envelope.body as Record<string, unknown> | undefined;
+  if (kind === "audio_clip" && body && body.wav_url !== undefined) {
+    const url = body.wav_url;
+    if (typeof url !== "string" || !url.startsWith("/library/")) throw new AssetError("bad_wav_url", `wav_url ${JSON.stringify(url)} must be /library/<media path>`);
+    try {
+      checkMediaPath(url.slice("/library/".length));
+    } catch (error) {
+      throw new AssetError("bad_wav_url", error instanceof Error ? error.message : String(error));
+    }
+  }
+  const relations = (envelope.relations ?? {}) as Record<string, unknown>;
+  for (const field of ["composes", "bound_to", "supersedes"]) {
+    const targets = relations[field];
+    if (Array.isArray(targets) && targets.length > MAX_FAN_OUT) {
+      throw new AssetError("fan_out_exceeded", `relations.${field} has ${targets.length} targets (max ${MAX_FAN_OUT})`);
+    }
+  }
+  for (const role of REQUIRED_MEDIA[kind] ?? []) {
+    if (!media.some((item) => item.role === role)) {
+      throw new AssetError(kind === "audio_clip" ? "clip_missing_wav" : "missing_media_role", `${kind} needs a ${role} media entry`);
+    }
+  }
+  if (kind === "transcript" && media.length === 0) throw new AssetError("missing_media_role", "transcript needs transcript_json or transcript_txt");
 }

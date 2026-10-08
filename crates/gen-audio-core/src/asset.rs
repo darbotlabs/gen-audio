@@ -10,7 +10,7 @@
 //! Identity (hashed):
 //! ```text
 //! identity = {"kind", "schema_major", "fields", "media":[{"role","sha256"}] (sorted by role, sha256),
-//!             "src":[parent uids] (sorted, de-duplicated)}
+//!             "src":[parent uids] (sorted; duplicates rejected)}
 //! preimage = "ga-asset-v1" 0x00 JCS(identity)        (RFC 8785, integer-only subset)
 //! digest   = SHA-256(preimage)
 //! uid      = "ga:" kind ":" base32_lower_nopad(digest[0..16])   (26 chars, last 2 pad bits 0)
@@ -33,6 +33,16 @@ pub const DOMAIN_TAG: &str = "ga-asset-v1";
 pub const MAX_MEDIA_BYTES: u64 = 256 * 1024 * 1024;
 pub const MAX_LINK_DEPTH: usize = 16;
 pub const MAX_SAFE_INTEGER: i64 = 9_007_199_254_740_991;
+/// Max parents in `src` (schema maxItems).
+pub const MAX_SRC: usize = 16;
+/// Max targets per relation list (composes, bound_to, supersedes).
+pub const MAX_FAN_OUT: usize = 8;
+/// Envelope root keys (schema `additionalProperties: false`).
+pub const ROOT_KEYS: &[&str] = &[
+    "schema_version", "uid_scheme", "kind", "uid", "legacy_id", "status", "fields", "media", "src", "relations", "honesty",
+    "provenance", "display", "body", "extensions",
+];
+const DISPLAY_KEYS: &[&str] = &["title", "summary", "semantic_name", "face_name", "glyph", "display_rev"];
 
 pub const KINDS: &[&str] = &[
     "voice_model",
@@ -164,13 +174,38 @@ fn canonical_integer(number: &serde_json::Number, path: &str) -> Result<i64, Ass
     if float == 0.0 && float.is_sign_negative() {
         return err("negative_zero", format!("{path} is -0"));
     }
+    // Integral floats (139375.0, 1e3) are rejected too: identity integers are
+    // JSON integer tokens, and the minter only ever writes integer tokens.
     if float.fract() != 0.0 {
         return err("float_in_identity", format!("{path} is not an integer; keep float views outside identity"));
     }
-    if float.abs() > MAX_SAFE_INTEGER as f64 {
-        return err("integer_out_of_range", format!("{path} is outside +/-(2^53-1)"));
+    err("float_in_identity", format!("{path} is an integral float ({float}); write it as an integer token"))
+}
+
+// ---------------------------------------------------------------- rounding (normative)
+
+/// Whole milliseconds from a frame count: round half up, in exact integer
+/// arithmetic. `duration_ms = (frames * 1000 + rate / 2) div rate`.
+pub fn ms_from_frames(frames: u64, rate: u64) -> u64 {
+    if rate == 0 {
+        return 0;
     }
-    Ok(float as i64)
+    (frames.saturating_mul(1000) + rate / 2) / rate
+}
+
+/// Round a non-negative IEEE-754 double half up (ties away from zero, which
+/// is the same thing for x >= 0). Used for `covers_ms = round(cube_covers_s *
+/// 1000)`, `inv_hdr_ppm = round(inv_hdr * 1e6)` and `bin_frames =
+/// round(bin_seconds * sample_rate_hz)`; the product is one IEEE-754 multiply.
+pub fn round_half_up(value: f64) -> Result<u64, AssetError> {
+    if !value.is_finite() || value < 0.0 {
+        return err("bad_rounding_input", format!("{value} must be finite and >= 0"));
+    }
+    let rounded = value.round();
+    if rounded > MAX_SAFE_INTEGER as f64 {
+        return err("integer_out_of_range", format!("{value} rounds outside 2^53-1"));
+    }
+    Ok(rounded as u64)
 }
 
 fn check_identity_string(text: &str, path: &str) -> Result<(), AssetError> {
@@ -336,14 +371,25 @@ pub fn identity_value(kind: &str, fields: &Value, media: &[MediaDigest], src: &[
             return err("bad_media_role", format!("media role {:?} must be snake_case", item.role));
         }
     }
+    let mut roles = BTreeSet::new();
+    for item in &media_sorted {
+        if !roles.insert(item.role.as_str()) {
+            return err("duplicate_media_role", format!("{kind} carries media role {:?} twice", item.role));
+        }
+    }
     media_sorted.sort();
+    if src.len() > MAX_SRC {
+        return err("fan_out_exceeded", format!("src has {} parents (max {MAX_SRC})", src.len()));
+    }
     let mut parents: Vec<String> = Vec::new();
     for uid in src {
         parse_uid(uid)?;
+        if parents.contains(uid) {
+            return err("duplicate_src", format!("src lists {uid} twice"));
+        }
         parents.push(uid.clone());
     }
     parents.sort();
-    parents.dedup();
     Ok(json!({
         "kind": kind,
         "schema_major": SCHEMA_MAJOR,
@@ -395,6 +441,8 @@ enum FieldType {
     Str,
     Int,
     NonNegInt,
+    /// Integer in 1..=32 (audio channels).
+    Channels,
     Bool,
     Uid(&'static str),
     StrList,
@@ -444,7 +492,7 @@ fn field_specs(kind: &str) -> &'static [FieldSpec] {
             req("engine", Str),
             req("sample_rate_hz", NonNegInt),
             req("duration_ms", NonNegInt),
-            opt("channels", NonNegInt),
+            opt("channels", Channels),
         ];
             F
         },
@@ -517,6 +565,17 @@ fn media_roles(kind: &str) -> &'static [&'static str] {
     }
 }
 
+/// Media roles every envelope of `kind` must carry (exactly once).
+fn required_media_roles(kind: &str) -> &'static [&'static str] {
+    match kind {
+        "audio_clip" => &["wav"],
+        "spectrogram_2d" => &["spectrogram_png"],
+        "cube_ihdr" => &["cube_json"],
+        "podcast_script" => &["script_txt"],
+        _ => &[],
+    }
+}
+
 fn check_fields(kind: &str, fields: &Value) -> Result<(), AssetError> {
     let map = fields.as_object().ok_or(AssetError { code: "bad_fields", detail: "fields must be an object".into() })?;
     let specs = field_specs(kind);
@@ -536,6 +595,7 @@ fn check_fields(kind: &str, fields: &Value) -> Result<(), AssetError> {
             Str => value.as_str().is_some_and(|text| !text.is_empty()),
             Int => value.as_i64().is_some(),
             NonNegInt => value.as_u64().is_some(),
+            Channels => value.as_u64().is_some_and(|count| (1..=32).contains(&count)),
             Bool => value.is_boolean(),
             Sha => value.as_str().is_some_and(is_sha256_hex),
             Object => value.is_object(),
@@ -705,6 +765,9 @@ pub fn validate_envelope(envelope: &Value) -> Result<Minted, AssetError> {
     let Some(root) = envelope.as_object() else {
         return err("bad_envelope", "envelope must be an object");
     };
+    if let Some(key) = root.keys().find(|key| !ROOT_KEYS.contains(&key.as_str())) {
+        return err("unknown_root_key", format!("envelope key {key:?} is not in the v1 schema"));
+    }
     let version = root.get("schema_version").and_then(Value::as_str).unwrap_or_default();
     let major = parse_schema_major(version)?;
     if major != SCHEMA_MAJOR {
@@ -722,14 +785,29 @@ pub fn validate_envelope(envelope: &Value) -> Result<Minted, AssetError> {
     if uid_kind != kind {
         return err("kind_mismatch", format!("uid prefix {uid_kind} != kind {kind}"));
     }
+    if let Some(id) = root.get("legacy_id") {
+        let ok = id.as_str().is_some_and(|text| {
+            (1..=96).contains(&text.len())
+                && !text.contains("..")
+                && text.bytes().all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b'.' | b'-'))
+        });
+        if !ok {
+            return err("bad_legacy_id", format!("legacy_id {id} must match [A-Za-z0-9_.-]{{1,96}} without '..'"));
+        }
+    }
     check_fields(kind, root.get("fields").unwrap_or(&Value::Null))?;
     let minted = mint_identity(&envelope_identity(envelope)?)?;
     if minted.uid != uid {
         return err("uid_mismatch", format!("uid {uid} != recomputed {}", minted.uid));
     }
-    if let Some(glyph) = str_at(envelope, &["display", "glyph"]) {
-        if glyph != minted.glyph {
-            return err("glyph_mismatch", format!("glyph {glyph} != {}", minted.glyph));
+    check_display(root.get("display"), &minted.glyph)?;
+    if kind == "audio_clip" {
+        if let Some(url) = root.get("body").and_then(|body| body.get("wav_url")) {
+            let rel = url.as_str().and_then(|text| text.strip_prefix("/library/"));
+            match rel {
+                Some(rel) => check_media_path(rel).map_err(|error| AssetError { code: "bad_wav_url", detail: error.detail })?,
+                None => return err("bad_wav_url", format!("wav_url {url} must be /library/<media path>")),
+            }
         }
     }
     if let Some(extensions) = root.get("extensions").and_then(Value::as_object) {
@@ -741,10 +819,52 @@ pub fn validate_envelope(envelope: &Value) -> Result<Minted, AssetError> {
         }
     }
     for field in ["composes", "bound_to", "supersedes"] {
-        uid_list(envelope.get("relations").and_then(|item| item.get(field)), field)?;
+        let targets = uid_list(envelope.get("relations").and_then(|item| item.get(field)), field)?;
+        if targets.len() > MAX_FAN_OUT {
+            return err("fan_out_exceeded", format!("relations.{field} has {} targets (max {MAX_FAN_OUT})", targets.len()));
+        }
     }
     check_honesty(kind, envelope)?;
+    check_required_media(kind, envelope)?;
     Ok(minted)
+}
+
+fn check_display(display: Option<&Value>, glyph: &str) -> Result<(), AssetError> {
+    let Some(display) = display.and_then(Value::as_object) else {
+        return err("missing_glyph", "display with title and glyph is required");
+    };
+    if let Some(key) = display.keys().find(|key| !DISPLAY_KEYS.contains(&key.as_str())) {
+        return err("unknown_display_key", format!("display.{key} is not in the v1 schema"));
+    }
+    match display.get("title").and_then(Value::as_str) {
+        Some(title) if !title.is_empty() && title.chars().count() <= 160 => {}
+        _ => return err("bad_title", "display.title must be a 1..160 char string"),
+    }
+    match display.get("glyph").and_then(Value::as_str) {
+        None => return err("missing_glyph", "display.glyph is required"),
+        Some(got) if got != glyph => return err("glyph_mismatch", format!("glyph {got} != {glyph}")),
+        Some(_) => {}
+    }
+    if let Some(rev) = display.get("display_rev") {
+        if !rev.as_u64().is_some_and(|value| value <= MAX_SAFE_INTEGER as u64) {
+            return err("bad_display_rev", "display.display_rev must be a non-negative integer");
+        }
+    }
+    Ok(())
+}
+
+fn check_required_media(kind: &str, envelope: &Value) -> Result<(), AssetError> {
+    let media = envelope.get("media").and_then(Value::as_array).cloned().unwrap_or_default();
+    for role in required_media_roles(kind) {
+        if !media.iter().any(|item| item.get("role").and_then(Value::as_str) == Some(role)) {
+            let code = if kind == "audio_clip" { "clip_missing_wav" } else { "missing_media_role" };
+            return err(code, format!("{kind} needs a {role} media entry"));
+        }
+    }
+    if kind == "transcript" && media.is_empty() {
+        return err("missing_media_role", "transcript needs transcript_json or transcript_txt");
+    }
+    Ok(())
 }
 
 fn check_honesty(kind: &str, envelope: &Value) -> Result<(), AssetError> {
@@ -936,6 +1056,19 @@ pub fn validate_set(envelopes: &[Value]) -> Result<BTreeMap<String, Value>, Asse
                 }
             }
             _ => {}
+        }
+    }
+    for (uid, envelope) in &by_uid {
+        let Some(relations) = envelope.get("relations").and_then(Value::as_object) else { continue };
+        for (field, targets) in relations {
+            let targets: Vec<&str> = match targets {
+                Value::String(one) => vec![one.as_str()],
+                Value::Array(many) => many.iter().filter_map(Value::as_str).collect(),
+                _ => vec![],
+            };
+            if let Some(missing) = targets.iter().find(|target| !by_uid.contains_key(**target)) {
+                return err("dangling_relation", format!("{uid} relations.{field} -> {missing} is not in the set"));
+            }
         }
     }
     check_link_cycles(&by_uid)?;

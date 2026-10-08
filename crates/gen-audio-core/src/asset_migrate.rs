@@ -14,7 +14,7 @@ use std::collections::BTreeMap;
 
 use serde_json::{json, Map, Value};
 
-use crate::asset::{build_envelope, parse_schema_major, AssetError, EnvelopeParts, SCHEMA_VERSION};
+use crate::asset::{build_envelope, ms_from_frames, parse_schema_major, round_half_up, AssetError, EnvelopeParts, SCHEMA_VERSION};
 
 fn fail<T>(code: &'static str, detail: impl Into<String>) -> Result<T, AssetError> {
     Err(AssetError { code, detail: detail.into() })
@@ -35,8 +35,10 @@ fn web_to_library_path(url: &str) -> Option<String> {
     url.strip_prefix("/library/").map(str::to_string)
 }
 
+/// Seconds (a float view) to identity milliseconds: round half up of the
+/// IEEE-754 product `seconds * 1000` (docs/ASSET_OBJECT_MODEL.md, rounding).
 fn ms(seconds: f64) -> u64 {
-    (seconds * 1000.0).round().max(0.0) as u64
+    round_half_up(seconds * 1000.0).unwrap_or(0)
 }
 
 fn media_ref(media: &Value, role: &str, path: &str, mime: &str) -> Option<Value> {
@@ -143,7 +145,7 @@ pub fn migrate_v0_to_v1(bundle: &Value) -> Result<Value, AssetError> {
         let info = media.get(&wav_path).cloned().unwrap_or(Value::Null);
         let sample_rate = info["sample_rate"].as_u64().or_else(|| clip["sample_rate"].as_u64()).unwrap_or(0);
         let duration_ms = match (info["frames"].as_u64(), sample_rate) {
-            (Some(frames), rate) if rate > 0 => (frames * 1000 + rate / 2) / rate,
+            (Some(frames), rate) if rate > 0 => ms_from_frames(frames, rate),
             _ => ms(clip["duration_s"].as_f64().unwrap_or(0.0)),
         };
         let mut fields = json!({"engine": engine, "sample_rate_hz": sample_rate, "duration_ms": duration_ms});
@@ -210,12 +212,12 @@ pub fn migrate_v0_to_v1(bundle: &Value) -> Result<Value, AssetError> {
         let hop = cube_doc["hop"].as_u64();
         let (bin_frames, inferred) = match (cube_doc["downsample_sf_st"].get(1).and_then(Value::as_u64), hop) {
             (Some(step), Some(hop)) => (step * hop, false),
-            _ => (((cube_duration_s * cube_sr as f64).floor() as u64) / time_bins, true),
+            _ => (round_half_up(cube_duration_s * cube_sr as f64 / time_bins as f64).unwrap_or(0), true),
         };
         let covers_ms = cube_doc["cube_covers_s"]
             .as_f64()
             .map(ms)
-            .unwrap_or_else(|| time_bins * bin_frames * 1000 / cube_sr.max(1));
+            .unwrap_or_else(|| ms_from_frames(time_bins * bin_frames, cube_sr));
         let n_points = cube_doc["n_points"]
             .as_u64()
             .unwrap_or_else(|| cube_doc["points_preview"].as_array().map(|items| items.len() as u64).unwrap_or(0));
@@ -228,7 +230,7 @@ pub fn migrate_v0_to_v1(bundle: &Value) -> Result<Value, AssetError> {
             "freq_bins": freq_bins,
             "duration_ms": ms(cube_duration_s),
             "covers_ms": covers_ms,
-            "inv_hdr_ppm": (inv_hdr * 1_000_000.0).round() as u64,
+            "inv_hdr_ppm": round_half_up(inv_hdr * 1_000_000.0).unwrap_or(0),
             "cube_revision": cube_doc["cube_revision"].as_u64().or_else(|| cube["cube_revision"].as_u64()).unwrap_or(1),
             "n_points": n_points,
         });

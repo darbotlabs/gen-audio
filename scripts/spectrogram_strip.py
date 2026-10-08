@@ -33,6 +33,11 @@ ANCHORS = np.array(
 )
 
 
+def ms_from_frames(frames: int, rate: int) -> int:
+    """Whole ms from a frame count, round half up in exact integers (ASSET_OBJECT_MODEL.md, rounding)."""
+    return (frames * 1000 + rate // 2) // rate if rate > 0 else 0
+
+
 def colormap(values: np.ndarray) -> np.ndarray:
     pos = np.clip(values, 0.0, 1.0) * (len(ANCHORS) - 1)
     low = np.floor(pos).astype(int)
@@ -131,8 +136,8 @@ def main() -> int:
     png_name = f"library_{stem.removeprefix('library_')}_spec2d.png"
     args.out_dir.mkdir(parents=True, exist_ok=True)
     write_png(args.out_dir / png_name, colormap(scaled))
-    duration_ms = (len(samples) * 1000 + rate // 2) // rate
-    covers_ms = columns * hop * 1000 // rate
+    duration_ms = ms_from_frames(len(samples), rate)
+    covers_ms = ms_from_frames(columns * hop, rate)
     sidecar = {
         "clip_id": args.clip_id,
         "path": png_name,

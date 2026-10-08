@@ -3,8 +3,8 @@
 use std::path::Path;
 
 use gen_audio_core::asset::{
-    check_media_path, glyph_from_uid, mint, normalize_nfc, parse_uid, validate_envelope, validate_set, verify_media,
-    MediaCheck, MediaDigest,
+    check_media_path, glyph_from_uid, mint, ms_from_frames, normalize_nfc, parse_uid, round_half_up, validate_envelope,
+    validate_set, verify_media, MediaCheck, MediaDigest,
 };
 use gen_audio_core::asset_migrate::migrate_to_v1;
 use serde_json::Value;
@@ -81,6 +81,44 @@ fn canonical_rejects_match() {
         };
         assert_eq!(got, vector["error"], "{name}");
     }
+}
+
+fn digests(media: &Value) -> Vec<MediaDigest> {
+    media
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|m| MediaDigest { role: m["role"].as_str().unwrap().into(), sha256: m["sha256"].as_str().unwrap().into() })
+        .collect()
+}
+
+#[test]
+fn identity_rejects_match() {
+    for vector in json(VECTORS)["identity_reject"].as_array().unwrap() {
+        let src: Vec<String> = vector["src"].as_array().unwrap().iter().map(|s| s.as_str().unwrap().into()).collect();
+        let got = code(mint(vector["kind"].as_str().unwrap(), &vector["fields"], &digests(&vector["media"]), &src));
+        assert_eq!(got, vector["error"], "{}", vector["name"]);
+    }
+}
+
+#[test]
+fn rounding_vectors_match() {
+    let doc = json(VECTORS);
+    for vector in doc["rounding"].as_array().unwrap() {
+        let got = match vector["op"].as_str().unwrap() {
+            "ms_from_frames" => ms_from_frames(vector["frames"].as_u64().unwrap(), vector["rate"].as_u64().unwrap()),
+            _ => round_half_up(vector["value"].as_f64().unwrap() * vector["scale"].as_f64().unwrap()).unwrap(),
+        };
+        assert_eq!(Value::from(got), vector["expect"], "{vector}");
+    }
+    for vector in doc["mint"].as_array().unwrap() {
+        if let Some(from) = vector.get("derived_from") {
+            let fields = json(vector["fields_json"].as_str().unwrap());
+            let want = ms_from_frames(from["frames"].as_u64().unwrap(), from["sample_rate_hz"].as_u64().unwrap());
+            assert_eq!(fields["duration_ms"], want, "{}", vector["name"]);
+        }
+    }
+    assert_eq!(ms_from_frames(24_008, 16_000), 1501, "exact .5 tie rounds up");
 }
 
 #[test]

@@ -12,8 +12,8 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use gen_audio_core::asset::{
-    build_envelope, check_media_path, glyph_dots, hue_class, mint, normalize_nfc, parse_uid, validate_envelope,
-    validate_set, AssetError, EnvelopeParts, MediaDigest,
+    build_envelope, check_media_path, glyph_dots, hue_class, mint, ms_from_frames, normalize_nfc, parse_uid, round_half_up,
+    sha256_hex, validate_envelope, validate_set, AssetError, EnvelopeParts, MediaDigest,
 };
 use gen_audio_core::asset_migrate::migrate_to_v1;
 use serde_json::{json, Map, Value};
@@ -73,6 +73,26 @@ fn reject_vector(name: &str, kind: &str, fields_json: &str) -> Value {
         },
     };
     json!({"name": name, "kind": kind, "fields_json": fields_json, "error": error})
+}
+
+/// A real 16-bit mono PCM WAV of `frames` zero samples (44-byte header).
+fn silent_wav(frames: u32, rate: u32) -> Vec<u8> {
+    let data = frames * 2;
+    let mut out = Vec::with_capacity(44 + data as usize);
+    out.extend_from_slice(b"RIFF");
+    out.extend_from_slice(&(36 + data).to_le_bytes());
+    out.extend_from_slice(b"WAVEfmt ");
+    out.extend_from_slice(&16u32.to_le_bytes());
+    out.extend_from_slice(&1u16.to_le_bytes());
+    out.extend_from_slice(&1u16.to_le_bytes());
+    out.extend_from_slice(&rate.to_le_bytes());
+    out.extend_from_slice(&(rate * 2).to_le_bytes());
+    out.extend_from_slice(&2u16.to_le_bytes());
+    out.extend_from_slice(&16u16.to_le_bytes());
+    out.extend_from_slice(b"data");
+    out.extend_from_slice(&data.to_le_bytes());
+    out.resize(44 + data as usize, 0);
+    out
 }
 
 fn code(result: Result<impl Sized, AssetError>) -> Value {
@@ -159,7 +179,38 @@ fn main() {
         ),
         mint_vector("glyph_zero_byte", "transcript", zero_glyph.as_deref().unwrap(), json!([]), json!([]), false),
         mint_vector("layer_with_parent", "layer", "{\"name\":\"signal\",\"index\":0}", json!([]), layer["src"].clone(), false),
+        // B1: duration_ms derived with the normative half-up rule. 24008 frames
+        // at 16 kHz = 1500.5 ms exactly (tie -> 1501); 33447 at 24 kHz =
+        // 1393.625 ms (non-whole -> 1394).
+        mint_vector(
+            "clip_tie_half_ms_16k",
+            "audio_clip",
+            &format!("{{\"engine\":\"kokoro_onnx\",\"sample_rate_hz\":16000,\"duration_ms\":{}}}", ms_from_frames(24_008, 16_000)),
+            json!([{"role": "wav", "sha256": "0".repeat(64)}]),
+            json!([]),
+            false,
+        ),
+        mint_vector(
+            "clip_non_whole_ms_24k",
+            "audio_clip",
+            &format!("{{\"engine\":\"kokoro_onnx\",\"sample_rate_hz\":24000,\"duration_ms\":{}}}", ms_from_frames(33_447, 24_000)),
+            json!([{"role": "wav", "sha256": "0".repeat(64)}]),
+            json!([]),
+            false,
+        ),
     ];
+    mint_vectors[10]["derived_from"] = json!({"frames": 24_008, "sample_rate_hz": 16_000, "rule": "ms_from_frames"});
+    mint_vectors[11]["derived_from"] = json!({"frames": 33_447, "sample_rate_hz": 24_000, "rule": "ms_from_frames"});
+
+    // ---- normative rounding table (B1)
+    let mut rounding: Vec<Value> = Vec::new();
+    for (frames, rate) in [(24_008u64, 16_000u64), (33_447, 24_000), (12, 24_000), (11, 24_000), (1, 48_000), (3_345_000, 24_000), (7, 44_100)] {
+        rounding.push(json!({"op": "ms_from_frames", "frames": frames, "rate": rate, "expect": ms_from_frames(frames, rate)}));
+    }
+    for (value, scale) in [(139.04, 1000.0), (0.0125, 1000.0), (1.0005, 1000.0), (2.5, 1.0), (0.5, 1.0), (0.49999999999999994, 1.0), (1.2345675, 1_000_000.0), (0.0016666666666666668, 24_000.0)] {
+        let product: f64 = value * scale;
+        rounding.push(json!({"op": "round_half_up", "value": value, "scale": scale, "expect": round_half_up(product).unwrap()}));
+    }
     for vector in &mut mint_vectors {
         vector["expect"]["canonical"] = vector["expect"]["canonical"].clone();
     }
@@ -169,6 +220,8 @@ fn main() {
         reject_vector("float_0_1", "transcript", "{\"language\":\"en\",\"n_words\":0.1}"),
         reject_vector("float_1e_minus_7", "transcript", "{\"language\":\"en\",\"n_words\":1e-7}"),
         reject_vector("float_139_375", "audio_clip", "{\"engine\":\"x\",\"sample_rate_hz\":24000,\"duration_ms\":139.375}"),
+        reject_vector("integral_float_139375_0", "audio_clip", "{\"engine\":\"x\",\"sample_rate_hz\":24000,\"duration_ms\":139375.0}"),
+        reject_vector("integral_float_exponent_1e3", "transcript", "{\"language\":\"en\",\"n_words\":1e3}"),
         reject_vector("negative_zero", "transcript", "{\"language\":\"en\",\"n_words\":-0}"),
         reject_vector("unsafe_integer", "transcript", "{\"language\":\"en\",\"n_words\":9007199254740993}"),
         reject_vector("null_value", "transcript", "{\"language\":null,\"n_words\":1}"),
@@ -176,6 +229,28 @@ fn main() {
         reject_vector("control_char_u001f", "transcript", "{\"language\":\"e\\u001fn\",\"n_words\":1}"),
         reject_vector("non_nfc_text", "transcript", "{\"language\":\"cafe\\u0301\",\"n_words\":1}"),
         reject_vector("lone_surrogate", "transcript", "{\"language\":\"\\ud800\",\"n_words\":1}"),
+    ];
+
+    // ---- identity rejects (B2 duplicate role, D3 duplicate src / fan-out)
+    let identity_reject = |name: &str, kind: &str, fields: Value, media: Value, src: Value| {
+        let error = code(mint(kind, &fields, &digests(&media), &strings(&src)));
+        assert!(!error.is_null(), "{name} unexpectedly minted");
+        json!({"name": name, "kind": kind, "fields": fields, "media": media, "src": src, "error": error})
+    };
+    let cube_uid = cube["uid"].as_str().unwrap().to_string();
+    let many: Vec<String> = (0..17u64)
+        .map(|n| mint("transcript", &json!({"language": "en", "n_words": n}), &[], &[]).unwrap().uid)
+        .collect();
+    let identity_rejects = vec![
+        identity_reject(
+            "duplicate_media_role",
+            "audio_clip",
+            json!({"engine": "kokoro_onnx", "sample_rate_hz": 24000, "duration_ms": 1000}),
+            json!([{"role": "wav", "sha256": wav_sha}, {"role": "wav", "sha256": "0".repeat(64)}]),
+            json!([]),
+        ),
+        identity_reject("duplicate_src", "layer", json!({"name": "signal", "index": 0}), json!([]), json!([cube_uid, cube_uid])),
+        identity_reject("src_fan_out_17", "card", json!({"card_id": "fan", "view": "LibraryClip"}), json!([]), json!(many)),
     ];
 
     // ---- uid grammar
@@ -203,6 +278,12 @@ fn main() {
         "https://example.com/x.wav", "file:x.wav", "a\\b.wav", ".hidden.wav", "a b.wav",
     ];
     let path_vectors: Vec<Value> = paths.iter().map(|path| json!({"path": path, "error": code(check_media_path(path))})).collect();
+
+    let card = |id: &str| {
+        let mut p = parts("card", id, json!({"card_id": id, "view": "LibraryClip"}));
+        p.body = json!({"id": id, "kind": "LibraryClip", "title": id, "body": {}});
+        build_envelope(p).unwrap()
+    };
 
     // ---- envelope invariants (one negative per invariant)
     let mut envelopes: Vec<Value> = Vec::new();
@@ -278,6 +359,44 @@ fn main() {
     push("kind_mismatch", { let mut c = cube.clone(); c["kind"] = json!("spectrogram_2d"); c }, false);
     push("media_path_dotdot_inside_segment", { let mut p = clip.clone(); p["media"][0]["path"] = json!("a..b.wav"); p }, true);
     push("bad_extension_key", { let mut c = cube.clone(); c["extensions"] = json!({"vendor": 1}); c }, false);
+    // D1: root/display/legacy_id rules enforced by the validator as well as the schema.
+    push("unknown_root_key", { let mut c = cube.clone(); c["notes"] = json!("x"); c }, false);
+    push("missing_glyph", { let mut c = cube.clone(); c["display"].as_object_mut().unwrap().remove("glyph"); c }, false);
+    push("empty_title", { let mut c = cube.clone(); c["display"]["title"] = json!(""); c }, false);
+    push("legacy_id_dotdot", { let mut c = cube.clone(); c["legacy_id"] = json!(".."); c }, false);
+    push("legacy_id_traversal", { let mut c = cube.clone(); c["legacy_id"] = json!("../../etc/passwd"); c }, false);
+    // C2: display_rev is a display-only integer; bumping it never changes the uid.
+    let mut renamed = cube.clone();
+    renamed["display"]["title"] = json!("Renamed cube");
+    renamed["display"]["display_rev"] = json!(1);
+    push("display_rev_bump_keeps_uid", renamed, true);
+    push("display_rev_not_integer", { let mut c = cube.clone(); c["display"]["display_rev"] = json!("1"); c }, false);
+    // B2: one entry per role; required roles per kind.
+    push("media_duplicate_role", { let mut c = cube.clone(); let first = c["media"][0].clone(); c["media"].as_array_mut().unwrap().push(first); c }, false);
+    let png_only = {
+        let mut p = parts("cube_ihdr", "cube", cube["fields"].clone());
+        p.media = cube["media"].as_array().unwrap().iter().filter(|m| m["role"] != "cube_json").cloned().collect();
+        p.src = strings(&cube["src"]);
+        p.honesty = cube["honesty"].clone();
+        build_envelope(p).unwrap()
+    };
+    push("cube_missing_cube_json", png_only, false);
+    // D3: channels 1..32, wav_url follows media_path rules, relation fan-out 8.
+    let clip_with_channels = |channels: u64| {
+        let mut fields = clip["fields"].clone();
+        fields["channels"] = json!(channels);
+        let mut p = parts("audio_clip", "clip", fields);
+        p.media = clip["media"].as_array().unwrap().clone();
+        p.provenance = clip["provenance"].as_object().unwrap().clone();
+        p.honesty = clip["honesty"].clone();
+        build_envelope(p).unwrap()
+    };
+    push("channels_zero", clip_with_channels(0), false);
+    push("channels_33", clip_with_channels(33), false);
+    push("wav_url_dotdot", { let mut c = clip.clone(); c["body"]["wav_url"] = json!("/library/../secrets.wav"); c }, false);
+    push("wav_url_nested_ok", { let mut c = clip.clone(); c["body"]["wav_url"] = json!("/library/clips/2026/x.wav"); c }, true);
+    push("wav_url_not_library", { let mut c = clip.clone(); c["body"]["wav_url"] = json!("https://example.com/x.wav"); c }, false);
+    push("relations_fan_out_9", { let mut c = card("fan-out"); c["relations"] = json!({"composes": many[..9]}); c }, false);
 
     // ---- set-level invariants
     let mut sets: Vec<Value> = Vec::new();
@@ -307,19 +426,21 @@ fn main() {
         build_envelope(p).unwrap()
     };
     push_set("duration_drift", vec![kokoro.clone(), find("misaki", "voice_model"), clip.clone(), drift]);
-    let card = |id: &str| {
-        let mut p = parts("card", id, json!({"card_id": id, "view": "LibraryClip"}));
-        p.body = json!({"id": id, "kind": "LibraryClip", "title": id, "body": {}});
-        build_envelope(p).unwrap()
-    };
     let (mut a, mut b) = (card("cycle-a"), card("cycle-b"));
     let (ua, ub) = (a["uid"].clone(), b["uid"].clone());
     a["relations"] = json!({"bound_to": [ub]});
     b["relations"] = json!({"bound_to": [ua]});
     push_set("link_cycle", vec![a, b]);
     push_set("layer_cube_missing", vec![layer.clone()]);
+    let mut dangling = card("dangling");
+    dangling["relations"] = json!({"bound_to": [many[0]]});
+    push_set("dangling_relation", vec![dangling]);
 
-    // ---- migration before/after
+    // ---- migration before/after. D6: the media entry is a real, synthetic
+    // file: a 1.000 s, 24 kHz, mono, 16-bit silent PCM WAV (44 + 48000 =
+    // 48044 bytes), so sha256 and bytes agree with each other.
+    let golden_wav = silent_wav(24_000, 24_000);
+    let golden_sha = sha256_hex(&golden_wav);
     let v0 = json!({
         "manifest": {"clips": [{
             "id": "lib-golden", "engineId": "kokoro_onnx", "title": "Golden clip", "status": "ok",
@@ -332,14 +453,14 @@ fn main() {
             {"id": "magpie", "label": "Magpie (unavailable)", "waveform": true, "synthAdapter": false, "unavailable": true, "note": "golden"}
         ],
         "cards": [], "profiles": [], "cube_docs": {}, "spectrograms": [],
-        "media": {"golden.wav": {"sha256": wav_sha, "bytes": 48044, "frames": 24000, "sample_rate": 24000, "channels": 1}}
+        "media": {"golden.wav": {"sha256": golden_sha, "bytes": golden_wav.len(), "frames": 24000, "sample_rate": 24000, "channels": 1}}
     });
     let after = migrate_to_v1(&v0).expect("migration vector");
     let mut retitled_v0 = v0.clone();
     retitled_v0["manifest"]["clips"][0]["title"] = json!("Renamed golden clip");
     let retitled_after = migrate_to_v1(&retitled_v0).expect("retitled migration");
     let migrations = vec![
-        json!({"name": "v0_manifest_clip_to_v1", "before": v0, "after": after, "error": null}),
+        json!({"name": "v0_manifest_clip_to_v1", "synthetic_media": "golden.wav = 1.000 s 24 kHz mono 16-bit silent PCM WAV (48044 bytes, all-zero samples)", "before": v0, "after": after, "error": null}),
         json!({"name": "v0_rename_keeps_uid", "before": retitled_v0, "after": retitled_after, "error": null}),
         json!({"name": "unknown_major_rejected", "before": {"schema_version": "2.0.0", "assets": []}, "after": null, "error": code(migrate_to_v1(&json!({"schema_version": "2.0.0", "assets": []})))}),
     ];
@@ -351,6 +472,8 @@ fn main() {
         "note": "Shared golden vectors. Regenerate with `cargo run -p gen-audio-core --example asset_vectors`; cargo test and `npm test` (apps/desktop) both assert this file.",
         "mint": mint_vectors,
         "canonical_reject": rejects,
+        "identity_reject": identity_rejects,
+        "rounding": rounding,
         "uid_parse": uid_vectors,
         "media_path": path_vectors,
         "envelopes": envelopes,

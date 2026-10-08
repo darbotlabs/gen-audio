@@ -77,3 +77,13 @@ def test_png_writer_round_trips_pixels(tmp_path):
     length = struct.unpack(">I", raw[idat - 4 : idat])[0]
     pixels = zlib.decompress(raw[idat + 4 : idat + 4 + length])
     assert pixels[:4] == b"\x00\xff\x00\x00"
+
+
+def test_ms_rounding_matches_the_shared_vectors():
+    module = _load()
+    vectors = json.loads((Path(__file__).resolve().parents[1] / "schemas/asset-object/vectors/v1.json").read_text(encoding="utf-8"))
+    cases = [row for row in vectors["rounding"] if row["op"] == "ms_from_frames"]
+    assert cases, "rounding vectors missing"
+    for row in cases:
+        assert module.ms_from_frames(row["frames"], row["rate"]) == row["expect"], row
+    assert module.ms_from_frames(24008, 16000) == 1501  # exact .5 tie rounds up

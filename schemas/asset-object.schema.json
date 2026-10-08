@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://darbotlabs.dev/gen-audio/schemas/asset-object/v1.schema.json",
   "title": "Gen-Audio asset object (v1 draft)",
-  "description": "One envelope for every composable asset. uid = ga:<kind>:base32(SHA-256(\"ga-asset-v1\\u0000\" + JCS({kind, schema_major, fields, media:[{role,sha256}], src})))[0..26]. Only kind, schema major, fields, media digests and src are hashed. See docs/ASSET_OBJECT_MODEL.md. Rules JSON Schema cannot state (NFC, '..' inside a path segment, uid recomputation, cross-asset sha/duration checks, link cycles, secrets in mcp_tool) are enforced by gen_audio_core::asset and pinned by schemas/asset-object/vectors/v1.json.",
+  "description": "One envelope for every composable asset. uid = ga:<kind>:base32(SHA-256(\"ga-asset-v1\\u0000\" + JCS({kind, schema_major, fields, media:[{role,sha256}], src})))[0..26]. Only kind, schema major, fields, media digests and src are hashed. See docs/ASSET_OBJECT_MODEL.md. Rules JSON Schema cannot state (NFC, '..' inside a path segment, uid recomputation, cross-asset sha/duration checks, link cycles, secrets in mcp_tool) are enforced by gen_audio_core::asset and pinned by schemas/asset-object/vectors/v1.json. Identity integers derived from measurements round half up (docs/ASSET_OBJECT_MODEL.md, 'Identity integers: rounding'); integral floats such as 1.0 are rejected by the Rust/TS validators, which JSON Schema cannot express.",
   "type": "object",
   "required": [
     "schema_version",
@@ -45,7 +45,10 @@
     "legacy_id": {
       "type": "string",
       "pattern": "^[A-Za-z0-9_.-]{1,96}$",
-      "description": "Pre-v1 id (card id, tileId, clipId, persona id). Never hashed."
+      "description": "Pre-v1 id (card id, tileId, clipId, persona id). Never hashed. No '/', no '..'.",
+      "not": {
+        "pattern": "\\.\\."
+      }
     },
     "status": {
       "enum": [
@@ -158,7 +161,23 @@
                   ]
                 }
               }
-            }
+            },
+            "allOf": [
+              {
+                "contains": {
+                  "properties": {
+                    "role": {
+                      "const": "profile_json"
+                    }
+                  },
+                  "required": [
+                    "role"
+                  ]
+                },
+                "minContains": 0,
+                "maxContains": 1
+              }
+            ]
           },
           "honesty": {
             "required": [
@@ -207,7 +226,35 @@
                   ]
                 }
               }
-            }
+            },
+            "allOf": [
+              {
+                "contains": {
+                  "properties": {
+                    "role": {
+                      "const": "wav"
+                    }
+                  },
+                  "required": [
+                    "role"
+                  ]
+                },
+                "minContains": 0,
+                "maxContains": 1
+              },
+              {
+                "contains": {
+                  "properties": {
+                    "role": {
+                      "const": "wav"
+                    }
+                  },
+                  "required": [
+                    "role"
+                  ]
+                }
+              }
+            ]
           },
           "status": {
             "enum": [
@@ -250,7 +297,35 @@
                   ]
                 }
               }
-            }
+            },
+            "allOf": [
+              {
+                "contains": {
+                  "properties": {
+                    "role": {
+                      "const": "spectrogram_png"
+                    }
+                  },
+                  "required": [
+                    "role"
+                  ]
+                },
+                "minContains": 0,
+                "maxContains": 1
+              },
+              {
+                "contains": {
+                  "properties": {
+                    "role": {
+                      "const": "spectrogram_png"
+                    }
+                  },
+                  "required": [
+                    "role"
+                  ]
+                }
+              }
+            ]
           },
           "src": {
             "minItems": 1,
@@ -295,7 +370,49 @@
                   ]
                 }
               }
-            }
+            },
+            "allOf": [
+              {
+                "contains": {
+                  "properties": {
+                    "role": {
+                      "const": "cube_json"
+                    }
+                  },
+                  "required": [
+                    "role"
+                  ]
+                },
+                "minContains": 0,
+                "maxContains": 1
+              },
+              {
+                "contains": {
+                  "properties": {
+                    "role": {
+                      "const": "cube_png"
+                    }
+                  },
+                  "required": [
+                    "role"
+                  ]
+                },
+                "minContains": 0,
+                "maxContains": 1
+              },
+              {
+                "contains": {
+                  "properties": {
+                    "role": {
+                      "const": "cube_json"
+                    }
+                  },
+                  "required": [
+                    "role"
+                  ]
+                }
+              }
+            ]
           },
           "src": {
             "minItems": 1,
@@ -381,7 +498,35 @@
                   ]
                 }
               }
-            }
+            },
+            "allOf": [
+              {
+                "contains": {
+                  "properties": {
+                    "role": {
+                      "const": "script_txt"
+                    }
+                  },
+                  "required": [
+                    "role"
+                  ]
+                },
+                "minContains": 0,
+                "maxContains": 1
+              },
+              {
+                "contains": {
+                  "properties": {
+                    "role": {
+                      "const": "script_txt"
+                    }
+                  },
+                  "required": [
+                    "role"
+                  ]
+                }
+              }
+            ]
           }
         }
       }
@@ -418,7 +563,38 @@
                   ]
                 }
               }
-            }
+            },
+            "minItems": 1,
+            "allOf": [
+              {
+                "contains": {
+                  "properties": {
+                    "role": {
+                      "const": "transcript_json"
+                    }
+                  },
+                  "required": [
+                    "role"
+                  ]
+                },
+                "minContains": 0,
+                "maxContains": 1
+              },
+              {
+                "contains": {
+                  "properties": {
+                    "role": {
+                      "const": "transcript_txt"
+                    }
+                  },
+                  "required": [
+                    "role"
+                  ]
+                },
+                "minContains": 0,
+                "maxContains": 1
+              }
+            ]
           }
         }
       }
@@ -788,6 +964,12 @@
           "type": "string",
           "pattern": "^[\\u2800-\\u28ff]{2}$",
           "description": "Text form: U+2800+digest[0], U+2800+digest[1]. Visual hint only."
+        },
+        "display_rev": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991,
+          "description": "Display-only revision counter. Bumped on rename/retitle; never hashed, so it never changes the uid. Absent means 0."
         }
       }
     },
@@ -1228,7 +1410,8 @@
         },
         "wav_url": {
           "type": "string",
-          "pattern": "^/library/[A-Za-z0-9_.-]+$"
+          "pattern": "^/library/[A-Za-z0-9_-][A-Za-z0-9_.-]{0,127}(/[A-Za-z0-9_-][A-Za-z0-9_.-]{0,127}){0,3}$",
+          "description": "/library/ + a media_path (same segment rules, up to 4 segments)."
         },
         "n_words": {
           "type": "integer"
@@ -1352,5 +1535,6 @@
     "card_body": {
       "$ref": "https://github.com/darbotlabs/gen-audio/schemas/card-viewport.schema.json#/$defs/card"
     }
-  }
+  },
+  "additionalProperties": false
 }

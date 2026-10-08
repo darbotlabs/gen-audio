@@ -35,13 +35,23 @@ reconciled choices listed at the end.
   "relations": { "layer_of", "bound_to", "composes", "supersedes" }, // unhashed links
   "honesty": { "synthesized_speech", "fixture", "not_podcast", "claims": [closed vocabulary], "note" },
   "provenance": { "generator", "engine", "voice_model", "g2p_model", "params", "created_at" },
-  "display": { "title", "summary", "semantic_name", "face_name", "glyph" },
+  "display": { "title", "summary", "semantic_name", "face_name", "glyph", "display_rev" }, // display_rev: integer, unhashed
   "body": { ... },                    // per-kind payload, unhashed; float views live here
   "extensions": { "x-vendor-thing": ... } // namespaced, never hashed
 }
 ```
 
-The root has `unevaluatedProperties: false`. Per-kind dispatch is
+The root has `additionalProperties: false`, and the Rust validator and the TS
+`checkEnvelopeShape` reject the same things on their own (D1): an unknown root
+key (`unknown_root_key`), a missing `display`/`display.glyph` (`missing_glyph`),
+an empty or over-long title (`bad_title`), an unknown display key
+(`unknown_display_key`), and a `legacy_id` outside `[A-Za-z0-9_.-]{1,96}` or
+containing `..` (`bad_legacy_id`, so no `/` and no traversal).
+
+**`display.display_rev` (C2)** is an optional non-negative integer inside
+`display` (absent = 0). It counts renames/retitles for UI caches and is never
+hashed, so bumping it never changes the uid (`display_rev_bump_keeps_uid`); a
+non-integer is `bad_display_rev`. Per-kind dispatch is
 `allOf: [{ if: {properties:{kind:{const:K}}, required:["kind"]}, then: {...$defs/K_fields, K_body, uid pattern, media roles} }]`.
 This is equivalent to a `oneOf` over `$defs/<kind>` (the `kind` enum is closed),
 but ajv and the jsonschema crate report much more readable errors. Payloads reuse
@@ -55,7 +65,7 @@ The uid hashes an allowlisted identity projection only:
 ```text
 identity = {"kind": K, "schema_major": 1, "fields": {...},
             "media": [{"role": r, "sha256": h} ...]   sorted by (role, sha256),
-            "src":   [parent uids ...]                sorted, de-duplicated}
+            "src":   [parent uids ...]                sorted; duplicates rejected (duplicate_src), max 16}
 preimage = UTF8("ga-asset-v1") || 0x00 || JCS(identity)
 digest   = SHA-256(preimage)
 uid      = "ga:" K ":" base32(digest[0..16])        RFC 4648 alphabet a-z2-7, lowercase, no padding
@@ -67,6 +77,14 @@ uid      = "ga:" K ":" base32(digest[0..16])        RFC 4648 alphabet a-z2-7, lo
     `bin_frames` and `inv_hdr_ppm` (0.239483 becomes 239483). Floats such as
     0.1, 1e-7 and 139.375 are rejected (`float_in_identity`), as are -0
     (`negative_zero`), NaN/Inf and `null` (omit the key instead).
+  - **Integral floats are rejected too (D2).** `139375.0` and `1e3` are
+    `float_in_identity`: identity integers are JSON integer *tokens*, and the
+    minter only writes integer tokens. Rust sees such tokens as f64 and rejects
+    them in `canonicalize`/`check_fields`; JS cannot tell `1.0` from `1` after
+    `JSON.parse`, so TS reads identity text through `parseIdentityJson`, which
+    rejects fraction/exponent tokens before parsing. JSON Schema cannot express
+    this (2020-12 `integer` admits `1.0`), so the schema stays silent and the
+    validators own it (`integral_float_139375_0`, `integral_float_exponent_1e3`).
   - Keys are printable ASCII (`non_ascii_key`), and field names are snake_case.
     UTF-8 byte order therefore equals the UTF-16 order JCS specifies.
   - Strings must be NFC (`non_nfc_string`) and contain no C0 controls or DEL
@@ -102,13 +120,37 @@ uid      = "ga:" K ":" base32(digest[0..16])        RFC 4648 alphabet a-z2-7, lo
   cube under a 130-bit encoding) no longer applies: this spec takes 128 bits and
   zero pad bits.
 
+### Identity integers: rounding (normative, B1)
+
+Every identity integer derived from a measurement uses **round half up**.
+All inputs are non-negative, so this is the same as half away from zero.
+Negative or non-finite inputs are an error (`bad_rounding_input`).
+
+| field | from | rule | implementation |
+|---|---|---|---|
+| `audio_clip.duration_ms`, `spectrogram_2d.duration_ms`, any `*_ms` from frames | frames, sample rate | `(frames·1000 + rate div 2) div rate`, exact integers | Rust `ms_from_frames`, TS `msFromFrames`, Python `spectrogram_strip.ms_from_frames` |
+| `spectrogram_2d.covers_ms` | columns·hop frames | same integer rule | same |
+| `cube_ihdr.duration_ms` | `duration_s` (float view) | round half up of the IEEE-754 double `duration_s × 1000` | Rust `round_half_up`, TS `roundHalfUp` |
+| `cube_ihdr.covers_ms` | `cube_covers_s` | round half up of `cube_covers_s × 1000`; without it, the integer rule on `time_bins·bin_frames` | same |
+| `cube_ihdr.inv_hdr_ppm` | `inv_hdr` | round half up of `inv_hdr × 1e6` | same |
+| `cube_ihdr.bin_frames` (inferred) | `bin_seconds × sample_rate_hz` | round half up of the double product | same |
+
+"The double product" is one IEEE-754 binary64 multiply, so Rust, TS and
+Python get bit-identical inputs to the rounding step. Examples (all in
+`v1.json` → `rounding`, asserted by cargo test, npm test and pytest):
+24008 frames @ 16 kHz = 1500.5 ms exactly → **1501** (the tie); 33447 @ 24 kHz
+= 1393.625 → 1394; 12 @ 24 kHz = 0.5 → 1; 11 @ 24 kHz → 0. The mint vectors
+`clip_tie_half_ms_16k` and `clip_non_whole_ms_24k` carry `derived_from`
+frames so both languages re-derive `duration_ms` before hashing. None of the
+63 library uids changed under this rule.
+
 ### Per-kind identity fields (`fields`, allowlist)
 
 | kind | required | optional | media roles | src |
 |---|---|---|---|---|
 | voice_model | model_id, waveform | | | |
 | voice_profile | persona_id, voice_model (uid), tone, purpose, domain, accent, traits, refs | | profile_json | |
-| audio_clip | engine, sample_rate_hz, duration_ms | channels | wav | |
+| audio_clip | engine, sample_rate_hz, duration_ms | channels (1..32) | wav | |
 | spectrogram_2d | source_sha256, sample_rate_hz, n_fft, hop_frames, n_bands, width_px, height_px, duration_ms, covers_ms, db_floor, colormap | | spectrogram_png | exactly 1 audio_clip |
 | cube_ihdr | source_sha256, sample_rate_hz, bin_frames, time_bins, freq_bins, duration_ms, covers_ms, inv_hdr_ppm, cube_revision, n_points | n_fft, hop_frames | cube_json, cube_png | exactly 1 audio_clip |
 | layer | name (signal/tonality/confidence/quality), index | | | exactly 1 cube_ihdr (= relations.layer_of) |
@@ -116,6 +158,20 @@ uid      = "ga:" K ":" base32(digest[0..16])        RFC 4648 alphabet a-z2-7, lo
 | transcript | language, n_words | | transcript_json, transcript_txt | (audio_clip) |
 | card | card_id, view (old card kind) | | | |
 | mcp_tool | name, input_schema | | | |
+
+**Media roles (B2).** Each role appears **at most once** per envelope
+(`duplicate_media_role`; schema `contains` + `maxContains: 1` per role; also
+rejected at mint time, so a duplicate can never reach a uid). Required roles:
+
+| kind | required | optional | missing → |
+|---|---|---|---|
+| audio_clip | wav | | `clip_missing_wav` |
+| spectrogram_2d | spectrogram_png | | `missing_media_role` |
+| cube_ihdr | cube_json | cube_png | `missing_media_role` |
+| podcast_script | script_txt | | `missing_media_role` |
+| transcript | one of transcript_json / transcript_txt | the other | `missing_media_role` |
+| voice_profile | | profile_json | |
+| voice_model, layer, card, mcp_tool | (no media) | | |
 
 **Pipeline lineage (for P4):** each derived step mints its own asset with
 `src` set to its parent uids. For example: improve → audio_clip (src: original
@@ -200,6 +256,39 @@ the rest (V). Every invariant has a failing vector in `v1.json`:
 | mcp_tool carries no secrets or env values (reuses `redact::redact_secrets`) | V | `mcp_tool_secret`, `mcp_tool_env` |
 | `claims` is a closed vocabulary | S+V | `unknown_claim` |
 | uid recomputes; glyph matches; uid prefix = kind | V (S for prefix) | `uid_mismatch`, `glyph_mismatch`, `kind_mismatch` |
+| root keys closed; display has a 1..160 char title and the glyph; `display_rev` integer; `legacy_id` safe | S+V+TS | `unknown_root_key`, `missing_glyph`, `bad_title`, `unknown_display_key`, `bad_display_rev`, `bad_legacy_id` |
+| media role at most once; required roles per kind | S+V+TS | `duplicate_media_role`, `missing_media_role`, `clip_missing_wav` |
+| `channels` 1..32 | S+V+TS | `bad_field_type` |
+| `src` ≤ 16 without duplicates; each relation list ≤ 8 (fan-out) | S+V+TS | `duplicate_src`, `fan_out_exceeded` |
+| `body.wav_url` = `/library/` + a valid media path (same segment rules) | S+V+TS | `bad_wav_url` |
+| every relation target (`composes`, `bound_to`, `supersedes`, `layer_of`) resolves in the set | V (set) | `dangling_relation` (`layer_cube_missing` for `layer_of`) |
+| identity integers are integer tokens (no `1.0`, `1e3`) | V+TS | `float_in_identity` |
+
+### status → honesty (C3)
+
+`status` says whether the bytes are here; `honesty` says what the bytes are.
+They are independent axes, but these combinations are the only ones writers
+produce (migration and `build_assets`), and the UI derives its badge text from
+`honesty.claims`, never from `status`:
+
+| kind / source | `status` | `synthesized_speech` | `fixture` | `claims` | UI meaning |
+|---|---|---|---|---|---|
+| audio_clip, synthesized, wav present | `ok` | true | false | `real_wav`, `synthesized_speech` | playable real synthesis |
+| audio_clip, synthesized, wav sha known but file absent here | `missing` | true | false | `real_wav`, `synthesized_speech` | real synthesis, not on this machine |
+| audio_clip, not synthesized (recording/import) | `ok` / `missing` | false | false | `real_wav` | real audio, no synthesis claim |
+| audio_clip | `unavailable` | — | — | — | **invalid** (`bad_status`): an unavailable engine has no clip; it is a voice_model |
+| voice_model, engine present | `ok` | false | false | `[]` or `g2p_only` | engine listed |
+| voice_model, engine unavailable | `unavailable` | false | false | `engine_unavailable` (+ `g2p_only`) | greyed engine, never playable |
+| voice_profile | `ok` | **false** (enforced) | false | `profile_preview`, `not_a_podcast_render`; `not_podcast:true` (enforced) | persona preview, not a render |
+| cube_ihdr / layer | `ok` | false | false | `library_cube` | analysis of a real clip |
+| spectrogram_2d | `ok` | false | false | `library_spectrogram` | analysis of a real clip |
+| card, fixture tone | `ok` | **false** (enforced) | true | `fixture_tone` | test tone, dev/test only |
+| card, status/health views | `ok` | false | false | `status_only` | no audio claim |
+| card, benchmark | `ok` | false | false | `reference_only` | reference numbers only |
+| card, library clip | `ok` | false | false | `real_wav` (clip ok) / `engine_unavailable` | mirrors the bound clip |
+
+Cards never claim synthesized speech themselves; they point at the clip that
+does through `relations.bound_to`.
 
 **Claims vocabulary:** `real_wav, synthesized_speech, library_cube,
 library_spectrogram, fixture_tone, profile_preview, reference_only,
@@ -219,7 +308,9 @@ not_a_podcast_render, engine_unavailable, g2p_only, status_only`.
   - URL schemes (`https:`, `file:`)
   - backslashes
   - dot-files
-- **Web URL:** `/library/<path>`.
+- **Web URL:** `/library/<path>`. `audio_clip.body.wav_url` follows exactly
+  the media-path rules after the `/library/` prefix (up to 4 segments), in the
+  schema, Rust and TS (`bad_wav_url`).
 - **On load:** `verify_media` checks the size cap (256 MiB), the byte length
   and the sha256.
 - **Missing files:** a file absent on this machine (the WAVs are gitignored)
@@ -260,6 +351,12 @@ not_a_podcast_render, engine_unavailable, g2p_only, status_only`.
 | vectors | `schemas/asset-object/vectors/v1.json` shared by `cargo test` and `npm test` (CI step added) |
 
 ## 9. Open items for the hardening review
+
+Darbot's RED review of `c97a69e` (B1, B2, D1–D4, D6, C2, C3) is folded in
+above. D6: the `v0_manifest_clip_to_v1` migration vector now uses a real
+synthetic file, a 1.000 s 24 kHz mono 16-bit silent PCM WAV (44 + 48000 =
+48044 bytes) whose sha256 matches its byte count; it is labelled
+`synthetic_media` in the vector.
 
 - The TS side mirrors canonicalization, uid, glyph, uid parsing and media-path
   checks, and runs Ajv over every envelope vector. The v0→v1 migration and the

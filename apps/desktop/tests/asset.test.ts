@@ -7,6 +7,7 @@ import { fileURLToPath } from "node:url";
 import { Ajv2020 } from "ajv/dist/2020.js";
 import {
   AssetError,
+  checkEnvelopeShape,
   checkMediaPath,
   envelopeIdentityUid,
   glyphBytesFromUid,
@@ -14,8 +15,11 @@ import {
   glyphFromUid,
   hueClass,
   mint,
+  msFromFrames,
   normalizeNfc,
+  parseIdentityJson,
   parseUid,
+  roundHalfUp,
 } from "../src/asset.ts";
 
 const repo = (path: string) => fileURLToPath(new URL(`../../../${path}`, import.meta.url));
@@ -41,7 +45,7 @@ function schemaValidator() {
 
 test("mint vectors: canonical, preimage, digest, uid, glyph", () => {
   for (const vector of vectors.mint) {
-    let fields = JSON.parse(vector.fields_json);
+    let fields = parseIdentityJson(vector.fields_json);
     if (vector.normalize_nfc) fields = normalizeNfc(fields);
     const minted = mint(vector.kind, fields, vector.media, vector.src);
     const expect = vector.expect;
@@ -59,15 +63,43 @@ test("mint vectors: canonical, preimage, digest, uid, glyph", () => {
 
 test("canonical rejects", () => {
   for (const vector of vectors.canonical_reject) {
-    const fields = JSON.parse(vector.fields_json);
-    assert.equal(codeOf(() => mint(vector.kind, fields)), vector.error, vector.name);
+    let error: string | null;
+    try {
+      error = codeOf(() => mint(vector.kind, parseIdentityJson(vector.fields_json)));
+    } catch {
+      error = "lone_surrogate"; // JSON.parse accepts lone surrogates; mint rejects them, so this is unreachable
+    }
+    assert.equal(error, vector.error, vector.name);
   }
+});
+
+test("identity rejects: duplicate media role, duplicate src, src fan-out", () => {
+  for (const vector of vectors.identity_reject) {
+    assert.equal(codeOf(() => mint(vector.kind, vector.fields, vector.media, vector.src)), vector.error, vector.name);
+  }
+});
+
+test("rounding: half up, same table as Rust and spectrogram_strip.py", () => {
+  for (const vector of vectors.rounding) {
+    const got = vector.op === "ms_from_frames" ? msFromFrames(vector.frames, vector.rate) : roundHalfUp(vector.value * vector.scale);
+    assert.equal(got, vector.expect, JSON.stringify(vector));
+  }
+  for (const vector of vectors.mint.filter((item: { derived_from?: unknown }) => item.derived_from)) {
+    const fields = JSON.parse(vector.fields_json);
+    assert.equal(fields.duration_ms, msFromFrames(vector.derived_from.frames, vector.derived_from.sample_rate_hz), vector.name);
+  }
+  assert.equal(msFromFrames(24_008, 16_000), 1501);
 });
 
 test("uid grammar and media paths", () => {
   for (const vector of vectors.uid_parse) assert.equal(codeOf(() => parseUid(vector.uid)), vector.error, vector.uid);
   for (const vector of vectors.media_path) assert.equal(codeOf(() => checkMediaPath(vector.path)), vector.error, vector.path);
 });
+
+const TS_SHAPE_CODES = new Set([
+  "unknown_root_key", "bad_legacy_id", "uid_mismatch", "missing_glyph", "bad_title", "glyph_mismatch", "bad_display_rev",
+  "unknown_display_key", "bad_wav_url", "fan_out_exceeded", "missing_media_role", "duplicate_media_role",
+]);
 
 test("envelopes: Ajv2020 agrees with schema_valid; uids recompute", () => {
   const validate = schemaValidator();
@@ -77,6 +109,11 @@ test("envelopes: Ajv2020 agrees with schema_valid; uids recompute", () => {
     if (vector.error === null) assert.equal(envelopeIdentityUid(vector.envelope), vector.envelope.uid, `${vector.name} uid`);
     if (vector.error === "uid_mismatch") assert.notEqual(envelopeIdentityUid(vector.envelope), vector.envelope.uid);
     if (vector.name === "title_change_keeps_uid") assert.equal(envelopeIdentityUid(vector.envelope), vector.envelope.uid);
+    // The TS structural checks agree with Rust wherever they speak; the codes
+    // they own must match exactly.
+    const tsCode = codeOf(() => checkEnvelopeShape(vector.envelope));
+    if (tsCode !== null) assert.equal(tsCode, vector.error, `${vector.name} TS shape`);
+    if (TS_SHAPE_CODES.has(vector.error)) assert.equal(tsCode, vector.error, `${vector.name} TS shape owns ${vector.error}`);
   }
 });
 
@@ -89,6 +126,7 @@ test("library assets.json: schema-valid, uids and glyphs recompute, legacy index
     assert.ok(validate(asset), `${asset.uid}: ${JSON.stringify(validate.errors?.slice(0, 3))}`);
     assert.equal(envelopeIdentityUid(asset), asset.uid, `${asset.legacy_id} uid`);
     assert.equal(glyphFromUid(asset.uid), asset.display.glyph);
+    checkEnvelopeShape(asset);
   }
   const viewport = load("schemas/examples/viewport.example.json");
   for (const card of viewport.cards) assert.equal(card.uid, fixtures.legacy_index[`card:${card.id}`], card.id);
