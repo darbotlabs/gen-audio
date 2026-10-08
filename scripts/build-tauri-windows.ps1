@@ -8,13 +8,17 @@ $root = Split-Path -Parent (Split-Path -Parent $MyInvocation.MyCommand.Path)
 Set-Location $root
 
 function Invoke-Checked {
-    param(
-        [Parameter(Mandatory = $true)][string]$File,
-        [Parameter(ValueFromRemainingArguments = $true)][string[]]$CommandArgs
-    )
-    & $File @CommandArgs
+    # Simple function on purpose. A param() block with [Parameter()] is an
+    # advanced function, so PowerShell binds a single-dash token itself:
+    # -p is -PipelineVariable on Windows PowerShell 5.1 (cargo never sees the
+    # package) and is ambiguous with -ProgressAction on PowerShell 7.4+
+    # (the call throws before cargo starts). $args forwards every token.
+    if ($args.Count -lt 1) { throw "Invoke-Checked requires a command" }
+    $file = [string]$args[0]
+    $commandArgs = [string[]]@($args | Select-Object -Skip 1)
+    & $file @commandArgs
     if ($LASTEXITCODE -ne 0) {
-        throw "$File $($CommandArgs -join ' ') failed with exit $LASTEXITCODE"
+        throw "$file $($commandArgs -join ' ') failed with exit $LASTEXITCODE"
     }
 }
 
@@ -88,7 +92,9 @@ Write-Host "frontend dist ok $index"
 Write-Host "package NSIS and MSI (tauri build embeds frontendDist; no bare desktop cargo build)"
 Push-Location (Join-Path $root "apps\desktop\src-tauri")
 try {
-    Invoke-Checked npx --yes "@tauri-apps/cli" build --bundles "nsis,msi"
+    # Same Tauri version as the tauri crate in Cargo.lock. An unpinned npx
+    # package resolves latest on every build.
+    Invoke-Checked npx --yes "@tauri-apps/cli@2.12.1" build --bundles "nsis,msi"
 } finally {
     Pop-Location
 }
@@ -107,6 +113,8 @@ foreach ($dir in $bundleRoots) {
 }
 if ($nsis.Count -lt 1) { throw "NSIS setup.exe was not produced under target\release\bundle" }
 if ($msi.Count -lt 1) { throw "MSI was not produced under target\release\bundle" }
+$nsis = @($nsis | Sort-Object -Property LastWriteTime -Descending)
+$msi = @($msi | Sort-Object -Property LastWriteTime -Descending)
 
 Write-Host "NSIS $($nsis[0].FullName)"
 Write-Host "MSI $($msi[0].FullName)"
