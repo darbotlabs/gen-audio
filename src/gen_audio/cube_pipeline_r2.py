@@ -10,6 +10,16 @@ lived in cube_layers.py, editing them would change the uid of every Library
 cube even though the library_r3 formulas did not change. Each formula lives
 in its own module, so editing one cannot move the identity of the other.
 
+Each pipeline_r2 cube JSON records ``provenance``: ``generator`` (this
+file's repo path, :data:`GENERATOR_PATH`), ``generator_sha256`` (sha256 of
+this file's bytes with CRLF normalized to LF, :func:`generator_sha256`),
+``layer_method`` and ``params``. Those bytes are the compare cube asset's
+identity, exactly as for a Library cube (gen_audio.cube_layers), so editing
+this file moves the compare cubes' uids and needs a regen
+(``cube_revision.py layers ... --method pipeline_r2``), and it never moves a
+Library cube. build_assets and tests/test_cube_pipeline_r2.py fail on a stale
+hash.
+
 Shared math is imported from :mod:`gen_audio.cube_layers`, never copied:
 ``preview_points`` (the point preview selection, so the two clouds differ
 only by the formulas), ``layers_to_points``, ``layer_score``, ``CubeParams``,
@@ -42,6 +52,8 @@ cube JSON).
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import numpy as np
 
 from gen_audio.cube_layers import (
@@ -53,16 +65,21 @@ from gen_audio.cube_layers import (
     preview_points,
 )
 from gen_audio.cube_revision import measure
+from gen_audio.library_manifest import normalized_sha256
 
 __all__ = [
     "DOWNSAMPLE",
+    "GENERATOR_PATH",
     "LAYER_METHOD",
     "LAYER_METHOD_LABEL",
     "LAYER_METHOD_SOURCE",
     "PARAMS",
+    "REVISION",
+    "check_generator",
     "compute_layers",
     "cube_json_name",
     "cube_png_name",
+    "generator_sha256",
     "grid",
     "layer_stats",
     "pipeline_r2_cube",
@@ -79,6 +96,38 @@ LAYER_METHOD_SOURCE = (
 DOWNSAMPLE = (5, 33)
 # n_fft, hop, thresh and per_layer as for library_r3 (max_f / max_t are unused: the grid is fixed 5 x 33 blocks).
 PARAMS = CubeParams()
+# cube_revision of every pipeline_r2 cube (PR #4's cube_document is revision 2).
+REVISION = 2
+GENERATOR_PATH = "src/gen_audio/cube_pipeline_r2.py"
+REPO_ROOT = Path(__file__).resolve().parents[2]
+
+
+def generator_sha256(repo: Path | str = REPO_ROOT) -> str:
+    """sha256 of this module's bytes with CRLF normalized to LF (the compare cubes' identity)."""
+    return normalized_sha256((Path(repo) / GENERATOR_PATH).read_bytes())
+
+
+def provenance_params() -> dict:
+    """The params a pipeline_r2 cube is made with (recorded in its provenance)."""
+    return {
+        "n_fft": PARAMS.n_fft,
+        "hop": PARAMS.hop,
+        "grid_sf_st": list(DOWNSAMPLE),
+        "thresh": PARAMS.thresh,
+        "per_layer": PARAMS.per_layer,
+    }
+
+
+def check_generator(doc: dict, repo: Path | str = REPO_ROOT) -> None:
+    """Raise ValueError unless a pipeline_r2 cube JSON was made by this module's bytes."""
+    provenance = doc.get("provenance") or {}
+    recorded, current = provenance.get("generator_sha256"), generator_sha256(repo)
+    if provenance.get("generator") != GENERATOR_PATH or recorded != current:
+        raise ValueError(
+            f"cube {doc.get('wavUrl')} names {provenance.get('generator')} sha256 {recorded}, but it is a "
+            f"{LAYER_METHOD} cube and {GENERATOR_PATH} hashes to {current} (CRLF->LF); regenerate: "
+            "python scripts/cube_revision.py layers WAV OUT --stem STEM --engine ENGINE --method pipeline_r2"
+        )
 
 
 def stft(samples: np.ndarray, n_fft: int = 1024, hop: int = 256) -> np.ndarray:
@@ -158,13 +207,13 @@ def pipeline_r2_cube(
     stem: str,
     engine: str,
     source_sha256: str,
-    revision: int = 2,
 ) -> tuple[dict, tuple]:
     """Build the pipeline_r2 comparison cube document of one WAV. Returns
     (doc, point_cloud) where point_cloud feeds ``cube_layers.write_cube_png``.
 
     ``source_sha256`` is the lowercase hex sha256 of the WAV file the samples
     came from, so the UI can refuse to compare cubes of different WAVs.
+    ``provenance`` names this module and :func:`generator_sha256`.
     """
     source_sha256 = _check_sha256(source_sha256)
     params = PARAMS
@@ -187,7 +236,7 @@ def pipeline_r2_cube(
         "source_wav": f"artifacts/library/{stem}.wav",
         "engine": engine,
         "title": f"Inverse-HDR bitdot cube \u2014 {stem} \u2014 {LAYER_METHOD_LABEL}",
-        "cube_revision": int(revision),
+        "cube_revision": REVISION,
         "sample_rate": int(sample_rate),
         "duration_s": float(len(y) / sample_rate),
         "n_fft": params.n_fft,
@@ -214,5 +263,11 @@ def pipeline_r2_cube(
         "layer_stats_on": "r2 grid: 5 x 33 block average of the STFT magnitude, before the layer formulas",
         "source_sha256": source_sha256,
         "compare_to": f"/library/library_{stem}_cube3d.json",
+        "provenance": {
+            "generator": GENERATOR_PATH,
+            "generator_sha256": generator_sha256(),
+            "layer_method": LAYER_METHOD,
+            "params": provenance_params(),
+        },
     }
     return doc, cloud

@@ -352,6 +352,35 @@ fn cube_uid_is_generator_content_and_a_commit_is_provenance_only() {
     }
 }
 
+/// Each formula lives in its own module, so each cube's identity names the
+/// module that produced it: Library cubes gen_audio.cube_layers (library_r3),
+/// comparison cubes gen_audio.cube_pipeline_r2 (pipeline_r2). An edit to one
+/// module cannot move the other's uids.
+#[test]
+fn compare_cube_identity_is_its_own_module_not_cube_layers() {
+    let catalog = json(ASSETS);
+    let cubes: Vec<&Value> = catalog["assets"].as_array().unwrap().iter().filter(|asset| asset["kind"] == "cube_ihdr").collect();
+    let library_sha = cubes
+        .iter()
+        .find(|cube| cube["legacy_id"].as_str().is_some_and(|id| id.ends_with(".cube")))
+        .map(|cube| cube["fields"]["generator_sha256"].clone())
+        .unwrap();
+    let compare: Vec<&&Value> = cubes.iter().filter(|cube| cube["legacy_id"].as_str().is_some_and(|id| id.ends_with(".cube.pipeline_r2"))).collect();
+    assert_eq!(compare.len(), 2);
+    for cube in compare {
+        let id = &cube["legacy_id"];
+        let sha = cube["fields"]["generator_sha256"].as_str().unwrap_or_default();
+        assert!(gen_audio_core::asset::is_sha256_hex(sha), "{id}: fields.generator_sha256");
+        assert_eq!(cube["provenance"]["generator"], "src/gen_audio/cube_pipeline_r2.py", "{id}");
+        assert_eq!(cube["provenance"]["generator_sha256"], sha, "{id}");
+        assert_eq!(cube["fields"]["layer_method"], "pipeline_r2", "{id}");
+        assert_ne!(cube["fields"]["generator_sha256"], library_sha, "{id}: its own module's hash, not cube_layers'");
+        let mut edited = (*cube).clone();
+        edited["fields"]["generator_sha256"] = Value::from("f".repeat(64));
+        assert_ne!(gen_audio_core::asset::envelope_identity(&edited).unwrap(), gen_audio_core::asset::envelope_identity(cube).unwrap(), "{id}");
+    }
+}
+
 /// E (Optimus, F5): status ok only for voice models Generate can produce in
 /// this app. Every model with no in-app adapter is offline_only (clips were
 /// rendered elsewhere, the VibeVoice honesty contract) or unavailable, with a

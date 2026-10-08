@@ -201,6 +201,14 @@ commit:
   (`generator_commit`). `build_assets` copies it into the cube envelope's
   `provenance`, which is unhashed. A test checks that a recorded commit holds
   those bytes, and skips when the commit is not in the clone.
+- One module per formula. A comparison cube (`<clip>.cube.pipeline_r2`, Cube
+  tab Compare) is made by `gen_audio.cube_pipeline_r2`, so its provenance and
+  `fields.generator_sha256` name `src/gen_audio/cube_pipeline_r2.py` and that
+  file's hash, never cube_layers'. Editing the r2 formulas moves only the
+  compare cubes' uids; editing cube_layers moves only the Library cubes'.
+  Shared math (`preview_points`, `layers_to_points`, `layer_score`, the PNG)
+  is imported from cube_layers, never copied: a copy would fork it silently
+  (`tests/test_cube_pipeline_r2.py` fails on one).
 
 **Media roles (B2).** Each role appears **at most once** per envelope
 (`duplicate_media_role`; schema `contains` + `maxContains: 1` per role; also

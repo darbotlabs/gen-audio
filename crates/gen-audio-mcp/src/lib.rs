@@ -736,7 +736,7 @@ mod tests {
         let no_clip = rpc(10, &json!({"name": "ui_cube", "arguments": {"mode": "compare"}}));
         assert!(no_clip["error"]["message"].as_str().unwrap().contains("needs tileId or uid"));
         // A cube uid names its clip: either cube of the pair enters Compare on misaki.
-        let by_cube = body(&rpc(11, &json!({"name": "ui_cube", "arguments": {"mode": "compare", "uid": "ga:cube_ihdr:qkqbteb54y64j4xkahvo65d5re"}})));
+        let by_cube = body(&rpc(11, &json!({"name": "ui_cube", "arguments": {"mode": "compare", "uid": "ga:cube_ihdr:zq3x2xysrfaf4tunakpqz6vhxi"}})));
         assert_eq!(by_cube["args"], contract["enter"]["state"]);
         body(&rpc(12, &contract["exit"]["call"]));
         let _ = std::fs::remove_dir_all(&server.scratch.dir);

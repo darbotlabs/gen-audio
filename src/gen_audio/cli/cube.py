@@ -11,7 +11,8 @@ Two commands share this entry point (scripts/cube_revision.py):
   ``--method pipeline_r2`` instead writes the comparison cube (PR #4's
   formulas, gen_audio.cube_pipeline_r2) that the Cube tab's Compare mode draws
   next to the library_r3 cube. The command dispatches by method to the module
-  that owns the formulas (``LAYER_METHODS``).
+  that owns the formulas (``LAYER_METHODS``), and each cube's provenance names
+  that module and its own normalized sha256.
 - ``cube_revision.py manifest [--manifest PATH] [--record-generator-commit]``
   rewrites the cube mirror in the Library manifest from the cube JSON
   (gen_audio.library_manifest; standard library only, no WAVs needed). With

@@ -14,7 +14,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from gen_audio import cube_layers, cube_pipeline_r2
+from gen_audio import cube_layers, cube_pipeline_r2, library_manifest
 from gen_audio.audio_io import read_wav, write_wav
 from gen_audio.cli.cube import LAYER_METHODS
 from gen_audio.cli.cube import main as cube_main
@@ -25,12 +25,12 @@ from test_cube_layers import LIBRARY, _need_wav, _speechish
 
 R2_MODULE = Path(cube_pipeline_r2.__file__)
 
-# (wav stem, engine, cube_revision) of the committed compare cubes (cube_revision.py layers --method pipeline_r2).
+# (wav stem, engine) of the committed compare cubes (cube_revision.py layers --method pipeline_r2).
 COMPARE = [
-    ("bitdot_braille_vibevoice", "vibevoice", 2),
-    ("genaid_full_misaki_kokoro", "misaki_kokoro", 2),
+    ("bitdot_braille_vibevoice", "vibevoice"),
+    ("genaid_full_misaki_kokoro", "misaki_kokoro"),
 ]
-COMPARE_CUBES = [cube_json_name(stem) for stem, _engine, _revision in COMPARE]
+COMPARE_CUBES = [cube_json_name(stem) for stem, _engine in COMPARE]
 
 
 def _sha256(path: Path) -> str:
@@ -45,7 +45,7 @@ def test_r2_module_defines_no_copy_of_the_shared_helpers():
     tree = ast.parse(R2_MODULE.read_text(encoding="utf-8"))
     defined = {node.name for node in ast.walk(tree) if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef))}
     assigned = {t.id for node in ast.walk(tree) if isinstance(node, ast.Assign) for t in node.targets if isinstance(t, ast.Name)}
-    for name in ("preview_points", "stft_mag", "layers_to_points", "layer_score", "write_cube_png"):
+    for name in ("preview_points", "stft_mag", "layers_to_points", "layer_score", "write_cube_png", "normalized_sha256"):
         assert name not in defined | assigned, f"cube_pipeline_r2 defines its own {name}; import it from gen_audio.cube_layers"
     imported = {
         alias.name
@@ -58,6 +58,7 @@ def test_r2_module_defines_no_copy_of_the_shared_helpers():
     assert cube_pipeline_r2.preview_points is cube_layers.preview_points
     assert cube_pipeline_r2.layers_to_points is cube_layers.layers_to_points
     assert cube_pipeline_r2.layer_score is cube_layers.layer_score
+    assert cube_pipeline_r2.normalized_sha256 is library_manifest.normalized_sha256
 
 
 def test_cube_layers_has_no_pipeline_r2_code():
@@ -80,30 +81,97 @@ def test_cli_dispatches_by_method_to_the_owning_module(tmp_path):
     out = tmp_path / "r2.json"
     assert cube_main(["layers", str(wav), str(out), "--stem", "tone", "--engine", "fixture", "--method", "pipeline_r2"]) == 0
     audio, sr = read_wav(wav)
-    expected, _ = pipeline_r2_cube(audio, sr, stem="tone", engine="fixture", source_sha256=_sha256(wav), revision=2)
+    expected, _ = pipeline_r2_cube(audio, sr, stem="tone", engine="fixture", source_sha256=_sha256(wav))
     assert json.loads(out.read_text(encoding="utf-8")) == json.loads(json.dumps(expected))
 
 
 # ---- committed compare cubes ----
 
 
-@pytest.mark.parametrize(("stem", "engine", "revision"), COMPARE)
-def test_reproduces_shipped_compare_cube_byte_for_byte(stem, engine, revision):
+@pytest.mark.parametrize(("stem", "engine"), COMPARE)
+def test_reproduces_shipped_compare_cube_byte_for_byte(stem, engine):
     """The regen-diff gate for compare cubes: same WAV + module bytes -> same bytes."""
     wav = _need_wav(stem)
     audio, sr = read_wav(wav)
-    doc, _ = pipeline_r2_cube(audio, sr, stem=stem, engine=engine, source_sha256=_sha256(wav), revision=revision)
+    doc, _ = pipeline_r2_cube(audio, sr, stem=stem, engine=engine, source_sha256=_sha256(wav))
     assert json.dumps(doc, ensure_ascii=False) == (LIBRARY / cube_json_name(stem)).read_text(encoding="utf-8"), (
         "regenerate: python scripts/cube_revision.py layers ... --method pipeline_r2"
     )
 
 
-@pytest.mark.parametrize(("stem", "engine", "revision"), COMPARE)
-def test_compare_cube_inv_hdr_is_rms_over_peak_of_its_wav(stem, engine, revision):
+@pytest.mark.parametrize(("stem", "engine"), COMPARE)
+def test_compare_cube_inv_hdr_is_rms_over_peak_of_its_wav(stem, engine):
     audio, sr = read_wav(_need_wav(stem))
     doc = json.loads((LIBRARY / cube_json_name(stem)).read_text(encoding="utf-8"))
     assert doc["inv_hdr"] == pytest.approx(measure(audio, sr).inv_hdr, abs=1e-6)
     assert doc["duration_s"] == pytest.approx(len(audio) / sr, abs=1e-9)
+
+
+# ---- identity: each cube names the module that produced it ----
+
+
+def test_generator_sha256_is_the_crlf_normalized_hash_of_the_r2_module():
+    raw = R2_MODULE.read_bytes()
+    assert cube_pipeline_r2.GENERATOR_PATH == "src/gen_audio/cube_pipeline_r2.py"
+    assert (cube_pipeline_r2.REPO_ROOT / cube_pipeline_r2.GENERATOR_PATH).resolve() == R2_MODULE.resolve()
+    assert cube_pipeline_r2.generator_sha256() == hashlib.sha256(raw.replace(b"\r\n", b"\n")).hexdigest()
+    # Two modules, two identities: an r2 edit cannot move a Library cube, nor the reverse.
+    assert cube_pipeline_r2.generator_sha256() != cube_layers.generator_sha256()
+
+
+@pytest.mark.parametrize(("stem", "engine"), COMPARE)
+def test_compare_cube_provenance_names_the_r2_module_and_its_own_hash(stem, engine):
+    """No WAV needed: the committed compare cube says cube_pipeline_r2 made it, with that file's hash."""
+    doc = json.loads((LIBRARY / cube_json_name(stem)).read_text(encoding="utf-8"))
+    assert doc["engine"] == engine and doc["cube_revision"] == cube_pipeline_r2.REVISION == 2
+    assert doc["provenance"] == {
+        "generator": "src/gen_audio/cube_pipeline_r2.py",
+        "generator_sha256": cube_pipeline_r2.generator_sha256(),
+        "layer_method": "pipeline_r2",
+        "params": {"n_fft": 1024, "hop": 256, "grid_sf_st": [5, 33], "thresh": 0.12, "per_layer": 900},
+    }, f"{cube_json_name(stem)}: {cube_pipeline_r2.GENERATOR_PATH} changed since; regenerate with --method pipeline_r2"
+    assert doc["provenance"]["generator_sha256"] != cube_layers.generator_sha256()
+    cube_pipeline_r2.check_generator(doc)
+
+
+def test_library_cubes_still_name_cube_layers_and_its_hash():
+    """The Library cubes did not move: each names cube_layers.py and that file's hash."""
+    from test_cube_layers import GENERATED
+
+    for _stem, cube, _engine, _label in GENERATED:
+        doc = json.loads((LIBRARY / cube).read_text(encoding="utf-8"))
+        assert doc["provenance"]["generator"] == cube_layers.GENERATOR_PATH == "src/gen_audio/cube_layers.py", cube
+        assert doc["provenance"]["generator_sha256"] == cube_layers.generator_sha256(), cube
+        assert doc["provenance"]["layer_method"] == "library_r3", cube
+
+
+def test_check_generator_refuses_a_stale_or_borrowed_identity():
+    doc = json.loads((LIBRARY / COMPARE_CUBES[0]).read_text(encoding="utf-8"))
+    stale = json.loads(json.dumps(doc))
+    stale["provenance"]["generator_sha256"] = "f" * 64
+    with pytest.raises(ValueError, match="regenerate"):
+        cube_pipeline_r2.check_generator(stale)
+    borrowed = json.loads(json.dumps(doc))
+    borrowed["provenance"].update(generator=cube_layers.GENERATOR_PATH, generator_sha256=cube_layers.generator_sha256())
+    with pytest.raises(ValueError, match="pipeline_r2 cube"):
+        cube_pipeline_r2.check_generator(borrowed)
+
+
+def test_assets_compare_envelopes_carry_the_r2_identity():
+    """assets.json: a compare cube's uid hashes the r2 module's sha; a Library cube's hashes cube_layers'."""
+    assets = json.loads((LIBRARY / "assets.json").read_text(encoding="utf-8"))["assets"]
+    cubes = [a for a in assets if a["kind"] == "cube_ihdr"]
+    compare = [a for a in cubes if a["legacy_id"].endswith(".cube.pipeline_r2")]
+    own = [a for a in cubes if a["legacy_id"].endswith(".cube")]
+    assert len(compare) == 2 and len(own) == 5
+    for envelope in compare:
+        assert envelope["fields"]["generator_sha256"] == cube_pipeline_r2.generator_sha256(), envelope["legacy_id"]
+        assert envelope["fields"]["layer_method"] == "pipeline_r2"
+        assert envelope["provenance"]["generator"] == cube_pipeline_r2.GENERATOR_PATH
+    for envelope in own:
+        assert envelope["fields"]["generator_sha256"] == cube_layers.generator_sha256(), envelope["legacy_id"]
+        assert envelope["fields"]["layer_method"] == "library_r3"
+        assert envelope["provenance"]["generator"] == cube_layers.GENERATOR_PATH
 
 
 # ---- layer_method pipeline_r2: PR #4's formulas as a comparison variant ----
@@ -212,7 +280,8 @@ def test_layers_cli_method_flag_records_method_and_wav_sha(tmp_path):
     argv = ["layers", str(wav), str(out), "--stem", "tone", "--engine", "fixture", "--method", "pipeline_r2", "--png", str(png)]
     assert cube_main(argv) == 0
     doc = json.loads(out.read_text(encoding="utf-8"))
-    assert doc["layer_method"] == "pipeline_r2" and doc["cube_revision"] == 2
+    assert doc["layer_method"] == doc["provenance"]["layer_method"] == "pipeline_r2" and doc["cube_revision"] == 2
+    assert doc["provenance"]["generator"] == "src/gen_audio/cube_pipeline_r2.py"
     assert doc["source_sha256"] == _sha256(wav)
     assert png.read_bytes()[:8] == b"\x89PNG\r\n\x1a\n"
     with pytest.raises(SystemExit):
@@ -247,3 +316,24 @@ def test_compare_cubes_are_declared_hashed_and_enveloped():
             [own] = [a for a in assets if a.get("legacy_id") == f"{clip['id']}.cube"]
             assert envelope["provenance"]["params"]["compare_to"] == own["uid"]
     assert declared == 2
+
+
+def test_manifest_sync_never_wires_a_compare_cube_as_the_clips_cube(tmp_path):
+    """A compare cube names the same wavUrl as the clip's cube; sync must wire the library_r3 one."""
+    library = tmp_path / "library"
+    library.mkdir()
+    for path in LIBRARY.glob("*_cube3d.json"):
+        (library / path.name).write_bytes(path.read_bytes())
+    manifest = json.loads((LIBRARY / "manifest.json").read_text(encoding="utf-8"))
+    shipped = {clip["id"]: clip for clip in json.loads((LIBRARY / "manifest.json").read_text(encoding="utf-8"))["clips"]}
+    for clip in manifest["clips"]:
+        if (clip.get("cube") or {}).get("compare"):
+            clip["cube"] = None
+    target = library / "manifest.json"
+    target.write_text(library_manifest.render(manifest), encoding="utf-8")
+    rewired = library_manifest.sync_manifest(target)
+    assert sorted(rewired) == ["lib-bitdot-braille-vibevoice", "lib-misaki-kokoro"]
+    for clip in json.loads(target.read_text(encoding="utf-8"))["clips"]:
+        if clip["id"] in rewired:
+            assert clip["cube"]["jsonUrl"] == shipped[clip["id"]]["cube"]["jsonUrl"], clip["id"]
+            assert "pipeline_r2" not in clip["cube"]["jsonUrl"]
