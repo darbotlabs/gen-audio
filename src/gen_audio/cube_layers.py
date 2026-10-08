@@ -28,6 +28,30 @@ Method (unchanged from the generator that produced the shipped cubes):
 
 Scrub mapping: ``bin_seconds`` = ``downsample_sf_st[1] * hop / sample_rate``;
 the cube covers ``cube_shape_f_t[1] * bin_seconds`` seconds of the WAV.
+
+Layer methods (``layer_method``). ``library_r3`` (the default) is the method
+above. ``pipeline_r2`` is a comparison variant only: a faithful port of the
+four formulas PR #4's Generate pipeline used under the same layer names
+(darbotlabs/gen-audio@204d0de ``src/gen_audio/pipeline.py``: ``cube_document``
+L275-L337, ``_stft_magnitude`` L340-L349, ``_frame_flatness`` L383-L387,
+``_unit`` L390-L394, ``_layer_stats`` L397-L406), so the Cube tab can show
+both cubes of one WAV side by side. pipeline_r2 block-averages the
+magnitude to a fixed 5 x 33 grid first and computes the layers on that grid:
+
+- ``signal`` = grid / max(grid) (divided by the loudest cell),
+- ``tonality`` = (1 - per-frame spectral flatness of the grid) where signal > 1e-4,
+- ``confidence`` = grid / (grid + p70(grid) + 1e-12) (a global 70th-percentile floor),
+- ``quality`` = 0.5 signal + 0.5 tonality.
+
+Its layer stats are over that grid, as in PR #4. The point preview uses the
+same selection as library_r3 (strongest ``per_layer`` points per layer at or
+above ``thresh``) so the two clouds differ only by the formulas. inv_hdr is
+``measure(...).inv_hdr`` (rms / peak) for both. A pipeline_r2 cube JSON
+records ``layer_method``, ``layer_method_label``, ``layer_method_source`` and
+``source_sha256``; a library_r3 cube JSON leaves those keys out, so the
+shipped Library cube bytes (and the asset uids pinned on their sha256) do not
+change. A cube JSON without ``layer_method`` that carries ``layer_score`` was
+written by library_r3.
 """
 
 from __future__ import annotations
@@ -47,6 +71,27 @@ LAYER_COLORS = (
     (0.95, 0.25, 0.55),
 )
 LEGEND = {"signal": "blue", "tonality": "green", "confidence": "orange", "quality": "pink"}
+
+LIBRARY_R3 = "library_r3"
+PIPELINE_R2 = "pipeline_r2"
+LAYER_METHODS = (LIBRARY_R3, PIPELINE_R2)
+DEFAULT_LAYER_METHOD = LIBRARY_R3
+LAYER_METHOD_LABELS = {
+    LIBRARY_R3: "Library formulas, rev 3",
+    PIPELINE_R2: "Pipeline formulas, rev 2 (PR #4)",
+}
+PIPELINE_R2_SOURCE = (
+    "darbotlabs/gen-audio@204d0de45766ad31af89d8f5aee6c1a014010834 src/gen_audio/pipeline.py "
+    "cube_document L275-L337, _stft_magnitude L340-L349, _frame_flatness L383-L387, _unit L390-L394"
+)
+# PR #4 CUBE_DOWNSAMPLE (pipeline.py L251): freq x time block size of the r2 grid.
+PIPELINE_R2_DOWNSAMPLE = (5, 33)
+
+
+def _check_method(method: str) -> str:
+    if method not in LAYER_METHODS:
+        raise ValueError(f"unknown layer_method {method!r}; expected one of {', '.join(LAYER_METHODS)}")
+    return method
 
 
 @dataclass(frozen=True)
@@ -79,8 +124,58 @@ def stft_mag(audio: np.ndarray, n_fft: int = 1024, hop: int = 256) -> np.ndarray
     return np.abs(np.fft.rfft(frames, axis=1)).T
 
 
-def compute_layers(mag: np.ndarray, sample_rate: int, n_fft: int) -> dict[str, np.ndarray]:
-    """The four honesty layers at full STFT resolution, float32 in [0, 1]."""
+def pipeline_r2_stft(samples: np.ndarray, n_fft: int = 1024, hop: int = 256) -> np.ndarray:
+    """PR #4 ``_stft_magnitude`` (pipeline.py L340-L349): zero padding of
+    n_fft/2 before and n_fft/2 + hop after, ``1 + n // hop`` frames, Hann."""
+    values = np.asarray(samples, dtype=np.float64).reshape(-1)
+    frames = 1 + int(values.size) // hop
+    padded = np.pad(values, (n_fft // 2, n_fft // 2 + hop))
+    window = np.hanning(n_fft)
+    strides = (padded.strides[0] * hop, padded.strides[0])
+    view = np.lib.stride_tricks.as_strided(padded, shape=(frames, n_fft), strides=strides, writeable=False)
+    return np.abs(np.fft.rfft(view * window, axis=1)).T
+
+
+def pipeline_r2_grid(mag: np.ndarray) -> np.ndarray:
+    """PR #4 cube_document grid (pipeline.py L290-L296): crop to whole 5 x 33
+    blocks and block-average. Raises when the clip is shorter than one block."""
+    sf, st = PIPELINE_R2_DOWNSAMPLE
+    freq_bins, time_bins = mag.shape[0] // sf, mag.shape[1] // st
+    if freq_bins < 1 or time_bins < 1:
+        raise ValueError("audio is too short for a pipeline_r2 cube")
+    cropped = mag[: freq_bins * sf, : time_bins * st]
+    return cropped.reshape(freq_bins, sf, time_bins, st).mean(axis=(1, 3))
+
+
+def _pipeline_r2_layers(grid: np.ndarray) -> dict[str, np.ndarray]:
+    """PR #4 cube_document L297-L310 on the r2 grid, float64 like the original."""
+    peak = float(np.max(grid)) if grid.size else 0.0
+    signal = np.zeros_like(grid) if peak <= 1e-12 else grid / peak  # _unit, L390-L394
+    power = np.maximum(grid, 1e-12)  # _frame_flatness, L383-L387
+    flatness = np.clip(np.exp(np.mean(np.log(power), axis=0)) / np.maximum(np.mean(power, axis=0), 1e-12), 0.0, 1.0)
+    tonality = (1.0 - flatness) * (signal > 1e-4)
+    floor = float(np.percentile(grid, 70))
+    confidence = np.clip(grid / (grid + floor + 1e-12), 0.0, 1.0)
+    quality = 0.5 * signal + 0.5 * np.clip(tonality, 0.0, 1.0)
+    return {
+        "signal": signal,
+        "tonality": np.clip(tonality, 0.0, 1.0),
+        "confidence": confidence,
+        "quality": np.clip(quality, 0.0, 1.0),
+    }
+
+
+def compute_layers(
+    mag: np.ndarray, sample_rate: int, n_fft: int, method: str = DEFAULT_LAYER_METHOD
+) -> dict[str, np.ndarray]:
+    """The four honesty layers, each in [0, 1].
+
+    ``library_r3``: at full STFT resolution, float32 (``mag`` from :func:`stft_mag`).
+    ``pipeline_r2``: PR #4's formulas on the 5 x 33 block-averaged grid of
+    ``mag`` (from :func:`pipeline_r2_stft`), float64, grid resolution.
+    """
+    if _check_method(method) == PIPELINE_R2:
+        return _pipeline_r2_layers(pipeline_r2_grid(mag))
     eps = 1e-12
     logm = np.log1p(mag)
     lo, hi = np.percentile(logm, [5, 99.5])
@@ -166,6 +261,19 @@ def layers_to_points(layers: dict[str, np.ndarray], thresh: float = 0.12):
     )
 
 
+def _pipeline_r2_stats(grid: np.ndarray) -> dict:
+    """PR #4 ``_layer_stats`` (pipeline.py L397-L406), over the flattened grid."""
+    flat = grid.reshape(-1)
+    return {
+        "mean": float(np.mean(flat)),
+        "std": float(np.std(flat)),
+        "p50": float(np.percentile(flat, 50)),
+        "p90": float(np.percentile(flat, 90)),
+        "active_frac": float(np.mean(flat > 0.2)),
+        "shape": [int(grid.shape[0]), int(grid.shape[1])],
+    }
+
+
 def layer_score(layers: dict[str, np.ndarray]) -> float:
     """Weighted mean of the four layers (informational; not inv_hdr)."""
     return float(
@@ -176,6 +284,16 @@ def layer_score(layers: dict[str, np.ndarray]) -> float:
     )
 
 
+def cube_json_name(stem: str, method: str = DEFAULT_LAYER_METHOD) -> str:
+    """File name of a Library cube JSON: library_<stem>[_<method>]_cube3d.json."""
+    return f"library_{stem}_cube3d.json" if _check_method(method) == LIBRARY_R3 else f"library_{stem}_{method}_cube3d.json"
+
+
+def cube_png_name(stem: str, method: str = DEFAULT_LAYER_METHOD) -> str:
+    """File name of a Library cube PNG: <stem>[_<method>]_cube3d.png."""
+    return f"{stem}_cube3d.png" if _check_method(method) == LIBRARY_R3 else f"{stem}_{method}_cube3d.png"
+
+
 def library_cube(
     audio: np.ndarray,
     sample_rate: int,
@@ -184,17 +302,36 @@ def library_cube(
     engine: str,
     revision: int = 1,
     params: CubeParams = CubeParams(),
+    method: str = DEFAULT_LAYER_METHOD,
+    source_sha256: str | None = None,
 ) -> tuple[dict, tuple]:
     """Build the Library cube document. Returns (doc, point_cloud) where
-    point_cloud feeds :func:`write_cube_png`."""
+    point_cloud feeds :func:`write_cube_png`.
+
+    ``method`` picks the layer formulas (module docstring). A non-default
+    method needs ``source_sha256`` (lowercase hex sha256 of the WAV file the
+    samples came from) so the UI can refuse to compare cubes of different WAVs.
+    """
+    _check_method(method)
     y = np.asarray(audio, dtype=np.float64)
     if y.ndim != 1 or len(y) == 0:
         raise ValueError("library_cube expects non-empty mono audio")
     if sample_rate <= 0:
         raise ValueError("sample rate must be positive")
-    mag = stft_mag(y, n_fft=params.n_fft, hop=params.hop)
-    full = compute_layers(mag, sample_rate, params.n_fft)
-    layers, sf, st = downsample_cube(full, max_f=params.max_f, max_t=params.max_t)
+    if method != LIBRARY_R3 and not (
+        isinstance(source_sha256, str) and len(source_sha256) == 64 and all(c in "0123456789abcdef" for c in source_sha256)
+    ):
+        raise ValueError(f"layer_method {method} needs the WAV's lowercase hex source_sha256")
+    if method == PIPELINE_R2:
+        mag = pipeline_r2_stft(y, n_fft=params.n_fft, hop=params.hop)
+        # PR #4 computes the layers on the grid, so its stats (and layer_score) are grid stats.
+        full = compute_layers(mag, sample_rate, params.n_fft, method=PIPELINE_R2)
+        layers = full
+        sf, st = PIPELINE_R2_DOWNSAMPLE
+    else:
+        mag = stft_mag(y, n_fft=params.n_fft, hop=params.hop)
+        full = compute_layers(mag, sample_rate, params.n_fft)
+        layers, sf, st = downsample_cube(full, max_f=params.max_f, max_t=params.max_t)
     cloud = layers_to_points(layers, thresh=params.thresh)
     x, yy, _z, _rgba, vals, lids = cloud
     nf, nt = next(iter(layers.values())).shape
@@ -220,6 +357,9 @@ def library_cube(
                 }
             )
         mat = full[name]
+        if method == PIPELINE_R2:
+            stats[name] = _pipeline_r2_stats(mat)
+            continue
         stats[name] = {
             "mean": float(mat.mean()),
             "std": float(mat.std()),
@@ -228,10 +368,13 @@ def library_cube(
             "active_frac": float((mat > 0.2).mean()),
             "shape": [int(nf), int(nt)],
         }
+    title = f"Inverse-HDR bitdot cube \u2014 {stem}"
+    if method != LIBRARY_R3:
+        title += f" \u2014 {LAYER_METHOD_LABELS[method]}"
     doc = {
         "source_wav": f"artifacts/library/{stem}.wav",
         "engine": engine,
-        "title": f"Inverse-HDR bitdot cube \u2014 {stem}",
+        "title": title,
         "cube_revision": int(revision),
         "sample_rate": int(sample_rate),
         "duration_s": float(len(y) / sample_rate),
@@ -250,10 +393,21 @@ def library_cube(
         "axes": {"x": "time bin", "y": "freq bin", "z": "layer (+value)"},
         "layers": stats,
         "points_preview": points,
-        "pngUrl": f"/library/{stem}_cube3d.png",
+        "pngUrl": f"/library/{cube_png_name(stem, method)}",
         "wavUrl": f"/library/{stem}.wav",
         "legend": dict(LEGEND),
     }
+    if method != LIBRARY_R3:
+        doc.update(
+            {
+                "layer_method": method,
+                "layer_method_label": LAYER_METHOD_LABELS[method],
+                "layer_method_source": PIPELINE_R2_SOURCE,
+                "layer_stats_on": "r2 grid: 5 x 33 block average of the STFT magnitude, before the layer formulas",
+                "source_sha256": source_sha256,
+                "compare_to": f"/library/{cube_json_name(stem)}",
+            }
+        )
     return doc, cloud
 
 

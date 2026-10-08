@@ -5,20 +5,24 @@ Two commands share this entry point (scripts/cube_revision.py):
 - ``cube_revision.py INPUT -o OUTPUT [...]`` runs the revision sketch and writes
   WAV, JSON and an optional plot (unchanged).
 - ``cube_revision.py layers WAV OUT_JSON --stem STEM --engine ENGINE [--revision N]
-  [--png PNG]`` builds the four-layer Library cube JSON (and PNG) that the
-  Library tiles and the Cube tab load. See gen_audio.cube_layers.
+  [--png PNG] [--method library_r3|pipeline_r2]`` builds the four-layer Library
+  cube JSON (and PNG) that the Library tiles and the Cube tab load. ``--method
+  pipeline_r2`` writes the comparison cube (PR #4's formulas) that the Cube
+  tab's Compare mode draws next to the library_r3 cube; it records the WAV's
+  sha256 as ``source_sha256``. See gen_audio.cube_layers.
 """
 
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import sys
 from pathlib import Path
 
 from gen_audio.artifacts import publish_copy
 from gen_audio.audio_io import read_wav, write_wav
-from gen_audio.cube_layers import library_cube, write_cube_png
+from gen_audio.cube_layers import DEFAULT_LAYER_METHOD, LAYER_METHODS, library_cube, write_cube_png
 from gen_audio.cube_revision import DEFAULT_MAX_STEPS, revise, write_cube_plot
 
 
@@ -46,14 +50,31 @@ def build_layers_parser() -> argparse.ArgumentParser:
     parser.add_argument("--engine", required=True, help="engine id recorded in the cube JSON")
     parser.add_argument("--revision", type=int, default=1, help="cube_revision (bump when the cube changes)")
     parser.add_argument("--png", type=Path, help="also write the 3D scatter PNG here")
+    parser.add_argument(
+        "--method",
+        choices=LAYER_METHODS,
+        default=DEFAULT_LAYER_METHOD,
+        help="layer formulas: library_r3 (default, the Library cube) or pipeline_r2 (PR #4's formulas, comparison only)",
+    )
     return parser
+
+
+def file_sha256(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for block in iter(lambda: handle.read(1 << 20), b""):
+            digest.update(block)
+    return digest.hexdigest()
 
 
 def layers_main(argv: list[str]) -> int:
     args = build_layers_parser().parse_args(argv)
     try:
         audio, sample_rate = read_wav(args.wav)
-        doc, cloud = library_cube(audio, sample_rate, stem=args.stem, engine=args.engine, revision=args.revision)
+        sha = file_sha256(args.wav) if args.method != DEFAULT_LAYER_METHOD else None
+        doc, cloud = library_cube(
+            audio, sample_rate, stem=args.stem, engine=args.engine, revision=args.revision, method=args.method, source_sha256=sha
+        )
         args.out.parent.mkdir(parents=True, exist_ok=True)
         args.out.write_text(json.dumps(doc, ensure_ascii=False), encoding="utf-8")
         written = [args.out]
