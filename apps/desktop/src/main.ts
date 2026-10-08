@@ -125,7 +125,7 @@ function paintProfile(): boolean {
 /** Default Cube-tab binding: the misaki\u2192kokoro Inverse-HDR cube (real WAV + cube JSON). */
 const DEFAULT_CUBE_CLIP = "lib-misaki-kokoro";
 let cubeClipId = "";
-/** Set when autoplay bound the Cube tab to a clip that has no cube: the tab says so and borrows nothing. */
+/** Set when a focus Play (C1) bound the Cube tab to a clip that has no cube: the tab says so and borrows nothing. */
 let noCubeClipId = "";
 let cubeBindSeq = 0;
 let libraryCatalog: LibraryCatalog | null = null;
@@ -200,15 +200,19 @@ async function bindCubeSource(clipId: string, url: string, source: string): Prom
 }
 
 /**
- * Autoplay: whichever audio-clip livetile starts playing owns the Cube tab and
- * the shared clock. A clip without a cube clears the tab instead of borrowing one.
+ * Focus binding (Optimus ruling C1). Only an explicit, user-initiated Play, a
+ * click on a tile's Play / the Cube tab's Play or MCP `ui_playback play`, is a
+ * focus action: that clip takes focus, and the Cube tab and the shared clock
+ * follow focus. Autoplay, snap-scroll and any other non-user start do NOT
+ * rebind (playback.ts `PlayOrigin`). A focused clip without a cube clears the
+ * tab instead of borrowing another clip's cube.
  */
 function bindCubeToPlayingClip(clipId: string): void {
   const tile = board.querySelector<HTMLElement>(`.library-tile[data-id="${CSS.escape(clipId)}"]`);
   if (!tile) return;
   const url = tile.dataset.cubeJson || "";
   if (url) {
-    if (cubeClipId !== clipId || boundCubeUrl() !== url) void bindCubeSource(clipId, url, "autoplay");
+    if (cubeClipId !== clipId || boundCubeUrl() !== url) void bindCubeSource(clipId, url, "focus");
     return;
   }
   cubeBindSeq += 1;
@@ -219,7 +223,19 @@ function bindCubeToPlayingClip(clipId: string): void {
   syncCubeChrome();
 }
 
-onClipPlay(bindCubeToPlayingClip);
+/** Mark the focused clip without scrolling the deck (the user is already looking at it, or asked over MCP). */
+function focusClipTile(clipId: string): void {
+  const tile = board.querySelector<HTMLElement>(`.library-tile[data-id="${CSS.escape(clipId)}"]`);
+  if (!tile) return;
+  board.querySelectorAll<HTMLElement>(".card.is-selected").forEach((node) => node.classList.remove("is-selected"));
+  tile.classList.add("is-selected");
+}
+
+onClipPlay((clipId, info) => {
+  if (!info.focus) return; // C1: non-user starts never rebind the cube or the clock
+  focusClipTile(clipId);
+  bindCubeToPlayingClip(clipId);
+});
 
 function bindCubeCanvas(): void {
   const canvas = document.querySelector<HTMLCanvasElement>("#cube-viewport");
@@ -259,7 +275,7 @@ function bindCubeCanvas(): void {
       syncCubeChrome();
       return;
     }
-    void playClip(cubeClipId).then((result) => {
+    void playClip(cubeClipId, "user").then((result) => {
       status.textContent = result === "playing" ? `Cube live clock follows ${cubeClipId}` : result;
       syncCubeChrome();
     });
@@ -603,8 +619,10 @@ function applyControl(event: { seq?: number; op?: string; args?: Record<string, 
   }
   const args = event.args ?? {};
   if (event.op === "navigate" && typeof args.slide === "string") {
-    goToSlideId(board, args.slide);
-    if (args.slide === "spatial") {
+    // C5: MCP sends the canonical "slide:<slug>"; a bare slug is the deprecated alias.
+    const slug = args.slide.startsWith("slide:") ? args.slide.slice("slide:".length) : args.slide;
+    goToSlideId(board, slug);
+    if (slug === "spatial") {
       ensureDefaultCube();
       syncCubeChrome();
     }
@@ -620,7 +638,7 @@ function applyControl(event: { seq?: number; op?: string; args?: Record<string, 
     showRun(args.voice, String(args.phase ?? "unavailable"), String(args.detail ?? ""), args.synthesizedSpeech === true);
   } else if (event.op === "playback" && typeof args.tileId === "string") {
     const action = String(args.action ?? "");
-    if (action === "play") void playClip(args.tileId).then((result) => {
+    if (action === "play") void playClip(args.tileId, "mcp").then((result) => {
       status.textContent = result === "playing" ? `Playing ${args.tileId}` : result;
     });
     else if (action === "pause") status.textContent = pauseClip(args.tileId);

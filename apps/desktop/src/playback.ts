@@ -1,4 +1,6 @@
 import { getCubeMeta, setCubeScrub, startLiveCubeClock, stopLiveCubeClock } from "./cubeview";
+import { isFocusPlay, type PlayInfo, type PlayOrigin } from "./play-origin";
+export { isFocusPlay, type PlayInfo, type PlayOrigin };
 /** HTML audio transport for library tiles. Missing files stay missing. */
 
 const players = new Map<string, HTMLAudioElement>();
@@ -9,7 +11,7 @@ let cubeClockClip: string | null = null;
 
 /** Asset uid of the clock source clip (seconds on this uid drive the cube). */
 let cubeClockUid: string | null = null;
-const playListeners = new Set<(clipId: string) => void>();
+const playListeners = new Set<(clipId: string, info: PlayInfo) => void>();
 
 export function setCubeClockClip(clipId: string | null, uid: string | null = null): void {
   cubeClockClip = clipId;
@@ -21,8 +23,8 @@ export function getClockSource(): { clipId: string | null; uid: string | null } 
   return { clipId: cubeClockClip, uid: cubeClockUid };
 }
 
-/** Called after a library clip starts playing (autoplay binds the cube to it). */
-export function onClipPlay(listener: (clipId: string) => void): () => void {
+/** Called after a library clip starts playing; `info.focus` says whether it is a focus action (C1). */
+export function onClipPlay(listener: (clipId: string, info: PlayInfo) => void): () => void {
   playListeners.add(listener);
   return () => playListeners.delete(listener);
 }
@@ -129,7 +131,7 @@ export function renderTransport(clipId: string, wavUrl: string | undefined, dura
 
   toggle.addEventListener("click", (event) => {
     event.stopPropagation();
-    if (audio.paused) void playClip(clipId);
+    if (audio.paused) void playClip(clipId, "user");
     else pauseClip(clipId);
   });
   scrub.addEventListener("input", () => {
@@ -150,7 +152,7 @@ function player(clipId: string): HTMLAudioElement | undefined {
   return players.get(clipId);
 }
 
-export async function playClip(clipId: string): Promise<string> {
+export async function playClip(clipId: string, origin: PlayOrigin = "auto"): Promise<string> {
   const audio = player(clipId);
   if (!audio || !audio.src) return "no wav";
   for (const [id, other] of players) {
@@ -162,7 +164,8 @@ export async function playClip(clipId: string): Promise<string> {
     await audio.play();
     syncFloater(clipId);
     startLiveCubeClock(cubeFraction);
-    for (const listener of playListeners) listener(clipId);
+    const info: PlayInfo = { origin, focus: isFocusPlay(origin) };
+    for (const listener of playListeners) listener(clipId, info);
     return "playing";
   } catch (error) {
     if (!anyPlaying()) setPlayingChrome(false);
@@ -303,7 +306,7 @@ export function bindFloatingPlayback(): void {
     if (!activeId) return;
     const audio = player(activeId);
     if (!audio) return;
-    if (audio.paused) void playClip(activeId);
+    if (audio.paused) void playClip(activeId, "resume");
     else pauseClip(activeId);
   });
   ui.scrub.addEventListener("input", () => {

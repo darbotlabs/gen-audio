@@ -55,7 +55,9 @@ export function spectrogramStrip(spec: AssetEnvelope, clip: AssetEnvelope, audio
   const durationMs = intField(clip, "duration_ms") || intField(spec, "duration_ms");
   const coversMs = intField(spec, "covers_ms");
   const bands = intField(spec, "n_bands");
-  const caption = `2D spectrogram \u00b7 ${bands} bands \u00b7 real WAV`;
+  // Caption text comes from the clip's honesty claims (status -> honesty table), never hard-coded.
+  const source = clip.honesty?.claims?.includes("real_wav") ? "real WAV" : "WAV (no real_wav claim)";
+  const caption = `2D spectrogram \u00b7 ${bands} bands \u00b7 ${source}`;
   canvas.setAttribute("aria-label", `${caption}, ${formatClock(durationMs / 1000)} long. Playhead follows this tile's audio.`);
   const image = new Image();
   let ready = false;

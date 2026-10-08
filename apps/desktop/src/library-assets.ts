@@ -21,7 +21,8 @@ export interface AssetEnvelope {
   media: AssetMedia[];
   src: string[];
   relations?: Record<string, unknown>;
-  display: { title: string; glyph: string };
+  honesty?: { synthesized_speech?: boolean; fixture?: boolean; claims?: string[] };
+  display: { title: string; glyph: string; display_rev?: number };
 }
 
 export interface LibraryCatalog {

@@ -161,25 +161,44 @@ pub fn validate_track(agents: &[Value], voice: &str) -> Result<(), (i32, String)
     Ok(())
 }
 
+/// Resolve a `ui_navigate` slide reference (Optimus ruling C5). The canonical
+/// form is `slide:<slug>` (the converged livetile object model's slide id);
+/// a bare slug is a deprecated alias that still resolves. Returns the slug and
+/// whether the deprecated alias was used.
+pub fn resolve_slide(reference: &str) -> Result<(&str, bool), (i32, String)> {
+    let (slug, deprecated) = match reference.strip_prefix("slide:") {
+        Some(slug) => (slug, false),
+        None => (reference, true),
+    };
+    if !catalog::SLIDES.contains(&slug) {
+        return Err((-32602, format!("unknown slide {reference}; use slide:<slug>, one of {}", catalog::SLIDES.join(", "))));
+    }
+    Ok((slug, deprecated))
+}
+
 pub fn ui_navigate(args: &Value) -> Result<Value, (i32, String)> {
-    let args = &with_uid_tile(args)?;
-    let slide = args
+    let mut args = with_uid_tile(args)?;
+    let reference = args
         .get("slide")
         .and_then(Value::as_str)
-        .ok_or((-32602, "ui_navigate needs slide".to_string()))?;
-    if !catalog::SLIDES.contains(&slide) {
-        return Err((-32602, format!("unknown slide {slide}")));
-    }
+        .ok_or((-32602, "ui_navigate needs slide (slide:<slug>)".to_string()))?
+        .to_string();
+    let (slug, deprecated) = resolve_slide(&reference)?;
+    let slug = slug.to_string();
     if let Some(tile) = args.get("tileId").and_then(Value::as_str) {
         if !id_ok(tile) {
             return Err((-32602, "tileId is invalid".into()));
         }
     }
-    Ok(queued(
-        "navigate",
-        args.clone(),
-        "Queued a viewport navigation. This does not render audio.",
-    ))
+    // The queued event always carries the canonical id; the UI accepts both.
+    args["slide"] = json!(format!("slide:{slug}"));
+    let mut out = queued("navigate", args, "Queued a viewport navigation. This does not render audio.");
+    if deprecated {
+        let warning = format!("ui_navigate slide \"{reference}\" is a deprecated alias; use \"slide:{slug}\"");
+        eprintln!("gen-audio-mcp: deprecation: {warning}");
+        out["deprecation"] = json!(warning);
+    }
+    Ok(out)
 }
 
 pub fn ui_select_tile(args: &Value) -> Result<Value, (i32, String)> {
@@ -610,5 +629,18 @@ mod tests {
         assert_eq!(profile["synthesizedSpeech"], false);
         assert!(profile.get("wavUrl").is_none());
         assert!(validate_track(&[json!("not-a-persona")], "kokoro_onnx").is_err());
+    }
+
+    #[test]
+    fn ui_navigate_takes_slide_ids_and_keeps_bare_names_as_deprecated_aliases() {
+        let canonical = ui_navigate(&json!({"slide": "slide:library"})).expect("slide:library");
+        assert_eq!(canonical["args"]["slide"], "slide:library");
+        assert!(canonical.get("deprecation").is_none());
+        let alias = ui_navigate(&json!({"slide": "library"})).expect("bare alias still resolves");
+        assert_eq!(alias["args"]["slide"], "slide:library", "the alias is rewritten to the canonical id");
+        assert!(alias["deprecation"].as_str().unwrap().contains("slide:library"));
+        assert_eq!(ui_navigate(&json!({"slide": "slide:nope"})).unwrap_err().0, -32602);
+        assert_eq!(ui_navigate(&json!({"slide": "slide:"})).unwrap_err().0, -32602);
+        assert_eq!(resolve_slide("slide:spatial").unwrap(), ("spatial", false));
     }
 }

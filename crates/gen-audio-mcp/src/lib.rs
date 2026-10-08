@@ -196,7 +196,14 @@ fn tool(name: &str, description: &str) -> Value {
         "spectrogram" => (json!({"before": {"type": "string"}, "after": {"type": "string"}}), json!(["before"])),
         "serve_health" => (json!({"host": {"type": "string"}, "port": {"type": "integer"}, "probe": {"type": "boolean"}}), json!([])),
         "connector_health" => (json!({"id": {"type": "string"}}), json!([])),
-        "ui_navigate" => (json!({"slide": {"type": "string"}, "tileId": {"type": "string"}, "uid": UID_PROP.clone()}), json!(["slide"])),
+        "ui_navigate" => (
+            json!({
+                "slide": {"type": "string", "description": "slide:<slug> (e.g. slide:library). A bare slug is a deprecated alias: it resolves and the result carries a deprecation note."},
+                "tileId": {"type": "string"},
+                "uid": UID_PROP.clone()
+            }),
+            json!(["slide"]),
+        ),
         "ui_select_tile" => (json!({"tileId": {"type": "string"}, "uid": UID_PROP.clone()}), json!([])),
         "ui_flip" => (json!({"tileId": {"type": "string"}, "uid": UID_PROP.clone(), "flipped": {"type": "boolean"}, "personaId": {"type": "string"}}), json!([])),
         "ui_playback" => (json!({"tileId": {"type": "string"}, "uid": UID_PROP.clone(), "action": {"type": "string"}, "seconds": {"type": "number"}}), json!(["action"])),

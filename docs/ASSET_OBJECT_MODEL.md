@@ -335,6 +335,19 @@ not_a_podcast_render, engine_unavailable, g2p_only, status_only`.
   - A kind/identity mismatch in stored data is `-32603`.
 - **Existing UI tools** keep `tileId`/`clipId` and accept an optional `uid`.
   If both are given, they must name the same asset.
+- **`ui_navigate {slide}` (C5)** takes the converged slide id
+  `slide:<slug>` (for example `slide:library`, `slide:spatial`). A bare slug
+  is a deprecated alias: it still resolves, the MCP server logs a deprecation
+  line on stderr, and the result carries `deprecation`. The queued event
+  always carries the canonical `slide:<slug>`; the UI accepts both forms.
+- **Livetile focus (C1).** Only an explicit, user-initiated Play is a focus
+  action: a click on a tile's Play or the Cube tab's Play, or MCP
+  `ui_playback {action:"play"}`. That clip takes focus, and the Cube tab and
+  the shared seconds clock (on the clip uid) follow focus. Autoplay,
+  snap-scroll, resuming from the floating bar and any other non-user start
+  never rebind the cube or the clock (`apps/desktop/src/play-origin.ts`,
+  `PlayOrigin`; gate in `main.ts` `onClipPlay`). The playhead stays
+  transport-local.
 - **ACP `session/new`** accepts `assets:[uid]` (at most 8, resolved through
   the same catalog) and stores uids in the track, never paths.
 
