@@ -36,6 +36,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import posixpath
 import re
 import subprocess
 from pathlib import Path, PurePosixPath, PureWindowsPath
@@ -174,6 +175,13 @@ def _is_label(path: str) -> bool:
     return path.startswith(OUTSIDE + "/")
 
 
+def leaves_repo(path: str) -> bool:
+    """True when a relative ``path`` climbs out of the directory it is read
+    from once its ``..`` segments are applied (``scripts/../../x``,
+    ``./../x``). Lexical, so it holds on any machine, with or without the file."""
+    return posixpath.normpath(path.replace("\\", "/")).split("/", 1)[0] == ".."
+
+
 def label_work_dir_paths(doc: dict, repo_root: Path, work_dir: Path | None, found: dict[str, Path], name: str) -> list[str]:
     """C1: a recorded path that neither resolves from the repo root nor is a
     label was written relative to the run's work dir. With ``work_dir`` it is
@@ -182,7 +190,15 @@ def label_work_dir_paths(doc: dict, repo_root: Path, work_dir: Path | None, foun
     problems: list[str] = []
     for container, key, where in list(_path_fields(doc)):
         path, note = _path_part(container[key])
-        if not path or _is_label(path) or (repo_root / path).exists():
+        if not path or _is_label(path):
+            continue
+        if leaves_repo(path):
+            # "Resolves from the repo root" means inside it: a `..` that climbs
+            # out names an outside file with no label and no facts.
+            problems.append(f"{name}: {where} {path!r} leaves the repo root through '..'; "
+                            f"record the absolute path so it becomes an <outside-repo>/ label with its sha256")
+            continue
+        if (repo_root / path).exists():
             continue
         if work_dir is None:
             problems.append(f"{name}: {where} {path!r} does not resolve from the repo root; "

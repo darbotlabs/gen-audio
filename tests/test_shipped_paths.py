@@ -9,6 +9,8 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
+import posixpath
 import re
 from pathlib import Path
 
@@ -337,6 +339,8 @@ def _path_ok(value: str, outside: dict) -> str | None:
         return f"label {path!r} has unusable facts {fact!r}"
     if path.startswith(("/", "\\")) or re.match(r"[A-Za-z]:[\\/]", path) or path.startswith("../"):
         return f"{path!r} is absolute or ../ (must be repo-relative or an <outside-repo>/ label)"
+    if posixpath.normpath(path.replace("\\", "/")).split("/", 1)[0] == "..":
+        return f"{path!r} leaves the repo root through '..' (must be repo-relative or an <outside-repo>/ label)"
     # Repo-relative: must resolve from the repo root (no dangling work-dir path).
     if not (REPO / path).exists():
         return f"{path!r} does not resolve from the repo root and is not an <outside-repo>/ label"
@@ -482,3 +486,67 @@ def test_an_old_directory_entry_is_upgraded_without_the_directory(tmp_path):
     assert sync_manifest(library / "manifest.json") == [] and sidecar.read_bytes() == once, "a second sync changes 0 bytes"
     (tmp_path / "venv").mkdir()
     assert file_facts(tmp_path / "venv") == DIRECTORY
+
+
+def _escape_forms(target: Path, base: Path) -> list[str]:
+    """Two spellings of ``target`` relative to ``base`` that climb out of it
+    without starting with ``../``: ``scripts/../../…`` and ``./../…``."""
+    try:
+        up = os.path.relpath(target, base / "scripts").replace(os.sep, "/")
+        dot = os.path.relpath(target, base).replace(os.sep, "/")
+    except ValueError:
+        pytest.skip("target on another drive than the repo")
+    return ["scripts/" + up, "./" + dot]
+
+
+def test_a_dotdot_escape_is_refused_by_the_sync_and_names_the_field(tmp_path):
+    """C1 Low 1: `scripts/../../x` and `./../x` named a real file outside the
+    repo and passed as "resolves from the repo root", unlabelled and without
+    facts. Inside means inside: the sync refuses and names the field."""
+    from gen_audio.library_manifest import sync_manifest
+
+    repo, library = _work(tmp_path)
+    (repo / "scripts").mkdir()
+    target = repo.parent / "genaid-podcast-compare" / "models" / "run.py"
+    _file(target, b"print('hi')\n")
+    for form in _escape_forms(target, repo):
+        assert (repo / form).exists(), form
+        sidecar = library / "e.synth.json"
+        sidecar.write_text(json.dumps({"engine": "vibevoice", "inference_code": form}, indent=2), encoding="utf-8")
+        before = sidecar.read_bytes()
+        with pytest.raises(ValueError, match=rf"e\.synth\.json: \$\.inference_code {re.escape(repr(form))} leaves the repo root through '\.\.'"):
+            sync_manifest(library / "manifest.json")
+        with pytest.raises(ValueError, match="leaves the repo root"):
+            sync_manifest(library / "manifest.json", work_dirs={"e.synth.json": target.parent})
+        assert sidecar.read_bytes() == before
+    # A `..` that stays inside the repo is still repo-relative.
+    _file(repo / "README.md", b"# r")
+    (library / "e.synth.json").write_text(json.dumps({"engine": "vibevoice", "script": "scripts/../README.md"}, indent=2), encoding="utf-8")
+    assert sync_manifest(library / "manifest.json") == []
+
+
+def test_a_dotdot_escape_is_refused_by_the_synth_writer(tmp_path):
+    """The writer holds the same rule at write time."""
+    from gen_audio.cli.synth import sidecar_payload
+
+    repo = tmp_path / "work" / "gen-audio"
+    (repo / "scripts").mkdir(parents=True)
+    target = tmp_path / "work" / "genaid-podcast-compare" / "models" / "run.py"
+    _file(target, b"print('hi')\n")
+    for form in _escape_forms(target, repo):
+        assert (repo / form).exists(), form
+        with pytest.raises(ValueError, match=rf"\$\.source {re.escape(repr(form))} leaves the repo root"):
+            sidecar_payload({"engine": "kokoro_onnx", "source": form}, "PCM_16", {}, repo)
+
+
+def test_the_shipped_path_check_refuses_a_dotdot_escape(tmp_path):
+    """The check over shipped sidecars says the same: an existing file reached
+    through `..` from the repo root is not a repo-relative path."""
+    target = tmp_path / "outside.txt"
+    target.write_text("x", encoding="utf-8")
+    for form in _escape_forms(target, REPO):
+        assert (REPO / form).exists(), form
+        reason = _path_ok(form, {})
+        assert reason and "leaves the repo root" in reason, (form, reason)
+    assert _path_ok("scripts/../README.md", {}) is None
+
