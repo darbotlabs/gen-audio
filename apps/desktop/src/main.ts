@@ -25,7 +25,9 @@ import {
   noteAssetResolveFailure,
   noteMcpLookupError,
   postMcp,
+  reportAsync,
   seekReportControl,
+  setReportSink,
   surfaceUiError,
   userPlayControl,
 } from "./play-control";
@@ -86,6 +88,9 @@ const loadDevAssets = async (): Promise<unknown[]> =>
 const board = required("#board");
 const empty = required("#empty");
 const status = required("#status");
+setReportSink((message) => {
+  status.textContent = message;
+});
 // Window->MCP failures are counted on McpFailureCounter and mirrored to
 // <html data-mcp-failures>. viewport_get (resyncViewport) is the MCP-readable
 // status. A failed address lookup, library fetch, or asset_resolve is counted
@@ -112,9 +117,16 @@ function failUi(error: unknown, where: string): void {
   status.textContent = surfaceUiError(error, where);
 }
 
-/** A bare `void` promise used to drop its rejection. This is the only attach. */
-function reportAsync(work: Promise<unknown>, where: string): void {
-  void work.catch((error: unknown) => failUi(error, where));
+/** The gap listener and a skipped control seq both resync through this. */
+let controlResync: () => Promise<unknown> = () => resyncViewport();
+
+function onControlGap(): Promise<unknown> {
+  return reportAsync(controlResync(), "viewport");
+}
+
+/** Test seam. Production leaves the real viewport_get resync in place. */
+export function setControlResyncForTest(work: (() => Promise<unknown>) | null): void {
+  controlResync = work ?? (() => resyncViewport());
 }
 
 /**
@@ -140,7 +152,7 @@ export function acceptControlFrame(data: string): void {
   try {
     const parsed = JSON.parse(data) as { seq?: number; op?: string; args?: Record<string, unknown> };
     if (typeof parsed.seq === "number" && parsed.seq > controlCursor + 1) {
-      reportAsync(resyncViewport(), "viewport");
+      void onControlGap();
       return;
     }
     applyControl(parsed);
@@ -989,7 +1001,7 @@ function markControlUp(): void {
   if (status.dataset.control === "disconnected") delete status.dataset.control;
 }
 
-function connectControl(): void {
+export function connectControl(): void {
   void mcpReady
     .then((origin) => {
       let source: EventSource;
@@ -1001,9 +1013,7 @@ function connectControl(): void {
         return;
       }
       source.onopen = () => markControlUp();
-      source.addEventListener("gap", () => {
-        reportAsync(resyncViewport(), "viewport");
-      });
+      source.addEventListener("gap", () => onControlGap());
       source.addEventListener("control", (event) => {
         acceptControlFrame(String((event as MessageEvent).data));
       });

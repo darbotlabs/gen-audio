@@ -7,7 +7,7 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import type { AddressInfo } from "node:net";
-import { controlBackoffMs, controlDisconnectedNotice, controlPlayOrigin, McpFailureCounter, mcpRequestBody, postMcp, seekReportControl, surfaceUiError, userPlayControl } from "../src/play-control.ts";
+import { controlBackoffMs, controlDisconnectedNotice, controlPlayOrigin, McpFailureCounter, mcpRequestBody, postMcp, reportAsync, seekReportControl, setReportSink, surfaceUiError, userPlayControl } from "../src/play-control.ts";
 import { Seeker } from "../src/seek.ts";
 
 const repo = (path: string) => fileURLToPath(new URL(`../../../${path}`, import.meta.url));
@@ -214,6 +214,27 @@ test("control reconnect backs off and the disconnected state is visible", () => 
   assert.match(controlDisconnectedNotice(0), /disconnected/);
   assert.match(controlDisconnectedNotice(0), /250ms/);
   assert.match(controlDisconnectedNotice(2), /1s/);
+});
+
+test("reportAsync logs the rejection and rethrows it", async () => {
+  const warnings: string[] = [];
+  const shown: string[] = [];
+  const original = console.warn;
+  console.warn = (message?: unknown) => {
+    warnings.push(String(message));
+  };
+  setReportSink((message) => {
+    shown.push(message);
+  });
+  try {
+    const offline = (error: unknown) => error instanceof TypeError && error.message === "offline";
+    await assert.rejects(reportAsync(Promise.reject(new TypeError("offline")), "play"), offline);
+    assert.deepEqual(warnings, ["gen-audio: play: TypeError: offline"]);
+    assert.deepEqual(shown, ["play: TypeError: offline"]);
+  } finally {
+    console.warn = original;
+    setReportSink(() => {});
+  }
 });
 
 test("a surfaced UI error names where it happened and the error", () => {

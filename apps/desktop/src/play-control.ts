@@ -224,3 +224,21 @@ export function surfaceUiError(error: unknown, where: string): string {
   console.warn(`gen-audio: ${message}`);
   return message;
 }
+
+let reportSink: (message: string) => void = () => {};
+
+/** Where a reported rejection is shown. The window points this at the status line. */
+export function setReportSink(sink: (message: string) => void): void {
+  reportSink = sink;
+}
+
+/**
+ * Log a rejected UI promise, show it, and rethrow.
+ * Dropping the log leaves the warning empty. Dropping the rethrow resolves the promise.
+ */
+export function reportAsync(work: Promise<unknown>, where: string): Promise<unknown> {
+  return work.catch((error: unknown) => {
+    reportSink(surfaceUiError(error, where));
+    throw error;
+  });
+}

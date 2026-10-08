@@ -269,6 +269,8 @@ test("main.ts counts a failed lookup, a failed library fetch, and a dropped reso
       insertGeneratedTile: (uid: string, args: Record<string, unknown>) => Promise<void>;
       presentLibraryCatalog: (work: Promise<null>) => void;
       acceptControlFrame: (data: string) => void;
+      connectControl: () => void;
+      setControlResyncForTest: (work: (() => Promise<unknown>) | null) => void;
     };
     await new Promise((resolve) => setTimeout(resolve, 50));
     const bootStatus = byId.get("status");
@@ -316,6 +318,42 @@ test("main.ts counts a failed lookup, a failed library fetch, and a dropped reso
       const malformed = JSON.parse(root.dataset.mcpFailures ?? "{}") as Record<string, number>;
       assert.equal(malformed["control_stream:malformed"], 1);
       assert.match(byId.get("status")?.textContent ?? "", /^control event: SyntaxError: /);
+
+      // The gap listener is the resync step. A rejecting resync must be logged
+      // and must reject; dropping the listener, the log, or the rethrow fails.
+      class FakeEventSource {
+        static last: FakeEventSource | undefined;
+        url: string;
+        onopen: (() => void) | null = null;
+        onerror: (() => void) | null = null;
+        listeners = new Map<string, Array<(event?: { data?: string }) => unknown>>();
+        constructor(url: string) {
+          this.url = url;
+          FakeEventSource.last = this;
+        }
+        addEventListener(type: string, listener: (event?: { data?: string }) => unknown): void {
+          const list = this.listeners.get(type) ?? [];
+          list.push(listener);
+          this.listeners.set(type, list);
+        }
+        close(): void {}
+      }
+      const previousSource = globalThis.EventSource;
+      globalThis.EventSource = FakeEventSource as unknown as typeof EventSource;
+      try {
+        main.setControlResyncForTest(() => Promise.reject(new TypeError("offline")));
+        main.connectControl();
+        await new Promise((resolve) => setTimeout(resolve, 0));
+        const gap = FakeEventSource.last?.listeners.get("gap")?.[0];
+        assert.equal(typeof gap, "function", "the control stream registers a gap listener");
+        warnings.length = 0;
+        const offline = (error: unknown) => error instanceof TypeError && error.message === "offline";
+        await assert.rejects(() => Promise.resolve(gap!()), offline);
+        assert.deepEqual(warnings, ["gen-audio: viewport: TypeError: offline"]);
+      } finally {
+        main.setControlResyncForTest(null);
+        globalThis.EventSource = previousSource;
+      }
     } finally {
       console.warn = originalWarn;
     }

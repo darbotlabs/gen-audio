@@ -60,18 +60,16 @@ export function glyphBadge(uid: unknown, options: BadgeOptions = {}): HTMLButton
   }
   badge.addEventListener("click", (event) => {
     event.stopPropagation();
-    void copyText(uid)
-      .then((copied) => {
-        badge.classList.toggle("is-copied", copied);
-        window.setTimeout(() => badge.classList.remove("is-copied"), 1200);
-        options.onCopy?.(uid, copied);
-      })
-      .catch((error: unknown) => surfaceUiError(error, "copy uid"));
+    void copyUid(uid).then((copied) => {
+      badge.classList.toggle("is-copied", copied);
+      window.setTimeout(() => badge.classList.remove("is-copied"), 1200);
+      options.onCopy?.(uid, copied);
+    });
   });
   return badge;
 }
 
-async function copyText(text: string): Promise<boolean> {
+export async function copyUid(text: string): Promise<boolean> {
   try {
     await navigator.clipboard.writeText(text);
     return true;

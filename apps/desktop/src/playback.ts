@@ -40,16 +40,22 @@ export function setSeeker(next: Seeker): void {
 
 /** Seek an element and keep the cube and floater on the clock it actually reached. */
 async function seekTo(clipId: string, audio: HTMLAudioElement, seconds: number): Promise<SeekResult> {
-  activeId = clipId;
-  // One cached blob URL per clip (seek.ts); the clip id keys it.
-  const outcome = await seeker.seek(audio as unknown as MediaLike, seconds, clipId);
-  if (outcome.status !== "superseded" && drivesCube(clipId)) {
-    // ONE clock: the cube shows where the audio is, not where we asked it to go.
-    const fraction = cubeFractionAt(outcome.ok ? outcome.actual : audio.currentTime, audio.duration);
-    if (fraction !== null) setCubeScrub(fraction, { silent: true });
+  try {
+    activeId = clipId;
+    // One cached blob URL per clip (seek.ts); the clip id keys it.
+    const outcome = await seeker.seek(audio as unknown as MediaLike, seconds, clipId);
+    if (outcome.status !== "superseded" && drivesCube(clipId)) {
+      // ONE clock: the cube shows where the audio is, not where we asked it to go.
+      const fraction = cubeFractionAt(outcome.ok ? outcome.actual : audio.currentTime, audio.duration);
+      if (fraction !== null) setCubeScrub(fraction, { silent: true });
+    }
+    syncFloater(clipId);
+    return outcome;
+  } catch (error) {
+    surfaceUiError(error, "seek");
+    const actual = Number.isFinite(audio.currentTime) ? audio.currentTime : 0;
+    return { ok: false, target: seconds, actual, deferred: false, reloaded: false, status: `seek failed: ${String(error)}` };
   }
-  syncFloater(clipId);
-  return outcome;
 }
 
 /** Test seam: register a transport element without building the tile DOM. */
