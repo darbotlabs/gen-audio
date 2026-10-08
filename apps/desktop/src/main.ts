@@ -13,8 +13,8 @@ import {
 } from "./cubeview";
 import { isClipPlaying, seekActiveFraction, seekClipFraction, setCubeClockClip } from "./playback";
 import { applyClipNames, harvestNames } from "./library-meta";
-import { bindFloatingPlayback, pauseClip, playClip, seekClip, setUserPlayReporter } from "./playback";
-import { controlPlayOrigin, userPlayControl } from "./play-control";
+import { bindFloatingPlayback, pauseClip, playClip, releaseAllSeekBlobs, releaseDetachedTransports, seekClipOutcome, setUserPlayReporter } from "./playback";
+import { controlPlayOrigin, mcpRequestBody, seekReportControl, userPlayControl } from "./play-control";
 import { fixturesRequested, selectViewport } from "./viewport-source";
 import { glyphBadge } from "./glyph";
 import { loadLibraryCatalog, type LibraryCatalog } from "./library-assets";
@@ -94,6 +94,8 @@ function show(documentIn: unknown): void {
   }
   const doc = documentIn as ViewportDocument;
   renderBoard(board, empty, doc);
+  // D: tiles this render removed give back their cached seek blob URLs.
+  releaseDetachedTransports();
   paintProfile();
   paintProfileCanvases();
   bindCubeCanvas();
@@ -216,6 +218,8 @@ async function bindCubeSource(clipId: string, url: string, source: string): Prom
  * Autoplay and other non-user starts use `playClip(..., "auto")` and change
  * nothing but the audio.
  */
+window.addEventListener("pagehide", () => releaseAllSeekBlobs());
+
 setUserPlayReporter((clipId) => {
   const request = userPlayControl(clipId);
   void mcpCall(request.name, request.args);
@@ -585,12 +589,9 @@ async function mcpCall(name: string, args: Record<string, unknown>): Promise<unk
     const response = await fetch("http://127.0.0.1:8765/mcp", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({
-        jsonrpc: "2.0",
-        id: 1,
-        method: "tools/call",
-        params: { name, arguments: args },
-      }),
+      // The exact body is the desktop half of the UI/agent contract
+      // (schemas/examples/control/*.json, tested from both sides).
+      body: JSON.stringify(mcpRequestBody(name, args)),
     });
     if (!response.ok) return null;
     const payload: unknown = await response.json();
@@ -645,9 +646,17 @@ function applyControl(event: { seq?: number; op?: string; args?: Record<string, 
       status.textContent = result === "playing" ? `Playing ${args.tileId}` : result;
     });
     else if (action === "pause") status.textContent = pauseClip(args.tileId);
-    else if (action === "seek") void seekClip(args.tileId, Number(args.seconds)).then((result) => {
-      if (result !== "superseded") status.textContent = result;
-    });
+    else if (action === "seek") {
+      const requested = Number(args.seconds);
+      void seekClipOutcome(args.tileId, requested).then((landing) => {
+        if (landing.status !== "superseded") status.textContent = landing.status;
+        // Tell MCP where it landed: ui_playback answers the agent with {requested_t, landed_t, ok, reason}.
+        if (typeof event.seq === "number") {
+          const report = seekReportControl(event.seq, requested, landing);
+          void mcpCall(report.name, report.args);
+        }
+      });
+    }
   } else if (event.op === "sidepane") {
     applySidepane({
       agents: Array.isArray(args.agents) ? args.agents.map(String) : undefined,

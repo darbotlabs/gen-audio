@@ -3,7 +3,13 @@
 // leaves the decision to the Rust reducer (PR #4).
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { controlPlayOrigin, userPlayControl } from "../src/play-control.ts";
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+import { controlPlayOrigin, mcpRequestBody, seekReportControl, userPlayControl } from "../src/play-control.ts";
+import { Seeker } from "../src/seek.ts";
+
+const repo = (path: string) => fileURLToPath(new URL(`../../../${path}`, import.meta.url));
+const load = (path: string) => JSON.parse(readFileSync(repo(path), "utf8"));
 
 // playback.ts only touches the DOM through querySelector and rAF while playing.
 const globals = globalThis as unknown as Record<string, unknown>;
@@ -53,4 +59,58 @@ test("a UI Play posts ui_playback with origin user; the bus default is user", ()
   assert.equal(controlPlayOrigin({ origin: "auto" }), "auto");
   assert.equal(controlPlayOrigin({ origin: "user" }), "user");
   assert.equal(controlPlayOrigin({}), "user");
+});
+
+// One contract, tested from both sides: these fixtures are exactly what the
+// window posts, and crates/gen-audio-mcp/src/lib.rs asserts the server accepts them.
+test("contract: the Play button's ui_playback body is schemas/examples/control/desktop-user-play.json", () => {
+  const fixture = load("schemas/examples/control/desktop-user-play.json");
+  const request = userPlayControl(fixture.params.arguments.tileId);
+  assert.deepEqual(mcpRequestBody(request.name, request.args), fixture);
+  // main.ts posts through these exact builders (Play click and Cube tab Play).
+  const main = readFileSync(repo("apps/desktop/src/main.ts"), "utf8");
+  assert.match(main, /body: JSON\.stringify\(mcpRequestBody\(name, args\)\)/);
+  assert.equal(main.match(/const request = userPlayControl\(/g)?.length, 2);
+});
+
+test("contract: the window's seek report body is the seek-round-trip fixture", () => {
+  const fixture = load("schemas/examples/control/seek-round-trip.json");
+  const seq = fixture.desktopReport.params.arguments.seq;
+  const requested = fixture.agentSeek.params.arguments.seconds;
+  const report = seekReportControl(seq, requested, fixture.landing);
+  assert.deepEqual(mcpRequestBody(report.name, report.args), fixture.desktopReport);
+  assert.deepEqual(
+    { requested_t: report.args.requested_t, landed_t: report.args.landed_t, ok: report.args.ok, reason: report.args.reason },
+    fixture.agentResult,
+  );
+  const main = readFileSync(repo("apps/desktop/src/main.ts"), "utf8");
+  assert.match(main, /const report = seekReportControl\(event\.seq, requested, landing\);\s*void mcpCall\(report\.name, report\.args\);/);
+  // Superseded and missing-element landings are reported honestly.
+  assert.deepEqual(seekReportControl(3, 10, { ok: false, actual: 4, status: "superseded" }).args, {
+    seq: 3, requested_t: 10, landed_t: 4, ok: false, reason: "superseded by a newer seek",
+  });
+  assert.equal(seekReportControl(3, 10, { ok: false, actual: null, status: "no wav" }).args.landed_t, null);
+});
+
+test("D: a re-registered clip with a new source, or a removed tile, releases its seek blob", async () => {
+  const playback = await import("../src/playback.ts");
+  const released: string[] = [];
+  class SpySeeker extends Seeker {
+    override release(key: string): void {
+      released.push(key);
+      super.release(key);
+    }
+  }
+  playback.setSeeker(new SpySeeker());
+  const first = fakeAudio();
+  playback.registerPlayer("lib-blob", first);
+  playback.registerPlayer("lib-blob", fakeAudio());
+  assert.deepEqual(released, [], "a re-render with the same source keeps the blob");
+  const moved = fakeAudio();
+  (moved as unknown as { src: string }).src = "/library/y.wav";
+  playback.registerPlayer("lib-blob", moved);
+  assert.deepEqual(released, ["lib-blob"], "a new source revokes the old blob");
+  (moved as unknown as { isConnected: boolean }).isConnected = false;
+  assert.ok(playback.releaseDetachedTransports().includes("lib-blob"));
+  assert.deepEqual(released, ["lib-blob", "lib-blob"]);
 });
