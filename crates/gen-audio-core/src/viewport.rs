@@ -171,11 +171,42 @@ struct JobRec {
     synthesized: bool,
 }
 
-#[derive(Clone, Debug)]
-struct FlipState {
-    face: String,
-    section: Option<String>,
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct FaceDef {
+    id: &'static str,
+    name: &'static str,
 }
+
+const CLIP_FACES: &[FaceDef] = &[
+    FaceDef { id: "clip", name: "Clip" },
+    FaceDef { id: "cube", name: "Cube" },
+    FaceDef { id: "layers", name: "Layers" },
+    FaceDef { id: "spectrogram", name: "Spectrogram" },
+    FaceDef { id: "relations", name: "Relations" },
+];
+const MODEL_FACES: &[FaceDef] = &[
+    FaceDef { id: "model", name: "Model" },
+    FaceDef { id: "cubes", name: "Cubes" },
+    FaceDef { id: "relations", name: "Relations" },
+];
+const CONNECTOR_FACE: FaceDef = FaceDef { id: "connector", name: "Connector" };
+const PROFILE_FACES: &[FaceDef] = &[
+    FaceDef { id: "profile", name: "Profile" },
+    FaceDef { id: "persona", name: "Persona" },
+    FaceDef { id: "relations", name: "Relations" },
+];
+
+/// Release deck tile id → `VoiceModel.id`. Card ids are not catalog engine ids.
+const RELEASE_ENGINES: &[(&str, &str)] = &[
+    ("engine-kokoro", "kokoro_onnx"),
+    ("engine-vibevoice", "vibevoice"),
+    ("engine-magpie", "magpie"),
+    ("engine-pocket", "pocket_tts"),
+    ("engine-kokoro-dayour", "kokoro_dayour"),
+    ("engine-misaki", "misaki"),
+];
+
+const RELEASE_CONNECTORS: &[&str] = &["mcp", "acp", "harness", "copilot", "claude", "gpt", "gemini"];
 
 #[derive(Clone, Debug)]
 pub struct Viewport {
@@ -191,8 +222,31 @@ pub struct Viewport {
     clock_t: Option<f64>,
     playing: Option<String>,
     slide: String,
-    flipped: BTreeMap<String, FlipState>,
+    /// Explicit flips only. A missing view reads as index 0.
+    face_index: BTreeMap<String, usize>,
     names: BTreeMap<String, String>,
+}
+
+fn install_deck_view(vp: &mut Viewport, id: &str, title: &str, kind: &str, home: &str, honesty: &str) {
+    vp.assets.insert(
+        id.to_string(),
+        Asset {
+            kind: kind.into(),
+            title: title.to_string(),
+            honesty: honesty.into(),
+            duration_s: None,
+            media: "absent".into(),
+            display_rev: 1,
+        },
+    );
+    let view_id = format!("view:{id}");
+    vp.views.push(View {
+        id: view_id.clone(),
+        asset: id.to_string(),
+        home: home.into(),
+        reference: false,
+    });
+    append_member(&mut vp.slides, home, &view_id);
 }
 
 fn install_library_view(
@@ -262,7 +316,7 @@ impl Viewport {
             clock_t: None,
             playing: None,
             slide: "slide:library".into(),
-            flipped: BTreeMap::new(),
+            face_index: BTreeMap::new(),
             names: BTreeMap::new(),
         };
         // C-M1: envelopes and envelope-less catalog tiles. Either source alone
@@ -302,6 +356,14 @@ impl Viewport {
                 clip.synthesized_speech,
                 clip.wav_url.is_some(),
             );
+        }
+        for (tile, engine_id) in RELEASE_ENGINES {
+            let title = catalog::voice_model(engine_id).map(|model| model.label).unwrap_or(engine_id);
+            install_deck_view(&mut vp, tile, title, "voice_model", "slide:models", "library");
+        }
+        for connector in RELEASE_CONNECTORS {
+            let tile = format!("conn-{connector}");
+            install_deck_view(&mut vp, &tile, connector, "connector", "slide:connectors", "connector");
         }
         for person in catalog::personas() {
             let id = format!("profile-{}", person.id);
@@ -415,13 +477,13 @@ impl Viewport {
                 if !self.views.iter().any(|item| item.id == view) {
                     return Err(ReduceError::invalid(format!("unknown view {view}")));
                 }
-                self.flipped.insert(
-                    view.clone(),
-                    FlipState {
-                        face: face.clone(),
-                        section: section.clone(),
-                    },
-                );
+                let count = self.faces_for(&view).len();
+                let index = if face == "front" || count <= 1 {
+                    0
+                } else {
+                    1
+                };
+                self.face_index.insert(view.clone(), index);
                 Ok(json!({"op": "flip", "view": view, "face": face, "section": section}))
             }
             Action::Rename { uid, name } => {
@@ -761,6 +823,64 @@ impl Viewport {
         }
     }
 
+    /// Ordered faces that apply to this view. Omitted faces are absent, so `len()` is M.
+    fn faces_for(&self, view_id: &str) -> Vec<FaceDef> {
+        let Some(view) = self.views.iter().find(|item| item.id == view_id) else {
+            return Vec::new();
+        };
+        let kind = self.assets.get(&view.asset).map(|asset| asset.kind.as_str()).unwrap_or("");
+        let tile = view_id.strip_prefix("view:").unwrap_or(view_id);
+        match kind {
+            "audio_clip" => {
+                let wav = self.assets.get(&view.asset).is_some_and(|asset| asset.media == "present");
+                CLIP_FACES
+                    .iter()
+                    .copied()
+                    .filter(|face| match face.id {
+                        "cube" | "layers" | "spectrogram" => wav,
+                        "relations" => clip_has_relation(tile),
+                        _ => true,
+                    })
+                    .collect()
+            }
+            "voice_model" => {
+                let Some(engine_id) = RELEASE_ENGINES
+                    .iter()
+                    .find(|(tile_id, _)| *tile_id == tile)
+                    .map(|(_, engine_id)| *engine_id)
+                else {
+                    return vec![MODEL_FACES[0]];
+                };
+                MODEL_FACES
+                    .iter()
+                    .copied()
+                    .filter(|face| match face.id {
+                        "cubes" => engine_has_cube_row(engine_id),
+                        "relations" => engine_has_link(engine_id),
+                        _ => true,
+                    })
+                    .collect()
+            }
+            "connector" => vec![CONNECTOR_FACE],
+            "voice_profile" => {
+                let persona = tile.strip_prefix("profile-").unwrap_or(tile);
+                PROFILE_FACES
+                    .iter()
+                    .copied()
+                    .filter(|face| match face.id {
+                        "persona" => persona_face_applies(persona),
+                        "relations" => profile_names_a_voice_model(persona),
+                        _ => true,
+                    })
+                    .collect()
+            }
+            "cube" => vec![FaceDef { id: "cube", name: "Cube" }],
+            "spectrogram" => vec![FaceDef { id: "spectrogram", name: "Spectrogram" }],
+            "video" => vec![FaceDef { id: "video", name: "Video" }],
+            _ => Vec::new(),
+        }
+    }
+
     pub fn snapshot(&self) -> Value {
         let views: Vec<Value> = self
             .views
@@ -854,7 +974,26 @@ impl Viewport {
                 "clock": clock,
                 "playing": self.playing,
                 "slide": self.slide,
-                "flipped": self.flipped.iter().map(|(id, state)| (id.clone(), json!({"face": state.face, "section": state.section}))).collect::<serde_json::Map<String, Value>>()
+                "flipped": self.face_index.iter().map(|(id, index)| {
+                    let face = if *index == 0 { "front" } else { "back" };
+                    (id.clone(), json!({"face": face, "section": Value::Null}))
+                }).collect::<serde_json::Map<String, Value>>(),
+                "faces": self.views.iter().filter(|view| !view.reference).map(|view| {
+                    let applicable = self.faces_for(&view.id);
+                    let index = self.face_index.get(&view.id).copied().unwrap_or(0).min(applicable.len().saturating_sub(1));
+                    let current = applicable.get(index);
+                    let face_id = current.map(|face| face.id).unwrap_or("");
+                    let face_name = current.map(|face| face.name).unwrap_or("");
+                    let tile = view.id.strip_prefix("view:").unwrap_or(view.id.as_str());
+                    (view.id.clone(), json!({
+                        "tileId": tile,
+                        "face_id": face_id,
+                        "face_name": face_name,
+                        "face_index": index,
+                        "face_count": applicable.len(),
+                        "ids": applicable.iter().map(|face| face.id).collect::<Vec<_>>()
+                    }))
+                }).collect::<serde_json::Map<String, Value>>()
             },
             "pipelineEmpty": self.slides.iter().find(|slide| slide.id == "slide:pipeline").and_then(|slide| slide.empty.clone())
         })
@@ -873,6 +1012,100 @@ impl Viewport {
             asset.display_rev,
         ))
     }
+}
+
+fn catalog_rows() -> Vec<Value> {
+    crate::asset_catalog::assets()
+}
+
+fn model_row(engine_id: &str) -> Option<Value> {
+    catalog_rows().into_iter().find(|asset| {
+        asset.get("kind").and_then(Value::as_str) == Some("voice_model")
+            && asset.get("legacy_id").and_then(Value::as_str) == Some(engine_id)
+    })
+}
+
+fn clips_naming(engine_id: &str, key: &str) -> Vec<Value> {
+    let Some(uid) = model_row(engine_id).and_then(|row| row.get("uid").and_then(Value::as_str).map(str::to_string)) else {
+        return Vec::new();
+    };
+    catalog_rows()
+        .into_iter()
+        .filter(|asset| {
+            asset.get("kind").and_then(Value::as_str) == Some("audio_clip")
+                && asset
+                    .pointer(&format!("/provenance/{key}"))
+                    .and_then(Value::as_str)
+                    == Some(uid.as_str())
+        })
+        .collect()
+}
+
+fn envelope_has_wav(asset: &Value) -> bool {
+    asset.get("media").and_then(Value::as_array).is_some_and(|items| {
+        items.iter().any(|item| item.get("role").and_then(Value::as_str) == Some("wav"))
+    })
+}
+
+fn engine_is_g2p(engine_id: &str) -> bool {
+    model_row(engine_id).is_some_and(|row| {
+        row.pointer("/honesty/claims")
+            .and_then(Value::as_array)
+            .is_some_and(|claims| claims.iter().any(|claim| claim.as_str() == Some("g2p_only")))
+    })
+}
+
+/// A cube row exists only when an enveloped clip names this model through
+/// `provenance.voice_model` and that clip's WAV is present. `g2p_only` has none.
+fn engine_has_cube_row(engine_id: &str) -> bool {
+    if engine_is_g2p(engine_id) {
+        return false;
+    }
+    clips_naming(engine_id, "voice_model").iter().any(envelope_has_wav)
+}
+
+/// Catalog tiles with no envelope are not link targets. Profiles count when
+/// their `voiceModel` is this engine.
+fn engine_has_link(engine_id: &str) -> bool {
+    if !clips_naming(engine_id, "voice_model").is_empty() || !clips_naming(engine_id, "g2p_model").is_empty() {
+        return true;
+    }
+    catalog::personas().iter().any(|person| {
+        catalog::voice_profile_value(person.id)
+            .and_then(|value| value.get("voiceModel").and_then(Value::as_str).map(str::to_string))
+            .as_deref()
+            == Some(engine_id)
+    })
+}
+
+/// Enveloped clips link through provenance. A tile with no envelope links only
+/// when its catalog `engine_id` is a real voice model.
+fn clip_has_relation(tile: &str) -> bool {
+    if let Some(asset) = crate::asset_catalog::baked_asset("audio_clip", tile) {
+        let named = asset.pointer("/provenance/voice_model").and_then(Value::as_str).is_some()
+            || asset.pointer("/provenance/g2p_model").and_then(Value::as_str).is_some();
+        if named {
+            return true;
+        }
+        let uid = asset.get("uid").and_then(Value::as_str).unwrap_or("");
+        return catalog_rows().iter().any(|row| {
+            matches!(row.get("kind").and_then(Value::as_str), Some("cube_ihdr" | "spectrogram_2d"))
+                && row.get("src").and_then(Value::as_array).is_some_and(|src| src.iter().any(|item| item.as_str() == Some(uid)))
+        });
+    }
+    catalog::library_clip(tile).is_some_and(|clip| catalog::voice_model(clip.engine_id).is_some())
+}
+
+fn persona_face_applies(persona_id: &str) -> bool {
+    catalog::persona(persona_id).is_some_and(|person| {
+        !person.domain.is_empty() || !person.accent.is_empty() || !person.traits.is_empty() || !person.refs.is_empty()
+    })
+}
+
+fn profile_names_a_voice_model(persona_id: &str) -> bool {
+    catalog::voice_profile_value(persona_id)
+        .and_then(|value| value.get("voiceModel").and_then(Value::as_str).map(str::to_string))
+        .is_some_and(|engine_id| catalog::voice_model(&engine_id).is_some())
 }
 
 fn slide(id: &str, title: &str, query_kind: Option<&str>, empty: Option<&str>) -> Slide {
@@ -1268,6 +1501,52 @@ mod tests {
             catalog_ids, cards,
             "library_clips() disagrees with the release deck"
         );
+    }
+
+    /// §2: M is the faces that apply. A full table for every tile, or a join on
+    /// catalog `engine_id`, reports a different list.
+    #[test]
+    fn release_face_lists_follow_the_omission_rule() {
+        let doc = Viewport::release().snapshot();
+        let faces = &doc["ui"]["faces"];
+        let expected: &[(&str, &[&str])] = &[
+            ("view:lib-misaki-kokoro", &["clip", "cube", "layers", "spectrogram", "relations"]),
+            ("view:lib-cube-explainer", &["clip", "cube", "layers", "spectrogram", "relations"]),
+            ("view:lib-bitdot-braille-vibevoice", &["clip", "cube", "layers", "spectrogram", "relations"]),
+            ("view:lib-kokoro", &["clip", "cube", "layers", "spectrogram", "relations"]),
+            ("view:lib-kokoro-onnx", &["clip", "cube", "layers", "spectrogram", "relations"]),
+            ("view:lib-magpie", &["clip", "relations"]),
+            ("view:lib-vibevoice", &["clip", "relations"]),
+            ("view:lib-pocket", &["clip", "relations"]),
+            ("view:engine-kokoro", &["model", "cubes", "relations"]),
+            ("view:engine-vibevoice", &["model", "cubes", "relations"]),
+            ("view:engine-kokoro-dayour", &["model", "cubes", "relations"]),
+            ("view:engine-misaki", &["model", "relations"]),
+            ("view:engine-magpie", &["model"]),
+            ("view:engine-pocket", &["model"]),
+            ("view:conn-mcp", &["connector"]),
+            ("view:conn-acp", &["connector"]),
+            ("view:conn-harness", &["connector"]),
+            ("view:conn-copilot", &["connector"]),
+            ("view:conn-claude", &["connector"]),
+            ("view:conn-gpt", &["connector"]),
+            ("view:conn-gemini", &["connector"]),
+            ("view:profile-anton", &["profile", "persona", "relations"]),
+            ("view:profile-alice", &["profile", "persona", "relations"]),
+            ("view:profile-khortana", &["profile", "persona", "relations"]),
+            ("view:profile-rocky", &["profile", "persona", "relations"]),
+            ("view:profile-optimus", &["profile", "persona", "relations"]),
+        ];
+        for (view, ids) in expected {
+            let got: Vec<String> = faces[view]["ids"]
+                .as_array()
+                .map(|items| items.iter().filter_map(|item| item.as_str().map(str::to_string)).collect())
+                .unwrap_or_default();
+            assert_eq!(got, ids.iter().map(|id| (*id).to_string()).collect::<Vec<_>>(), "{view} faces {faces}");
+            assert_eq!(faces[view]["face_count"].as_u64(), Some(ids.len() as u64), "{view}");
+            assert_eq!(faces[view]["face_index"].as_u64(), Some(0), "{view}");
+            assert_eq!(faces[view]["face_id"].as_str(), ids.first().copied(), "{view}");
+        }
     }
 
     #[test]
