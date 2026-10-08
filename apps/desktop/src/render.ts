@@ -284,6 +284,8 @@ function setFace(article: HTMLElement, index: number): void {
     node.inert = i !== n;
   });
   article.querySelector<HTMLButtonElement>(":scope > .flip-glyph")?.setAttribute("aria-label", flipGlyphLabel(n, faces));
+  // Low (a): a profile-status badge clears on the next user-driven face change; face is unchanged by this.
+  article.querySelectorAll(":scope > .profile-status").forEach((node) => node.remove());
 }
 
 /** One glyph activation: the next face, wrapping after the last. */
@@ -325,8 +327,11 @@ export function applyProfileUpdate(board: HTMLElement, profile: Record<string, u
     badge.setAttribute("role", "status");
     tile.append(badge);
   }
+  // Low (a): name the face that holds refs from data-faces (index 1), never "face 2".
+  const faces = facesOf(tile);
+  const refsFace = faces[1] ?? faces[faces.length - 1] ?? "back";
   badge.textContent = added.length
-    ? `Ref attached: ${added.join(", ")}. Refs are on face 2.`
+    ? `Ref attached: ${added.join(", ")}. Refs are on the ${refsFace} face.`
     : "Profile refs up to date.";
   return true;
 }

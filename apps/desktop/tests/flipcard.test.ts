@@ -316,8 +316,29 @@ test("second ruling 6: Attach to profile updates the profile tile and announces 
     assert.ok(badge, "a status badge sits on the tile, outside the faces, so it shows on any face");
     assert.equal(badge!.getAttribute("role"), "status", "the badge is a polite live region");
     assert.match(badge!.textContent ?? "", /clip:lib-misaki-kokoro/);
+    // Low (a): name the face from data-faces (refs live on face index 1), never hardcode "face 2".
+    const faces = (tile.dataset.faces ?? "").split(" ");
+    assert.ok(faces.length >= 2, "profile has a face that holds refs");
+    assert.match(badge!.textContent ?? "", new RegExp(`Refs are on the ${faces[1]} face`), `badge must name faces[1]=${faces[1]}, not a hardcoded index`);
+    assert.doesNotMatch(badge!.textContent ?? "", /face 2/, "no hardcoded face number");
     assert.equal(tile.querySelector('[data-field="refs"]')?.textContent, "persona:anton, clip:lib-misaki-kokoro");
   }
+});
+
+test("Low (a): the status badge clears on the next user action without moving the face", () => {
+  const board = mount();
+  const tile = profileTile(board);
+  assert.equal(face(tile), "front");
+  render.applyProfileUpdate(board, attachedProfile);
+  const badge = tile.querySelector<HTMLElement>(":scope > .profile-status");
+  assert.ok(badge?.textContent, "badge announced the attach");
+  // Next user action on this tile: glyph flip to back and back to front.
+  click(glyphOf(tile));
+  assert.equal(face(tile), "back");
+  assert.equal(tile.querySelector(":scope > .profile-status"), null, "badge cleared when the user flipped");
+  click(glyphOf(tile));
+  assert.equal(face(tile), "front", "clearing the badge did not steal the face");
+  assert.equal(tile.querySelector(":scope > .profile-status"), null);
 });
 
 test("second ruling 6: an explicit ui_flip (the flip op) still flips the profile tile", () => {
