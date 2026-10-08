@@ -57,7 +57,6 @@
         "generator_commit": "3162d0d2bc7fddf32b8562851f58dc26aa386882"
       },
       "wav": "artifacts/library/library_kokoro_onnx.wav",
-      "absWav": "D:\\gen-audio\\artifacts\\library\\library_kokoro_onnx.wav",
       "n_turns": 18,
       "title": "kokoro-onnx",
       "wavUrl": "/library/library_kokoro_onnx.wav"
@@ -70,7 +69,6 @@
       "engineId": "kokoro_dayour",
       "title": "dayour/kokoro",
       "status": "ok",
-      "absWav": "D:\\gen-audio\\artifacts\\library\\library_kokoro.wav",
       "wavUrl": "/library/library_kokoro.wav",
       "duration_s": 375.625,
       "sample_rate": 24000,

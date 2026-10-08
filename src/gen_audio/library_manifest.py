@@ -67,9 +67,10 @@ def render(manifest: dict) -> str:
 
 
 def sync_manifest(manifest_path: Path | str, library_dir: Path | str | None = None) -> list[str]:
-    """Rewrite the cube mirror of every clip whose cube JSON has cube_revision.
+    """Rewrite the cube mirror of every clip whose cube JSON has cube_revision,
+    and drop machine-specific ``absWav`` paths (``wav`` is the repo-relative one).
 
-    Returns the clip ids whose block changed. Writes only when something did.
+    Returns the clip ids whose entry changed. Writes only when something did.
     """
     manifest_path = Path(manifest_path)
     library = Path(library_dir) if library_dir is not None else manifest_path.parent
@@ -81,6 +82,12 @@ def sync_manifest(manifest_path: Path | str, library_dir: Path | str | None = No
             by_wav[doc["wavUrl"]] = (path.name, doc)
     changed: list[str] = []
     for clip in manifest.get("clips", []):
+        # F: the manifest ships in dist, so no machine paths. ``wav`` already
+        # holds the repo-relative path; an absolute ``absWav`` (``D:\\...``,
+        # ``/home/...``) is dropped here, so the generator removes it.
+        if "absWav" in clip:
+            del clip["absWav"]
+            changed.append(str(clip.get("id")))
         block = clip.get("cube")
         found = by_wav.get(clip.get("wavUrl")) if clip.get("status") == "ok" else None
         if not isinstance(block, dict) and found is not None:
