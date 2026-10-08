@@ -53,6 +53,24 @@ fn uid_of(asset: &Value) -> &str {
     asset.get("uid").and_then(Value::as_str).unwrap_or_default()
 }
 
+/// Tile ids of baked `audio_clip` envelopes, in catalog order. A generated
+/// clip is not a release view.
+pub fn baked_audio_clip_ids() -> Vec<String> {
+    catalog()
+        .iter()
+        .filter(|asset| asset.get("kind").and_then(Value::as_str) == Some("audio_clip"))
+        .filter_map(|asset| asset.get("legacy_id").and_then(Value::as_str).map(str::to_string))
+        .collect()
+}
+
+/// One baked envelope. Runtime rows are not part of the release deck.
+pub fn baked_asset(kind: &str, legacy_id: &str) -> Option<Value> {
+    catalog().into_iter().find(|asset| {
+        asset.get("kind").and_then(Value::as_str) == Some(kind)
+            && asset.get("legacy_id").and_then(Value::as_str) == Some(legacy_id)
+    })
+}
+
 /// Baked catalog plus runtime envelopes. A runtime uid replaces the baked row.
 pub fn assets() -> Vec<Value> {
     merged()

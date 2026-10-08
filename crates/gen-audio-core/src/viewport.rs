@@ -195,6 +195,43 @@ pub struct Viewport {
     names: BTreeMap<String, String>,
 }
 
+fn install_library_view(
+    vp: &mut Viewport,
+    id: &str,
+    title: &str,
+    synthesized_speech: bool,
+    wav_present: bool,
+) {
+    let honesty = if synthesized_speech {
+        "library"
+    } else if !wav_present {
+        "unavailable"
+    } else {
+        "library"
+    };
+    vp.assets.insert(
+        id.to_string(),
+        Asset {
+            kind: "audio_clip".into(),
+            title: title.to_string(),
+            honesty: honesty.into(),
+            duration_s: None,
+            media: if wav_present { "present" } else { "wav_missing" }.into(),
+            display_rev: 1,
+        },
+    );
+    let view_id = format!("view:{id}");
+    vp.views.push(View {
+        id: view_id.clone(),
+        asset: id.to_string(),
+        home: "slide:library".into(),
+        reference: false,
+    });
+    if let Some(members) = vp.slides.iter_mut().find(|item| item.id == "slide:library") {
+        members.members.push(view_id);
+    }
+}
+
 impl Viewport {
     /// Fresh install. Library clips that exist stay `library` or `unavailable`.
     /// The pipeline slide has no cube and no fixture view.
@@ -228,40 +265,43 @@ impl Viewport {
             flipped: BTreeMap::new(),
             names: BTreeMap::new(),
         };
-        for clip in catalog::library_clips() {
-            let honesty = if clip.synthesized_speech {
-                "library"
-            } else if clip.wav_url.is_none() {
-                "unavailable"
-            } else {
-                "library"
-            };
-            vp.assets.insert(
-                clip.id.to_string(),
-                Asset {
-                    kind: "audio_clip".into(),
-                    title: clip.title.to_string(),
-                    honesty: honesty.into(),
-                    duration_s: None,
-                    media: if clip.wav_url.is_some() {
-                        "present"
-                    } else {
-                        "wav_missing"
-                    }
-                    .into(),
-                    display_rev: 1,
-                },
-            );
-            let view_id = format!("view:{}", clip.id);
-            vp.views.push(View {
-                id: view_id.clone(),
-                asset: clip.id.to_string(),
-                home: "slide:library".into(),
-                reference: false,
-            });
-            if let Some(members) = vp.slides.iter_mut().find(|item| item.id == "slide:library") {
-                members.members.push(view_id);
+        // C-M1: envelopes and envelope-less catalog tiles. Either source alone
+        // drops a tile (the five audio_clip rows, or lib-magpie / lib-vibevoice
+        // / lib-pocket).
+        let envelopes = crate::asset_catalog::baked_audio_clip_ids();
+        for id in &envelopes {
+            if let Some(clip) = catalog::library_clip(id) {
+                install_library_view(
+                    &mut vp,
+                    clip.id,
+                    clip.title,
+                    clip.synthesized_speech,
+                    clip.wav_url.is_some(),
+                );
+            } else if let Some(asset) = crate::asset_catalog::baked_asset("audio_clip", id) {
+                let title = asset
+                    .pointer("/display/title")
+                    .and_then(Value::as_str)
+                    .unwrap_or(id);
+                let synthesized = asset
+                    .pointer("/honesty/synthesized_speech")
+                    .and_then(Value::as_bool)
+                    .unwrap_or(false);
+                let wav_present = asset.pointer("/body/wav_url").and_then(Value::as_str).is_some();
+                install_library_view(&mut vp, id, title, synthesized, wav_present);
             }
+        }
+        for clip in catalog::library_clips() {
+            if envelopes.iter().any(|id| id == clip.id) {
+                continue;
+            }
+            install_library_view(
+                &mut vp,
+                clip.id,
+                clip.title,
+                clip.synthesized_speech,
+                clip.wav_url.is_some(),
+            );
         }
         for person in catalog::personas() {
             let id = format!("profile-{}", person.id);
@@ -1188,6 +1228,46 @@ mod tests {
             sec_per_bin: 0.352,
             clip_in_src: true,
         }
+    }
+
+    /// C-M1: the release deck's LibraryClip cards and the `view:lib-*` set are
+    /// the same eight tile ids. A catalog-only loop drops `lib-cube-explainer`.
+    #[test]
+    fn release_library_views_match_the_release_deck() {
+        let document: Value =
+            serde_json::from_str(include_str!("../../../schemas/examples/viewport.release.json"))
+                .unwrap();
+        let mut cards: Vec<String> = document["cards"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|card| card["kind"] == "LibraryClip")
+            .filter_map(|card| card["id"].as_str().map(str::to_string))
+            .collect();
+        cards.sort();
+        let doc = Viewport::release().snapshot();
+        let mut views: Vec<String> = doc["views"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter_map(|view| view["id"].as_str())
+            .filter(|id| id.starts_with("view:lib-"))
+            .map(|id| id.trim_start_matches("view:").to_string())
+            .collect();
+        views.sort();
+        assert_eq!(
+            views, cards,
+            "release view:lib-* set disagrees with viewport.release.json"
+        );
+        let mut catalog_ids: Vec<String> = catalog::library_clips()
+            .iter()
+            .map(|clip| clip.id.to_string())
+            .collect();
+        catalog_ids.sort();
+        assert_eq!(
+            catalog_ids, cards,
+            "library_clips() disagrees with the release deck"
+        );
     }
 
     #[test]

@@ -223,6 +223,17 @@ const VOICE_MODELS: &[VoiceModel] = &[
 
 const LIBRARY: &[LibraryClipMeta] = &[
     LibraryClipMeta {
+        id: "lib-cube-explainer",
+        title: "Cube explainer",
+        engine_id: "kokoro_onnx",
+        status: "ok",
+        synthesized_speech: true,
+        wav_url: Some("/library/library_cube_explainer_kokoro_onnx.wav"),
+        cube_json_url: Some("/library/library_cube_explainer_kokoro_onnx_cube3d.json"),
+        sidecar_url: Some("/library/library_cube_explainer_kokoro_onnx.synth.json"),
+        summary: "Catalog says this clip is a real kokoro-onnx explainer of spectrogram cubes. This process does not open the WAV.",
+    },
+    LibraryClipMeta {
         id: "lib-kokoro-onnx",
         title: "kokoro-onnx",
         engine_id: "kokoro_onnx",
