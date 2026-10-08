@@ -165,3 +165,59 @@ def test_sprawl_gate_fails_on_a_stray_shell_script_or_any_shebang_file(tmp_path)
     assert "SPRAWL outside-allowlist tools/deploy" in out
     assert "SPRAWL outside-allowlist helper.mjs" in out
     assert "main.rs" not in out
+
+
+def _stub_cargo(tmp_path: Path) -> dict[str, str]:
+    """PATH with a `cargo` that does nothing, so Regen runs only the python
+    generator and its git diff (the build_assets bytes are not the question)."""
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    (bin_dir / "cargo").write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+    (bin_dir / "cargo").chmod(0o755)
+    (bin_dir / "cargo.cmd").write_text("@exit /b 0\r\n", encoding="utf-8")
+    return {**os.environ, "PATH": f"{bin_dir}{os.pathsep}{os.environ.get('PATH', '')}", "GEN_AUDIO_PYTHON": sys.executable}
+
+
+@pytest.mark.skipif(SHELL is None or shutil.which("git") is None, reason="needs PowerShell and git")
+def test_regen_diffs_the_synth_sidecars_like_ci(tmp_path):
+    """B5: CI's Regen gate diffs apps/desktop/public/library/*.synth.json after
+    `cube_revision.py manifest`; the local Regen step must too, or a sidecar
+    the generator rewrites passes locally and fails only in CI."""
+    repo = _temp_repo(tmp_path)
+    library = repo / "apps" / "desktop" / "public" / "library"
+    library.mkdir(parents=True)
+    (library / "a.synth.json").write_text('{\n  "engine": "x"\n}\n', encoding="utf-8")
+    generator = repo / "scripts" / "cube_revision.py"
+    generator.write_text("import sys\n", encoding="utf-8")
+    _git(repo, "add", ".")
+    _git(repo, "commit", "-q", "-m", "sidecar + no-op generator")
+    env = _stub_cargo(tmp_path)
+    steps = "Pssa,Sprawl,Cargo,Npm,Python"
+    run = lambda: subprocess.run([SHELL, "-NoProfile", "-File", str(repo / "scripts" / "test.ps1"), "-Tag", "t", "-Skip", steps],
+                                 cwd=repo, capture_output=True, text=True, timeout=300, env=env)
+    clean = run()
+    assert clean.returncode == 0, clean.stdout + clean.stderr
+    # The generator now rewrites the sidecar (what sync_synth_sidecars does to a ../ path).
+    generator.write_text(
+        "from pathlib import Path\n"
+        "p = Path('apps/desktop/public/library/a.synth.json')\n"
+        "p.write_text(p.read_text(encoding='utf-8').replace('\"x\"', '\"y\"'), encoding='utf-8')\n",
+        encoding="utf-8",
+    )
+    _git(repo, "add", ".")
+    _git(repo, "commit", "-q", "-m", "generator that rewrites the sidecar")
+    drift = run()
+    out = drift.stdout + drift.stderr
+    assert drift.returncode != 0, out
+    assert "a.synth.json" in out and "generated files drifted" in out, out
+
+
+def test_from_lock_help_says_it_checks_the_cube_bytes():
+    """Since M8, -FromLock verifies every cube file against media.lock.json
+    "cubes"; the help must not still say it cannot see a hand-edited cube."""
+    text = (REPO / "scripts" / "test.ps1").read_text(encoding="utf-8")
+    help_text = text[: text.index("#>")]
+    assert "cannot see a hand-edited cube" not in help_text
+    modes = help_text[help_text.index("\nModes:"):]
+    from_lock = modes[modes.index("\n  -FromLock"): modes.index("\n  -WithWav")]
+    assert "cubes" in from_lock and "hand-edited cube" in from_lock, from_lock
