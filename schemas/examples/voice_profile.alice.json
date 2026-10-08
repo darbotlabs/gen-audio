@@ -9,10 +9,9 @@
   "accent": "General American",
   "traits": "Persona Alice is the agent name. Kokoro pack id af_heart is a reference on this profile, not the Voice selector.",
   "refs": ["kokoro-pack:af_heart", "persona:alice"],
-  "spectrogram2d": "browser-profile-map",
-  "spectrogram3d": "library-cube-hook",
-  "cubeJsonUrl": "/library/library_kokoro_onnx_cube3d.json",
+  "spectrogram2d": "none",
+  "spectrogram3d": "none",
   "notPodcast": true,
   "synthesizedSpeech": false,
-  "disclaimer": "Profile for persona Alice. Voice model is kokoro-onnx. Not a podcast render and not a Python spectrogram."
+  "disclaimer": "Persona config for Alice on voice model kokoro-onnx. No audio of this persona yet; not a podcast render."
 }

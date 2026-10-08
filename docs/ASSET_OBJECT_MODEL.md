@@ -28,7 +28,7 @@ reconciled choices listed at the end.
   "schema_version": "1.0.0",          // semver; only the major enters the uid; unknown major rejected
   "uid_scheme": "ga1",
   "kind": "cube_ihdr",                // closed enum, snake_case (see §4)
-  "uid": "ga:cube_ihdr:26plzjawolfu5es5gab5agoxte",
+  "uid": "ga:cube_ihdr:biaxxmnibxtcur7nxdu3ffvna4",
   "legacy_id": "lib-misaki-kokoro.cube", // old card id / tileId / clipId / persona id; never hashed
   "status": "ok",                     // ok | missing | unavailable; never hashed
   "fields":  { ... },                 // HASHED identity fields: fixed per-kind allowlist, integers only
@@ -116,10 +116,10 @@ uid      = "ga:" K ":" base32(digest[0..16])        RFC 4648 alphabet a-z2-7, lo
   (`control.rs`). `uid_scheme: "ga1"`. Rehashing in place is never allowed: a
   new scheme or major mints a new uid plus `relations.supersedes: [old uid]`.
 - **Worked example (real misaki cube):**
-  - `JCS(identity)` = `{"fields":{"bin_frames":8448,"covers_ms":139040,"cube_revision":3,"duration_ms":139375,"freq_bins":102,"generator_sha256":"68d0f9ff…71af9",...,"layer_method":"library_r3",...},"kind":"cube_ihdr","media":[{"role":"cube_json",...},{"role":"cube_png",...}],"schema_major":1,"src":["ga:audio_clip:vtwxksrsuci7zygslimzfy7kdy"]}`
-  - digest = `d79ebca4…9090`
-  - uid = `ga:cube_ihdr:26plzjawolfu5es5gab5agoxte`
-  - glyph = `⣗⢞`
+  - `JCS(identity)` = `{"fields":{"bin_frames":8448,"covers_ms":139040,"cube_revision":3,"duration_ms":139375,"freq_bins":102,"generator_sha256":"410fa703…2db35",...,"layer_method":"library_r3",...},"kind":"cube_ihdr","media":[{"role":"cube_json",...},{"role":"cube_png",...}],"schema_major":1,"src":["ga:audio_clip:vtwxksrsuci7zygslimzfy7kdy"]}`
+  - digest = `0a017bb1…c47e`
+  - uid = `ga:cube_ihdr:biaxxmnibxtcur7nxdu3ffvna4`
+  - glyph = `⠊⠁`
 
   Darbot's earlier worked example (`…ay76z`, built from the old kokoro_onnx
   cube under a 130-bit encoding) no longer applies: this spec takes 128 bits and
@@ -283,7 +283,11 @@ through `src`.
   - VoiceProfile → `voice_profile`:
     - `fields` hold the persona text plus the voice_model uid.
     - `body` is the VoiceProfile document itself.
-    - `cubeJsonUrl` becomes `relations.bound_to: [cube uid]`.
+    - No `bound_to` (H): a persona is config, not audio. Its honest link is
+      `fields.voice_model`, and that engine's own clips and cubes link from
+      there. No voice_profile or persona card is bound_to a cube whose
+      speakers do not include that persona (`asset_v1.rs`
+      `no_persona_is_bound_to_a_cube_it_does_not_speak_in`).
   - Viewport card → `card` with `fields{card_id, view}`, where the old card
     `kind` becomes `fields.view`. `viewport.example.json` keeps `id` and gains
     `uid` alongside it, and it still validates against
@@ -340,7 +344,7 @@ produce (migration and `build_assets`), and the UI derives its badge text from
 | voice_model, Generate can produce it (adapter) | `ok` | false | false | `[]` | engine listed |
 | voice_model, no adapter, offline clips only | `unavailable` (`availability.status: offline_only`) | false | false | `engine_unavailable` or `g2p_only` | offline runs, never generated here |
 | voice_model, engine unavailable | `unavailable` | false | false | `engine_unavailable` (+ `g2p_only`) | greyed engine, never playable |
-| voice_profile | `ok` | **false** (enforced) | false | `profile_preview`, `not_a_podcast_render`; `not_podcast:true` (enforced) | persona preview, not a render |
+| voice_profile | `ok` | **false** (enforced) | false | `persona_config`, `not_a_podcast_render`; `not_podcast:true` (enforced) | persona config, no audio of this persona |
 | cube_ihdr / layer | `ok` | false | false | `library_cube` | analysis of a real clip |
 | spectrogram_2d | `ok` | false | false | `library_spectrogram` | analysis of a real clip |
 | card, fixture tone | `ok` | **false** (enforced) | true | `fixture_tone` | test tone, dev/test only |
@@ -352,7 +356,7 @@ Cards never claim synthesized speech themselves; they point at the clip that
 does through `relations.bound_to`.
 
 **Claims vocabulary:** `real_wav, synthesized_speech, library_cube,
-library_spectrogram, fixture_tone, profile_preview, reference_only,
+library_spectrogram, fixture_tone, persona_config, reference_only,
 not_a_podcast_render, engine_unavailable, g2p_only, status_only, sample_content`.
 
 **Release vs dev (PR #5 review).** An asset is dev/test-only when

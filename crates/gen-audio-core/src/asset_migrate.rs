@@ -139,7 +139,6 @@ pub fn migrate_v0_to_v1(bundle: &Value) -> Result<Value, AssetError> {
     // Audio clips, cubes and layers.
     let mut clip_uid: BTreeMap<String, String> = BTreeMap::new();
     let mut clip_wav_sha: BTreeMap<String, String> = BTreeMap::new();
-    let mut cube_uid_by_json: BTreeMap<String, String> = BTreeMap::new();
     for clip in &clips {
         if clip["status"] != "ok" {
             continue;
@@ -315,7 +314,6 @@ pub fn migrate_v0_to_v1(bundle: &Value) -> Result<Value, AssetError> {
             }),
         })?;
         let cube_uid = remember(&mut assets, cube_envelope);
-        cube_uid_by_json.insert(format!("/library/{json_path}"), cube_uid.clone());
         for (layer_index, name) in crate::asset::LAYER_NAMES.iter().enumerate() {
             let Some(stats) = cube_doc.pointer(&format!("/layers/{name}")) else { continue };
             let mut relations = Map::new();
@@ -379,10 +377,11 @@ pub fn migrate_v0_to_v1(bundle: &Value) -> Result<Value, AssetError> {
         let Some(voice_uid) = model_uid.get(model) else {
             return fail("bad_voice_ref", format!("profile {persona}: voiceModel {model:?} is not a catalog voice model"));
         };
-        let mut relations = Map::new();
-        if let Some(cube) = profile["cubeJsonUrl"].as_str().and_then(|url| cube_uid_by_json.get(url)) {
-            relations.insert("bound_to".into(), json!([cube]));
-        }
+        // A persona is config (name, tone, purpose, voice model), not audio. Its
+        // honest link is fields.voice_model; that engine's clips and cubes hang
+        // off the voice model. No bound_to to a cube whose speakers are not this
+        // persona (H b): a v0 cubeJsonUrl on a profile never becomes a relation.
+        let relations = Map::new();
         let mut profile_media = Vec::new();
         if let Some(path) = entry["path"].as_str() {
             profile_media.extend(media_ref(&media, "profile_json", path, "application/json"));
@@ -406,7 +405,7 @@ pub fn migrate_v0_to_v1(bundle: &Value) -> Result<Value, AssetError> {
             media: profile_media,
             src: vec![],
             relations,
-            honesty: json!({"synthesized_speech": false, "fixture": false, "not_podcast": true, "claims": ["profile_preview", "not_a_podcast_render"]}),
+            honesty: json!({"synthesized_speech": false, "fixture": false, "not_podcast": true, "claims": ["persona_config", "not_a_podcast_render"]}),
             provenance: obj(vec![("generator", json!("VoiceProfile (v0)"))]),
             body: profile.clone(),
         })?;
@@ -438,7 +437,7 @@ pub fn migrate_v0_to_v1(bundle: &Value) -> Result<Value, AssetError> {
             "ServeHealth" if body_in["probed"] != true => &["status_only", "sample_content"],
             "EngineStatus" | "ServeHealth" | "ConnectorStatus" => &["status_only"],
             "BenchmarkCompare" => &["reference_only"],
-            "VoiceProfile" => &["profile_preview", "not_a_podcast_render"],
+            "VoiceProfile" => &["persona_config", "not_a_podcast_render"],
             "LibraryClip" if body_in["status"] == "ok" => &["real_wav"],
             "LibraryClip" => &["engine_unavailable"],
             _ => &[],

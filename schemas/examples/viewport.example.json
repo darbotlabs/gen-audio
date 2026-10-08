@@ -303,10 +303,10 @@
         "refs": [
           "persona:anton"
         ],
-        "spectrogram2d": "browser-profile-map",
+        "spectrogram2d": "none",
         "spectrogram3d": "none",
         "notPodcast": true,
-        "disclaimer": "Browser profile map for persona Anton. Not a podcast render."
+        "disclaimer": "Persona config for Anton on voice model kokoro-onnx. No audio of this persona yet; not a podcast render."
       }
     },
     {
@@ -327,11 +327,10 @@
           "kokoro-pack:af_heart",
           "persona:alice"
         ],
-        "spectrogram2d": "browser-profile-map",
-        "spectrogram3d": "library-cube-hook",
-        "cubeJsonUrl": "/library/library_kokoro_onnx_cube3d.json",
+        "spectrogram2d": "none",
+        "spectrogram3d": "none",
         "notPodcast": true,
-        "disclaimer": "Browser profile map for persona Alice on kokoro-onnx. The cube is the library clip, not a recording of this persona. Not a podcast render."
+        "disclaimer": "Persona config for Alice on voice model kokoro-onnx. No audio of this persona yet; not a podcast render."
       }
     },
     {
@@ -351,10 +350,10 @@
         "refs": [
           "persona:khortana"
         ],
-        "spectrogram2d": "browser-profile-map",
+        "spectrogram2d": "none",
         "spectrogram3d": "none",
         "notPodcast": true,
-        "disclaimer": "Browser profile map for persona Khortana. Not a podcast render."
+        "disclaimer": "Persona config for Khortana on voice model kokoro-onnx. No audio of this persona yet; not a podcast render."
       }
     },
     {
@@ -374,10 +373,10 @@
         "refs": [
           "persona:rocky"
         ],
-        "spectrogram2d": "browser-profile-map",
+        "spectrogram2d": "none",
         "spectrogram3d": "none",
         "notPodcast": true,
-        "disclaimer": "Browser profile map for persona Rocky. Not a podcast render."
+        "disclaimer": "Persona config for Rocky on voice model kokoro-onnx. No audio of this persona yet; not a podcast render."
       }
     },
     {
@@ -649,12 +648,11 @@
           "cube:library_cube_explainer",
           "clip:lib-cube-explainer"
         ],
-        "spectrogram2d": "browser-profile-map",
-        "spectrogram3d": "library-cube-hook",
-        "cubeJsonUrl": "/library/library_cube_explainer_kokoro_onnx_cube3d.json",
+        "spectrogram2d": "none",
+        "spectrogram3d": "none",
         "notPodcast": true,
         "synthesizedSpeech": false,
-        "disclaimer": "Browser profile map for persona Optimus Timelarp with library cube spatial analysis. Not a podcast render."
+        "disclaimer": "Persona config for Optimus Timelarp on voice model kokoro-onnx. No audio of this persona yet; not a podcast render."
       }
     },
     {

@@ -334,3 +334,57 @@ fn every_engine_without_an_in_app_adapter_is_offline_only_or_unavailable() {
         }
     }
 }
+
+/// H (Optimus): a persona is config, not audio. No voice_profile and no
+/// persona card may be bound_to a cube whose speakers do not include that
+/// persona. Cubes carry no speakers list today, so no persona is bound to any
+/// cube; the honest link is voice_profile.fields.voice_model, and the claim is
+/// persona_config (never profile_preview).
+#[test]
+fn no_persona_is_bound_to_a_cube_it_does_not_speak_in() {
+    let mut all = json(ASSETS)["assets"].as_array().unwrap().clone();
+    all.extend(json(DEV_ASSETS)["assets"].as_array().unwrap().iter().cloned());
+    let by_uid = |uid: &str| all.iter().find(|asset| asset["uid"] == uid).cloned();
+    let speakers = |cube: &Value| -> Vec<String> {
+        let list = cube.pointer("/body/speakers").or_else(|| cube.pointer("/fields/speakers"));
+        list.and_then(Value::as_array)
+            .map(|items| {
+                items
+                    .iter()
+                    .filter_map(|item| item.as_str().or_else(|| item["persona_id"].as_str()).or_else(|| item["id"].as_str()))
+                    .map(str::to_string)
+                    .collect()
+            })
+            .unwrap_or_default()
+    };
+    let mut personas = 0;
+    let mut bad = Vec::new();
+    for asset in &all {
+        let persona = match asset["kind"].as_str() {
+            Some("voice_profile") => asset["fields"]["persona_id"].as_str(),
+            Some("card") if asset["fields"]["view"] == "VoiceProfile" => asset.pointer("/body/body/personaId").and_then(Value::as_str),
+            _ => continue,
+        };
+        let persona = persona.unwrap_or_else(|| panic!("{} has no persona id", asset["uid"]));
+        personas += 1;
+        let claims = asset["honesty"]["claims"].as_array().unwrap();
+        assert!(claims.iter().any(|claim| claim == "persona_config"), "{} claims {claims:?}", asset["uid"]);
+        assert!(!claims.iter().any(|claim| claim == "profile_preview"), "{}", asset["uid"]);
+        for target in asset.pointer("/relations/bound_to").and_then(Value::as_array).into_iter().flatten() {
+            let target = by_uid(target.as_str().unwrap()).unwrap_or_else(|| panic!("{} bound_to dangles", asset["uid"]));
+            if target["kind"] == "cube_ihdr" && !speakers(&target).iter().any(|id| id == persona) {
+                bad.push(format!("{} ({persona}) -> {} ({})", asset["legacy_id"], target["uid"], target["legacy_id"]));
+            }
+        }
+        if asset["kind"] == "voice_profile" {
+            let model = asset["fields"]["voice_model"].as_str().unwrap();
+            assert_eq!(by_uid(model).map(|m| m["kind"].clone()), Some(Value::from("voice_model")), "{persona}: voice_model");
+        }
+    }
+    assert!(personas >= 10, "expected the 5 voice profiles and their 5 cards, saw {personas}");
+    assert!(bad.is_empty(), "persona bound_to a cube it does not speak in:\n  {}", bad.join("\n  "));
+    for card in json(RELEASE_VIEWPORT)["cards"].as_array().unwrap().iter().filter(|card| card["kind"] == "VoiceProfile") {
+        assert!(card["body"].get("cubeJsonUrl").is_none(), "{}: persona card links a cube", card["id"]);
+        assert_eq!(card["body"]["spectrogram3d"], "none", "{}", card["id"]);
+    }
+}

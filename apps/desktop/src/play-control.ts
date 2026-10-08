@@ -32,6 +32,78 @@ export function mcpRequestBody(name: string, args: Record<string, unknown>): {
   return { jsonrpc: "2.0", id: 1, method: "tools/call", params: { name, arguments: args } };
 }
 
+/**
+ * Window->MCP failures, counted by `tool:status` (`http_415`, `rpc_-32602`)
+ * or `tool:<error class>` (`TypeError` is what a CORS or network failure
+ * throws). A failed call stays non-fatal but is never silent: the first
+ * failure per key warns once, and every failure is counted.
+ */
+export class McpFailureCounter {
+  private readonly counts = new Map<string, number>();
+  private readonly warned = new Set<string>();
+
+  constructor(
+    private readonly warn: (message: string) => void = (message) => console.warn(message),
+    private readonly onChange: (snapshot: Record<string, number>) => void = () => {},
+  ) {}
+
+  note(tool: string, kind: string): number {
+    const key = `${tool}:${kind}`;
+    const count = (this.counts.get(key) ?? 0) + 1;
+    this.counts.set(key, count);
+    if (!this.warned.has(key)) {
+      this.warned.add(key);
+      this.warn(`gen-audio: MCP ${tool} failed (${kind}); later failures of this kind are counted, not logged`);
+    }
+    this.onChange(this.snapshot());
+    return count;
+  }
+
+  snapshot(): Record<string, number> {
+    return Object.fromEntries(this.counts);
+  }
+
+  total(): number {
+    let total = 0;
+    for (const count of this.counts.values()) total += count;
+    return total;
+  }
+}
+
+/**
+ * POST one tool call to the loopback MCP. Returns the JSON-RPC payload, or
+ * null when the request fails (non-2xx, network/CORS error, bad JSON); each
+ * failure, and each JSON-RPC error payload, is counted in `failures`.
+ */
+export async function postMcp(
+  fetchImpl: typeof fetch,
+  url: string,
+  name: string,
+  args: Record<string, unknown>,
+  failures: McpFailureCounter,
+): Promise<unknown | null> {
+  try {
+    const response = await fetchImpl(url, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      // The exact body is the desktop half of the UI/agent contract
+      // (schemas/examples/control/*.json, tested from both sides).
+      body: JSON.stringify(mcpRequestBody(name, args)),
+    });
+    if (!response.ok) {
+      failures.note(name, `http_${response.status}`);
+      return null;
+    }
+    const payload: unknown = await response.json();
+    const code = (payload as { error?: { code?: unknown } } | null)?.error?.code;
+    if (code !== undefined) failures.note(name, `rpc_${String(code)}`);
+    return payload;
+  } catch (error) {
+    failures.note(name, error instanceof Error ? error.name : "error");
+    return null;
+  }
+}
+
 /** Where a control-bus seek landed, as the window measured it. */
 export interface SeekLanding {
   ok: boolean;

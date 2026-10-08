@@ -209,6 +209,40 @@ def layers_to_points(layers: dict[str, np.ndarray], thresh: float = 0.12):
     )
 
 
+def preview_points(cloud: tuple, shape_f_t: tuple[int, int], per_layer: int) -> tuple[list[dict], dict[str, int]]:
+    """Library preview selection over a :func:`layers_to_points` cloud.
+
+    Per layer: the ``per_layer`` strongest points (stable order), t and f
+    normalized by bin / (n - 1) of ``shape_f_t``, z = layer index / 3, v
+    min-max scaled within the selected points. Returns (points, counts) where
+    counts is the source point count per layer. Public so every layer method
+    shares one selection (import it; a copy would fork the preview silently).
+    """
+    x, yy, _z, _rgba, vals, lids = cloud
+    nf, nt = shape_f_t
+    points, counts = [], {}
+    for li, name in enumerate(LAYER_NAMES):
+        mask = lids == li
+        tx, fy, vv = x[mask], yy[mask], vals[mask]
+        counts[name] = int(mask.sum())
+        order = np.argsort(-vv, kind="stable")[:per_layer]
+        if len(order):
+            sel = vv[order]
+            lo, hi = float(sel.min()), float(sel.max())
+        for i in order:
+            v = 1.0 if hi <= lo else (float(vv[i]) - lo) / (hi - lo)
+            points.append(
+                {
+                    "t": round(float(tx[i]) / max(nt - 1, 1), 5),
+                    "f": round(float(fy[i]) / max(nf - 1, 1), 5),
+                    "z": li / 3.0,
+                    "v": round(v, 5),
+                    "layer": name,
+                }
+            )
+    return points, counts
+
+
 def layer_score(layers: dict[str, np.ndarray]) -> float:
     """Weighted mean of the four layers (informational; not inv_hdr)."""
     return float(
@@ -247,26 +281,9 @@ def library_cube(
     x, yy, _z, _rgba, vals, lids = cloud
     nf, nt = next(iter(layers.values())).shape
     bin_s = st * params.hop / sample_rate
-    points, stats, counts = [], {}, {}
-    for li, name in enumerate(LAYER_NAMES):
-        mask = lids == li
-        tx, fy, vv = x[mask], yy[mask], vals[mask]
-        counts[name] = int(mask.sum())
-        order = np.argsort(-vv, kind="stable")[: params.per_layer]
-        if len(order):
-            sel = vv[order]
-            lo, hi = float(sel.min()), float(sel.max())
-        for i in order:
-            v = 1.0 if hi <= lo else (float(vv[i]) - lo) / (hi - lo)
-            points.append(
-                {
-                    "t": round(float(tx[i]) / max(nt - 1, 1), 5),
-                    "f": round(float(fy[i]) / max(nf - 1, 1), 5),
-                    "z": li / 3.0,
-                    "v": round(v, 5),
-                    "layer": name,
-                }
-            )
+    points, counts = preview_points(cloud, (nf, nt), params.per_layer)
+    stats = {}
+    for name in LAYER_NAMES:
         mat = full[name]
         stats[name] = {
             "mean": float(mat.mean()),

@@ -1,9 +1,7 @@
-import { profileForPersona } from "./profiles";
 import { glyphBadge } from "./glyph";
 import type { LibraryCatalog, ModelCubes } from "./library-assets";
 import { emptyStrip } from "./livestrip";
 import { renderTransport } from "./playback";
-import { drawSpectrogram } from "./signal";
 import { SnapAnimator, WheelGesture, stepIndex, type SlideKey } from "./snap";
 import type { ViewportCard, ViewportDocument } from "./validate";
 
@@ -171,7 +169,6 @@ export function renderBoard(board: HTMLElement, empty: HTMLElement, document: Vi
         article.classList.add("profile-tile");
         article.dataset.personaId = String(card.body.personaId ?? "");
         article.dataset.voiceModel = String(card.body.voiceModel ?? "");
-        article.dataset.cubeJson = typeof card.body.cubeJsonUrl === "string" ? card.body.cubeJsonUrl : "";
       }
       if (card.kind === "EngineStatus") {
         article.classList.add("engine-source");
@@ -696,8 +693,6 @@ function voiceProfileBack(card: ViewportCard): HTMLElement {
     ["Accent", String(body.accent ?? "")],
     ["Traits", String(body.traits ?? "")],
     ["Refs", Array.isArray(body.refs) ? body.refs.map((item) => String(item)).join(", ") : ""],
-    ["2D spectrogram", String(body.spectrogram2d ?? "")],
-    ["3D spectrogram", String(body.spectrogram3d ?? "none")],
   ];
   const list = window.document.createElement("dl");
   list.className = "profile-schema";
@@ -710,25 +705,14 @@ function voiceProfileBack(card: ViewportCard): HTMLElement {
     list.append(term, detail);
   }
   wrap.append(list);
+  // Persona config, not audio evidence (H): no spectrogram area and no cube
+  // link. The voice model row is the honest relation; that engine's own
+  // clips and cubes are on the Library slide.
+  const none = paragraph("No audio of this persona yet");
+  none.dataset.field = "no-audio";
+  wrap.append(none);
   wrap.append(paragraph(String(body.disclaimer ?? "")));
-  const canvas = window.document.createElement("canvas");
-  canvas.dataset.canvas = "profile-spec";
-  canvas.dataset.personaId = String(body.personaId ?? "");
-  canvas.dataset.voiceModel = String(body.voiceModel ?? "");
-  wrap.append(canvas);
-  const open = button(body.spectrogram3d === "library-cube-hook" ? "Open 3D cube" : "No library cube");
-  open.dataset.action = "open-cube";
-  open.dataset.cubeJson = typeof body.cubeJsonUrl === "string" ? body.cubeJsonUrl : "";
-  open.disabled = body.spectrogram3d !== "library-cube-hook";
-  wrap.append(open);
   return wrap;
-}
-
-export function paintProfileCanvases(): void {
-  document.querySelectorAll<HTMLCanvasElement>('[data-canvas="profile-spec"]').forEach((canvas) => {
-    const preview = profileForPersona(canvas.dataset.personaId || "alice", canvas.dataset.voiceModel || "kokoro_onnx");
-    drawSpectrogram(canvas, preview.before, preview.beforeTitle);
-  });
 }
 
 function renameBlock(card: ViewportCard): HTMLElement {

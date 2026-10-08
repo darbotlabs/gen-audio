@@ -175,7 +175,7 @@ function validateBody(id: string, kind: string, body: Record<string, unknown>): 
     for (const reference of body.refs) {
       if (!boundedString(reference, 1, 80)) return `card ${id} ref is invalid`;
     }
-    if (body.spectrogram2d !== "browser-profile-map") return `card ${id} spectrogram2d must be a browser profile map`;
+    if (body.spectrogram2d !== "none") return `card ${id} spectrogram2d must be none (a persona has no audio)`;
     if (body.spectrogram3d !== "none" && body.spectrogram3d !== "library-cube-hook" && body.spectrogram3d !== "fixture-cube") {
       return `card ${id} spectrogram3d is not a known hook`;
     }

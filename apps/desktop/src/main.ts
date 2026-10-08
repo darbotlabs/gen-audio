@@ -14,7 +14,7 @@ import {
 import { isClipPlaying, seekActiveFraction, seekClipFraction, setCubeClockClip } from "./playback";
 import { applyClipNames, harvestNames } from "./library-meta";
 import { bindFloatingPlayback, pauseClip, playClip, releaseAllSeekBlobs, releaseDetachedTransports, seekClipOutcome, setUserPlayReporter } from "./playback";
-import { controlPlayOrigin, mcpRequestBody, seekReportControl, userPlayControl } from "./play-control";
+import { controlPlayOrigin, McpFailureCounter, postMcp, seekReportControl, userPlayControl } from "./play-control";
 import { fixturesRequested, selectViewport } from "./viewport-source";
 import { glyphBadge } from "./glyph";
 import { loadLibraryCatalog, type LibraryCatalog } from "./library-assets";
@@ -29,7 +29,6 @@ import {
   isSnapping,
   moveFocus,
   moveSlide,
-  paintProfileCanvases,
   renderBoard,
   setCardFlip,
   showRejected,
@@ -97,7 +96,6 @@ function show(documentIn: unknown): void {
   // D: tiles this render removed give back their cached seek blob URLs.
   releaseDetachedTransports();
   paintProfile();
-  paintProfileCanvases();
   bindCubeCanvas();
   bindRename();
   void harvestLibrary();
@@ -342,12 +340,6 @@ function bindRename(): void {
       });
     });
   });
-  board.querySelectorAll<HTMLButtonElement>("[data-action='open-cube']").forEach((node) => {
-    node.addEventListener("click", (event) => {
-      event.stopPropagation();
-      void openCube(node.dataset.cubeJson || "", "profile");
-    });
-  });
 }
 
 async function harvestLibrary(): Promise<void> {
@@ -584,22 +576,17 @@ function applyFlipcard(profile: Record<string, unknown>): void {
   setCardFlip(board, `profile-${personaId}`, true);
 }
 
+// Window->MCP failures are counted, not swallowed. No MCP-readable status
+// surface exists on this branch for the window to report into (viewport_get
+// is PR #4), so the counts live on <html data-mcp-failures> and console.warn.
+const mcpFailures = new McpFailureCounter(undefined, (snapshot) => {
+  document.documentElement.dataset.mcpFailures = JSON.stringify(snapshot);
+});
+
 async function mcpCall(name: string, args: Record<string, unknown>): Promise<unknown | null> {
-  try {
-    const response = await fetch("http://127.0.0.1:8765/mcp", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      // The exact body is the desktop half of the UI/agent contract
-      // (schemas/examples/control/*.json, tested from both sides).
-      body: JSON.stringify(mcpRequestBody(name, args)),
-    });
-    if (!response.ok) return null;
-    const payload: unknown = await response.json();
-    noteControlSeq(payload);
-    return payload;
-  } catch {
-    return null;
-  }
+  const payload = await postMcp(fetch, "http://127.0.0.1:8765/mcp", name, args, mcpFailures);
+  if (payload !== null) noteControlSeq(payload);
+  return payload;
 }
 
 function noteControlSeq(payload: unknown): void {

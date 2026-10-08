@@ -68,7 +68,7 @@ pub const CLAIMS: &[&str] = &[
     "library_cube",
     "library_spectrogram",
     "fixture_tone",
-    "profile_preview",
+    "persona_config",
     "reference_only",
     "not_a_podcast_render",
     "engine_unavailable",
