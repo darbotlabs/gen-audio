@@ -333,7 +333,9 @@ pub fn voice_profile_value(id: &str) -> Option<Value> {
     let person = persona(id)?;
     let voice = voice_models().iter().find(|item| item.id == "kokoro_onnx");
     let voice_label = voice.map(|item| item.label).unwrap_or("kokoro-onnx");
-    let mut profile = json!({
+    // Persona config only (H): no spectrogram, no cube hook, no audio claim.
+    // Its honest link is voiceModel; that engine's own clips and cubes link from there.
+    Some(json!({
         "agentName": person.name,
         "personaId": person.id,
         "voiceModel": "kokoro_onnx",
@@ -344,26 +346,15 @@ pub fn voice_profile_value(id: &str) -> Option<Value> {
         "accent": person.accent,
         "traits": person.traits,
         "refs": person.refs,
-        "spectrogram2d": "browser-profile-map",
-        "spectrogram3d": if matches!(person.id, "alice" | "optimus") { "library-cube-hook" } else { "none" },
+        "spectrogram2d": "none",
+        "spectrogram3d": "none",
         "notPodcast": true,
         "synthesizedSpeech": false,
         "disclaimer": format!(
-            "Profile for persona {}. Voice model is {}. Not a podcast render and not a Python spectrogram.",
+            "Persona config for {} on voice model {}. No audio of this persona yet; not a podcast render.",
             person.name, voice_label
         )
-    });
-    // Omit cubeJsonUrl when there is no cube hook. A null value fails the
-    // VoiceProfile schema (type string) and the Rust checker.
-    let cube = match person.id {
-        "alice" => Some("/library/library_kokoro_onnx_cube3d.json"),
-        "optimus" => Some("/library/library_cube_explainer_kokoro_onnx_cube3d.json"),
-        _ => None,
-    };
-    if let (Some(url), Some(map)) = (cube, profile.as_object_mut()) {
-        map.insert("cubeJsonUrl".into(), Value::String(url.into()));
-    }
-    Some(profile)
+    }))
 }
 
 #[cfg(test)]
@@ -378,11 +369,8 @@ mod tests {
         assert_eq!(profile["notPodcast"], true);
         assert_eq!(profile["synthesizedSpeech"], false);
         assert!(profile.get("wavUrl").is_none());
-        assert_eq!(profile["spectrogram3d"], "library-cube-hook");
-        assert_eq!(
-            profile["cubeJsonUrl"],
-            "/library/library_cube_explainer_kokoro_onnx_cube3d.json"
-        );
+        assert_eq!(profile["spectrogram3d"], "none");
+        assert!(profile.get("cubeJsonUrl").is_none());
     }
 
     #[test]
@@ -411,13 +399,13 @@ mod tests {
     }
 
     #[test]
-    fn profiles_omit_cube_url_instead_of_null() {
+    fn profiles_are_persona_config_without_spectrogram_or_cube() {
         for person in personas() {
             let profile = voice_profile_value(person.id).expect("profile");
-            match profile.get("cubeJsonUrl") {
-                None => assert_ne!(profile["spectrogram3d"], "library-cube-hook", "{}", person.id),
-                Some(url) => assert!(url.is_string(), "{} cubeJsonUrl must be a string", person.id),
-            }
+            assert!(profile.get("cubeJsonUrl").is_none(), "{}", person.id);
+            assert_eq!(profile["spectrogram2d"], "none", "{}", person.id);
+            assert_eq!(profile["spectrogram3d"], "none", "{}", person.id);
+            assert!(profile["disclaimer"].as_str().unwrap_or_default().contains("No audio of this persona yet"), "{}", person.id);
         }
     }
 

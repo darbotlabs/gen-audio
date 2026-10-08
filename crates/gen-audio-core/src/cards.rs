@@ -249,7 +249,7 @@ fn validate_voice_profile(id: &str, obj: &serde_json::Map<String, Value>) -> Res
     for reference in refs {
         expect_string(Some(reference), "refs", 1, 80)?;
     }
-    expect_const(obj.get("spectrogram2d"), "browser-profile-map", "spectrogram2d")?;
+    expect_const(obj.get("spectrogram2d"), "none", "spectrogram2d")?;
     let spatial = expect_string(obj.get("spectrogram3d"), "spectrogram3d", 1, 40)?;
     if !matches!(spatial.as_str(), "none" | "library-cube-hook" | "fixture-cube") {
         return Err(format!("card {id} spectrogram3d is not a known hook"));

@@ -327,8 +327,7 @@
         "body": {
           "accent": "General American",
           "agentName": "Optimus Timelarp",
-          "cubeJsonUrl": "/library/library_cube_explainer_kokoro_onnx_cube3d.json",
-          "disclaimer": "Browser profile map for persona Optimus Timelarp with library cube spatial analysis. Not a podcast render.",
+          "disclaimer": "Persona config for Optimus Timelarp on voice model kokoro-onnx. No audio of this persona yet; not a podcast render.",
           "domain": "Product / A-E stamps",
           "notPodcast": true,
           "personaId": "optimus",
@@ -339,8 +338,8 @@
             "cube:library_cube_explainer",
             "clip:lib-cube-explainer"
           ],
-          "spectrogram2d": "browser-profile-map",
-          "spectrogram3d": "library-cube-hook",
+          "spectrogram2d": "none",
+          "spectrogram3d": "none",
           "synthesizedSpeech": false,
           "tone": "assertive",
           "traits": "Decisive, honest, screenshot-proof. AP-7 hard kill. Not a TTS model id.",
@@ -360,7 +359,7 @@
       },
       "honesty": {
         "claims": [
-          "profile_preview",
+          "persona_config",
           "not_a_podcast_render"
         ],
         "fixture": false,
@@ -374,7 +373,7 @@
       },
       "relations": {
         "bound_to": [
-          "ga:voice_profile:wv66j2iqbp6l2fmu25pf7zcvxi"
+          "ga:voice_profile:nkt65vsnllmb3veaei3vhua25e"
         ]
       },
       "schema_version": "1.0.0",
@@ -642,7 +641,7 @@
         "body": {
           "accent": "General American",
           "agentName": "Khortana",
-          "disclaimer": "Browser profile map for persona Khortana. Not a podcast render.",
+          "disclaimer": "Persona config for Khortana on voice model kokoro-onnx. No audio of this persona yet; not a podcast render.",
           "domain": "Product critique",
           "notPodcast": true,
           "personaId": "khortana",
@@ -650,7 +649,7 @@
           "refs": [
             "persona:khortana"
           ],
-          "spectrogram2d": "browser-profile-map",
+          "spectrogram2d": "none",
           "spectrogram3d": "none",
           "tone": "bright",
           "traits": "Higher placement and a quicker glide. Not a TTS model id.",
@@ -670,7 +669,7 @@
       },
       "honesty": {
         "claims": [
-          "profile_preview",
+          "persona_config",
           "not_a_podcast_render"
         ],
         "fixture": false,
@@ -1159,7 +1158,7 @@
         "body": {
           "accent": "General American",
           "agentName": "Rocky",
-          "disclaimer": "Browser profile map for persona Rocky. Not a podcast render.",
+          "disclaimer": "Persona config for Rocky on voice model kokoro-onnx. No audio of this persona yet; not a podcast render.",
           "domain": "Studio banter",
           "notPodcast": true,
           "personaId": "rocky",
@@ -1167,7 +1166,7 @@
           "refs": [
             "persona:rocky"
           ],
-          "spectrogram2d": "browser-profile-map",
+          "spectrogram2d": "none",
           "spectrogram3d": "none",
           "tone": "gravel",
           "traits": "Low pitch and a narrow band. Not a TTS model id.",
@@ -1187,7 +1186,7 @@
       },
       "honesty": {
         "claims": [
-          "profile_preview",
+          "persona_config",
           "not_a_podcast_render"
         ],
         "fixture": false,
@@ -1255,8 +1254,7 @@
         "body": {
           "accent": "General American",
           "agentName": "Alice",
-          "cubeJsonUrl": "/library/library_kokoro_onnx_cube3d.json",
-          "disclaimer": "Browser profile map for persona Alice on kokoro-onnx. The cube is the library clip, not a recording of this persona. Not a podcast render.",
+          "disclaimer": "Persona config for Alice on voice model kokoro-onnx. No audio of this persona yet; not a podcast render.",
           "domain": "SDK onboarding",
           "notPodcast": true,
           "personaId": "alice",
@@ -1265,8 +1263,8 @@
             "kokoro-pack:af_heart",
             "persona:alice"
           ],
-          "spectrogram2d": "browser-profile-map",
-          "spectrogram3d": "library-cube-hook",
+          "spectrogram2d": "none",
+          "spectrogram3d": "none",
           "tone": "warm",
           "traits": "Persona Alice is the agent name. Kokoro pack id af_heart is a reference on this profile, not the Voice selector.",
           "voiceModel": "kokoro_onnx"
@@ -1285,7 +1283,7 @@
       },
       "honesty": {
         "claims": [
-          "profile_preview",
+          "persona_config",
           "not_a_podcast_render"
         ],
         "fixture": false,
@@ -1353,7 +1351,7 @@
         "body": {
           "accent": "General American",
           "agentName": "Anton",
-          "disclaimer": "Browser profile map for persona Anton. Not a podcast render.",
+          "disclaimer": "Persona config for Anton on voice model kokoro-onnx. No audio of this persona yet; not a podcast render.",
           "domain": "Desktop app and SDK layout",
           "notPodcast": true,
           "personaId": "anton",
@@ -1361,7 +1359,7 @@
           "refs": [
             "persona:anton"
           ],
-          "spectrogram2d": "browser-profile-map",
+          "spectrogram2d": "none",
           "spectrogram3d": "none",
           "tone": "measured",
           "traits": "Low-mid pitch, even pace, short pauses. Not a connector model.",
@@ -1381,7 +1379,7 @@
       },
       "honesty": {
         "claims": [
-          "profile_preview",
+          "persona_config",
           "not_a_podcast_render"
         ],
         "fixture": false,
@@ -3498,7 +3496,7 @@
       "body": {
         "accent": "General American",
         "agentName": "Anton",
-        "disclaimer": "Browser profile map for persona Anton. Not a podcast render.",
+        "disclaimer": "Persona config for Anton on voice model kokoro-onnx. No audio of this persona yet; not a podcast render.",
         "domain": "Desktop app and SDK layout",
         "notPodcast": true,
         "personaId": "anton",
@@ -3506,7 +3504,7 @@
         "refs": [
           "persona:anton"
         ],
-        "spectrogram2d": "browser-profile-map",
+        "spectrogram2d": "none",
         "spectrogram3d": "none",
         "tone": "measured",
         "traits": "Low-mid pitch, even pace, short pauses. Not a connector model.",
@@ -3530,7 +3528,7 @@
       },
       "honesty": {
         "claims": [
-          "profile_preview",
+          "persona_config",
           "not_a_podcast_render"
         ],
         "fixture": false,
@@ -3554,8 +3552,7 @@
       "body": {
         "accent": "General American",
         "agentName": "Alice",
-        "cubeJsonUrl": "/library/library_kokoro_onnx_cube3d.json",
-        "disclaimer": "Browser profile map for persona Alice on kokoro-onnx. The cube is the library clip, not a recording of this persona. Not a podcast render.",
+        "disclaimer": "Persona config for Alice on voice model kokoro-onnx. No audio of this persona yet; not a podcast render.",
         "domain": "SDK onboarding",
         "notPodcast": true,
         "personaId": "alice",
@@ -3564,8 +3561,8 @@
           "kokoro-pack:af_heart",
           "persona:alice"
         ],
-        "spectrogram2d": "browser-profile-map",
-        "spectrogram3d": "library-cube-hook",
+        "spectrogram2d": "none",
+        "spectrogram3d": "none",
         "tone": "warm",
         "traits": "Persona Alice is the agent name. Kokoro pack id af_heart is a reference on this profile, not the Voice selector.",
         "voiceModel": "kokoro_onnx"
@@ -3589,7 +3586,7 @@
       },
       "honesty": {
         "claims": [
-          "profile_preview",
+          "persona_config",
           "not_a_podcast_render"
         ],
         "fixture": false,
@@ -3602,11 +3599,7 @@
       "provenance": {
         "generator": "VoiceProfile (v0)"
       },
-      "relations": {
-        "bound_to": [
-          "ga:cube_ihdr:ztt6tb4idvogs5hkl6qpboclk4"
-        ]
-      },
+      "relations": {},
       "schema_version": "1.0.0",
       "src": [],
       "status": "ok",
@@ -3616,8 +3609,80 @@
     {
       "body": {
         "accent": "General American",
+        "agentName": "Optimus Timelarp",
+        "disclaimer": "Persona config for Optimus Timelarp on voice model kokoro-onnx. No audio of this persona yet; not a podcast render.",
+        "domain": "Product / A-E stamps",
+        "notPodcast": true,
+        "personaId": "optimus",
+        "purpose": "Gate and harden product stamps",
+        "refs": [
+          "persona:optimus",
+          "tts:kokoro_onnx",
+          "cube:library_cube_explainer",
+          "clip:lib-cube-explainer"
+        ],
+        "spectrogram2d": "none",
+        "spectrogram3d": "none",
+        "synthesizedSpeech": false,
+        "tone": "assertive",
+        "traits": "Decisive, honest, screenshot-proof. AP-7 hard kill. Not a TTS model id.",
+        "voiceLabel": "kokoro-onnx",
+        "voiceModel": "kokoro_onnx"
+      },
+      "display": {
+        "glyph": "⡪⢧",
+        "title": "Optimus Timelarp"
+      },
+      "fields": {
+        "accent": "General American",
+        "domain": "Product / A-E stamps",
+        "persona_id": "optimus",
+        "purpose": "Gate and harden product stamps",
+        "refs": [
+          "persona:optimus",
+          "tts:kokoro_onnx",
+          "cube:library_cube_explainer",
+          "clip:lib-cube-explainer"
+        ],
+        "tone": "assertive",
+        "traits": "Decisive, honest, screenshot-proof. AP-7 hard kill. Not a TTS model id.",
+        "voice_model": "ga:voice_model:i4uzucqkja4nawtxlnu2m3vcta"
+      },
+      "honesty": {
+        "claims": [
+          "persona_config",
+          "not_a_podcast_render"
+        ],
+        "fixture": false,
+        "not_podcast": true,
+        "synthesized_speech": false
+      },
+      "kind": "voice_profile",
+      "legacy_id": "optimus",
+      "media": [
+        {
+          "bytes": 720,
+          "mime": "application/json",
+          "path": "voice_profile.optimus.json",
+          "role": "profile_json",
+          "sha256": "55adbb252a3324057fe0461fca212c4e8d86f448b1ac0b5ceaf1d2cb48e94bba"
+        }
+      ],
+      "provenance": {
+        "generator": "VoiceProfile (v0)"
+      },
+      "relations": {},
+      "schema_version": "1.0.0",
+      "src": [],
+      "status": "ok",
+      "uid": "ga:voice_profile:nkt65vsnllmb3veaei3vhua25e",
+      "uid_scheme": "ga1"
+    },
+    {
+      "body": {
+        "accent": "General American",
         "agentName": "Khortana",
-        "disclaimer": "Browser profile map for persona Khortana. Not a podcast render.",
+        "disclaimer": "Persona config for Khortana on voice model kokoro-onnx. No audio of this persona yet; not a podcast render.",
         "domain": "Product critique",
         "notPodcast": true,
         "personaId": "khortana",
@@ -3625,7 +3690,7 @@
         "refs": [
           "persona:khortana"
         ],
-        "spectrogram2d": "browser-profile-map",
+        "spectrogram2d": "none",
         "spectrogram3d": "none",
         "tone": "bright",
         "traits": "Higher placement and a quicker glide. Not a TTS model id.",
@@ -3649,7 +3714,7 @@
       },
       "honesty": {
         "claims": [
-          "profile_preview",
+          "persona_config",
           "not_a_podcast_render"
         ],
         "fixture": false,
@@ -3673,7 +3738,7 @@
       "body": {
         "accent": "General American",
         "agentName": "Rocky",
-        "disclaimer": "Browser profile map for persona Rocky. Not a podcast render.",
+        "disclaimer": "Persona config for Rocky on voice model kokoro-onnx. No audio of this persona yet; not a podcast render.",
         "domain": "Studio banter",
         "notPodcast": true,
         "personaId": "rocky",
@@ -3681,7 +3746,7 @@
         "refs": [
           "persona:rocky"
         ],
-        "spectrogram2d": "browser-profile-map",
+        "spectrogram2d": "none",
         "spectrogram3d": "none",
         "tone": "gravel",
         "traits": "Low pitch and a narrow band. Not a TTS model id.",
@@ -3705,7 +3770,7 @@
       },
       "honesty": {
         "claims": [
-          "profile_preview",
+          "persona_config",
           "not_a_podcast_render"
         ],
         "fixture": false,
@@ -3723,83 +3788,6 @@
       "src": [],
       "status": "ok",
       "uid": "ga:voice_profile:vmt6ix4lzljitv3nwziaw6rtpa",
-      "uid_scheme": "ga1"
-    },
-    {
-      "body": {
-        "accent": "General American",
-        "agentName": "Optimus Timelarp",
-        "cubeJsonUrl": "/library/library_cube_explainer_kokoro_onnx_cube3d.json",
-        "disclaimer": "Profile for persona Optimus Timelarp. Voice model is kokoro-onnx. Cube refs are library spatial analysis, not a podcast render of this persona.",
-        "domain": "Product / A-E stamps",
-        "notPodcast": true,
-        "personaId": "optimus",
-        "purpose": "Gate and harden product stamps",
-        "refs": [
-          "persona:optimus",
-          "tts:kokoro_onnx",
-          "cube:library_cube_explainer",
-          "clip:lib-cube-explainer"
-        ],
-        "spectrogram2d": "browser-profile-map",
-        "spectrogram3d": "library-cube-hook",
-        "synthesizedSpeech": false,
-        "tone": "assertive",
-        "traits": "Decisive, honest, screenshot-proof. AP-7 hard kill. Not a TTS model id.",
-        "voiceLabel": "kokoro-onnx",
-        "voiceModel": "kokoro_onnx"
-      },
-      "display": {
-        "glyph": "⢵⡽",
-        "title": "Optimus Timelarp"
-      },
-      "fields": {
-        "accent": "General American",
-        "domain": "Product / A-E stamps",
-        "persona_id": "optimus",
-        "purpose": "Gate and harden product stamps",
-        "refs": [
-          "persona:optimus",
-          "tts:kokoro_onnx",
-          "cube:library_cube_explainer",
-          "clip:lib-cube-explainer"
-        ],
-        "tone": "assertive",
-        "traits": "Decisive, honest, screenshot-proof. AP-7 hard kill. Not a TTS model id.",
-        "voice_model": "ga:voice_model:i4uzucqkja4nawtxlnu2m3vcta"
-      },
-      "honesty": {
-        "claims": [
-          "profile_preview",
-          "not_a_podcast_render"
-        ],
-        "fixture": false,
-        "not_podcast": true,
-        "synthesized_speech": false
-      },
-      "kind": "voice_profile",
-      "legacy_id": "optimus",
-      "media": [
-        {
-          "bytes": 852,
-          "mime": "application/json",
-          "path": "voice_profile.optimus.json",
-          "role": "profile_json",
-          "sha256": "ced378356f321af11233b23820b4fbfa9ba214f6266c3ae4f96645864c10e2db"
-        }
-      ],
-      "provenance": {
-        "generator": "VoiceProfile (v0)"
-      },
-      "relations": {
-        "bound_to": [
-          "ga:cube_ihdr:khcfdwmaogog2j6rjd357ylbqy"
-        ]
-      },
-      "schema_version": "1.0.0",
-      "src": [],
-      "status": "ok",
-      "uid": "ga:voice_profile:wv66j2iqbp6l2fmu25pf7zcvxi",
       "uid_scheme": "ga1"
     }
   ],
@@ -3874,7 +3862,7 @@
     "voice_profile:alice": "ga:voice_profile:kzdi52n5cdmrz42mligtbouwlu",
     "voice_profile:anton": "ga:voice_profile:crpz7gauggx6yj3zhop36bk32m",
     "voice_profile:khortana": "ga:voice_profile:olm6jnzapingrpr3vc2zcdqaqa",
-    "voice_profile:optimus": "ga:voice_profile:wv66j2iqbp6l2fmu25pf7zcvxi",
+    "voice_profile:optimus": "ga:voice_profile:nkt65vsnllmb3veaei3vhua25e",
     "voice_profile:rocky": "ga:voice_profile:vmt6ix4lzljitv3nwziaw6rtpa"
   },
   "schema_version": "1.0.0",

@@ -166,7 +166,7 @@
       "body": {
         "accent": "General American",
         "agentName": "Anton",
-        "disclaimer": "Browser profile map for persona Anton. Not a podcast render.",
+        "disclaimer": "Persona config for Anton on voice model kokoro-onnx. No audio of this persona yet; not a podcast render.",
         "domain": "Desktop app and SDK layout",
         "notPodcast": true,
         "personaId": "anton",
@@ -174,7 +174,7 @@
         "refs": [
           "persona:anton"
         ],
-        "spectrogram2d": "browser-profile-map",
+        "spectrogram2d": "none",
         "spectrogram3d": "none",
         "tone": "measured",
         "traits": "Low-mid pitch, even pace, short pauses. Not a connector model.",
@@ -189,8 +189,7 @@
       "body": {
         "accent": "General American",
         "agentName": "Alice",
-        "cubeJsonUrl": "/library/library_kokoro_onnx_cube3d.json",
-        "disclaimer": "Browser profile map for persona Alice on kokoro-onnx. The cube is the library clip, not a recording of this persona. Not a podcast render.",
+        "disclaimer": "Persona config for Alice on voice model kokoro-onnx. No audio of this persona yet; not a podcast render.",
         "domain": "SDK onboarding",
         "notPodcast": true,
         "personaId": "alice",
@@ -199,8 +198,8 @@
           "kokoro-pack:af_heart",
           "persona:alice"
         ],
-        "spectrogram2d": "browser-profile-map",
-        "spectrogram3d": "library-cube-hook",
+        "spectrogram2d": "none",
+        "spectrogram3d": "none",
         "tone": "warm",
         "traits": "Persona Alice is the agent name. Kokoro pack id af_heart is a reference on this profile, not the Voice selector.",
         "voiceModel": "kokoro_onnx"
@@ -214,7 +213,7 @@
       "body": {
         "accent": "General American",
         "agentName": "Khortana",
-        "disclaimer": "Browser profile map for persona Khortana. Not a podcast render.",
+        "disclaimer": "Persona config for Khortana on voice model kokoro-onnx. No audio of this persona yet; not a podcast render.",
         "domain": "Product critique",
         "notPodcast": true,
         "personaId": "khortana",
@@ -222,7 +221,7 @@
         "refs": [
           "persona:khortana"
         ],
-        "spectrogram2d": "browser-profile-map",
+        "spectrogram2d": "none",
         "spectrogram3d": "none",
         "tone": "bright",
         "traits": "Higher placement and a quicker glide. Not a TTS model id.",
@@ -237,7 +236,7 @@
       "body": {
         "accent": "General American",
         "agentName": "Rocky",
-        "disclaimer": "Browser profile map for persona Rocky. Not a podcast render.",
+        "disclaimer": "Persona config for Rocky on voice model kokoro-onnx. No audio of this persona yet; not a podcast render.",
         "domain": "Studio banter",
         "notPodcast": true,
         "personaId": "rocky",
@@ -245,7 +244,7 @@
         "refs": [
           "persona:rocky"
         ],
-        "spectrogram2d": "browser-profile-map",
+        "spectrogram2d": "none",
         "spectrogram3d": "none",
         "tone": "gravel",
         "traits": "Low pitch and a narrow band. Not a TTS model id.",
@@ -509,8 +508,7 @@
       "body": {
         "accent": "General American",
         "agentName": "Optimus Timelarp",
-        "cubeJsonUrl": "/library/library_cube_explainer_kokoro_onnx_cube3d.json",
-        "disclaimer": "Browser profile map for persona Optimus Timelarp with library cube spatial analysis. Not a podcast render.",
+        "disclaimer": "Persona config for Optimus Timelarp on voice model kokoro-onnx. No audio of this persona yet; not a podcast render.",
         "domain": "Product / A-E stamps",
         "notPodcast": true,
         "personaId": "optimus",
@@ -521,8 +519,8 @@
           "cube:library_cube_explainer",
           "clip:lib-cube-explainer"
         ],
-        "spectrogram2d": "browser-profile-map",
-        "spectrogram3d": "library-cube-hook",
+        "spectrogram2d": "none",
+        "spectrogram3d": "none",
         "synthesizedSpeech": false,
         "tone": "assertive",
         "traits": "Decisive, honest, screenshot-proof. AP-7 hard kill. Not a TTS model id.",

@@ -76,7 +76,7 @@
     "voice_profile:alice": "ga:voice_profile:kzdi52n5cdmrz42mligtbouwlu",
     "voice_profile:anton": "ga:voice_profile:crpz7gauggx6yj3zhop36bk32m",
     "voice_profile:khortana": "ga:voice_profile:olm6jnzapingrpr3vc2zcdqaqa",
-    "voice_profile:optimus": "ga:voice_profile:wv66j2iqbp6l2fmu25pf7zcvxi",
+    "voice_profile:optimus": "ga:voice_profile:nkt65vsnllmb3veaei3vhua25e",
     "voice_profile:rocky": "ga:voice_profile:vmt6ix4lzljitv3nwziaw6rtpa"
   },
   "note": "Pinned uid of every migrated v0 fixture. Regenerate with `cargo run -p gen-audio-core --example build_assets`.",

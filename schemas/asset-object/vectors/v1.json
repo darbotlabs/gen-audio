@@ -507,8 +507,7 @@
         "body": {
           "accent": "General American",
           "agentName": "Optimus Timelarp",
-          "cubeJsonUrl": "/library/library_cube_explainer_kokoro_onnx_cube3d.json",
-          "disclaimer": "Profile for persona Optimus Timelarp. Voice model is kokoro-onnx. Cube refs are library spatial analysis, not a podcast render of this persona.",
+          "disclaimer": "Persona config for Optimus Timelarp on voice model kokoro-onnx. No audio of this persona yet; not a podcast render.",
           "domain": "Product / A-E stamps",
           "notPodcast": true,
           "personaId": "optimus",
@@ -519,8 +518,8 @@
             "cube:library_cube_explainer",
             "clip:lib-cube-explainer"
           ],
-          "spectrogram2d": "browser-profile-map",
-          "spectrogram3d": "library-cube-hook",
+          "spectrogram2d": "none",
+          "spectrogram3d": "none",
           "synthesizedSpeech": false,
           "tone": "assertive",
           "traits": "Decisive, honest, screenshot-proof. AP-7 hard kill. Not a TTS model id.",
@@ -528,7 +527,7 @@
           "voiceModel": "kokoro_onnx"
         },
         "display": {
-          "glyph": "⢵⡽",
+          "glyph": "⡪⢧",
           "title": "Optimus Timelarp"
         },
         "fields": {
@@ -548,7 +547,7 @@
         },
         "honesty": {
           "claims": [
-            "profile_preview",
+            "persona_config",
             "not_a_podcast_render"
           ],
           "fixture": false,
@@ -559,25 +558,21 @@
         "legacy_id": "optimus",
         "media": [
           {
-            "bytes": 852,
+            "bytes": 720,
             "mime": "application/json",
             "path": "voice_profile.optimus.json",
             "role": "profile_json",
-            "sha256": "ced378356f321af11233b23820b4fbfa9ba214f6266c3ae4f96645864c10e2db"
+            "sha256": "55adbb252a3324057fe0461fca212c4e8d86f448b1ac0b5ceaf1d2cb48e94bba"
           }
         ],
         "provenance": {
           "generator": "VoiceProfile (v0)"
         },
-        "relations": {
-          "bound_to": [
-            "ga:cube_ihdr:khcfdwmaogog2j6rjd357ylbqy"
-          ]
-        },
+        "relations": {},
         "schema_version": "1.0.0",
         "src": [],
         "status": "ok",
-        "uid": "ga:voice_profile:wv66j2iqbp6l2fmu25pf7zcvxi",
+        "uid": "ga:voice_profile:nkt65vsnllmb3veaei3vhua25e",
         "uid_scheme": "ga1"
       },
       "error": "profile_claims_speech",
@@ -589,8 +584,7 @@
         "body": {
           "accent": "General American",
           "agentName": "Optimus Timelarp",
-          "cubeJsonUrl": "/library/library_cube_explainer_kokoro_onnx_cube3d.json",
-          "disclaimer": "Profile for persona Optimus Timelarp. Voice model is kokoro-onnx. Cube refs are library spatial analysis, not a podcast render of this persona.",
+          "disclaimer": "Persona config for Optimus Timelarp on voice model kokoro-onnx. No audio of this persona yet; not a podcast render.",
           "domain": "Product / A-E stamps",
           "notPodcast": true,
           "personaId": "optimus",
@@ -601,8 +595,8 @@
             "cube:library_cube_explainer",
             "clip:lib-cube-explainer"
           ],
-          "spectrogram2d": "browser-profile-map",
-          "spectrogram3d": "library-cube-hook",
+          "spectrogram2d": "none",
+          "spectrogram3d": "none",
           "synthesizedSpeech": false,
           "tone": "assertive",
           "traits": "Decisive, honest, screenshot-proof. AP-7 hard kill. Not a TTS model id.",
@@ -610,7 +604,7 @@
           "voiceModel": "kokoro_onnx"
         },
         "display": {
-          "glyph": "⢵⡽",
+          "glyph": "⡪⢧",
           "title": "Optimus Timelarp"
         },
         "fields": {
@@ -630,7 +624,7 @@
         },
         "honesty": {
           "claims": [
-            "profile_preview",
+            "persona_config",
             "not_a_podcast_render"
           ],
           "fixture": false,
@@ -641,25 +635,21 @@
         "legacy_id": "optimus",
         "media": [
           {
-            "bytes": 852,
+            "bytes": 720,
             "mime": "application/json",
             "path": "voice_profile.optimus.json",
             "role": "profile_json",
-            "sha256": "ced378356f321af11233b23820b4fbfa9ba214f6266c3ae4f96645864c10e2db"
+            "sha256": "55adbb252a3324057fe0461fca212c4e8d86f448b1ac0b5ceaf1d2cb48e94bba"
           }
         ],
         "provenance": {
           "generator": "VoiceProfile (v0)"
         },
-        "relations": {
-          "bound_to": [
-            "ga:cube_ihdr:khcfdwmaogog2j6rjd357ylbqy"
-          ]
-        },
+        "relations": {},
         "schema_version": "1.0.0",
         "src": [],
         "status": "ok",
-        "uid": "ga:voice_profile:wv66j2iqbp6l2fmu25pf7zcvxi",
+        "uid": "ga:voice_profile:nkt65vsnllmb3veaei3vhua25e",
         "uid_scheme": "ga1"
       },
       "error": "profile_not_marked_not_podcast",
@@ -1001,7 +991,7 @@
         },
         "honesty": {
           "claims": [
-            "profile_preview",
+            "persona_config",
             "not_a_podcast_render"
           ],
           "fixture": false,
@@ -1046,7 +1036,7 @@
         },
         "honesty": {
           "claims": [
-            "profile_preview",
+            "persona_config",
             "not_a_podcast_render"
           ],
           "fixture": false,

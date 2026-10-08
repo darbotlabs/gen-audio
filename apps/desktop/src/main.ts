@@ -29,7 +29,6 @@ import {
   isSnapping,
   moveFocus,
   moveSlide,
-  paintProfileCanvases,
   renderBoard,
   setCardFlip,
   showRejected,
@@ -97,7 +96,6 @@ function show(documentIn: unknown): void {
   // D: tiles this render removed give back their cached seek blob URLs.
   releaseDetachedTransports();
   paintProfile();
-  paintProfileCanvases();
   bindCubeCanvas();
   bindRename();
   void harvestLibrary();
@@ -340,12 +338,6 @@ function bindRename(): void {
           applyFlipcard(body.profile as Record<string, unknown>);
         }
       });
-    });
-  });
-  board.querySelectorAll<HTMLButtonElement>("[data-action='open-cube']").forEach((node) => {
-    node.addEventListener("click", (event) => {
-      event.stopPropagation();
-      void openCube(node.dataset.cubeJson || "", "profile");
     });
   });
 }
