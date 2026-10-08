@@ -525,6 +525,32 @@ mod tests {
         assert_eq!(redact(plain), plain, "a peer address is not an email or a secret");
     }
 
+    /// Optimus's L1 probe: a secret and an email that straddle the 512-byte
+    /// cap. Capped first, the cut leaves `Zk3Qx9Lm2R` (too short to look like
+    /// a token) and `dayour@micro` (no dot, so not an email), and both leak.
+    /// Redacted whole and then capped, neither does.
+    #[test]
+    fn a_secret_and_an_email_straddling_the_line_cap_are_redacted_whole() {
+        let token = "Zk3Qx9Lm2Rt7Vb4NwY8pH6cJ";
+        let email = "dayour@microsoft.com";
+        let mut leaks = Vec::new();
+        for (lead, secret, head, marker) in [("error: key ", token, "Zk3Qx9Lm2R", "<redacted>"), ("error: notify ", email, "dayour@micro", "<email>")] {
+            let pad = MAX_LINE - head.len() - lead.len();
+            let raw = format!("{}{}{lead}{secret} refused", "ok ".repeat(pad / 3), " ".repeat(pad % 3));
+            assert!(raw[..MAX_LINE].ends_with(head), "{secret:?} straddles byte {MAX_LINE}");
+            let line = redact(&raw);
+            assert!(line.len() <= MAX_LINE, "{} bytes", line.len());
+            // The longest piece (4+ bytes) of the secret that reached the line.
+            let leaked = (0..secret.len()).flat_map(|start| (start + 4..=secret.len()).map(move |end| &secret[start..end])).filter(|piece| line.contains(piece)).max_by_key(|piece| piece.len());
+            if let Some(piece) = leaked {
+                leaks.push(format!("{piece:?} of {secret:?}"));
+            } else if !line.contains(marker) {
+                leaks.push(format!("no {marker} for {secret:?}"));
+            }
+        }
+        assert!(leaks.is_empty(), "leaked across the {MAX_LINE}-byte cap: {leaks:?}");
+    }
+
     #[test]
     fn the_line_cap_counts_bytes_and_cuts_on_a_char_boundary() {
         // 511 bytes of short words, then a 2-byte char straddling byte 512.
