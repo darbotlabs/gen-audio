@@ -13,9 +13,8 @@ Targets: Windows (WebView2, NSIS and MSI), macOS (WebKit, dmg), Linux (webkit2gt
 Release builds embed `apps/desktop/dist` (`frontendDist`: `../dist`). `devUrl` is only for `tauri dev`. The scripts build the Vite app and refuse to continue if `apps/desktop/dist/index.html` is missing, then run `tauri build`. The installed app keeps a tray icon and a taskbar button while the window is open. It starts `gen-audio-mcp` beside the executable on `127.0.0.1:8765` (or `GEN_AUDIO_MCP_ADDR`). Closing the window hides it. Quit is on the tray menu and stops the sidecar. On Windows, a successful sidecar start registers the app under the current user's Run key unless `GEN_AUDIO_AUTOSTART=0`.
 
 ```bash
-scripts/build-tauri.sh                 # Linux: mcp handshake, npm run build, then tauri build --bundles deb
-# Windows, from PowerShell:
-# scripts/build-tauri-windows.ps1      # mcp handshake, npm run build, then tauri build --bundles nsis,msi
+# Windows: scripts\build-tauri-windows.ps1 -Mode Full|NoBundle (see Scripts below), the only build script.
+# There is no Linux or macOS build script; CI's rust job runs `cargo check -p gen-audio-desktop` on Linux.
 ```
 
 ```bash
@@ -174,6 +173,19 @@ Health: `http://<node>:8002/genaid-audio/health`
 
 `10.1.8.70:8002` is the shared gateway row in the Power Table, not a stand-in for each node. See [docs/SERVE_APIM.md](docs/SERVE_APIM.md).
 
+## Scripts
+
+Windows tooling has exactly four entry points. Each one runs under Windows PowerShell 5.1 and PowerShell 7, checks every native exit code, and exits non-zero on failure. Extend these with a parameter instead of adding a new script: `scripts/test.ps1` fails on any other `*.ps1`, `*.bat`, `*.cmd` or `*.py` outside the allowlist, including untracked and gitignored files such as anything under `artifacts/`.
+
+| Entry point | What it does |
+|---|---|
+| `scripts\build-tauri-windows.ps1 [-Mode Full\|NoBundle]` | The only build path. Imports the MSVC environment (`Import-VsDevEnv`), then fails unless every library WAV in `schemas/asset-object/media.lock.json` is staged with the locked sha256 and byte count (they are gitignored and the release embeds them), builds and handshakes `gen-audio-mcp` (fresh means cargo's own fingerprint verdict from `--message-format=json` plus a sha256 check of the staged copy, never the file mtime), stages it for `externalBin`, runs `npm ci`, then the pinned tauri CLI (`@tauri-apps/cli@2.12.1`). `Full` (default) makes NSIS and MSI. `NoBundle` runs `tauri build --no-bundle`, which still embeds `frontendDist`. It judges `dist`, `gen-audio.exe` and the installers by content, never mtime: each must exist after the build and is reported by sha256 as `rebuilt` or `unchanged` (a no-op rebuild is not stale), `dist` must hold every `apps/desktop/public` file byte for byte, and the installers are the ones for this `tauri.conf.json` version. It also checks that `dist/index.html` has the header markers, that the build is not a dev build (`cargo:rustc-cfg=dev`, which would load `localhost:1420`), and that `target\release` holds one `gen-audio-desktop` fingerprint. It prints one `BUILD_OK` line, and only on success. Every run, failed ones included, saves its full transcript (native tool output too) to `target/logs/build-<sha>-<timestamp>.log`; the first line `BUILD_LOG`, `BUILD_OK ... log=` and `BUILD_FAIL log=` name it. |
+| `scripts\test.ps1 [-Tag name] [-Skip Pssa,Sprawl,Regen,Cargo,Npm,Python] [-SprawlExclude path] [-FromLock \| -WithWav]` | An EOL preflight first (`git ls-files --eol`: a tracked file with `eol=lf` in `.gitattributes` but CRLF in the working copy fails the run, is listed, and the fix is printed; nothing is rewritten), then PSScriptAnalyzer 1.24.0 with `PSScriptAnalyzerSettings.psd1` (any finding fails), the sprawl gate, a regen check (reruns the `build_assets` and `asset_vectors` examples and `cube_revision.py manifest`, then `git diff --exit-code` over `assets.json`, `manifest.json`, `assets.dev.json`, `media.lock.json`, `fixtures_v1.json`, `v1.json` and `viewport.{example,release}.json`; a missing gitignored library WAV fails the step, and `-FromLock` (CI) takes the WAV facts from `schemas/asset-object/media.lock.json`; PNGs are checked by pixels in pytest because zlib-ng makes their bytes vary), `cargo test --workspace`, `npm test` and `tsc --noEmit` in `apps/desktop`, and `pytest`. `-WithWav` is the merge check that the PR template requires. It first proves the staged WAVs are the `media.lock.json` bytes (Wavs step), then runs pytest with `GEN_AUDIO_REQUIRE_WAVS=1`, so a WAV test that would skip fails instead: the byte-for-byte cube regeneration, inv_hdr and strip tests must run. Prints a `TEST_SUMMARY` line. Logs go to `artifacts/test-logs/`. |
+| `scripts\mcp-call.ps1 -Tool <name> [-ArgsJson <json>] [-Port <n>]` | One MCP `tools/call` over HTTP. Finds the server from `-Port`, `GEN_AUDIO_MCP_ADDR`, `127.0.0.1:8765`, then the loopback ports a `gen-audio` process listens on, and checks `initialize` says `gen-audio`. Example: `scripts\mcp-call.ps1 -Tool ui_navigate -ArgsJson '{"slide":"slide:library"}'`. |
+| `scripts\ui-shot.ps1 -Out <png>` | Captures the Gen-Audio window with Win32 `PrintWindow`. No input injection and no screen-scrape fallback. Fails on a blank capture and prints the PNG's sha256. |
+
+`scripts/lib/devenv.ps1` holds the shared helpers (`Import-VsDevEnv`, `Invoke-Checked`) and is the only file that may source `vcvars64.bat`. The `scripts/*.py` files are thin CLI shims into `gen_audio.cli`. The Library cube JSON comes from `python scripts/cube_revision.py layers WAV OUT_JSON --stem STEM --engine ENGINE --label LABEL --png PNG` (every cube is rev 3, `layer_method` `library_r3`; the JSON records the WAV sha256 and the generator commit), and `python scripts/cube_revision.py manifest` rewrites the manifest's cube mirror from it. The Library manifest has one home, `apps/desktop/public/library/manifest.json`. Vite copies it into `dist` at build time.
+
 ## Layout
 
 ```text
@@ -186,6 +198,7 @@ src/gen_audio/          installable package
   gateway.py            /health versus /ready and proxy status classes
   node_http.py          loopback genaid-audio health and ready routes
   cube_revision.py      serial inv-HDR / BW95 / clip_frac sketch
+  cube_layers.py        four-layer Library cube; inv_hdr is rms/peak, layer_score the composite (cube_revision.py layers)
   compare.py            measure existing WAVs
   engines.py            compare-list registry
   serve.py              per-node URL and health-body helpers
