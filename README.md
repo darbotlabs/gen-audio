@@ -100,6 +100,16 @@ export GEN_AUDIO_KOKORO_VOICES=/path/to/voices-v1.0.bin
 
 Those filenames are the v1 pair documented by kokoro-onnx. Weights are published with the [kokoro-onnx](https://github.com/thewh1teagle/kokoro-onnx) project and the [Kokoro-82M ONNX](https://huggingface.co/onnx-community/Kokoro-82M-v1.0-ONNX) repo. Do not commit them here. `.gitignore` ignores `*.onnx`, `*.bin`, `*.wav`, and `models/`.
 
+The `vibevoice` extra is the locked VibeVoice-1.5B inference runtime (torch 2.14.1+cpu from the PyTorch CPU index, transformers 4.51.3, accelerate 1.6.0, diffusers 0.39.0, librosa). It installs only through uv and `uv.lock`, which covers Linux x86_64 and Windows AMD64 with wheels only (`[tool.uv] no-build = true`):
+
+```bash
+uv sync --frozen --extra vibevoice
+```
+
+It does not include the VibeVoice code or weights; nothing in this repo runs VibeVoice yet. Upstream's `datasets` (which pulls in `multiprocess`), `gradio` and `peft` are fine-tuning or demo-UI dependencies and are left out. `pip-audit` reports open advisories against transformers 4.51.3 and accelerate 1.6.0, which VibeVoice pins; they are listed on the PR that added the extra.
+
+`apps/desktop` builds with TypeScript ~7.0.2 (`npm ci`, then `npx tsc --noEmit` and `npm run build`).
+
 ## Quickstart
 
 From a checkout, with the environment variables above set:

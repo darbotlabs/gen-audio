@@ -2,7 +2,12 @@
 
 export interface FixtureBuffer {
   sampleRate: number;
-  samples: Float32Array;
+  /**
+   * Backed by a plain ArrayBuffer (never a SharedArrayBuffer), which is what
+   * AudioBuffer.copyToChannel requires since TS 5.7 made typed arrays generic.
+   * Every producer allocates with `new Float32Array(length)` or `.slice()`.
+   */
+  samples: Float32Array<ArrayBuffer>;
 }
 
 export function makeFixture(): FixtureBuffer {
