@@ -761,9 +761,9 @@ mod tests {
         assert!(lines[0].starts_with("gen-audio-mcp http: rejected POST /mcp 411 read "), "{lines:?}");
     }
 
-    #[test]
-    fn every_rejection_is_one_log_line_with_method_target_and_code() {
-        let cases: Vec<(Box<dyn FnOnce(u16) -> String>, &str)> = vec![
+    /// The five rejection classes and the start of each one's log line.
+    fn rejection_cases() -> Vec<(Box<dyn FnOnce(u16) -> String>, &'static str)> {
+        vec![
             (Box::new(|port| format!("OPTIONS /mcp HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\nOrigin: https://evil.example\r\nConnection: close\r\n\r\n")),
              "rejected OPTIONS /mcp 403 origin"),
             (Box::new(|port| post(port, "Content-Type: text/plain\r\n", NAVIGATE)), "rejected POST /mcp 415 content-type"),
@@ -773,17 +773,80 @@ mod tests {
              "rejected POST /mcp 411 read"),
             (Box::new(|port| post(port, "Content-Type: application/json\r\n", r#"{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"ui_navigate","arguments":{"slide":"slide:nope"}}}"#)),
              "rejected POST tools/call ui_navigate -32602 rpc"),
-        ];
-        for (build, want) in cases {
-            let (status, text, peer, served) = roundtrip_seeded(build, |_| {});
+        ]
+    }
+
+    /// Lines in the production ring (`recent_rejections()`) that name this peer.
+    fn ring_lines_for(peer: &str) -> usize {
+        let suffix = format!(" peer={peer}");
+        recent_rejections().iter().filter(|line| line.ends_with(&suffix)).count()
+    }
+
+    /// The thread-local hook scopes lines to their connection; it must not
+    /// stand in for the production path. So each line this worker logged must
+    /// also be in `recent_rejections()` verbatim, as the one new ring line for
+    /// this peer. (stderr is checked by `every_rejection_reaches_stderr_exactly_once`.)
+    #[test]
+    fn every_rejection_is_one_log_line_with_method_target_and_code() {
+        for (build, want) in rejection_cases() {
+            let mut before = None;
+            let (status, text, peer, served) = roundtrip_seeded(build, |peer| before = Some(ring_lines_for(peer)));
             let lines = rejection_lines(&peer, &served);
             assert_eq!(lines.len(), 1, "one line per rejection ({want}), status {status}: {lines:?} {text}");
             assert!(lines[0].starts_with(&format!("gen-audio-mcp http: {want} ")), "{lines:?}");
             assert!(lines[0].ends_with(&format!(" peer={peer}")), "the line still names the peer: {lines:?}");
+            assert!(recent_rejections().contains(&lines[0]), "recent_rejections() holds the logged line verbatim ({want}): {lines:?}");
+            assert_eq!(ring_lines_for(&peer), before.unwrap() + 1, "exactly one new ring line for this connection ({want}): {lines:?}");
         }
-        // Accepted requests log nothing.
-        let (status, _text, peer, served) = roundtrip_seeded(|port| post(port, "Content-Type: application/json\r\n", NAVIGATE), |_| {});
+        // Accepted requests log nothing, on the thread or in the ring.
+        let mut before = None;
+        let (status, _text, peer, served) = roundtrip_seeded(|port| post(port, "Content-Type: application/json\r\n", NAVIGATE), |peer| before = Some(ring_lines_for(peer)));
         assert_eq!(status, 200);
         assert!(rejection_lines(&peer, &served).is_empty());
+        assert_eq!(ring_lines_for(&peer), before.unwrap(), "an accepted request adds no ring line");
+    }
+
+    const STDERR_CHILD_ENV: &str = "GEN_AUDIO_MCP_TEST_STDERR_CHILD";
+
+    /// Child half of `every_rejection_reaches_stderr_exactly_once`: run by it
+    /// as a separate process of this same test binary with --nocapture, so
+    /// log_rejection's eprintln! lands on a real fd 2 the parent reads. Prints
+    /// the lines its workers logged (thread-scoped, as above) on stdout.
+    #[test]
+    #[ignore = "child process of every_rejection_reaches_stderr_exactly_once"]
+    fn rejection_stderr_child() {
+        assert_eq!(std::env::var(STDERR_CHILD_ENV).as_deref(), Ok("1"), "run only by every_rejection_reaches_stderr_exactly_once");
+        for (build, _) in rejection_cases() {
+            let (_, _, _, served) = roundtrip_seeded(build, |_| {});
+            for line in served {
+                println!("SERVED\t{line}");
+            }
+        }
+        let (_, _, _, served) = roundtrip_seeded(|port| post(port, "Content-Type: application/json\r\n", NAVIGATE), |_| {});
+        for line in served {
+            println!("SERVED\t{line}");
+        }
+    }
+
+    /// stderr gets exactly one line per rejection: the same lines, in order,
+    /// that the serving threads logged, and nothing for the accepted request.
+    /// A child process keeps the thread scoping intact and reads the real
+    /// stderr, so dropping the eprintln! turns this red.
+    #[test]
+    fn every_rejection_reaches_stderr_exactly_once() {
+        let module = module_path!().split_once("::").map(|(_, rest)| rest).unwrap_or(module_path!());
+        let output = std::process::Command::new(std::env::current_exe().unwrap())
+            .args(["--exact", &format!("{module}::rejection_stderr_child"), "--ignored", "--nocapture", "--test-threads=1"])
+            .env(STDERR_CHILD_ENV, "1")
+            .output()
+            .unwrap();
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        assert!(output.status.success(), "child failed: {stdout}\n{stderr}");
+        assert!(stdout.contains("1 passed"), "the child test ran: {stdout}");
+        let served: Vec<&str> = stdout.lines().filter_map(|line| line.split_once("SERVED\t").map(|(_, rest)| rest)).collect();
+        let logged: Vec<&str> = stderr.lines().filter(|line| line.starts_with("gen-audio-mcp http: ")).collect();
+        assert_eq!(served.len(), rejection_cases().len(), "one served line per rejection class: {served:?}");
+        assert_eq!(logged, served, "stderr carries each rejection line exactly once, in order\nstderr: {stderr}");
     }
 }
