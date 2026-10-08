@@ -1,8 +1,8 @@
 //! The MCP sidecar's stderr, kept: a size-capped rotating file in the Tauri
 //! app_log_dir (gen-audio-mcp.log, .log.1, .log.2; 1 MiB each).
 //!
-//! The sidecar writes one stderr line per rejected request (method, path,
-//! status, reason, peer) and its startup errors. Before this, the desktop
+//! The sidecar writes one stderr line per rejected request (method, target,
+//! status, reason, peer and seq) and its startup errors. Before this, the desktop
 //! spawned it with stderr set to null, so on a user's machine those lines went
 //! nowhere: a diagnostic written to a stream nobody can read is the same as no
 //! diagnostic.
@@ -201,7 +201,7 @@ pub enum Rule {
 ///
 /// Denylist redaction is defense in depth, not the boundary. The boundary is
 /// what is written at all: the sidecar's rejection lines carry method, target,
-/// status, reason and peer, never a body or a header value. This table only
+/// status, reason, peer and seq, never a body or a header value. This table only
 /// catches what slips through anyway and can never be complete, so a miss is
 /// first a reason to stop writing that thing, then a new row here.
 pub const CLASSES: &[(&str, Rule)] = &[
@@ -679,7 +679,11 @@ mod tests {
         assert_eq!(said.matches("sidecar log write failed").count(), 1, "one notice for 5 lost lines: {said:?}");
         fs::remove_dir_all(log_path(&dir, 2)).unwrap();
         log.write_line("after recovery").unwrap();
-        // All files: a long reason can rotate the marker into `.log.1`.
+        // Force a rotation (200 more bytes on a 256-byte cap), so the marker is
+        // read from a rotated file: reading only the current file misses it.
+        log.write_line(&format!("after rotation {}", "w".repeat(185))).unwrap();
+        let newest = fs::read_to_string(log_path(&dir, 0)).unwrap();
+        assert!(!newest.contains("sidecar log dropped"), "the marker rotated out of the current file: {newest:?}");
         let current = log_text(&dir);
         let marker = current.lines().find(|line| line.contains("sidecar log dropped 5 line(s)")).unwrap_or_else(|| panic!("no drop marker in {current:?}"));
         for (what, text) in [("marker", marker), ("notice", said.as_str())] {

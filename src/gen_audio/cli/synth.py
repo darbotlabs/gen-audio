@@ -11,7 +11,7 @@ from pathlib import Path
 from gen_audio.artifacts import publish_copy
 from gen_audio.audio_io import write_wav
 from gen_audio.cast import load_cast_map, read_script
-from gen_audio.library_manifest import OUTSIDE, file_facts, label_work_dir_paths, outside_repo_label
+from gen_audio.library_manifest import OUTSIDE, WRITE_HINT, file_facts, label_work_dir_paths, outside_repo_label
 from gen_audio.synth_kokoro_onnx import KokoroOnnxSynthesizer, resolve_model_paths
 
 
@@ -55,8 +55,9 @@ def sidecar_payload(manifest: dict, subtype: str, inputs: dict[str, Path], repo_
     if outside:
         payload["outside_repo"] = dict(sorted(outside.items()))
     # C1: the writer holds the same rule the sync does: every recorded path
-    # resolves from the repo root or is a label with facts.
-    problems = label_work_dir_paths(payload, Path(repo_root), None, {}, "sidecar")
+    # resolves from the repo root or is a label with facts. Its advice is for
+    # write time: fix what is recorded, not rerun the sync.
+    problems = label_work_dir_paths(payload, Path(repo_root), None, {}, "sidecar", hint=WRITE_HINT)
     if problems:
         raise ValueError("; ".join(problems))
     return payload
