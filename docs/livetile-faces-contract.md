@@ -1,7 +1,9 @@
 # Livetile faces contract (v1.1)
 
-Status: **v1.1b — C11-M1/M2 + L1–L5 (2026-10-08).** Behavior-only; no code on this line. Symbol
-citations below still name PR #4 at `99ba67e` (do not chase later moves). Behavioral claims were
+Status: **v1.1c — C12-M1 + C12-L1/L2 + Info (2026-10-08).** Behavior-only; no code on this line. Symbol
+citations below still name PR #4 at `99ba67e` (do not chase later moves). The one exception is
+`apps/desktop/src/library-assets.ts`, which is cited on both lines as **livetile L64–70 / #4 `fb07d91`
+L65–71**, because the hand-off is implemented on #4. Behavioral claims were
 re-checked at `fb07d91` (PR #4 head / `cursor/no-stubs-pipeline-bcbb`); every citation still holds.
 The cloud agent implements the reducer and `facts()` parts in core on PR #4. Once #4 reaches GO, it
 merges forward into this line with `--no-ff`, and the desktop work (faces from ruling 3, T17, C-M4)
@@ -30,7 +32,8 @@ Inputs:
 - This branch (`cursor/livetile-faces-v2`), the desktop side that will consume the contract:
   - `apps/desktop/src/render.ts`: `setFace`, `stepFace`, `setCardFlip` (data-face / data-faces)
   - `apps/desktop/src/glyph.ts`: `flipGlyph`, `flipGlyphLabel`
-  - `apps/desktop/src/library-assets.ts`: `derivedFrom`, `compareCubesFor`, `modelCubes`
+  - `apps/desktop/src/library-assets.ts`: `derivedFrom`, `compareCubesFor`, `modelCubes` (the clip→model
+    join is livetile L64–70 / #4 `fb07d91` L65–71)
 
 ## 1. Faces per tile kind
 
@@ -59,7 +62,9 @@ Which `facts()` sections each face renders (§5):
     (`library-assets.ts` `modelCubes`); the content moves into core. When the model is omitted
     from `cubes` (§2 wav_missing rule), this face is absent and `facts().cube` (pending /
     `wav_missing`) is what the renderer shows on the `model` face instead.
-  - `relations` → `relations`
+  - `relations` → `relations`. When the model has no link (§2, C12-M1: `engine-magpie`,
+    `engine-pocket`), this face is absent and `facts().relations` (pending / `no_envelope`, §5.6) is
+    what the renderer shows on the `model` face instead.
 - Connector: `connector` → `identity`, `honesty`, `connector`; `relations` → `relations`.
 - Voice profile: `profile` → `identity`, `honesty`, `profile`; `persona` → `persona`;
   `relations` → `relations`.
@@ -110,15 +115,30 @@ presence changes. That matches converged rebuttal 4: `snapshot = facts(asset, me
 |---|---|
 | `clip`, `model`, `connector`, `profile` | always (the first face) |
 | `cube`, `layers`, `spectrogram` | the clip's WAV is present (`media` is `present`), so a cube or spectrogram can be derived. A clip with `wav_missing` (`lib-magpie`, `lib-vibevoice`, `lib-pocket`) omits all three. |
-| `cubes` (voice model) | At least one Library clip that **names the model** (§5.5 join) has its WAV present, so `modelCubes` can emit a real `cubes` row. **g2p_only** models (honesty claim `g2p_only`; `modelCubes` returns `{state:"g2p", …}`) omit `cubes` — G2P emits phonemes, not a waveform, so there is no cube row. If the engine is unavailable and has no naming clip, the face is omitted. **A model whose only clip(s) have no WAV is OMITTED from `cubes`** — no placeholder (AP-OPT-1). The model's `facts().cube` section still carries `status: "pending"`, `reason: "wav_missing"`, and the clip uid(s) / catalog tile ids; the renderer shows missing + why. Honest absence, consistent with the clip media-presence rule. Worked: `magpie` / `pocket_tts` (catalog tiles `lib-magpie`, `lib-pocket` only) omit `cubes`; `vibevoice` keeps the bitdot cube and does **not** get a pending cube section. |
+| `cubes` (voice model) | At least one Library clip that **names the model** (§5.5 join) has its WAV present, so `modelCubes` can emit a real `cubes` row. **g2p_only** models (honesty claim `g2p_only`; `modelCubes` returns `{state:"g2p", …}`) omit `cubes` — G2P emits phonemes, not a waveform, so there is no cube row. If the engine is unavailable and has no naming clip, the face is omitted. **A model whose only clip(s) have no WAV is OMITTED from `cubes`** — no placeholder (AP-OPT-1). The model's `facts().cube` section still carries `status: "pending"`, `reason: "wav_missing"`, and `tile_ids` (the catalog tile ids, §5.5; never a `*_uids` field); the renderer shows missing + why. Honest absence, consistent with the clip media-presence rule. Worked: `magpie` / `pocket_tts` (catalog tiles `lib-magpie`, `lib-pocket` only) omit `cubes`; `vibevoice` keeps the bitdot cube and does **not** get a pending cube section. |
 | `persona` | the profile has at least one of domain, accent, traits or refs |
-| `relations` | the view has at least one link (§5.6), whatever its status |
+| `relations` | the view has at least one link (§5.6), whatever its status. With no link the face is omitted; a voice model whose only naming clips are catalog tiles with no envelope then carries `facts().relations` pending / `no_envelope` on its `model` face (§5.6, C12-M1). |
 
 Worked examples on the release deck:
 - `lib-misaki-kokoro`: M = 5.
 - `lib-magpie`: M = 2 (`clip`, `relations`; the relations face has the voice model link via catalog `engine_id`).
 - `engine-vibevoice`: M = 3 (`model`, `cubes`, `relations`) — `modelCubes("vibevoice")` returns one row for `lib-bitdot-braille-vibevoice` (`ga:audio_clip:gq2l5uxxj44uwnok6io3kduf5a`).
-- `engine-misaki`: M = 2 (`model`, `relations`) — honesty `g2p_only`; `modelCubes("misaki")` → `{state:"g2p", clips:[lib-misaki-kokoro]}` via `provenance.g2p_model`; no cube rows → omit `cubes`.
+- `engine-misaki`: M = 2 (`model`, `relations`). This is the one place the count is derived
+  (C12-L2): `cubes` is omitted because honesty is `g2p_only` (`modelCubes("misaki")` →
+  `{state:"g2p", clips:[lib-misaki-kokoro]}`; no cube rows), and `relations` applies because the
+  §5.6 voice-model link list includes g2p clips via `provenance.g2p_model`, and `lib-misaki-kokoro`
+  names misaki there. T17 step 8 asserts this value and does not pin a second one.
+- `engine-kokoro-dayour`: M = 3 (`model`, `cubes`, `relations`). `provenance.voice_model` names
+  `kokoro_dayour` on `lib-kokoro` and `lib-misaki-kokoro`, both with their WAV present, so
+  `modelCubes("kokoro_dayour")` returns two rows (cubes `ga:cube_ihdr:eijw35etu6fq4ajayl4fz33kry` and
+  `ga:cube_ihdr:biaxxmnibxtcur7nxdu3ffvna4`) and §5.6 links both clips.
+- `engine-magpie`, `engine-pocket`: M = 1 (`model` only; C12-M1). No clip envelope names `magpie` /
+  `pocket_tts` (neither `provenance.voice_model` nor `provenance.g2p_model`), no profile names them
+  (all five profiles name `kokoro_onnx`), and each one's only clip is a catalog tile with no envelope
+  (`lib-magpie` / `lib-pocket`). So §5.6 yields no link: `cubes` and `relations` are both omitted. The
+  `model` face carries `facts().cube` (pending / `wav_missing`) and `facts().relations` (pending /
+  `no_envelope`), each with `tile_ids: ["lib-magpie"]` (resp. `["lib-pocket"]`). The glyph is
+  `aria-disabled` with the label `Card has 1 face: Model` (Q2: `<name>` is the face name, id `model`).
 - `conn-mcp`: M = 1 if it has no link. That case is Decision Q2. `conn-claude`: M = 1 (`face_count: 1`).
 
 ## 3. Reducer state and actions (core, `viewport.rs`)
@@ -169,6 +189,10 @@ MCP `ui_flip` arguments (`control.rs` `ui_flip`), on top of today's `tileId | ui
   `{tileId, section}` is accepted and applied as back+section today. Contract: log a **deprecation
   warning for one release** (same window as Q1), then the bare form is **-32602**. Do not fail-open
   forever; do not make it hard-fail before the deprecation window ends.
+- **C12-L1 — where the deprecation lands:** during the window the call succeeds and the JSON-RPC
+  `result` carries `warnings: [{"code": "deprecated_bare_section", "detail": "<text>"}]`, and the
+  mcp server writes exactly one line for that call to its stderr log. T17 8b asserts the `result`
+  field. A deprecation that nobody can observe in the response never gets acted on.
 
 The reducer result, which is also the `flip` event echoed over SSE with its seq (converged 3b: TS applies
 events, never actions):
@@ -310,9 +334,10 @@ out of the reducer (converged v1 FINAL 3a: no per-frame events over SSE).
   `offline_reason` (string or absent). Sources: `catalog::VoiceModel` and the `voice_model` envelope.
 - **Which field makes a clip name a model (C11-M2):**
   1. **Primary (enveloped clips):** the clip envelope's `provenance.voice_model` (a `ga:voice_model:…`
-     uid). That is what `modelCubes` uses today — `apps/desktop/src/library-assets.ts` L64–70
-     (`clipsBy("voice_model")` filters `asset.provenance?.voice_model === model.uid`). G2P links use
-     `provenance.g2p_model` the same way (L66–67 when `honesty.claims` includes `g2p_only`).
+     uid). That is what `modelCubes` uses today — `apps/desktop/src/library-assets.ts` livetile
+     L64–70 / #4 `fb07d91` L65–71 (`clipsBy("voice_model")` filters
+     `asset.provenance?.voice_model === model.uid`). G2P links use `provenance.g2p_model` the same way
+     (livetile L66–67 / #4 `fb07d91` L67–68, when `honesty.claims` includes `g2p_only`).
   2. **Fallback (no envelope):** catalog `engine_id` is used **only** for the three release-deck
      tiles with no `audio_clip` envelope — `lib-magpie`, `lib-vibevoice`, `lib-pocket` — to resolve
      the voice-model relation against `VoiceModel.id` / the voice_model envelope `legacy_id`.
@@ -326,7 +351,9 @@ out of the reducer (converged v1 FINAL 3a: no per-frame events over SSE).
   (no cube rows); the `cubes` face is omitted (§2).
 - **`cube` (voice model, wav_missing case):** when every Library clip that names the model has
   `wav_missing`, `facts()` still emits a `cube` section:
-  `{ "id": "cube", "status": "pending", "reason": "wav_missing", "clip_uids": [<uid>, …] }`.
+  `{ "id": "cube", "status": "pending", "reason": "wav_missing", "tile_ids": [<tile id>, …] }`
+  (release deck: `["lib-magpie"]` for magpie, `["lib-pocket"]` for pocket_tts). A field named
+  `*_uids` holds `ga:` uids only, so tile ids go in `tile_ids` (C12-M1).
   The desktop renders that the cube is missing and why. It must not invent a cube card or a
   stand-in row in `model_cubes`.
 - **`connector`**: `connector_id`, `mode` (`live | local | mock | token_present | misconfigured`),
@@ -339,6 +366,11 @@ out of the reducer (converged v1 FINAL 3a: no per-frame events over SSE).
 
 ### 5.6 `relations` (all kinds)
 `links: [{rel, target_uid, target_kind, status, reason?}]`.
+
+- **`target_uid` is always a `ga:` uid** (`ga:<kind>:<id>`) that resolves in `asset_catalog`. A tile
+  id (`lib-*`, `engine-*`, `conn-*`, `profile-*`) must **never** appear in `target_uid` (C12-M1).
+  Every consumer that resolves `target_uid` as a uid would get a value that isn't one, and that is how
+  a dangling link ships looking real. Tile ids go in `tile_ids` only.
 
 - **Status of each link:**
   - `real`: the target resolves in `asset_catalog`, and for derived links its `fields.source_sha256`
@@ -353,7 +385,17 @@ out of the reducer (converged v1 FINAL 3a: no per-frame events over SSE).
     `compare_to` field)
   - the bound `card`: reverse lookup via `relations.bound_to` on the card envelope (clip→card is not a
     forward field on the clip)
-- **Voice model links:** clips it rendered and profiles that name it.
+- **Voice model links:** clips that name it via `provenance.voice_model` (clips it rendered), g2p
+  clips that name it via `provenance.g2p_model` (C12-L2), and profiles that name it. The target is
+  the clip's `ga:audio_clip:` uid, so only enveloped clips can be linked. A catalog tile with no
+  envelope (`lib-magpie`, `lib-vibevoice`, `lib-pocket`) is never a link target; its `ga:card:` uid
+  is a card, not a clip, and the tile rendered no audio.
+- **No link, no envelope (C12-M1):** when a voice model has no link and its only naming clips are
+  catalog tiles with no envelope, the `relations` face is omitted (§2, M = 1 for `engine-magpie` and
+  `engine-pocket`) and `facts()` emits
+  `{ "id": "relations", "status": "pending", "reason": "no_envelope", "tile_ids": [<tile id>, …] }`
+  (`["lib-magpie"]`, resp. `["lib-pocket"]`), shown on the `model` face. Same rule as the cubes
+  omission: honest absence plus a visible reason, not a placeholder face.
 - **Profile links:** its voice model, plus attached clip refs that resolve to a clip uid.
 - **Section status:** the worst of its links, ordered `partial` > `pending` > `real`.
 
@@ -419,13 +461,26 @@ Each step reads back through `viewport_get`.
    - `ui_flip {"tileId": "engine-kokoro", "next": true}` → `cubes`, 1, 3.
    - `engine-vibevoice`: M = 3. `ui_flip {"tileId": "engine-vibevoice", "next": true}` → `cubes`, 1, 3
      (exactly the bitdot cube; no pending cube section on the model).
-   - `engine-misaki`: M = 2 (`model`, `relations`). `ui_flip {"tileId": "engine-misaki", "face": "cubes"}`
-     → **-32602** (g2p_only; valid faces: `model, relations`).
+   - `engine-kokoro-dayour`: M = 3 (`model`, `cubes`, `relations`; §2).
+     `ui_flip {"tileId": "engine-kokoro-dayour", "next": true}` → `cubes`, 1, 3.
+   - `engine-magpie`: M = 1 and `engine-pocket`: M = 1 (`model` only; C12-M1, §2). For each:
+     `views[…].faces` ids are `model`; `ui_flip {"tileId": "engine-magpie", "next": true}` → `model`,
+     0, 1 (Q2); `ui_flip {"tileId": "engine-magpie", "face": "relations"}` → **-32602** (valid faces:
+     `model`); `facts().relations` = `{status: "pending", reason: "no_envelope", tile_ids:
+     ["lib-magpie"]}` (resp. `["lib-pocket"]`); the glyph is `aria-disabled`, `Card has 1 face: Model`.
+   - `engine-misaki`: `face_count` equals the value §2 derives from the §5.6 g2p link (C12-L2; not
+     re-pinned here). `ui_flip {"tileId": "engine-misaki", "face": "cubes"}` → **-32602** (g2p_only;
+     the valid faces are the §2 list).
+   - **Must-fail (C12-M1):** a relations link whose `target_uid` is not a `ga:` uid (for example
+     `target_uid: "lib-magpie"` forced onto `engine-magpie`) is rejected. A mutant that accepts it
+     must turn this row red.
    - `conn-claude` appears **once** on the release deck (`conn-claude` count = 1) and
      `ui.faces["view:conn-claude"].face_count` = **1**.
 8b. Bare section deprecation (C11-L2): `ui_flip {"tileId": "lib-misaki-kokoro", "section": "honesty"}`
-    (no `back` / `face` / `flipped`) logs a deprecation for one release and behaves as back+section;
-    after that window it is **-32602**. Must-pass during the window; must-fail (as -32602) after.
+    (no `back` / `face` / `flipped`) behaves as back+section for one release, and the JSON-RPC result
+    contains `warnings: [{code: "deprecated_bare_section", detail}]` (C12-L1; the test asserts this
+    result field). After that window it is **-32602**. Must-pass during the window; must-fail (as
+    -32602) after.
 9. Two selectors: `ui_flip {"tileId": "lib-misaki-kokoro", "next": true, "face": "cube"}` → -32602.
 10. Snapshot stability: steps 2–5 leave every `views[].snapshot` byte-identical (§7).
 11. **face_index stability under data mutation (Q10):** with `view:lib-misaki-kokoro` on face
@@ -439,7 +494,7 @@ Reason in one line: an honest absence, consistent with the clip media-presence r
 
 | Row | Kind | Assertion |
 |---|---|---|
-| must-pass | model whose only clip(s) have `wav_missing`: **magpie** / **pocket_tts** (catalog tiles `lib-magpie`, `lib-pocket` — no `audio_clip` envelope / no WAV) | the `cubes` / `model_cubes` list **omits** the model (no row); `facts().cube` is `{status: "pending", reason: "wav_missing", clip_uids: ["lib-magpie"]}` (resp. `lib-pocket`); the renderer surfaces missing + why |
+| must-pass | model whose only clip(s) have `wav_missing`: **magpie** / **pocket_tts** (catalog tiles `lib-magpie`, `lib-pocket` — no `audio_clip` envelope / no WAV) | the `cubes` / `model_cubes` list **omits** the model (no row); `facts().cube` is `{status: "pending", reason: "wav_missing", tile_ids: ["lib-magpie"]}` (resp. `lib-pocket`) and `facts().relations` is `{status: "pending", reason: "no_envelope", tile_ids: ["lib-magpie"]}` (resp. `lib-pocket`; C12-M1, face_count 1); the renderer surfaces missing + why |
 | must-pass | **vibevoice** | keeps **exactly** the bitdot cube (`lib-bitdot-braille-vibevoice` / `ga:audio_clip:gq2l5uxxj44uwnok6io3kduf5a` → cube `ga:cube_ihdr:dqufjgk2q4nj575exlfy7ecxqe`); `model_cubes` has that one row; **no** pending `facts().cube` section for wav_missing on the model |
 | must-fail | magpie/pocket with a placeholder / stub cube entry forced into `model_cubes` or the cubes list | rejected (AP-OPT-1: no stub card) |
 | must-fail | vibevoice row that deletes the bitdot cube or adds a pending wav_missing section while bitdot's WAV is present | rejected |
@@ -463,7 +518,8 @@ alias is **pending** on this line (today's desktop still keys on `flipcard` /
 
 - **Q1. `section`:** `back` + `section: "<id>"` maps to the face that renders that section (for example
   `honesty` → `clip`). Log a deprecation for one release; then the pair is **-32602**. The same
-  one-release deprecation applies to bare `{tileId, section}` without `back` (C11-L2); #4 at
+  one-release deprecation applies to bare `{tileId, section}` without `back` (C11-L2; it lands as
+  `result.warnings` plus one stderr line, §3 C12-L1); #4 at
   `fb07d91` accepts it today by defaulting `ui_flip` to back (`control.rs` L629–633).
 - **Q2. M = 1:** the glyph stays in the same corner, `aria-disabled`, labelled
   `Card has 1 face: <name>`. Activating it is a no-op. `back` is -32602; `next` stays at index 0.
