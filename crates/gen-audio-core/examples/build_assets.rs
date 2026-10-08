@@ -219,8 +219,8 @@ fn main() {
     validate_set(&assets).unwrap_or_else(|e| panic!("migrated set is invalid: {e}"));
 
     let pretty = |value: &Value| serde_json::to_string_pretty(value).expect("json") + "\n";
-    // Release vs dev split (PR #5 review, fix 5): fixture-tone and
-    // reference-only assets never reach public/library (and so never dist).
+    // Release vs dev split (PR #5 review, fix 5): fixture-tone, reference-only,
+    // and stand-in cards never reach public/library (and so never dist).
     let (dev_assets, release_assets): (Vec<Value>, Vec<Value>) = assets.iter().cloned().partition(is_dev_fixture);
     validate_set(&release_assets).unwrap_or_else(|e| panic!("release set is invalid without the dev fixtures: {e}"));
     let dev_uids: Vec<&str> = dev_assets.iter().filter_map(|asset| asset["uid"].as_str()).collect();
@@ -239,7 +239,7 @@ fn main() {
     fs::write(library.join("assets.json"), pretty(&release)).expect("write assets.json");
     let dev_doc = json!({
         "schema_version": migrated["schema_version"],
-        "note": "Dev/test-only assets (honesty.fixture or fixture_tone / reference_only / sample_content claims). Never shipped; the desktop shows these cards only with VITE_GEN_AUDIO_FIXTURES=1. Regenerate with build_assets.",
+        "note": "Dev/test-only assets (honesty.fixture, fixture_tone / reference_only / sample_content claims, or stand-in cards). Never shipped; the desktop shows these cards only with VITE_GEN_AUDIO_FIXTURES=1. Regenerate with build_assets.",
         "assets": dev_assets,
         "legacy_index": split_index(true),
     });

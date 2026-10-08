@@ -1131,18 +1131,43 @@ fn check_required_media(kind: &str, envelope: &Value) -> Result<(), AssetError> 
 /// and sample content (a sample cast script, unprobed placeholder endpoints).
 pub const DEV_FIXTURE_CLAIMS: [&str; 3] = ["fixture_tone", "reference_only", "sample_content"];
 
-/// True for an asset that ships only in dev/test builds (the cards
-/// `spec-fixture`, `cube-fixture`, `bench-ref`, `cast-sample`, `serve-node`
-/// and `serve-gateway` today): `honesty.fixture`
-/// is true or a claim is in `DEV_FIXTURE_CLAIMS`. Release `assets.json` and
-/// `viewport.release.json` leave these out (VITE_GEN_AUDIO_FIXTURES=1 brings
-/// the example deck back in dev).
+/// True for an asset that ships only in dev/test builds.
+///
+/// The generator split (`build_assets`) is the filter: `honesty.fixture`,
+/// a `fixture_tone` / `reference_only` / `sample_content` claim, or a stand-in
+/// card (unprobed `ServeHealth`, a placeholder host, or `sampleScript`). That
+/// set is `spec-fixture`, `cube-fixture`, `bench-ref`, `cast-sample`,
+/// `serve-node` and `serve-gateway`. Release `assets.json` and
+/// `viewport.release.json` leave them out. `VITE_GEN_AUDIO_FIXTURES=1` brings
+/// the example deck back.
 pub fn is_dev_fixture(envelope: &Value) -> bool {
     let claims_dev = envelope
         .pointer("/honesty/claims")
         .and_then(Value::as_array)
         .is_some_and(|claims| claims.iter().any(|claim| claim.as_str().is_some_and(|claim| DEV_FIXTURE_CLAIMS.contains(&claim))));
-    claims_dev || bool_at(envelope, &["honesty", "fixture"]) == Some(true)
+    claims_dev || bool_at(envelope, &["honesty", "fixture"]) == Some(true) || is_stand_in_card(envelope)
+}
+
+/// A card that is a sample or an unprobed placeholder, not a measured view.
+fn is_stand_in_card(envelope: &Value) -> bool {
+    if envelope.get("kind").and_then(Value::as_str) != Some("card") {
+        return false;
+    }
+    let outer = envelope.get("body");
+    let kind = outer.and_then(|body| body.get("kind")).and_then(Value::as_str).unwrap_or("");
+    let inner = outer.and_then(|body| body.get("body"));
+    if kind == "ServeHealth" && inner.and_then(|body| body.get("probed")) != Some(&Value::Bool(true)) {
+        return true;
+    }
+    if inner.and_then(|body| body.get("sampleScript")) == Some(&Value::Bool(true)) {
+        return true;
+    }
+    if let Some(host) = inner.and_then(|body| body.get("host")).and_then(Value::as_str) {
+        if host.starts_with('<') && host.ends_with('>') && host.len() > 2 {
+            return true;
+        }
+    }
+    false
 }
 
 /// A cube_ihdr is "real" when it claims `library_cube` and is not a fixture.

@@ -1,7 +1,8 @@
 """Content-addressed asset objects for pipeline outputs.
 
-``uid`` is a v1 ``ga:`` identity for the kinds the schema knows. Auxiliary
-files keep a sha256 prefix and are not hashed into an identity.
+``uid`` is a v1 ``ga:`` identity for the kinds the schema knows. A real cube
+hashes both ``cube_json`` and ``cube_png`` into one ``ga:cube_ihdr:`` uid
+(B2). Other auxiliary files keep a sha256 prefix and are not an identity.
 """
 
 from __future__ import annotations
@@ -48,8 +49,14 @@ def asset_object(
     n_frames: int | None = None,
     fields: dict | None = None,
     media_role: str | None = None,
+    media: list[dict] | None = None,
 ) -> dict:
-    """Build one asset object. Known kinds get a minted ``ga:`` uid."""
+    """Build one asset object. Known kinds get a minted ``ga:`` uid.
+
+    ``media`` is the identity digest list. A cube passes both ``cube_json``
+    and ``cube_png`` so the png is inside the ``ga:`` uid. When ``media`` is
+    omitted, the file itself is the single digest for the kind's role.
+    """
     file_path = Path(path)
     digest = sha256_file(file_path)
     schema_kind = _KIND.get(kind)
@@ -83,7 +90,16 @@ def asset_object(
         identity.setdefault("format", "speaker")
         identity.setdefault("n_turns", len(turns))
         identity.setdefault("n_words", len(text.split()))
-    role = media_role or _ROLE[schema_kind]
-    payload["uid"] = mint(schema_kind, identity, [{"role": role, "sha256": digest}], parents)
+    if media is None:
+        role = media_role or _ROLE[schema_kind]
+        media_entries = [{"role": role, "sha256": digest}]
+    else:
+        media_entries = [{"role": item["role"], "sha256": item["sha256"]} for item in media]
+        primary = media_role or _ROLE[schema_kind]
+        matched = [item["sha256"] for item in media_entries if item["role"] == primary]
+        if matched != [digest]:
+            raise ValueError(f"{schema_kind} media must include {primary} sha256 of {file_path.name}")
+    payload["uid"] = mint(schema_kind, identity, media_entries, parents)
     payload["fields"] = identity
+    payload["media"] = media_entries
     return payload

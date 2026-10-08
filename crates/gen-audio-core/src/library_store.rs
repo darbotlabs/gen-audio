@@ -503,6 +503,25 @@ fn envelope(
         "podcast_script" => "script_txt",
         other => return Err(format!("cannot catalog kind {other}")),
     };
+    // B2: a real cube's ga: uid covers cube_json and cube_png. The png sits
+    // beside the json (generated/{id}/cube.png) and is hashed into the mint.
+    let mut media_files: Vec<(&str, String, String, u64, &str)> = vec![(role, rel.to_string(), sha.to_string(), bytes.len() as u64, mime)];
+    if kind == "cube_ihdr" {
+        let png_rel = match rel.rsplit_once('/') {
+            Some((dir, _)) => format!("{dir}/cube.png"),
+            None => "cube.png".to_string(),
+        };
+        let png_bytes = read_media_bytes(&png_rel).map_err(|_| {
+            "a real cube needs cube.png beside cube.json".to_string()
+        })?;
+        media_files.push((
+            "cube_png",
+            png_rel,
+            sha256_hex(&png_bytes),
+            png_bytes.len() as u64,
+            "image/png",
+        ));
+    }
     let fields = coerce_ints(asset.get("fields").cloned().unwrap_or(json!({})));
     let src: Vec<String> = asset
         .get("derived_from")
@@ -516,16 +535,14 @@ fn envelope(
                 .collect()
         })
         .unwrap_or_default();
-    let minted = asset::mint(
-        kind,
-        &fields,
-        &[MediaDigest {
-            role: role.into(),
-            sha256: sha.into(),
-        }],
-        &src,
-    )
-    .map_err(|err| err.to_string())?;
+    let digests: Vec<MediaDigest> = media_files
+        .iter()
+        .map(|(role, _, sha, _, _)| MediaDigest {
+            role: (*role).to_string(),
+            sha256: sha.clone(),
+        })
+        .collect();
+    let minted = asset::mint(kind, &fields, &digests, &src).map_err(|err| err.to_string())?;
     if minted.uid != uid {
         return Err(format!("uid {uid} != recomputed {}", minted.uid));
     }
@@ -555,13 +572,13 @@ fn envelope(
         "legacy_id": legacy_for(uid),
         "status": "ok",
         "fields": fields,
-        "media": [{
+        "media": media_files.iter().map(|(role, path, sha, nbytes, mime)| json!({
             "role": role,
-            "path": rel,
+            "path": path,
             "sha256": sha,
-            "bytes": bytes.len() as u64,
+            "bytes": nbytes,
             "mime": mime
-        }],
+        })).collect::<Vec<_>>(),
         "src": src,
         "relations": {},
         "honesty": {
@@ -731,6 +748,89 @@ mod tests {
         let again = crate::asset_catalog::require(&imported.wav_uid).expect("renamed");
         assert_eq!(again["display"]["semantic_name"], "Narrator");
         assert!(!again.to_string().contains(&root.display().to_string()));
+        set_root_override_for_test(None);
+        let _ = fs::remove_dir_all(&root);
+        let _ = fs::remove_dir_all(&work);
+    }
+
+    #[test]
+    fn import_pipeline_mints_a_real_cube_with_png() {
+        let root = std::env::temp_dir().join(format!("ga-lib-cube-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&root);
+        fs::create_dir_all(&root).unwrap();
+        set_root_override_for_test(Some(root.clone()));
+        let work = std::env::temp_dir().join(format!("ga-lib-cube-work-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&work);
+        fs::create_dir_all(&work).unwrap();
+        let wav_bytes = b"RIFF-library-clip";
+        let json_bytes = br#"{"speakers":"unresolved","duration_s":1.0}"#;
+        let png_bytes = b"\x89PNG-cube";
+        fs::write(work.join("fitted.wav"), wav_bytes).unwrap();
+        fs::write(work.join("cube.json"), json_bytes).unwrap();
+        fs::write(work.join("cube.png"), png_bytes).unwrap();
+        let wav_sha = sha256_hex(wav_bytes);
+        let json_sha = sha256_hex(json_bytes);
+        let png_sha = sha256_hex(png_bytes);
+        let wav_fields = json!({"engine": "kokoro_onnx", "sample_rate_hz": 24000, "duration_ms": 1000});
+        let wav = asset::mint(
+            "audio_clip",
+            &wav_fields,
+            &[MediaDigest { role: "wav".into(), sha256: wav_sha.clone() }],
+            &[],
+        )
+        .unwrap();
+        let cube_fields = json!({
+            "source_sha256": wav_sha,
+            "sample_rate_hz": 24000,
+            "bin_frames": 256,
+            "time_bins": 1,
+            "freq_bins": 102,
+            "duration_ms": 1000,
+            "covers_ms": 1000,
+            "inv_hdr_ppm": 70211,
+            "cube_revision": 3,
+            "n_points": 1
+        });
+        let cube = asset::mint(
+            "cube_ihdr",
+            &cube_fields,
+            &[
+                MediaDigest { role: "cube_json".into(), sha256: json_sha.clone() },
+                MediaDigest { role: "cube_png".into(), sha256: png_sha.clone() },
+            ],
+            &[wav.uid.clone()],
+        )
+        .unwrap();
+        assert!(cube.uid.starts_with("ga:cube_ihdr:"), "{}", cube.uid);
+        let manifest = json!({
+            "duration_s": 1.0,
+            "engine": "kokoro_onnx",
+            "synthesizedSpeech": true,
+            "assets": {
+                "wav": {"uid": wav.uid, "sha256": wav_sha, "fields": wav_fields, "derived_from": []},
+                "cube": {
+                    "uid": cube.uid,
+                    "sha256": json_sha,
+                    "fields": cube_fields,
+                    "derived_from": [wav.uid],
+                    "media": [
+                        {"role": "cube_json", "sha256": json_sha},
+                        {"role": "cube_png", "sha256": png_sha}
+                    ]
+                }
+            },
+            "files": {"wav": "fitted.wav", "cubeJson": "cube.json", "cubePng": "cube.png"}
+        });
+        let imported = import_pipeline(&work, &manifest).expect("import");
+        assert_eq!(imported.cube_uid, cube.uid);
+        match crate::asset_catalog::resolve(&imported.cube_uid).expect("resolve") {
+            crate::asset_catalog::Resolve::Found(asset) => {
+                let roles: Vec<&str> = asset["media"].as_array().unwrap().iter().map(|item| item["role"].as_str().unwrap()).collect();
+                assert_eq!(roles, ["cube_json", "cube_png"]);
+                assert!(asset["honesty"]["claims"].as_array().unwrap().iter().any(|claim| claim == "library_cube"));
+            }
+            other => panic!("expected the imported cube, got {other:?}"),
+        }
         set_root_override_for_test(None);
         let _ = fs::remove_dir_all(&root);
         let _ = fs::remove_dir_all(&work);

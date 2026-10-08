@@ -1,8 +1,12 @@
-import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { defineConfig, type Plugin } from "vite";
 
-/** Cards that stay in the dev catalog and the example viewport, and must not ship in dist. */
+/**
+ * Dev-only and stand-in cards. The generator split (is_dev_fixture) is what
+ * keeps them out of the release deck and catalog. This plugin does not
+ * rewrite those files: a release build fails if one is still present.
+ */
 const STUB_CARD_IDS = new Set([
   "serve-node",
   "serve-gateway",
@@ -14,46 +18,66 @@ const STUB_CARD_IDS = new Set([
 
 const STUB_PHRASE = /not remeasured|stand-in|\bstand in\b/i;
 
-function shipsInRelease(asset: unknown): boolean {
-  if (!asset || typeof asset !== "object") return false;
-  const record = asset as {
-    legacy_id?: unknown;
-    honesty?: { fixture?: unknown };
-    body?: { id?: unknown; kind?: unknown; body?: { probed?: unknown; measuredHere?: unknown; host?: unknown } };
-  };
-  const legacy = typeof record.legacy_id === "string" ? record.legacy_id : "";
-  const cardId = typeof record.body?.id === "string" ? record.body.id : legacy;
-  if (STUB_CARD_IDS.has(cardId) || STUB_CARD_IDS.has(legacy)) return false;
-  if (record.honesty?.fixture === true) return false;
-  const kind = record.body?.kind;
-  const inner = record.body?.body;
-  if (kind === "ServeHealth" && inner?.probed !== true) return false;
-  if (kind === "BenchmarkCompare" && inner?.measuredHere !== true) return false;
-  if (typeof inner?.host === "string" && /^<[^>]+>$/.test(inner.host)) return false;
-  return !STUB_PHRASE.test(JSON.stringify(record));
+type Card = {
+  id?: unknown;
+  kind?: unknown;
+  body?: { probed?: unknown; measuredHere?: unknown; host?: unknown; sampleScript?: unknown };
+};
+
+type CatalogAsset = {
+  legacy_id?: unknown;
+  honesty?: { fixture?: unknown };
+  body?: { id?: unknown; kind?: unknown; body?: Card["body"] };
+};
+
+function cardProblems(card: Card): string[] {
+  const id = typeof card.id === "string" ? card.id : "?";
+  const problems: string[] = [];
+  if (STUB_CARD_IDS.has(id)) problems.push(id);
+  const body = card.body ?? {};
+  if (card.kind === "ServeHealth" && body.probed !== true) problems.push(`${id}: unprobed ServeHealth`);
+  if (card.kind === "BenchmarkCompare" && body.measuredHere !== true) problems.push(`${id}: unmeasured BenchmarkCompare`);
+  if (typeof body.host === "string" && /^<[^>]+>$/.test(body.host)) problems.push(`${id}: placeholder host`);
+  if (body.sampleScript === true) problems.push(`${id}: sample script`);
+  if (STUB_PHRASE.test(JSON.stringify(card))) problems.push(`${id}: stand-in phrase`);
+  return problems;
 }
 
-/** Drop stub cards from the release deck module so they are not in the JS bundle. The source file stays the example minus the dev-fixture assets (the Rust pin). */
-function stripReleaseDeck(): Plugin {
+function assetProblems(asset: unknown): string[] {
+  if (!asset || typeof asset !== "object") return ["asset is not an object"];
+  const record = asset as CatalogAsset;
+  const legacy = typeof record.legacy_id === "string" ? record.legacy_id : "";
+  const cardId = typeof record.body?.id === "string" ? record.body.id : legacy;
+  const label = cardId || legacy || "asset";
+  const problems: string[] = [];
+  if (STUB_CARD_IDS.has(cardId) || STUB_CARD_IDS.has(legacy)) problems.push(label);
+  if (record.honesty?.fixture === true) problems.push(`${label}: honesty.fixture`);
+  const kind = record.body?.kind;
+  const inner = record.body?.body ?? {};
+  if (kind === "ServeHealth" && inner.probed !== true) problems.push(`${label}: unprobed ServeHealth`);
+  if (kind === "BenchmarkCompare" && inner.measuredHere !== true) problems.push(`${label}: unmeasured BenchmarkCompare`);
+  if (typeof inner.host === "string" && /^<[^>]+>$/.test(inner.host)) problems.push(`${label}: placeholder host`);
+  if (inner.sampleScript === true) problems.push(`${label}: sample script`);
+  if (STUB_PHRASE.test(JSON.stringify(record))) problems.push(`${label}: stand-in phrase`);
+  return problems;
+}
+
+/** Fail the production build when a dev-only or stand-in card is still in the release inputs. */
+function failReleaseStubs(): Plugin {
   return {
-    name: "strip-release-deck",
+    name: "fail-release-stubs",
     apply: "build",
     enforce: "pre",
     transform(code, id) {
       const path = id.split("?")[0]?.replaceAll("\\", "/");
       if (!path?.endsWith("schemas/examples/viewport.release.json")) return null;
-      const document = JSON.parse(code) as { cards?: Array<{ id?: string }> };
-      document.cards = (document.cards ?? []).filter((card) => !STUB_CARD_IDS.has(String(card.id)));
-      return { code: JSON.stringify(document), map: null };
+      const document = JSON.parse(code) as { cards?: Card[] };
+      const problems = (document.cards ?? []).flatMap(cardProblems);
+      if (problems.length) {
+        this.error(`release deck contains dev-only or stand-in cards: ${problems.join(", ")}`);
+      }
+      return null;
     },
-  };
-}
-
-/** Vite copies public/ as-is. Drop fixture and placeholder cards from the bundle the release gate scans. */
-function stripReleaseCatalog(): Plugin {
-  return {
-    name: "strip-release-catalog",
-    apply: "build",
     closeBundle() {
       const path = resolve("dist/library/assets.json");
       if (!existsSync(path)) return;
@@ -61,30 +85,21 @@ function stripReleaseCatalog(): Plugin {
         assets?: unknown[];
         legacy_index?: Record<string, string>;
       };
-      const assets = (catalog.assets ?? []).filter(shipsInRelease);
-      const kept = new Set(
-        assets.flatMap((asset) => {
-          if (!asset || typeof asset !== "object") return [];
-          const uid = (asset as { uid?: unknown }).uid;
-          return typeof uid === "string" ? [uid] : [];
-        }),
-      );
-      const index: Record<string, string> = {};
-      for (const [key, uid] of Object.entries(catalog.legacy_index ?? {})) {
+      const problems = (catalog.assets ?? []).flatMap(assetProblems);
+      for (const key of Object.keys(catalog.legacy_index ?? {})) {
         const tail = key.includes(":") ? key.slice(key.indexOf(":") + 1) : key;
-        if (STUB_CARD_IDS.has(tail) || !kept.has(uid)) continue;
-        index[key] = uid;
+        if (STUB_CARD_IDS.has(tail)) problems.push(key);
       }
-      catalog.assets = assets;
-      catalog.legacy_index = index;
-      writeFileSync(path, `${JSON.stringify(catalog, null, 2)}\n`);
+      if (problems.length) {
+        this.error(`release catalog contains dev-only or stand-in cards: ${problems.join(", ")}`);
+      }
     },
   };
 }
 
 export default defineConfig({
   clearScreen: false,
-  plugins: [stripReleaseDeck(), stripReleaseCatalog()],
+  plugins: [failReleaseStubs()],
   server: {
     port: 1420,
     strictPort: true,

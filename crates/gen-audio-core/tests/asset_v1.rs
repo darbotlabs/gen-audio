@@ -246,7 +246,6 @@ fn library_media_hashes_verify_where_present() {
     assert!(verified > 0);
 }
 
-<<<<<<< HEAD
 /// E2: media.lock.json pins exactly the WAVs the release catalog hashes, so CI
 /// (no WAVs, build_assets --from-lock) mints the same clip uids.
 #[test]
@@ -388,7 +387,8 @@ fn no_persona_is_bound_to_a_cube_it_does_not_speak_in() {
         assert!(card["body"].get("cubeJsonUrl").is_none(), "{}: persona card links a cube", card["id"]);
         assert_eq!(card["body"]["spectrogram3d"], "none", "{}", card["id"]);
     }
-=======
+}
+
 fn speaker(idx: u64) -> Value {
     json!({"idx": idx, "persona": format!("Persona {idx}"), "voice": "af_heart", "engine": "kokoro_onnx"})
 }
@@ -462,5 +462,4 @@ fn speech_facts_reject_nine_speakers_overlap_and_overrun() {
         schema.is_valid(&touching),
         "schema rejects a 2-speaker clip"
     );
->>>>>>> 95f2687 (Unify cube layers with the library generator and record speaker offsets.)
 }

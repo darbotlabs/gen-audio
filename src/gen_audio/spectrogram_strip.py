@@ -5,7 +5,7 @@ column per ``hop`` samples (10 columns per second at 24 kHz by default), log
 spaced frequency bands from low (bottom) to high (top), dB magnitude mapped
 through a fixed colormap. Identity fields in the sidecar are integers (asset
 object model v1); floats stay in ``params``. WAV input goes through
-``gen_audio.audio_io.read_wav``; the PNG is written with zlib (no matplotlib).
+``gen_audio.identity.read_wav``; the PNG is written with zlib (no matplotlib).
 """
 
 from __future__ import annotations
@@ -18,8 +18,7 @@ from pathlib import Path
 
 import numpy as np
 
-from gen_audio.audio_io import read_wav
-from gen_audio.identity import ms_from_frames
+from gen_audio.identity import ms_from_frames, read_wav
 
 # Fixed 5-anchor colormap ("ga-ember"): near-black -> indigo -> magenta -> orange -> pale yellow.
 ANCHORS = np.array(

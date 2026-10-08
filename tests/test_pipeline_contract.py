@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import json
+
 import numpy as np
 import pytest
 
@@ -25,7 +27,7 @@ def test_cube_duration_matches_the_buffer():
     duration = audio.size / rate
     document = cube_document(audio, rate, duration_s=duration, engine="tone", derived_from=["asset-src"])
     assert document["duration_s"] == duration
-    assert document["cube_revision"] == 2
+    assert document["cube_revision"] == 3
     assert document["inv_hdr"] == measure(audio, rate).inv_hdr
     assert 0.0 < document["layer_score"] < 1.0
     assert document["cube_shape_f_t"][0] == (1024 // 2 + 1) // 5
@@ -49,7 +51,7 @@ def test_generated_cube_layers_match_library_cube():
     audio += rng.normal(0, 0.01, audio.size)
     duration = audio.size / rate
     generated = cube_document(audio, rate, duration_s=duration, engine="tone", derived_from=["asset-src"])
-    library, _cloud = library_cube(audio, rate, stem="tone", engine="tone", revision=2)
+    library, _cloud = library_cube(audio, rate, stem="tone", engine="tone", revision=3)
     assert generated["layers"] == library["layers"]
     assert generated["layer_score"] == library["layer_score"]
     assert generated["inv_hdr"] == library["inv_hdr"]
@@ -110,8 +112,6 @@ def test_pipeline_on_a_tone_locks_duration_and_measures_wer(tmp_path):
     spec = (tmp_path / "spectrogram.json").read_text(encoding="utf-8")
     cube = (tmp_path / "cube.json").read_text(encoding="utf-8")
     assert f'"duration_s": {duration}' in spec or str(duration) in spec
-    import json
-
     spec_doc = json.loads(spec)
     cube_doc = json.loads(cube)
     assert spec_doc["duration_s"] == duration
@@ -153,3 +153,17 @@ def test_asr_failure_keeps_the_synth(tmp_path, monkeypatch):
     assert manifest["compare"]["measuredHere"] is False
     assert "unavailable" in manifest["compare"]
     assert manifest["durationHonoured"] is False
+    cube = manifest["assets"]["cube"]
+    png = manifest["assets"]["cubePng"]
+    assert cube["uid"].startswith("ga:cube_ihdr:")
+    assert png["uid"] == cube["uid"]
+    assert {item["role"] for item in cube["media"]} == {"cube_json", "cube_png"}
+    assert cube["fields"]["cube_revision"] == 3
+    again = mint(
+        "cube_ihdr",
+        cube["fields"],
+        cube["media"],
+        [item for item in cube["derived_from"] if str(item).startswith("ga:")],
+    )
+    assert again == cube["uid"]
+    assert json.loads((tmp_path / "cube.json").read_text(encoding="utf-8"))["cube_revision"] == 3

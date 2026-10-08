@@ -63,25 +63,16 @@ def test_sample_rate_is_not_a_stub_label():
 
 
 def test_committed_release_viewport_has_no_stub_labels():
-    """The shipped deck is the example minus the three dev-fixture cards.
-
-    That pin (asset_v1) still includes cast-sample and the two serve rows.
-    The production bundle drops those six ids before the dist gate runs.
-    """
+    """The shipped deck is the example minus every dev-fixture and stand-in card."""
     document = json.loads(Path("schemas/examples/viewport.release.json").read_text(encoding="utf-8"))
     example = json.loads(Path("schemas/examples/viewport.example.json").read_text(encoding="utf-8"))
-    dev = {"bench-ref", "cube-fixture", "spec-fixture"}
+    dev = {"bench-ref", "cube-fixture", "spec-fixture", "cast-sample", "serve-node", "serve-gateway"}
     expected = [card for card in example["cards"] if card["id"] not in dev]
     assert document["cards"] == expected
     ids = {card["id"] for card in document["cards"]}
     assert dev.isdisjoint(ids)
-    assert "cast-sample" in ids
-    from gen_audio.release_gate import without_build_stubs
-
-    shipped = without_build_stubs(document)
-    assert label_hits(shipped) == []
-    assert structural_hits(shipped) == []
-    assert "cast-sample" not in {card["id"] for card in shipped["cards"]}
+    assert label_hits(document) == []
+    assert structural_hits(document) == []
 
 
 def test_t6_fixture_absent_in_release_and_dev_doc_stays_fixture():
@@ -105,9 +96,7 @@ def test_t6_fixture_absent_in_release_and_dev_doc_stays_fixture():
 
 def test_release_document_passes_structural_rules():
     document = json.loads(Path("schemas/examples/viewport.release.json").read_text(encoding="utf-8"))
-    from gen_audio.release_gate import without_build_stubs
-
-    assert structural_hits(without_build_stubs(document)) == []
+    assert structural_hits(document) == []
     for card in document["cards"]:
         assert str(card.get("uid", "")).startswith("ga:card:")
 

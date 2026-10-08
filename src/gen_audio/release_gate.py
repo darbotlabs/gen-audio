@@ -13,20 +13,6 @@ _FORBIDDEN = re.compile(
 _SKIP_KEYS = {"sample_rate", "samples", "n_samples"}
 
 
-def without_build_stubs(document: dict) -> dict:
-    """Cards the desktop build drops before they reach dist.
-
-    The source release deck stays the example minus the three dev-fixture
-    assets (the Rust pin), which still lists cast-sample and the serve rows.
-    Those ids are not in the production bundle.
-    """
-    cards = document.get("cards")
-    if not isinstance(cards, list):
-        return document
-    kept = [card for card in cards if not (isinstance(card, dict) and str(card.get("id")) in _STUB_CARD_IDS)]
-    return {**document, "cards": kept}
-
-
 def label_hits(document: dict) -> list[str]:
     """Return ``card id: match`` rows for stub labels in shipped cards."""
     hits: list[str] = []

@@ -13,7 +13,7 @@ from pathlib import Path
 import numpy as np
 
 from gen_audio.asr_wer import AsrError, transcribe, word_error_rate
-from gen_audio.assets import asset_object
+from gen_audio.assets import asset_object, sha256_file
 from gen_audio.audio_io import read_wav, write_wav
 from gen_audio.cube_layers import (
     LAYER_NAMES,
@@ -165,9 +165,9 @@ def run_pipeline(
     cube_json_path = out_dir / "cube.json"
     cube_png = out_dir / "cube.png"
     _write_cube_png(cube_png, cube_doc)
-    cube_png_asset = asset_object(cube_png, kind="cube_png", derived_from=[wav_asset["uid"]], duration_s=duration_s)
+    cube_png_sha = sha256_file(cube_png)
     cube_doc["png"] = cube_png.name
-    cube_doc["png_sha256"] = cube_png_asset["sha256"]
+    cube_doc["png_sha256"] = cube_png_sha
     cube_json_path.write_text(json.dumps(cube_doc, indent=2) + "\n", encoding="utf-8")
     cube_fields = {
         "source_sha256": wav_asset["sha256"],
@@ -181,7 +181,7 @@ def run_pipeline(
             round_half_up(float(duration_s) * 1000.0),
         ),
         "inv_hdr_ppm": round_half_up(float(cube_doc["inv_hdr"]) * 1_000_000.0),
-        "cube_revision": 2,
+        "cube_revision": int(cube_doc["cube_revision"]),
         "n_points": int(cube_doc["n_points"]),
         "n_fft": int(cube_doc["n_fft"]),
         "hop_frames": int(cube_doc["hop"]),
@@ -192,7 +192,21 @@ def run_pipeline(
         derived_from=[wav_asset["uid"]],
         duration_s=duration_s,
         fields=cube_fields,
+        media=[
+            {"role": "cube_json", "sha256": sha256_file(cube_json_path)},
+            {"role": "cube_png", "sha256": cube_png_sha},
+        ],
     )
+    # The png is media of the cube identity, so it carries that ga: uid.
+    cube_png_asset = {
+        "sha256": cube_png_sha,
+        "kind": "cube_png",
+        "uid": cube_asset["uid"],
+        "derived_from": [wav_asset["uid"]],
+        "bytes": cube_png.stat().st_size,
+        "name": cube_png.name,
+        "role": "cube_png",
+    }
 
     try:
         compare_doc = compare_clip(
@@ -276,6 +290,8 @@ def run_pipeline(
 # Closed form of the long-clip downsample (max 128 x 400 at n_fft 1024 / hop 256).
 # A 3_345_000-sample 24 kHz clip lands on sf=5, st=33. Short clips use a smaller
 # time stride; cube_document asks cube_layers.downsample_cube for the real pair.
+# Generated cubes report revision 3: the cube_layers set the Library misaki cube uses.
+GENERATED_CUBE_REVISION = 3
 CUBE_N_FFT = 1024
 CUBE_HOP = 256
 CUBE_DOWNSAMPLE = (5, 33)
@@ -315,7 +331,7 @@ def cube_document(
     """Inverse-HDR bitdot cube on the samples that were passed in.
 
     Signal, tonality, confidence, quality, the downsample, and ``layer_score``
-    come from :mod:`gen_audio.cube_layers`. ``inv_hdr`` stays
+    come from :mod:`gen_audio.cube_layers` (revision 3). ``inv_hdr`` stays
     :func:`gen_audio.cube_revision.measure` (rms/peak).
     """
     values = np.asarray(audio, dtype=np.float64).reshape(-1)
@@ -376,7 +392,7 @@ def cube_document(
         "bin_seconds": bin_s,
         "cube_shape_f_t": [int(nf), int(nt)],
         "cube_covers_s": nt * bin_s,
-        "cube_revision": 2,
+        "cube_revision": GENERATED_CUBE_REVISION,
         "n_points": len(points),
         "n_points_source": int(len(x)),
         "n_points_source_per_layer": counts,

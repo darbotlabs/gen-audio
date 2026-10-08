@@ -20,7 +20,7 @@ test("only the exact flag value 1 requests fixtures", () => {
   assert.equal(selectViewport("1", "release", "example"), "example");
 });
 
-test("release assets.json and the release deck leave out the fixture, reference and sample/stub cards", () => {
+test("release assets.json and the release deck leave out dev fixtures and stand-in cards", () => {
   const release = load("apps/desktop/public/library/assets.json");
   const dev = load("schemas/asset-object/fixtures/assets.dev.json");
   assert.deepEqual(release.assets.filter(isDevFixture), []);

@@ -6,6 +6,9 @@ Rust minter:
 
 preimage = UTF-8("ga-asset-v1") || 0x00 || JCS(identity)
 uid = "ga:{kind}:" + base32(SHA-256(preimage)[:16])   RFC 4648, lowercase, no padding
+
+``read_wav`` is the single reader in :mod:`gen_audio.audio_io`, re-exported
+here so callers share one function with ``round_half_up`` and ``ms_from_frames``.
 """
 
 from __future__ import annotations
@@ -13,6 +16,8 @@ from __future__ import annotations
 import hashlib
 import math
 from typing import Any
+
+from gen_audio.audio_io import read_wav as read_wav
 
 DOMAIN_TAG = b"ga-asset-v1"
 SCHEMA_MAJOR = 1

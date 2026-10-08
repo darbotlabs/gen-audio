@@ -47,10 +47,12 @@ function required(id: string): HTMLElement {
 
 /**
  * Release builds boot the real Library deck (viewport.release.json) and serve
- * an assets.json without the dev fixtures (spec-fixture, cube-fixture,
- * bench-ref). VITE_GEN_AUDIO_FIXTURES=1 (dev/test only) loads the example
- * deck and the dev assets instead; both stay out of the release bundle's
- * main chunk (dynamic import).
+ * an assets.json without the dev fixtures and stand-in cards (spec-fixture,
+ * cube-fixture, bench-ref, cast-sample, serve-node, serve-gateway).
+ * VITE_GEN_AUDIO_FIXTURES=1 (dev/test only) loads the example deck and the
+ * dev assets instead; both stay out of the release bundle's main chunk
+ * (dynamic import). The Vite build fails if a stand-in is still in the
+ * release deck or catalog.
  */
 const fixtureFlag: string | undefined = import.meta.env.VITE_GEN_AUDIO_FIXTURES;
 const loadExampleDocument: () => Promise<ViewportDocument> =

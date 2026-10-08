@@ -360,16 +360,19 @@ library_spectrogram, fixture_tone, persona_config, reference_only,
 not_a_podcast_render, engine_unavailable, g2p_only, status_only, sample_content`.
 
 **Release vs dev (PR #5 review).** An asset is dev/test-only when
-`honesty.fixture` is true or it claims `fixture_tone`, `reference_only` or
-`sample_content` (Rust `is_dev_fixture`, TS `isDevFixture`): today the
-`spec-fixture`, `cube-fixture`, `bench-ref`, `cast-sample` (sample script),
-`serve-node` and `serve-gateway` (never-probed placeholder endpoints) cards. `build_assets` writes them to
+`honesty.fixture` is true, it claims `fixture_tone`, `reference_only` or
+`sample_content`, or it is a stand-in card (unprobed `ServeHealth`, a
+placeholder host, or `sampleScript`). Rust `is_dev_fixture` and TS
+`isDevFixture` are that split: `spec-fixture`, `cube-fixture`, `bench-ref`,
+`cast-sample`, `serve-node` and `serve-gateway`. `build_assets` writes them to
 `schemas/asset-object/fixtures/assets.dev.json` instead of the public
 `assets.json`, and writes `viewport.release.json` (the example deck minus
 those cards). Release builds boot `viewport.release.json`; only
 `VITE_GEN_AUDIO_FIXTURES=1` (PR #4's flag) loads the example deck and the dev
-envelopes, through dynamic imports that a release build does not emit.
-`fixtures_v1.json` still pins every uid (release and dev).
+envelopes, through dynamic imports that a release build does not emit. The
+desktop Vite plugin fails the build if a dev-only or stand-in card is still
+in the release deck or catalog. `fixtures_v1.json` still pins every uid
+(release and dev).
 
 ## 6. Media references
 
