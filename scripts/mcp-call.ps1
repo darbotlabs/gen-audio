@@ -12,17 +12,30 @@ port really is Gen-Audio (initialize, serverInfo.name = gen-audio):
      listening on (the app falls back to an ephemeral port when 8765 is taken)
 Prints `MCP addr=<host:port> tool=<name>` and then the JSON-RPC result.
 Exits non-zero on a JSON-RPC error or a tool result with isError true.
+
+-OutFile <path> writes only the JSON-RPC response body to <path> (UTF-8, no
+BOM, the bytes as received), also when the response is a JSON-RPC error, so
+the evidence file is machine-checkable (ConvertFrom-Json, python json.load).
+With -OutFile the `MCP addr=... tool=...` header and a final `exit=<N>` line go
+to stderr and nothing goes to stdout; Write-Error stays on the error stream and
+the exit code is the same as without it. Without -OutFile the header and the
+body go to stdout as before.
 Works on Windows PowerShell 5.1 and PowerShell 7.
 
 .EXAMPLE
 pwsh -NoProfile -File scripts/mcp-call.ps1 -Tool ui_navigate -ArgsJson '{"slide":"slide:library"}'
+
+.EXAMPLE
+pwsh -NoProfile -File scripts/mcp-call.ps1 -Tool viewport_get -OutFile artifacts/viewport.json
 #>
 [CmdletBinding()]
 param(
     [Parameter(Mandatory = $true)][string]$Tool,
     [string]$ArgsJson = '{}',
     [int]$Port = 0,
-    [int]$TimeoutSec = 15
+    [int]$TimeoutSec = 15,
+    # Write only the JSON-RPC response body here (UTF-8, no BOM); header and exit=<N> go to stderr.
+    [string]$OutFile = ''
 )
 
 $ErrorActionPreference = 'Stop'
@@ -86,15 +99,23 @@ if (-not $addr) { throw "no Gen-Audio MCP server answered initialize on: $($cand
 
 $request = @{ jsonrpc = '2.0'; id = 2; method = 'tools/call'; params = @{ name = $Tool; arguments = $arguments } } | ConvertTo-Json -Depth 32 -Compress
 $text = Invoke-JsonRpc -Address $addr -Body $request -Timeout $TimeoutSec
-Write-Output "MCP addr=$addr tool=$Tool"
-Write-Output $text
+if ($OutFile) {
+    # The file holds the body and nothing else; the header goes to stderr.
+    $outPath = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($OutFile)
+    [System.IO.File]::WriteAllText($outPath, $text, (New-Object System.Text.UTF8Encoding($false)))
+    [Console]::Error.WriteLine("MCP addr=$addr tool=$Tool")
+} else {
+    Write-Output "MCP addr=$addr tool=$Tool"
+    Write-Output $text
+}
+$code = 0
 $reply = $text | ConvertFrom-Json
 if ($reply.PSObject.Properties.Name -contains 'error') {
     Write-Error "JSON-RPC error $($reply.error.code): $($reply.error.message)" -ErrorAction Continue
-    exit 1
-}
-if ($reply.result.PSObject.Properties.Name -contains 'isError' -and $reply.result.isError) {
+    $code = 1
+} elseif ($reply.result.PSObject.Properties.Name -contains 'isError' -and $reply.result.isError) {
     Write-Error "tool $Tool returned isError" -ErrorAction Continue
-    exit 1
+    $code = 1
 }
-exit 0
+if ($OutFile) { [Console]::Error.WriteLine("exit=$code") }
+exit $code
