@@ -251,3 +251,40 @@ test("L2/B8: syncCubeChrome passes the bound cube uid into fillCubeGlyph (not nu
   const slot = happy.document.querySelector("#cube-glyph");
   assert.fail(`B8: #cube-glyph never got Copy cube uid (slot text=${JSON.stringify(slot?.textContent)} children=${slot?.childElementCount})`);
 });
+
+// L40-1 / E5: a default boot (fixtures flag unset) must show the release deck.
+// A mutant that always loads viewport.example.json puts spec-fixture on the board.
+test("L40-1: default boot shows the release deck (not the fixture deck)", async () => {
+  const board = await waitForCards(10);
+  assert.ok(
+    board.querySelector('.card[data-id="lib-misaki-kokoro"]'),
+    "release deck includes lib-misaki-kokoro",
+  );
+  assert.equal(
+    board.querySelector('.card[data-id="spec-fixture"]'),
+    null,
+    "release deck must not include spec-fixture",
+  );
+  assert.equal(
+    board.querySelector('.card[data-id="cube-fixture"]'),
+    null,
+    "release deck must not include cube-fixture",
+  );
+});
+
+// L40-1: fixtures flag gates the dev-asset merge. Default boot passes [] into
+// loadLibraryCatalog; a mutant that always merges assets.dev.json puts the
+// fixture card envelopes into the shared catalog pending.
+test("L40-1: default boot does not merge assets.dev into the library catalog", async () => {
+  await waitForCards(10);
+  const catalog = await loadLibraryCatalog();
+  assert.ok(catalog);
+  const devIds = ["spec-fixture", "cube-fixture", "serve-node", "serve-gateway", "bench-ref", "cast-sample"];
+  for (const id of devIds) {
+    assert.equal(
+      catalog!.assets.find((a) => a.legacy_id === id),
+      undefined,
+      `dev asset ${id} must not be in the catalog when fixtures are off`,
+    );
+  }
+});

@@ -92,3 +92,24 @@ test("N-M2: bindEnv fixtures=1 boots the fixture deck through the inline call-si
   const ids = Array.from(happy.document.querySelectorAll("#board .card")).map((n) => (n as HTMLElement).dataset.id);
   assert.fail(`bindEnv fixtures=1 must boot the fixture deck (spec-fixture); board has ${JSON.stringify(ids)}`);
 });
+
+// L40-1: fixtures=1 must merge assets.dev.json through loadDevAssets(). A mutant
+// that drops the fixtures operand (always returns []) leaves the catalog without
+// the six fixture card envelopes even though the fixture deck is on the board.
+test("L40-1: bindEnv fixtures=1 merges assets.dev into the library catalog", async () => {
+  const { loadLibraryCatalog } = await import("../src/library-assets");
+  const deadline = Date.now() + 5000;
+  let catalog = null as Awaited<ReturnType<typeof loadLibraryCatalog>>;
+  while (Date.now() < deadline) {
+    await new Promise((r) => setTimeout(r, 25));
+    catalog = await loadLibraryCatalog();
+    if (catalog?.assets.some((a) => a.legacy_id === "spec-fixture")) break;
+  }
+  assert.ok(catalog, "catalog must load");
+  for (const id of ["spec-fixture", "cube-fixture", "serve-node", "serve-gateway", "bench-ref", "cast-sample"]) {
+    assert.ok(
+      catalog!.assets.some((a) => a.legacy_id === id),
+      `fixtures=1 must merge assets.dev envelope ${id}`,
+    );
+  }
+});
