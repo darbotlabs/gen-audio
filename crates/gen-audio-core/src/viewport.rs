@@ -249,6 +249,20 @@ fn install_deck_view(vp: &mut Viewport, id: &str, title: &str, kind: &str, home:
     append_member(&mut vp.slides, home, &view_id);
 }
 
+/// Install one view per enveloped clip. An envelope whose tile id is not in
+/// `library_clips()` is a data error: the deck and the views would otherwise
+/// diverge.
+fn install_enveloped_library_views(vp: &mut Viewport, envelopes: &[Value]) -> Result<(), String> {
+    for asset in envelopes {
+        let id = asset.get("legacy_id").and_then(Value::as_str).unwrap_or("");
+        let Some(clip) = catalog::library_clip(id) else {
+            return Err(format!("audio_clip envelope {id} has no catalog row"));
+        };
+        install_library_view(vp, clip.id, clip.title, clip.synthesized_speech, clip.wav_url.is_some());
+    }
+    Ok(())
+}
+
 fn install_library_view(
     vp: &mut Viewport,
     id: &str,
@@ -319,34 +333,19 @@ impl Viewport {
             face_index: BTreeMap::new(),
             names: BTreeMap::new(),
         };
-        // C-M1: envelopes and envelope-less catalog tiles. Either source alone
-        // drops a tile (the five audio_clip rows, or lib-magpie / lib-vibevoice
-        // / lib-pocket).
-        let envelopes = crate::asset_catalog::baked_audio_clip_ids();
-        for id in &envelopes {
-            if let Some(clip) = catalog::library_clip(id) {
-                install_library_view(
-                    &mut vp,
-                    clip.id,
-                    clip.title,
-                    clip.synthesized_speech,
-                    clip.wav_url.is_some(),
-                );
-            } else if let Some(asset) = crate::asset_catalog::baked_asset("audio_clip", id) {
-                let title = asset
-                    .pointer("/display/title")
-                    .and_then(Value::as_str)
-                    .unwrap_or(id);
-                let synthesized = asset
-                    .pointer("/honesty/synthesized_speech")
-                    .and_then(Value::as_bool)
-                    .unwrap_or(false);
-                let wav_present = asset.pointer("/body/wav_url").and_then(Value::as_str).is_some();
-                install_library_view(&mut vp, id, title, synthesized, wav_present);
-            }
-        }
+        // Every baked audio_clip envelope must already be a catalog row.
+        // Envelope-less catalog tiles are added below. Member order is the
+        // baked catalog's uid order, then those envelope-less tiles. The
+        // contract pins the set of tile ids, not this order. The desktop
+        // paints the library deck from its own cardIds list.
+        let envelopes: Vec<Value> = crate::asset_catalog::baked_audio_clip_ids()
+            .iter()
+            .filter_map(|id| crate::asset_catalog::baked_asset("audio_clip", id))
+            .collect();
+        install_enveloped_library_views(&mut vp, &envelopes)
+            .expect("release library envelopes");
         for clip in catalog::library_clips() {
-            if envelopes.iter().any(|id| id == clip.id) {
+            if envelopes.iter().any(|asset| asset.get("legacy_id").and_then(Value::as_str) == Some(clip.id)) {
                 continue;
             }
             install_library_view(
@@ -1463,8 +1462,8 @@ mod tests {
         }
     }
 
-    /// C-M1: the release deck's LibraryClip cards and the `view:lib-*` set are
-    /// the same eight tile ids. A catalog-only loop drops `lib-cube-explainer`.
+    /// C-M1: after `Viewport::release()`, the `view:lib-*` set is the eight
+    /// LibraryClip ids in `viewport.release.json`.
     #[test]
     fn release_library_views_match_the_release_deck() {
         let document: Value =
@@ -1501,6 +1500,23 @@ mod tests {
             catalog_ids, cards,
             "library_clips() disagrees with the release deck"
         );
+    }
+
+    #[test]
+    fn an_orphan_audio_clip_envelope_is_an_error() {
+        let mut vp = Viewport::release();
+        let before = vp.views.len();
+        let orphan = json!({
+            "kind": "audio_clip",
+            "legacy_id": "lib-orphan-envelope",
+            "display": {"title": "Orphan"},
+            "honesty": {"synthesized_speech": true},
+            "body": {"wav_url": "/library/orphan.wav"}
+        });
+        let err = install_enveloped_library_views(&mut vp, &[orphan]).unwrap_err();
+        assert!(err.contains("lib-orphan-envelope"), "{err}");
+        assert_eq!(vp.views.len(), before, "orphan envelope installed a view");
+        assert!(vp.views.iter().all(|view| view.asset != "lib-orphan-envelope"));
     }
 
     /// §2: M is the faces that apply. A full table for every tile, or a join on
