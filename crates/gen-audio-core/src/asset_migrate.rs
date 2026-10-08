@@ -69,6 +69,97 @@ fn clip_voice_model(engine: &str) -> Option<(&'static str, Option<&'static str>)
     }
 }
 
+/// Layer methods a manifest `cube.compare` entry may name (gen_audio.cli.cube
+/// LAYER_METHODS minus the default library_r3, which is the clip's own cube;
+/// pipeline_r2 is gen_audio.cube_pipeline_r2).
+pub const COMPARE_LAYER_METHODS: &[&str] = &["pipeline_r2"];
+
+/// cube_ihdr identity fields, body and "bins inferred" flag from a cube JSON
+/// (plus the v0 manifest `cube` block for fallbacks; Null when there is none).
+fn cube_identity(cube_doc: &Value, cube: &Value, sha: &str, sample_rate: u64, json_path: &str, png_path: &str) -> (Value, Value, bool) {
+    let cube_sr = cube_doc["sample_rate"].as_u64().unwrap_or(sample_rate);
+    let cube_duration_s = cube_doc["duration_s"].as_f64().or_else(|| cube["duration_s"].as_f64()).unwrap_or(0.0);
+    let shape = cube_doc["cube_shape_f_t"]
+        .as_array()
+        .cloned()
+        .or_else(|| cube_doc.pointer("/layers/signal/shape").and_then(Value::as_array).cloned())
+        .unwrap_or_default();
+    let freq_bins = shape.first().and_then(Value::as_u64).unwrap_or(0);
+    let time_bins = shape.get(1).and_then(Value::as_u64).unwrap_or(0).max(1);
+    let hop = cube_doc["hop"].as_u64();
+    let (bin_frames, inferred) = match (cube_doc["downsample_sf_st"].get(1).and_then(Value::as_u64), hop) {
+        (Some(step), Some(hop)) => (step * hop, false),
+        // No downsample step: infer from the float duration (B1'; two binary64 ops).
+        _ => (bin_frames_inferred(cube_duration_s, cube_sr, time_bins).unwrap_or(0), true),
+    };
+    let covers_ms = cube_doc["cube_covers_s"]
+        .as_f64()
+        .map(ms)
+        .unwrap_or_else(|| ms_from_frames(time_bins * bin_frames, cube_sr));
+    let n_points = cube_doc["n_points"]
+        .as_u64()
+        .unwrap_or_else(|| cube_doc["points_preview"].as_array().map(|items| items.len() as u64).unwrap_or(0));
+    let inv_hdr = cube_doc["inv_hdr"].as_f64().or_else(|| cube["inv_hdr"].as_f64()).unwrap_or(0.0);
+    let mut fields = json!({
+        "source_sha256": sha,
+        "sample_rate_hz": cube_sr,
+        "bin_frames": bin_frames,
+        "time_bins": time_bins,
+        "freq_bins": freq_bins,
+        "duration_ms": ms(cube_duration_s),
+        "covers_ms": covers_ms,
+        "inv_hdr_ppm": round_half_up(inv_hdr * 1_000_000.0).unwrap_or(0),
+        "cube_revision": cube_doc["cube_revision"].as_u64().or_else(|| cube["cube_revision"].as_u64()).unwrap_or(1),
+        "n_points": n_points,
+    });
+    if let Some(n_fft) = cube_doc["n_fft"].as_u64() {
+        fields["n_fft"] = json!(n_fft);
+    }
+    if let Some(hop) = hop {
+        fields["hop_frames"] = json!(hop);
+    }
+    // Cube identity (item 2): what made the cube is the generator's content
+    // hash and layer method (the producing module: gen_audio.cube_layers for
+    // library_r3, gen_audio.cube_pipeline_r2 for pipeline_r2). A commit SHA
+    // never enters fields.
+    for key in ["generator_sha256", "layer_method"] {
+        if let Some(value) = cube_doc.pointer(&format!("/provenance/{key}")).and_then(Value::as_str) {
+            fields[key] = json!(value);
+        }
+    }
+    let body = json!({
+        "inv_hdr": inv_hdr,
+        "layer_score": cube_doc["layer_score"],
+        "duration_s": cube_duration_s,
+        "bin_seconds": bin_frames as f64 / cube_sr.max(1) as f64,
+        "cube_covers_s": covers_ms as f64 / 1000.0,
+        "cube_shape_f_t": [freq_bins, time_bins],
+        "json_url": format!("/library/{json_path}"),
+        "png_url": format!("/library/{png_path}"),
+    });
+    (fields, body, inferred)
+}
+
+/// Provenance of a cube envelope from its cube JSON: the producing module
+/// writes generator (repo path), generator_sha256, layer_method and params
+/// (gen_audio.cube_layers, gen_audio.cube_pipeline_r2). `fallback` names the
+/// generator of a cube JSON without provenance. `generator_commit` (manifest
+/// cube block) is information only, unhashed, so a rebase or squash never
+/// changes the uid.
+fn recorded_cube_provenance(cube_doc: &Value, fallback: &str, generator_commit: Option<&str>, inferred: bool) -> Map<String, Value> {
+    let mut provenance = match cube_doc.get("provenance").and_then(Value::as_object) {
+        Some(recorded) => recorded.clone(),
+        None => obj(vec![("generator", json!(fallback))]),
+    };
+    if let Some(commit) = generator_commit {
+        provenance.insert("generator_commit".into(), json!(commit));
+    }
+    let mut params = provenance.get("params").and_then(Value::as_object).cloned().unwrap_or_default();
+    params.insert("bins_inferred_from_shape".into(), json!(inferred));
+    provenance.insert("params".into(), Value::Object(params));
+    provenance
+}
+
 pub fn migrate_v0_to_v1(bundle: &Value) -> Result<Value, AssetError> {
     let media = bundle.get("media").cloned().unwrap_or_else(|| json!({}));
     let clips = bundle.pointer("/manifest/clips").and_then(Value::as_array).cloned().unwrap_or_default();
@@ -216,54 +307,7 @@ pub fn migrate_v0_to_v1(bundle: &Value) -> Result<Value, AssetError> {
         let Some(cube_doc) = bundle.pointer("/cube_docs").and_then(|docs| docs.get(&json_path)) else {
             return fail("cube_doc_missing", format!("v0 clip {id}: cube JSON {json_path} not supplied"));
         };
-        let cube_sr = cube_doc["sample_rate"].as_u64().unwrap_or(sample_rate);
-        let cube_duration_s = cube_doc["duration_s"].as_f64().or_else(|| cube["duration_s"].as_f64()).unwrap_or(0.0);
-        let shape = cube_doc["cube_shape_f_t"]
-            .as_array()
-            .cloned()
-            .or_else(|| cube_doc.pointer("/layers/signal/shape").and_then(Value::as_array).cloned())
-            .unwrap_or_default();
-        let freq_bins = shape.first().and_then(Value::as_u64).unwrap_or(0);
-        let time_bins = shape.get(1).and_then(Value::as_u64).unwrap_or(0).max(1);
-        let hop = cube_doc["hop"].as_u64();
-        let (bin_frames, inferred) = match (cube_doc["downsample_sf_st"].get(1).and_then(Value::as_u64), hop) {
-            (Some(step), Some(hop)) => (step * hop, false),
-            // No downsample step: infer from the float duration (B1'; two binary64 ops).
-            _ => (bin_frames_inferred(cube_duration_s, cube_sr, time_bins).unwrap_or(0), true),
-        };
-        let covers_ms = cube_doc["cube_covers_s"]
-            .as_f64()
-            .map(ms)
-            .unwrap_or_else(|| ms_from_frames(time_bins * bin_frames, cube_sr));
-        let n_points = cube_doc["n_points"]
-            .as_u64()
-            .unwrap_or_else(|| cube_doc["points_preview"].as_array().map(|items| items.len() as u64).unwrap_or(0));
-        let inv_hdr = cube_doc["inv_hdr"].as_f64().or_else(|| cube["inv_hdr"].as_f64()).unwrap_or(0.0);
-        let mut fields = json!({
-            "source_sha256": sha,
-            "sample_rate_hz": cube_sr,
-            "bin_frames": bin_frames,
-            "time_bins": time_bins,
-            "freq_bins": freq_bins,
-            "duration_ms": ms(cube_duration_s),
-            "covers_ms": covers_ms,
-            "inv_hdr_ppm": round_half_up(inv_hdr * 1_000_000.0).unwrap_or(0),
-            "cube_revision": cube_doc["cube_revision"].as_u64().or_else(|| cube["cube_revision"].as_u64()).unwrap_or(1),
-            "n_points": n_points,
-        });
-        if let Some(n_fft) = cube_doc["n_fft"].as_u64() {
-            fields["n_fft"] = json!(n_fft);
-        }
-        if let Some(hop) = hop {
-            fields["hop_frames"] = json!(hop);
-        }
-        // Cube identity (item 2): what made the cube is the generator's
-        // content hash and layer method. A commit SHA never enters fields.
-        for key in ["generator_sha256", "layer_method"] {
-            if let Some(value) = cube_doc.pointer(&format!("/provenance/{key}")).and_then(Value::as_str) {
-                fields[key] = json!(value);
-            }
-        }
+        let (fields, cube_body, inferred) = cube_identity(cube_doc, cube, &sha, sample_rate, &json_path, &png_path);
         // E4: a cube JSON that names its WAV's sha256 must name this clip's WAV.
         if let Some(cube_source) = cube_doc["source_sha256"].as_str() {
             if cube_source != sha {
@@ -273,20 +317,8 @@ pub fn migrate_v0_to_v1(bundle: &Value) -> Result<Value, AssetError> {
                 );
             }
         }
-        // Provenance comes from the cube JSON (gen_audio.cube_layers writes the
-        // generator path, generator_sha256, layer_method and params), plus the
-        // manifest cube block's generator_commit: information only, unhashed,
-        // so a rebase or squash never changes the uid.
-        let mut cube_provenance = match cube_doc.get("provenance").and_then(Value::as_object) {
-            Some(recorded) => recorded.clone(),
-            None => obj(vec![("generator", json!("retired library cube generator (before gen_audio.cube_layers)"))]),
-        };
-        if let Some(commit) = cube["generator_commit"].as_str() {
-            cube_provenance.insert("generator_commit".into(), json!(commit));
-        }
-        let mut params = cube_provenance.get("params").and_then(Value::as_object).cloned().unwrap_or_default();
-        params.insert("bins_inferred_from_shape".into(), json!(inferred));
-        cube_provenance.insert("params".into(), Value::Object(params));
+        let cube_provenance =
+            recorded_cube_provenance(cube_doc, "retired library cube generator (before gen_audio.cube_layers)", cube["generator_commit"].as_str(), inferred);
         let mut cube_media = Vec::new();
         cube_media.extend(media_ref(&media, "cube_json", &json_path, "application/json"));
         cube_media.extend(media_ref(&media, "cube_png", &png_path, "image/png"));
@@ -302,16 +334,7 @@ pub fn migrate_v0_to_v1(bundle: &Value) -> Result<Value, AssetError> {
             relations: Map::new(),
             honesty: honesty(false, false, &["library_cube"]),
             provenance: cube_provenance,
-            body: json!({
-                "inv_hdr": inv_hdr,
-                "layer_score": cube_doc["layer_score"],
-                "duration_s": cube_duration_s,
-                "bin_seconds": bin_frames as f64 / cube_sr.max(1) as f64,
-                "cube_covers_s": covers_ms as f64 / 1000.0,
-                "cube_shape_f_t": [freq_bins, time_bins],
-                "json_url": format!("/library/{json_path}"),
-                "png_url": format!("/library/{png_path}"),
-            }),
+            body: cube_body,
         })?;
         let cube_uid = remember(&mut assets, cube_envelope);
         for (layer_index, name) in crate::asset::LAYER_NAMES.iter().enumerate() {
@@ -333,6 +356,55 @@ pub fn migrate_v0_to_v1(bundle: &Value) -> Result<Value, AssetError> {
                 body: stats.clone(),
             })?;
             remember(&mut assets, layer);
+        }
+
+        // Comparison cubes of the same WAV under another layer_method
+        // (e.g. pipeline_r2 = PR #4's formulas, gen_audio.cube_pipeline_r2). Cube
+        // tab Compare mode only; never the clip's primary cube.
+        for entry in cube.get("compare").and_then(Value::as_array).cloned().unwrap_or_default() {
+            let method = entry["layer_method"].as_str().unwrap_or_default().to_string();
+            if !COMPARE_LAYER_METHODS.contains(&method.as_str()) {
+                return fail("bad_layer_method", format!("v0 clip {id}: compare layer_method {method:?} is not one of {COMPARE_LAYER_METHODS:?}"));
+            }
+            let compare_json = entry["jsonUrl"].as_str().and_then(web_to_library_path).unwrap_or_default();
+            let compare_png = entry["pngUrl"].as_str().and_then(web_to_library_path).unwrap_or_default();
+            let Some(compare_doc) = bundle.pointer("/cube_docs").and_then(|docs| docs.get(&compare_json)) else {
+                return fail("cube_doc_missing", format!("v0 clip {id}: compare cube JSON {compare_json} not supplied"));
+            };
+            if compare_doc["layer_method"].as_str() != Some(method.as_str()) {
+                return fail("bad_layer_method", format!("{compare_json}: layer_method is not {method:?}"));
+            }
+            if compare_doc["source_sha256"].as_str() != Some(sha.as_str()) {
+                return fail("source_sha_mismatch", format!("{compare_json}: source_sha256 is not the sha256 of {wav_path}"));
+            }
+            let (fields, body, inferred) = cube_identity(compare_doc, &Value::Null, &sha, sample_rate, &compare_json, &compare_png);
+            // Provenance names the module that produced this cube (its cube JSON's
+            // provenance), plus which clip cube it is compared to.
+            let fallback = format!("gen_audio.cube_pipeline_r2 layer_method {method} (comparison variant)");
+            let mut compare_provenance = recorded_cube_provenance(compare_doc, &fallback, None, inferred);
+            if let Some(Value::Object(params)) = compare_provenance.get_mut("params") {
+                params.insert("layer_method".into(), json!(method));
+                params.insert("compare_to".into(), json!(cube_uid));
+                params.insert("layer_method_source".into(), compare_doc["layer_method_source"].clone());
+            }
+            let mut compare_media = Vec::new();
+            compare_media.extend(media_ref(&media, "cube_json", &compare_json, "application/json"));
+            compare_media.extend(media_ref(&media, "cube_png", &compare_png, "image/png"));
+            let envelope = build_envelope(EnvelopeParts {
+                kind: "cube_ihdr",
+                legacy_id: Some(format!("{id}.cube.{method}")),
+                title: compare_doc["title"].as_str().map(str::to_string).unwrap_or_else(|| format!("Inverse-HDR cube ({method}) — {id}")),
+                summary: entry["note"].as_str().map(str::to_string),
+                status: "ok",
+                fields,
+                media: compare_media,
+                src: vec![uid.clone()],
+                relations: Map::new(),
+                honesty: honesty(false, false, &["library_cube"]),
+                provenance: compare_provenance,
+                body,
+            })?;
+            remember(&mut assets, envelope);
         }
     }
 

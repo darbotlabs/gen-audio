@@ -781,6 +781,36 @@ function appendUtilitySlides(board: HTMLElement, startIndex: number): number {
   labels.className = "cube-labels";
   labels.setAttribute("aria-hidden", "true");
 
+  // Compare mode (Cube tab): the same WAV's cube under PR #4's pipeline formulas,
+  // drawn beside the bound cube on shared axes with the same playback slice.
+  const compareCanvas = window.document.createElement("canvas");
+  compareCanvas.id = "cube-compare-viewport";
+  compareCanvas.className = "cube-compare-canvas";
+  compareCanvas.hidden = true;
+  compareCanvas.setAttribute("aria-label", "Comparison cube (off)");
+  const compareLabels = window.document.createElement("canvas");
+  compareLabels.id = "cube-compare-labels";
+  compareLabels.className = "cube-labels cube-compare-labels";
+  compareLabels.hidden = true;
+  compareLabels.setAttribute("aria-hidden", "true");
+  const compareFallback = window.document.createElement("img");
+  compareFallback.id = "cube-compare-fallback";
+  compareFallback.className = "cube-fallback cube-compare-fallback";
+  compareFallback.hidden = true;
+  compareFallback.alt = "Static comparison cube image";
+  const paneHeads = (["primary", "compare"] as const).map((pane) => {
+    const head = window.document.createElement("p");
+    head.id = `cube-pane-head-${pane}`;
+    head.className = `cube-overlay cube-pane-head cube-pane-head-${pane}`;
+    head.hidden = true;
+    return head;
+  });
+  const compareClock = window.document.createElement("p");
+  compareClock.id = "cube-compare-clock";
+  compareClock.className = "cube-overlay cube-compare-clock";
+  compareClock.setAttribute("aria-live", "off");
+  compareClock.setAttribute("aria-label", "Playback slice time on both cubes");
+
   const title = window.document.createElement("p");
   title.id = "cube-title";
   title.className = "cube-overlay cube-title";
@@ -816,7 +846,13 @@ function appendUtilitySlides(board: HTMLElement, startIndex: number): number {
   const cubeGlyph = window.document.createElement("span");
   cubeGlyph.id = "cube-glyph";
   cubeGlyph.className = "cube-glyph";
-  picker.append(cubeGlyph, select, play, layersToggle);
+  const compareToggle = window.document.createElement("button");
+  compareToggle.type = "button";
+  compareToggle.id = "cube-compare-toggle";
+  compareToggle.textContent = "Compare";
+  compareToggle.setAttribute("aria-pressed", "false");
+  compareToggle.setAttribute("aria-label", "Compare library formulas with pipeline formulas on the same WAV");
+  picker.append(cubeGlyph, select, play, compareToggle, layersToggle);
 
   const badge = window.document.createElement("p");
   badge.id = "cube-badge";
@@ -852,7 +888,7 @@ function appendUtilitySlides(board: HTMLElement, startIndex: number): number {
   scrub.value = "0";
   scrub.setAttribute("aria-label", "Shared cube and audio clock");
 
-  stage.append(canvas, labels, fallback, title, badge, legend, picker, caption, clock, matrix, scrub);
+  stage.append(canvas, labels, fallback, compareCanvas, compareLabels, compareFallback, ...paneHeads, title, badge, legend, picker, caption, clock, compareClock, matrix, scrub);
   spatial.append(stage);
   board.append(spatial);
   return 2;

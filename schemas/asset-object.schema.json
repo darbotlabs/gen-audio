@@ -962,8 +962,8 @@
         },
         "layer_method": {
           "type": "string",
-          "pattern": "^library_r[0-9]+$",
-          "description": "Cube layer method; library_r3 is gen_audio.cube_layers revision 3."
+          "pattern": "^(library|pipeline)_r[0-9]+$",
+          "description": "Cube layer method, named by the module that produced the cube: library_r3 is gen_audio.cube_layers revision 3; pipeline_r2 is gen_audio.cube_pipeline_r2 (PR #4's formulas, comparison cubes only)."
         },
         "params": {
           "type": "object",
@@ -1292,8 +1292,8 @@
         },
         "layer_method": {
           "type": "string",
-          "pattern": "^library_r[0-9]+$",
-          "description": "Cube layer method; library_r3 is gen_audio.cube_layers revision 3."
+          "pattern": "^(library|pipeline)_r[0-9]+$",
+          "description": "Cube layer method, named by the module that produced the cube: library_r3 is gen_audio.cube_layers revision 3; pipeline_r2 is gen_audio.cube_pipeline_r2 (PR #4's formulas, comparison cubes only)."
         }
       }
     },

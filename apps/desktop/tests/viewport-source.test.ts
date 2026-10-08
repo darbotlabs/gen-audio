@@ -7,7 +7,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { DEV_FIXTURE_CLAIMS, fixturesRequested, isDevFixture, selectViewport } from "../src/viewport-source.ts";
-import { modelCubes, type AssetEnvelope } from "../src/library-assets.ts";
+import { comparisonMethod, modelCubes, type AssetEnvelope } from "../src/library-assets.ts";
 import { validateViewport } from "../src/validate.ts";
 import { Ajv2020 } from "ajv/dist/2020.js";
 
@@ -186,7 +186,12 @@ test("E4: every audio clip with a WAV has exactly one rev 3 cube made from that 
   assert.equal(clips.length, 5);
   for (const clip of clips) {
     const wav = clip.media.find((item) => item.role === "wav")!;
-    const cubes = assets.filter((asset) => asset.kind === "cube_ihdr" && asset.src.includes(clip.uid));
+    // The clip's own cube; a comparison cube (another layer_method, Cube tab Compare) is of the same WAV but never the clip's cube.
+    const derived = assets.filter((asset) => asset.kind === "cube_ihdr" && asset.src.includes(clip.uid));
+    for (const compare of derived.filter((asset) => comparisonMethod(asset) !== null)) {
+      assert.equal(compare.fields.source_sha256, wav.sha256, `${compare.legacy_id} is of ${clip.legacy_id}'s WAV`);
+    }
+    const cubes = derived.filter((asset) => comparisonMethod(asset) === null);
     assert.equal(cubes.length, 1, clip.legacy_id);
     assert.equal(cubes[0].fields.cube_revision, 3, clip.legacy_id);
     assert.equal(cubes[0].fields.source_sha256, wav.sha256, clip.legacy_id);

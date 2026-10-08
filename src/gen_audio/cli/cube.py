@@ -8,6 +8,11 @@ Two commands share this entry point (scripts/cube_revision.py):
   [--label LABEL] [--png PNG]`` builds the rev 3 four-layer Library cube JSON
   (and PNG) that the Library tiles and the Cube tab load, with the WAV sha256
   and the generator's normalized sha256. See gen_audio.cube_layers.
+  ``--method pipeline_r2`` instead writes the comparison cube (PR #4's
+  formulas, gen_audio.cube_pipeline_r2) that the Cube tab's Compare mode draws
+  next to the library_r3 cube. The command dispatches by method to the module
+  that owns the formulas (``LAYER_METHODS``), and each cube's provenance names
+  that module and its own normalized sha256.
 - ``cube_revision.py manifest [--manifest PATH] [--record-generator-commit]
   [--work-dir SIDECAR=DIR ...]`` rewrites the cube mirror in the Library
   manifest from the cube JSON and relabels the synth sidecars' outside-repo
@@ -32,6 +37,12 @@ from gen_audio.library_manifest import record_generator_commits, sync_manifest
 # `manifest` runs on a bare Python (CI's Windows scripts job).
 LIBRARY_MANIFEST = Path(__file__).resolve().parents[3] / "apps" / "desktop" / "public" / "library" / "manifest.json"
 
+# layer_method -> the module that owns those formulas. Each module's bytes are
+# its cubes' identity (provenance.generator_sha256), so an edit to one method
+# never moves the other's uids. Modules load lazily (numpy), see above.
+LAYER_METHODS = {"library_r3": "gen_audio.cube_layers", "pipeline_r2": "gen_audio.cube_pipeline_r2"}
+DEFAULT_LAYER_METHOD = "library_r3"
+
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
@@ -55,8 +66,15 @@ def build_layers_parser() -> argparse.ArgumentParser:
     parser.add_argument("out", type=Path, help="output cube JSON, e.g. apps/desktop/public/library/library_<stem>_cube3d.json")
     parser.add_argument("--stem", required=True, help="clip file stem; sets wavUrl, pngUrl and source_wav")
     parser.add_argument("--engine", required=True, help="engine id recorded in the cube JSON")
-    parser.add_argument("--label", help="clip name in the title, e.g. misaki\u2192kokoro (default: the stem)")
+    parser.add_argument("--label", help="clip name in the title, e.g. misaki\u2192kokoro (default: the stem; library_r3 only)")
     parser.add_argument("--png", type=Path, help="also write the 3D scatter PNG here")
+    parser.add_argument(
+        "--method",
+        choices=tuple(LAYER_METHODS),
+        default=DEFAULT_LAYER_METHOD,
+        help="layer formulas: library_r3 (default, the Library cube, gen_audio.cube_layers) or "
+        "pipeline_r2 (PR #4's formulas, comparison only, gen_audio.cube_pipeline_r2)",
+    )
     return parser
 
 
@@ -97,14 +115,28 @@ def manifest_main(argv: list[str]) -> int:
     return 0
 
 
+def build_cube(method: str, audio, sample_rate: int, *, stem: str, engine: str, source_sha256: str, label: str | None = None):
+    """(doc, point_cloud) from the module that owns ``method`` (LAYER_METHODS)."""
+    if method == "pipeline_r2":
+        from gen_audio.cube_pipeline_r2 import pipeline_r2_cube
+
+        return pipeline_r2_cube(audio, sample_rate, stem=stem, engine=engine, source_sha256=source_sha256)
+    if method != DEFAULT_LAYER_METHOD:
+        raise ValueError(f"unknown layer_method {method!r}; expected one of {', '.join(LAYER_METHODS)}")
+    from gen_audio.cube_layers import library_cube
+
+    return library_cube(audio, sample_rate, stem=stem, engine=engine, source_sha256=source_sha256, label=label)
+
+
 def layers_main(argv: list[str]) -> int:
     from gen_audio.audio_io import read_wav
-    from gen_audio.cube_layers import library_cube, write_cube_png
+    from gen_audio.cube_layers import write_cube_png
 
     args = build_layers_parser().parse_args(argv)
     try:
         audio, sample_rate = read_wav(args.wav)
-        doc, cloud = library_cube(
+        doc, cloud = build_cube(
+            args.method,
             audio,
             sample_rate,
             stem=args.stem,

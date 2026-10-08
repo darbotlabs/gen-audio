@@ -1,5 +1,19 @@
 /** Interactive library cube. Points come from cube JSON only. No invented layers. */
 
+import {
+  checkPair,
+  paneHeading,
+  sharedAxes,
+  sharedPoint,
+  sideFromDoc,
+  sliceReadout,
+  slicesAt,
+  type CompareSide,
+  type CubeDocFields,
+  type SharedAxes,
+  type SliceHead,
+} from "./cube-compare";
+
 export interface CubePoint {
   t: number;
   f: number;
@@ -60,6 +74,12 @@ const BOX: [number, number, number] = [1.5, 0.85, 1.05];
 const CAMERA = 4.6;
 const SCALE = 2.1;
 const LIFT = 0.1;
+/** Compare halves each canvas; pull the camera back so the plane names stay on screen. */
+const COMPARE_FIT = 0.84;
+
+function zoomNow(): number {
+  return state.zoom * (state.compare ? COMPARE_FIT : 1);
+}
 
 interface GlCache {
   gl: WebGLRenderingContext;
@@ -71,28 +91,66 @@ interface GlCache {
   headBuffer: WebGLBuffer | null;
 }
 
+/**
+ * One drawn cube: the bound Library cube ("primary") or, in Compare mode, the
+ * same WAV's cube under another layer method ("compare"). Camera, layer
+ * params and the clock are shared; each view has its own canvas and data.
+ */
+interface CubeView {
+  id: "primary" | "compare";
+  canvas: HTMLCanvasElement | null;
+  labels: HTMLCanvasElement | null;
+  points: CubePoint[];
+  meta: CubeMeta | null;
+  /** The cube JSON fields Compare needs (kept from the last load). */
+  doc: CubeDocFields | null;
+  resize: ResizeObserver | null;
+  unbind: AbortController | null;
+  fit: (() => void) | null;
+  glCache: GlCache | null;
+  glLost: boolean;
+  glFailed: string;
+  dataVersion: number;
+  builtVersion: number;
+  fallbackSelector: string;
+}
+
+function newView(id: CubeView["id"], fallbackSelector: string): CubeView {
+  return {
+    id,
+    canvas: null,
+    labels: null,
+    points: [],
+    meta: null,
+    doc: null,
+    resize: null,
+    unbind: null,
+    fit: null,
+    glCache: null,
+    glLost: false,
+    glFailed: "",
+    dataVersion: 0,
+    builtVersion: -1,
+    fallbackSelector,
+  };
+}
+
+const primary = newView("primary", "#cube-fallback");
+const compareView = newView("compare", "#cube-compare-fallback");
+
 const state = {
-  points: [] as CubePoint[],
   layerIds: [] as string[],
   layers: new Map<string, LayerParams>(),
   yaw: -0.45,
   pitch: -0.55,
   zoom: 1,
   scrub: 0,
-  canvas: null as HTMLCanvasElement | null,
-  labels: null as HTMLCanvasElement | null,
-  meta: null as CubeMeta | null,
-  resize: null as ResizeObserver | null,
-  unbind: null as AbortController | null,
   sourceUrl: "",
   clockListeners: new Set<(fraction: number) => void>(),
   rafId: 0 as number,
   audioClock: null as (() => number | null) | null,
-  glCache: null as GlCache | null,
-  glLost: false,
-  glFailed: "",
-  dataVersion: 0,
-  builtVersion: -1,
+  /** Compare mode: [primary side, compare side] on shared axes, or null when off. */
+  compare: null as { sides: [CompareSide, CompareSide]; axes: SharedAxes } | null,
 };
 
 function ensureLayer(id: string, order: number): LayerParams {
@@ -124,28 +182,40 @@ function dpr(): number {
  * there is no fixed 640x360 buffer. An optional 2D label canvas draws ticks/axes.
  */
 export function bindCube(canvas: HTMLCanvasElement, labels?: HTMLCanvasElement | null): void {
-  unbindCube();
+  bindView(primary, canvas, labels ?? null);
+}
+
+/** Bind the Compare pane's canvas (same camera, layers and clock as the primary cube). */
+export function bindCompareCube(canvas: HTMLCanvasElement, labels?: HTMLCanvasElement | null): void {
+  bindView(compareView, canvas, labels ?? null);
+}
+
+function bindView(view: CubeView, canvas: HTMLCanvasElement, labels: HTMLCanvasElement | null): void {
+  unbindView(view);
   const listeners = new AbortController();
   const signal = listeners.signal;
-  state.unbind = listeners;
-  state.canvas = canvas;
-  state.labels = labels ?? null;
-  state.glCache = null;
-  state.glFailed = "";
+  view.unbind = listeners;
+  view.canvas = canvas;
+  view.labels = labels;
+  view.glCache = null;
+  view.glFailed = "";
   const fit = () => {
     const ratio = dpr();
     const width = Math.max(1, Math.round(canvas.clientWidth * ratio));
     const height = Math.max(1, Math.round(canvas.clientHeight * ratio));
-    for (const node of [canvas, state.labels]) {
+    for (const node of [canvas, view.labels]) {
       if (!node) continue;
       if (node.width !== width) node.width = width;
       if (node.height !== height) node.height = height;
     }
     draw();
   };
+  view.fit = fit;
   if (typeof ResizeObserver !== "undefined") {
-    state.resize = new ResizeObserver(fit);
-    state.resize.observe(canvas.parentElement ?? canvas);
+    view.resize = new ResizeObserver(fit);
+    // The canvas too: Compare mode halves it without resizing the stage.
+    view.resize.observe(canvas.parentElement ?? canvas);
+    if (canvas.parentElement) view.resize.observe(canvas);
   }
   window.addEventListener("resize", fit, { signal });
   // Re-arm on DPR changes (display scaling, monitor moves, zoom).
@@ -160,13 +230,13 @@ export function bindCube(canvas: HTMLCanvasElement, labels?: HTMLCanvasElement |
   watchDpr();
   canvas.addEventListener("webglcontextlost", (event) => {
     event.preventDefault();
-    state.glLost = true;
-    state.glCache = null;
+    view.glLost = true;
+    view.glCache = null;
   }, { signal });
   canvas.addEventListener("webglcontextrestored", () => {
-    state.glLost = false;
-    state.glCache = null;
-    state.builtVersion = -1;
+    view.glLost = false;
+    view.glCache = null;
+    view.builtVersion = -1;
     draw();
   }, { signal });
   fit();
@@ -199,14 +269,20 @@ export function bindCube(canvas: HTMLCanvasElement, labels?: HTMLCanvasElement |
 
 /** Drop every listener/observer bindCube added (called on re-render and teardown). */
 export function unbindCube(): void {
-  state.unbind?.abort();
-  state.unbind = null;
-  state.resize?.disconnect();
-  state.resize = null;
+  unbindView(primary);
+  unbindView(compareView);
+}
+
+function unbindView(view: CubeView): void {
+  view.unbind?.abort();
+  view.unbind = null;
+  view.resize?.disconnect();
+  view.resize = null;
+  view.fit = null;
 }
 
 export function getCubeMeta(): CubeMeta | null {
-  return state.meta ? { ...state.meta } : null;
+  return primary.meta ? { ...primary.meta } : null;
 }
 
 export function boundCubeUrl(): string {
@@ -231,7 +307,7 @@ export function formatClock(seconds: number): string {
  * `beyond` is true.
  */
 export function getCubePlayhead(): CubePlayhead | null {
-  const meta = state.meta;
+  const meta = primary.meta;
   if (!meta || meta.timeBins < 2) return null;
   const duration = meta.durationS ?? 0;
   const seconds = state.scrub * duration;
@@ -261,8 +337,13 @@ export function getCubeScrub(): number {
 
 /** Readout + coverage badge + covered scrub segment. Classes only (CSP style-src 'self'). */
 function syncClockUi(): void {
-  const meta = state.meta;
+  const meta = primary.meta;
   const head = getCubePlayhead();
+  const compareClock = document.querySelector<HTMLElement>("#cube-compare-clock");
+  if (compareClock) {
+    const heads = getComparePlayheads();
+    compareClock.textContent = heads && meta ? sliceReadout(heads, meta.durationS ?? 0) : "";
+  }
   const clock = document.querySelector<HTMLElement>("#cube-clock");
   if (clock) {
     clock.textContent = head && meta
@@ -319,6 +400,129 @@ export function onCubeClock(listener: (fraction: number) => void): () => void {
   };
 }
 
+/** True while the Cube tab draws the comparison cube next to the bound one. */
+export function isCompareOn(): boolean {
+  return state.compare !== null;
+}
+
+/** Both sides (primary first) while Compare is on. */
+export function getCompareSides(): [CompareSide, CompareSide] | null {
+  return state.compare ? [{ ...state.compare.sides[0] }, { ...state.compare.sides[1] }] : null;
+}
+
+/**
+ * The ONE slice on both cubes: seconds = the shared scrub fraction x the bound
+ * WAV's duration (the same clock getCubePlayhead reads), mapped per cube by
+ * its bin_seconds and cube_covers_s. Null when Compare is off.
+ */
+export function getComparePlayheads(): SliceHead[] | null {
+  const compare = state.compare;
+  const meta = primary.meta;
+  if (!compare || !meta || !meta.durationS) return null;
+  return slicesAt(state.scrub * meta.durationS, compare.sides, compare.axes);
+}
+
+export type CompareResult = { ok: true; message: string } | { ok: false; reason: string };
+
+/**
+ * Enter Compare mode: load `url` (a comparison cube of the bound clip's WAV)
+ * into the second pane. `shas` are the asset envelopes' fields.source_sha256
+ * for the bound cube and the comparison cube (assets.json). Refuses, and draws
+ * nothing in the second pane, unless both cubes come from the same WAV.
+ */
+export async function loadCompareCube(url: string, shas: { primary: string | null; compare: string | null }): Promise<CompareResult> {
+  const refuse = (reason: string): CompareResult => {
+    exitCompare();
+    return { ok: false, reason };
+  };
+  if (!primary.meta || !primary.doc) return refuse("Bind a library cube before comparing.");
+  const boundUrl = primary.meta.url;
+  const left = sideFromDoc(boundUrl, primary.doc, shas.primary);
+  if (typeof left === "string") return refuse(left);
+  let data: CubeDoc;
+  try {
+    const response = await fetch(url);
+    if (!response.ok) return refuse(`Comparison cube JSON did not load (${response.status}). Nothing is drawn in its place.`);
+    data = await response.json();
+  } catch (error) {
+    return refuse(`Comparison cube JSON did not load (${String(error)}). Nothing is drawn in its place.`);
+  }
+  if (primary.meta?.url !== boundUrl) return refuse("The bound cube changed while the comparison cube loaded.");
+  const right = sideFromDoc(url, data, shas.compare);
+  if (typeof right === "string") return refuse(right);
+  const verdict = checkPair(left, right);
+  if (!verdict.ok) return refuse(verdict.reason);
+  const parsed = parseCubeDoc(url, data);
+  if (typeof parsed === "string") return refuse(`Comparison cube: ${parsed}`);
+  compareView.points = parsed.points;
+  compareView.meta = parsed.meta;
+  compareView.doc = data;
+  const sides: [CompareSide, CompareSide] = [left, right];
+  state.compare = { sides, axes: sharedAxes(sides) };
+  primary.dataVersion += 1;
+  compareView.dataVersion += 1;
+  setCompareChrome();
+  draw();
+  syncClockUi();
+  return { ok: true, message: `Compare: ${paneHeading(left)} | ${paneHeading(right)} · one slice, same WAV (sha256 ${left.sourceSha256.slice(0, 12)}…)` };
+}
+
+/** Leave Compare mode: the second pane empties and the bound cube returns to bin axes. */
+export function exitCompare(): void {
+  const was = state.compare !== null;
+  state.compare = null;
+  compareView.points = [];
+  compareView.meta = null;
+  compareView.doc = null;
+  compareView.dataVersion += 1;
+  if (was) primary.dataVersion += 1;
+  setCompareChrome();
+  draw();
+  syncClockUi();
+}
+
+/** Stage class, pane headings and aria labels for Compare mode. Classes only (CSP style-src 'self'). */
+function setCompareChrome(): void {
+  const compare = state.compare;
+  const stage = primary.canvas?.closest<HTMLElement>(".cube-stage") ?? document.querySelector<HTMLElement>(".cube-stage");
+  stage?.classList.toggle("is-compare", Boolean(compare));
+  const heads: Array<[string, CompareSide | null]> = [
+    ["#cube-pane-head-primary", compare ? compare.sides[0] : null],
+    ["#cube-pane-head-compare", compare ? compare.sides[1] : null],
+  ];
+  for (const [selector, side] of heads) {
+    const node = document.querySelector<HTMLElement>(selector);
+    if (!node) continue;
+    node.textContent = side ? paneHeading(side) : "";
+    node.hidden = !side;
+    if (side) node.dataset.method = side.method;
+    else delete node.dataset.method;
+  }
+  if (primary.canvas) {
+    primary.canvas.setAttribute(
+      "aria-label",
+      compare
+        ? `${compare.sides[0].label} cube. Shared axes: seconds by Hz by layer. Drag to rotate both cubes, wheel to zoom.`
+        : "Inverse-HDR bitdot cube. Drag to rotate, wheel to zoom.",
+    );
+  }
+  if (compareView.canvas) {
+    compareView.canvas.hidden = !compare;
+    compareView.canvas.setAttribute(
+      "aria-label",
+      compare ? `${compare.sides[1].label} cube. Shared axes: seconds by Hz by layer. Drag to rotate both cubes, wheel to zoom.` : "Comparison cube (off)",
+    );
+  }
+  if (compareView.labels) compareView.labels.hidden = !compare;
+  const toggle = document.querySelector<HTMLButtonElement>("#cube-compare-toggle");
+  if (toggle) {
+    toggle.setAttribute("aria-pressed", compare ? "true" : "false");
+    toggle.textContent = compare ? "Single" : "Compare";
+  }
+  primary.fit?.();
+  compareView.fit?.();
+}
+
 export function setCubeLayer(layer: string, on: boolean): void {
   if (!state.layers.has(layer)) return; // never invent layers
   state.layers.get(layer)!.on = on;
@@ -360,41 +564,32 @@ export function listCubeLayers(): LayerParams[] {
 }
 
 function resetCube(): void {
-  state.points = [];
+  if (state.compare) exitCompare();
+  primary.points = [];
+  primary.doc = null;
   state.layerIds = [];
   state.layers.clear();
   state.sourceUrl = "";
-  state.meta = null;
-  state.dataVersion += 1;
+  primary.meta = null;
+  primary.dataVersion += 1;
 }
 
-export async function loadCube(url: string): Promise<string> {
-  let data: {
-    points_preview?: CubePoint[];
-    engine?: string;
-    inv_hdr?: number;
-    title?: string;
-    duration_s?: number;
-    cube_shape_f_t?: number[];
-    bin_seconds?: number;
-    cube_covers_s?: number;
-    cube_revision?: number;
-    pngUrl?: string;
-    layers?: Record<string, unknown> | string[];
-  };
-  try {
-    const response = await fetch(url);
-    if (!response.ok) {
-      resetCube();
-      draw();
-      return `Cube JSON did not load (${response.status}).`;
-    }
-    data = await response.json();
-  } catch (error) {
-    resetCube();
-    draw();
-    return `Cube JSON did not load (${String(error)}).`;
-  }
+type CubeDoc = CubeDocFields & {
+  points_preview?: CubePoint[];
+  engine?: string;
+  inv_hdr?: number;
+  title?: string;
+  duration_s?: number;
+  cube_shape_f_t?: number[];
+  bin_seconds?: number;
+  cube_covers_s?: number;
+  cube_revision?: number;
+  pngUrl?: string;
+  layers?: Record<string, unknown> | string[];
+};
+
+/** Points (the four honesty layers only) and meta from a cube JSON, or why not. */
+function parseCubeDoc(url: string, data: CubeDoc): { points: CubePoint[]; names: string[]; meta: CubeMeta } | string {
   const points = Array.isArray(data.points_preview) ? data.points_preview : [];
   const namesFromDict = data.layers && !Array.isArray(data.layers) ? Object.keys(data.layers) : [];
   const namesFromArr = Array.isArray(data.layers) ? data.layers.map(String) : [];
@@ -403,18 +598,8 @@ export async function loadCube(url: string): Promise<string> {
   );
   // Only accept the four honesty layers present in JSON — do not invent extras.
   const missing = EXPECTED.filter((name) => !names.includes(name));
-  if (points.length === 0 || missing.length > 0) {
-    resetCube();
-    draw();
-    return "Cube JSON has no signal/tonality/confidence/quality preview.";
-  }
-  state.points = points.filter((point) => names.includes(point.layer));
-  state.layerIds = [...names];
-  state.layers.clear();
-  names.forEach((id, index) => ensureLayer(id, index));
-  state.scrub = 0;
-  state.sourceUrl = url;
-  state.dataVersion += 1;
+  if (points.length === 0 || missing.length > 0) return "Cube JSON has no signal/tonality/confidence/quality preview.";
+  const kept = points.filter((point) => names.includes(point.layer));
   const name = cubeNameFromUrl(url);
   const shape = shapeOf(data);
   const durationS = typeof data.duration_s === "number" && data.duration_s > 0 ? data.duration_s : null;
@@ -424,12 +609,12 @@ export async function loadCube(url: string): Promise<string> {
       : durationS && shape[1] > 0
         ? durationS / shape[1]
         : null;
-  state.meta = {
+  const meta: CubeMeta = {
     url,
     name,
     title: typeof data.title === "string" && data.title ? data.title : `Inverse-HDR cube \u2014 ${name}`,
     invHdr: typeof data.inv_hdr === "number" ? data.inv_hdr : null,
-    points: state.points.length,
+    points: kept.length,
     freqBins: shape[0],
     timeBins: shape[1],
     durationS,
@@ -443,16 +628,52 @@ export async function loadCube(url: string): Promise<string> {
     revision: typeof data.cube_revision === "number" ? data.cube_revision : null,
     pngUrl: typeof data.pngUrl === "string" && data.pngUrl.startsWith("/") ? data.pngUrl : "",
   };
-  draw();
-  if (state.glFailed) showFallback(state.glFailed);
-  rebuildLayerMatrixUi();
-  syncClockUi();
-  const inv = state.meta.invHdr === null ? "?" : state.meta.invHdr.toFixed(4);
-  const span = durationS ? ` \u00b7 ${formatClock(durationS)} \u00b7 ${shape[1]} time bins` : "";
-  return `${state.meta.title} \u00b7 inv_hdr ${inv} \u00b7 ${state.points.length} points${span} \u00b7 axes time bin / freq bin / layer`;
+  return { points: kept, names, meta };
 }
 
-function shapeOf(data: { cube_shape_f_t?: number[]; layers?: Record<string, unknown> | string[] }): [number, number] {
+export async function loadCube(url: string): Promise<string> {
+  let data: CubeDoc;
+  try {
+    const response = await fetch(url);
+    if (!response.ok) {
+      resetCube();
+      draw();
+      return `Cube JSON did not load (${response.status}).`;
+    }
+    data = await response.json();
+  } catch (error) {
+    resetCube();
+    draw();
+    return `Cube JSON did not load (${String(error)}).`;
+  }
+  const parsed = parseCubeDoc(url, data);
+  if (typeof parsed === "string") {
+    resetCube();
+    draw();
+    return parsed;
+  }
+  // A new bound cube ends Compare: the comparison cube belonged to the old WAV.
+  if (state.compare) exitCompare();
+  primary.points = parsed.points;
+  primary.doc = data;
+  state.layerIds = [...parsed.names];
+  state.layers.clear();
+  parsed.names.forEach((id, index) => ensureLayer(id, index));
+  state.scrub = 0;
+  state.sourceUrl = url;
+  primary.dataVersion += 1;
+  primary.meta = parsed.meta;
+  const { durationS, timeBins } = parsed.meta;
+  draw();
+  if (primary.glFailed) showFallback(primary, primary.glFailed);
+  rebuildLayerMatrixUi();
+  syncClockUi();
+  const inv = primary.meta.invHdr === null ? "?" : primary.meta.invHdr.toFixed(4);
+  const span = durationS ? ` \u00b7 ${formatClock(durationS)} \u00b7 ${timeBins} time bins` : "";
+  return `${primary.meta.title} \u00b7 inv_hdr ${inv} \u00b7 ${primary.points.length} points${span} \u00b7 axes time bin / freq bin / layer`;
+}
+
+function shapeOf(data: { cube_shape_f_t?: unknown; layers?: Record<string, unknown> | string[] }): [number, number] {
   const direct = data.cube_shape_f_t;
   if (Array.isArray(direct) && direct.length === 2 && direct.every((n) => Number.isFinite(n) && n > 0)) {
     return [Number(direct[0]), Number(direct[1])];
@@ -574,15 +795,15 @@ function planeY(z: number): number {
   return -0.9 + z * 1.8;
 }
 
-function aspect(): number {
-  const canvas = state.canvas;
+function aspect(view: CubeView): number {
+  const canvas = view.canvas;
   if (!canvas || canvas.clientHeight === 0) return 1;
   return canvas.clientWidth / canvas.clientHeight;
 }
 
 /** Same transform as the vertex shaders, for the 2D label overlay. Returns buffer pixel coords. */
-function project(x: number, y: number, z: number): { px: number; py: number } | null {
-  const canvas = state.canvas;
+function project(view: CubeView, x: number, y: number, z: number): { px: number; py: number } | null {
+  const canvas = view.canvas;
   if (!canvas) return null;
   const cy = Math.cos(state.yaw);
   const sy = Math.sin(state.yaw);
@@ -596,9 +817,9 @@ function project(x: number, y: number, z: number): { px: number; py: number } | 
   const y2 = y * cx - z1 * sx;
   const z2 = y * sx + z1 * cx;
   const w = Math.max(0.2, CAMERA + z2);
-  const a = aspect();
-  let nx = (x1 * state.zoom * SCALE) / w;
-  let ny = (y2 * state.zoom * SCALE) / w;
+  const a = aspect(view);
+  let nx = (x1 * zoomNow() * SCALE) / w;
+  let ny = (y2 * zoomNow() * SCALE) / w;
   if (a > 1) nx /= a;
   else ny *= a;
   ny += LIFT;
@@ -703,17 +924,17 @@ function link(gl: WebGLRenderingContext, vs: string, fs: string): WebGLProgram {
   return program;
 }
 
-function glCache(): GlCache | null {
-  const canvas = state.canvas;
-  if (!canvas || state.glLost || state.glFailed) return null;
-  if (state.glCache) return state.glCache;
+function glCache(view: CubeView): GlCache | null {
+  const canvas = view.canvas;
+  if (!canvas || view.glLost || view.glFailed) return null;
+  if (view.glCache) return view.glCache;
   const gl = canvas.getContext("webgl", { alpha: false, preserveDrawingBuffer: true, antialias: true });
   if (!gl) {
-    showFallback("WebGL is unavailable in this view.");
+    showFallback(view, "WebGL is unavailable in this view.");
     return null;
   }
   try {
-    state.glCache = {
+    view.glCache = {
       gl,
       points: link(gl, POINTS_VS, POINTS_FS),
       lines: link(gl, LINES_VS, LINES_FS),
@@ -722,26 +943,41 @@ function glCache(): GlCache | null {
       gridCount: 0,
       headBuffer: gl.createBuffer(),
     };
-    state.builtVersion = -1;
-    return state.glCache;
+    view.builtVersion = -1;
+    return view.glCache;
   } catch (error) {
     console.error("[cube]", error);
-    showFallback(`WebGL shader error: ${String(error)}`);
+    showFallback(view, `WebGL shader error: ${String(error)}`);
     return null;
   }
 }
 
+/** The compare side for a view while Compare is on (shared seconds/Hz axes), else null (bin axes). */
+function sideOf(view: CubeView): CompareSide | null {
+  const compare = state.compare;
+  if (!compare) return null;
+  return view.id === "primary" ? compare.sides[0] : compare.sides[1];
+}
+
 /** Static VBOs built once per loaded cube (and after a context restore), not per frame. */
-function buildBuffers(cache: GlCache): void {
-  if (state.builtVersion === state.dataVersion) return;
+function buildBuffers(view: CubeView, cache: GlCache): void {
+  if (view.builtVersion === view.dataVersion) return;
   const { gl } = cache;
   for (const entry of cache.layerBuffers.values()) gl.deleteBuffer(entry.buffer);
   cache.layerBuffers.clear();
+  const side = sideOf(view);
+  const axes = state.compare?.axes ?? null;
   for (const id of state.layerIds) {
     const data: number[] = [];
-    for (const point of state.points) {
+    for (const point of view.points) {
       if (point.layer !== id) continue;
-      data.push(point.t * 2 - 1, planeY(point.z), point.f * 2 - 1, point.v);
+      if (side && axes) {
+        // Compare: seconds and Hz on axes shared by both cubes.
+        const at = sharedPoint(side, axes, point.t, point.f);
+        data.push(at.x * 2 - 1, planeY(point.z), at.y * 2 - 1, point.v);
+      } else {
+        data.push(point.t * 2 - 1, planeY(point.z), point.f * 2 - 1, point.v);
+      }
     }
     const buffer = gl.createBuffer();
     if (!buffer) continue;
@@ -749,31 +985,31 @@ function buildBuffers(cache: GlCache): void {
     gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(data), gl.STATIC_DRAW);
     cache.layerBuffers.set(id, { buffer, count: data.length / 4 });
   }
-  const grid = gridLines();
+  const grid = gridLines(view);
   if (cache.gridBuffer) gl.deleteBuffer(cache.gridBuffer);
   cache.gridBuffer = gl.createBuffer();
   gl.bindBuffer(gl.ARRAY_BUFFER, cache.gridBuffer);
   gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(grid), gl.STATIC_DRAW);
   cache.gridCount = grid.length / 7;
-  state.builtVersion = state.dataVersion;
+  view.builtVersion = view.dataVersion;
 }
 
-function setShared(gl: WebGLRenderingContext, program: WebGLProgram): void {
+function setShared(view: CubeView, gl: WebGLRenderingContext, program: WebGLProgram): void {
   gl.uniform1f(gl.getUniformLocation(program, "u_yaw"), state.yaw);
   gl.uniform1f(gl.getUniformLocation(program, "u_pitch"), state.pitch);
-  gl.uniform1f(gl.getUniformLocation(program, "u_zoom"), state.zoom);
-  gl.uniform1f(gl.getUniformLocation(program, "u_aspect"), aspect());
+  gl.uniform1f(gl.getUniformLocation(program, "u_zoom"), zoomNow());
+  gl.uniform1f(gl.getUniformLocation(program, "u_aspect"), aspect(view));
   gl.uniform3f(gl.getUniformLocation(program, "u_box"), BOX[0], BOX[1], BOX[2]);
   gl.uniform1f(gl.getUniformLocation(program, "u_camera"), CAMERA);
   gl.uniform1f(gl.getUniformLocation(program, "u_scale"), SCALE);
   gl.uniform1f(gl.getUniformLocation(program, "u_lift"), LIFT);
 }
 
-function drawLines(cache: GlCache, buffer: WebGLBuffer | null, count: number): void {
+function drawLines(view: CubeView, cache: GlCache, buffer: WebGLBuffer | null, count: number): void {
   if (!buffer || count === 0) return;
   const { gl, lines } = cache;
   gl.useProgram(lines);
-  setShared(gl, lines);
+  setShared(view, gl, lines);
   gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
   const pos = gl.getAttribLocation(lines, "a_pos");
   const col = gl.getAttribLocation(lines, "a_color");
@@ -786,34 +1022,53 @@ function drawLines(cache: GlCache, buffer: WebGLBuffer | null, count: number): v
   gl.disableVertexAttribArray(col);
 }
 
+/** Draw every bound view from the same clock (state.scrub), so Compare's two slices never drift. */
 function draw(): void {
-  const canvas = state.canvas;
+  const heads = getComparePlayheads();
+  drawView(primary, heads?.[0] ?? null);
+  if (state.compare) drawView(compareView, heads?.[1] ?? null);
+}
+
+function drawView(view: CubeView, slice: SliceHead | null): void {
+  const canvas = view.canvas;
   if (!canvas) return;
-  const cache = glCache();
+  const cache = glCache(view);
   if (!cache) return;
   const { gl } = cache;
-  hideFallback();
+  hideFallback(view);
   gl.viewport(0, 0, canvas.width, canvas.height);
   gl.clearColor(0.035, 0.045, 0.07, 1);
   gl.clear(gl.COLOR_BUFFER_BIT);
-  drawLabels();
-  if (state.points.length === 0) return;
-  buildBuffers(cache);
+  drawLabels(view, slice);
+  if (view.points.length === 0) return;
+  buildBuffers(view, cache);
   gl.disable(gl.DEPTH_TEST);
   gl.depthMask(false);
   gl.enable(gl.BLEND);
-  drawLines(cache, cache.gridBuffer, cache.gridCount);
-  const head = getCubePlayhead();
-  const headX = head ? head.x * 2 - 1 : -1;
-  const band = head ? 1.01 * (2 / Math.max(1, head.timeBins - 1)) : 0;
-  // Playhead frame + translucent plane at the bound clip's current time bin.
-  const headLines = playheadLines(headX);
+  drawLines(view, cache, cache.gridBuffer, cache.gridCount);
+  let headX = -1;
+  let planeX = -1;
+  let band = 0;
+  if (slice) {
+    // Compare: the slice plane sits at the clock's exact second (same x on both cubes);
+    // the highlight band follows this cube's own bin under it.
+    planeX = slice.x * 2 - 1;
+    headX = slice.binX * 2 - 1;
+    band = 1.01 * 2 * slice.binWidth;
+  } else {
+    const head = getCubePlayhead();
+    headX = head ? head.x * 2 - 1 : -1;
+    planeX = headX;
+    band = head ? 1.01 * (2 / Math.max(1, head.timeBins - 1)) : 0;
+  }
+  // Playhead frame + translucent plane at the bound clip's current time.
+  const headLines = playheadLines(planeX);
   gl.bindBuffer(gl.ARRAY_BUFFER, cache.headBuffer);
   gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(headLines), gl.DYNAMIC_DRAW);
-  drawLines(cache, cache.headBuffer, headLines.length / 7);
+  drawLines(view, cache, cache.headBuffer, headLines.length / 7);
   const { points } = cache;
   gl.useProgram(points);
-  setShared(gl, points);
+  setShared(view, gl, points);
   gl.uniform1f(gl.getUniformLocation(points, "u_head"), headX);
   gl.uniform1f(gl.getUniformLocation(points, "u_band"), band);
   gl.uniform1f(
@@ -845,7 +1100,7 @@ function pushSeg(out: number[], a: number[], b: number[], rgba: number[]): void 
 }
 
 /** 3D bounding box, floor + back-wall grid, plane outlines. Interleaved xyz rgba. */
-function gridLines(): number[] {
+function gridLines(view: CubeView): number[] {
   const out: number[] = [];
   const box = [0.62, 0.7, 0.82, 0.55];
   const faint = [0.5, 0.58, 0.7, 0.16];
@@ -854,13 +1109,16 @@ function gridLines(): number[] {
     for (const x of [-1, 1]) pushSeg(out, [x, y, -1], [x, y, 1], box);
   }
   for (const x of [-1, 1]) for (const z of [-1, 1]) pushSeg(out, [x, -1, z], [x, 1, z], box);
-  const meta = state.meta;
-  for (const t of ticks(meta?.timeBins ?? 0, tickStep(meta?.timeBins ?? 0, 50))) {
+  const meta = view.meta;
+  const axes = state.compare?.axes ?? null;
+  const timeTicks = axes ? secondTicks(axes.timeMaxS).map((s) => s / axes.timeMaxS) : ticks(meta?.timeBins ?? 0, tickStep(meta?.timeBins ?? 0, 50));
+  for (const t of timeTicks) {
     const x = t * 2 - 1;
     pushSeg(out, [x, -1, -1], [x, -1, 1], faint);
     pushSeg(out, [x, -1, 1], [x, 1, 1], faint);
   }
-  for (const f of ticks(meta?.freqBins ?? 0, tickStep(meta?.freqBins ?? 0, 20))) {
+  const freqTicks = axes ? hzTicks(axes.freqMaxHz).map((hz) => hz / axes.freqMaxHz) : ticks(meta?.freqBins ?? 0, tickStep(meta?.freqBins ?? 0, 20));
+  for (const f of freqTicks) {
     const z = f * 2 - 1;
     pushSeg(out, [-1, -1, z], [1, -1, z], faint);
     pushSeg(out, [-1, -1, z], [-1, 1, z], faint);
@@ -894,6 +1152,23 @@ function tickStep(bins: number, preferred: number): number {
   return bins / preferred > 9 ? preferred * 2 : preferred;
 }
 
+/** Shared time axis ticks (seconds) for Compare: about six, on round steps. */
+function secondTicks(maxS: number): number[] {
+  if (!(maxS > 0)) return [];
+  const step = [5, 10, 15, 30, 60, 120, 300].find((candidate) => maxS / candidate <= 8) ?? 600;
+  const out: number[] = [];
+  for (let s = 0; s <= maxS + 1e-9; s += step) out.push(s);
+  return out;
+}
+
+/** Shared frequency axis ticks (Hz) for Compare, every 2 kHz. */
+function hzTicks(maxHz: number): number[] {
+  if (!(maxHz > 0)) return [];
+  const out: number[] = [];
+  for (let hz = 0; hz <= maxHz + 1e-9; hz += 2000) out.push(hz);
+  return out;
+}
+
 /** Normalized 0..1 positions for integer bin ticks. */
 function ticks(bins: number, step: number): number[] {
   if (bins <= 1 || step <= 0) return [];
@@ -908,14 +1183,15 @@ export function layerCss(id: string): string {
 }
 
 /** 2D overlay: tick labels, axis names, layer plane names. Pixel-exact with the GL projection. */
-function drawLabels(): void {
-  const labels = state.labels;
+function drawLabels(view: CubeView, slice: SliceHead | null): void {
+  const labels = view.labels;
   if (!labels) return;
   const ctx = labels.getContext("2d");
   if (!ctx) return;
   ctx.clearRect(0, 0, labels.width, labels.height);
-  const meta = state.meta;
-  if (!meta || state.points.length === 0) return;
+  const meta = view.meta;
+  if (!meta || view.points.length === 0) return;
+  const project3 = (x: number, y: number, z: number) => project(view, x, y, z);
   const ratio = dpr();
   const font = Math.round(Math.max(10, Math.min(15, labels.height / ratio / 48)) * ratio);
   ctx.font = `${font}px "Segoe UI", system-ui, sans-serif`;
@@ -927,36 +1203,47 @@ function drawLabels(): void {
     ctx.textAlign = align;
     ctx.fillText(value, p.px + dx * ratio, p.py + dy * ratio);
   };
-  const tStep = tickStep(meta.timeBins, 50);
-  for (let b = 0; meta.timeBins > 1 && b <= meta.timeBins - 1; b += tStep) {
-    text(String(b), project((b / (meta.timeBins - 1)) * 2 - 1, -1, -1), 0, 14);
+  const axes = state.compare?.axes ?? null;
+  if (axes) {
+    // Compare: shared axes in seconds and kHz, identical on both cubes.
+    for (const s of secondTicks(axes.timeMaxS)) text(formatClock(s), project3((s / axes.timeMaxS) * 2 - 1, -1, -1), 0, 14);
+    text("time (s, shared)", project3(0, -1, -1.28), 0, 26);
+    for (const hz of hzTicks(axes.freqMaxHz)) text(`${hz / 1000}k`, project3(1, -1, (hz / axes.freqMaxHz) * 2 - 1), 14, 8, "left");
+    text("Hz", project3(1.3, -1, 0), 20, 18, "left");
+  } else {
+    const tStep = tickStep(meta.timeBins, 50);
+    for (let b = 0; meta.timeBins > 1 && b <= meta.timeBins - 1; b += tStep) {
+      text(String(b), project3((b / (meta.timeBins - 1)) * 2 - 1, -1, -1), 0, 14);
+    }
+    text("time bin", project3(0, -1, -1.28), 0, 26);
+    const fStep = tickStep(meta.freqBins, 20);
+    for (let b = 0; meta.freqBins > 1 && b <= meta.freqBins - 1; b += fStep) {
+      text(String(b), project3(1, -1, (b / (meta.freqBins - 1)) * 2 - 1), 14, 8, "left");
+    }
+    text("freq bin", project3(1.3, -1, 0), 20, 18, "left");
   }
-  text("time bin", project(0, -1, -1.28), 0, 26);
-  const fStep = tickStep(meta.freqBins, 20);
-  for (let b = 0; meta.freqBins > 1 && b <= meta.freqBins - 1; b += fStep) {
-    text(String(b), project(1, -1, (b / (meta.freqBins - 1)) * 2 - 1), 14, 8, "left");
-  }
-  text("freq bin", project(1.3, -1, 0), 20, 18, "left");
   EXPECTED.forEach((id, index) => {
     ctx.fillStyle = layerCss(id);
-    text(id, project(1, planeY(index / 3), 1), 10, 0, "left");
+    text(id, project3(1, planeY(index / 3), 1), 10, 0, "left");
   });
   // Axis title sits above the back-left vertical edge, clear of the layer-matrix overlay (top-right).
   ctx.fillStyle = ink;
-  text("layer (+value)", project(-1, 1, 1), 0, -14, "left");
-  const head = getCubePlayhead();
-  if (head) {
-    ctx.fillStyle = "rgba(41, 211, 255, 0.95)";
-    text(`bin ${head.bin}`, project(head.x * 2 - 1, 1, -1), 0, -12);
+  text("layer (+value)", project3(-1, 1, 1), 0, -14, "left");
+  ctx.fillStyle = "rgba(41, 211, 255, 0.95)";
+  if (slice) {
+    text(`bin ${slice.bin}`, project3(slice.x * 2 - 1, 1, -1), 0, -12);
+  } else {
+    const head = getCubePlayhead();
+    if (head) text(`bin ${head.bin}`, project3(head.x * 2 - 1, 1, -1), 0, -12);
   }
 }
 
 /** WebGL missing or shaders failed: show the matplotlib PNG as a labeled static image. */
-function showFallback(reason: string): void {
-  state.glFailed = state.glFailed || reason;
-  const img = document.querySelector<HTMLImageElement>("#cube-fallback");
-  if (img && state.meta?.pngUrl) {
-    img.src = state.meta.pngUrl;
+function showFallback(view: CubeView, reason: string): void {
+  view.glFailed = view.glFailed || reason;
+  const img = document.querySelector<HTMLImageElement>(view.fallbackSelector);
+  if (img && view.meta?.pngUrl) {
+    img.src = view.meta.pngUrl;
     img.alt = `Static cube image (${reason})`;
     img.hidden = false;
   }
@@ -964,7 +1251,7 @@ function showFallback(reason: string): void {
   if (caption) caption.textContent = `${reason} Showing the static cube PNG.`;
 }
 
-function hideFallback(): void {
-  const img = document.querySelector<HTMLImageElement>("#cube-fallback");
+function hideFallback(view: CubeView): void {
+  const img = document.querySelector<HTMLImageElement>(view.fallbackSelector);
   if (img && !img.hidden) img.hidden = true;
 }

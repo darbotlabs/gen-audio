@@ -494,7 +494,9 @@ def sync_manifest(manifest_path: Path | str, library_dir: Path | str | None = No
     by_wav: dict[str, tuple[str, dict]] = {}
     for path in sorted(library.glob("*_cube3d.json")):
         doc = json.loads(path.read_text(encoding="utf-8"))
-        if "cube_revision" in doc and isinstance(doc.get("wavUrl"), str):
+        # A comparison cube (top-level layer_method, gen_audio.cube_pipeline_r2)
+        # names the same WAV but is never a clip's own cube.
+        if "cube_revision" in doc and isinstance(doc.get("wavUrl"), str) and "layer_method" not in doc:
             by_wav[doc["wavUrl"]] = (path.name, doc)
     changed: list[str] = []
     for clip in manifest.get("clips", []):

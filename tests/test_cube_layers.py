@@ -143,7 +143,12 @@ def _need_wav(stem: str) -> Path:
 
 
 def test_every_library_cube_json_is_listed_here():
-    assert sorted(path.name for path in LIBRARY.glob("*_cube3d.json")) == sorted(cube for _s, cube, _e, _l in GENERATED)
+    """Each *_cube3d.json is a library_r3 cube listed here or a comparison cube
+    listed in tests/test_cube_pipeline_r2.py (its own module, its own identity)."""
+    from test_cube_pipeline_r2 import COMPARE_CUBES
+
+    listed = [cube for _s, cube, _e, _l in GENERATED] + COMPARE_CUBES
+    assert sorted(path.name for path in LIBRARY.glob("*_cube3d.json")) == sorted(listed)
 
 
 @pytest.mark.parametrize(("stem", "cube", "engine", "label"), GENERATED)

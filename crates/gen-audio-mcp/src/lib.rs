@@ -87,6 +87,8 @@ pub fn smoke() -> Result<String, String> {
         "voice_profile_get",
         "voice_profile_list",
         "ui_flip",
+        "ui_cube",
+        "viewport_get",
         "cube_layers",
         "asset_resolve",
         "asset_list",
@@ -176,6 +178,8 @@ fn tool_defs() -> Vec<Value> {
         tool("ui_flip", "Queue a flipcard. Optional personaId attaches the voice-profile payload. Does not render audio."),
         tool("ui_playback", "Queue play, pause, or seek for a library tile. A seek waits (waitMs, default 2000) for the window and returns {requested_t, landed_t, ok, reason}. Does not open the WAV in this process."),
         tool("ui_seek_report", "Desktop window only: report where a queued ui_playback seek (bus seq) landed. Records the result ui_playback returns."),
+        tool("ui_cube", "Set the Cube tab mode: single, or compare (the clip's Library cube, library_r3, beside the same WAV's pipeline_r2 cube, one playback slice). compare takes tileId or uid. The desktop Compare button posts this same tool."),
+        tool("viewport_get", "Read the UI state this server owns: cube_mode (single or compare) and cube_compare {tileId, clip_uid, left_method, right_method, left_cube_uid, right_cube_uid} or null."),
         tool("ui_set_sidepane", "Queue Agent personas (max 8) and a Voice TTS model. Connector ids are rejected."),
         tool("ui_generate", "Record a generation request. synthesizedSpeech is false. Does not call synth."),
         tool("library_list", "List the library catalog. Does not open WAV bytes. Unavailable clips stay unavailable."),
@@ -213,6 +217,14 @@ fn tool(name: &str, description: &str) -> Value {
         "ui_select_tile" => (json!({"tileId": {"type": "string"}, "uid": UID_PROP.clone()}), json!([])),
         "ui_flip" => (json!({"tileId": {"type": "string"}, "uid": UID_PROP.clone(), "flipped": {"type": "boolean"}, "personaId": {"type": "string"}}), json!([])),
         "ui_playback" => (json!({"tileId": {"type": "string"}, "uid": UID_PROP.clone(), "action": {"type": "string"}, "seconds": {"type": "number"}, "origin": {"type": "string", "enum": ["user", "auto"], "description": "play only; default user"}, "waitMs": {"type": "integer", "minimum": 0, "maximum": 10000, "description": "seek only; default 2000"}}), json!(["action"])),
+        "ui_cube" => (
+            json!({
+                "mode": {"type": "string", "enum": control::CUBE_MODES, "description": "single, or compare (Library formulas rev 3 beside Pipeline formulas rev 2 on the same WAV)"},
+                "tileId": {"type": "string", "description": "library clip tile id, e.g. lib-misaki-kokoro; compare only needs it when no clip is in Compare yet"},
+                "uid": UID_PROP.clone()
+            }),
+            json!(["mode"]),
+        ),
         "ui_seek_report" => (
             json!({"seq": {"type": "integer", "minimum": 1}, "requested_t": {"type": "number"}, "landed_t": {"type": ["number", "null"]}, "ok": {"type": "boolean"}, "reason": {"type": "string", "maxLength": 240}}),
             json!(["seq", "requested_t", "landed_t", "ok", "reason"]),
@@ -264,6 +276,8 @@ pub fn call_tool(server: &Server, params: &Value) -> Result<Value, (i32, String)
         "ui_select_tile" => control::ui_select_tile(&args)?,
         "ui_flip" => control::ui_flip(&args)?,
         "ui_playback" => control::ui_playback(&args)?,
+        "ui_cube" => control::ui_cube(&args)?,
+        "viewport_get" => control::viewport_get(),
         "ui_seek_report" => control::ui_seek_report(&args)?,
         "ui_set_sidepane" => control::ui_set_sidepane(&args)?,
         "ui_generate" => control::ui_generate(&args)?,
@@ -294,11 +308,12 @@ fn allowed_arguments(name: &str) -> &'static [&'static str] {
         "cube_revision" => &["input", "output", "maxSteps"],
         "serve_health" => &["host", "port", "probe"],
         "connector_health" => &["id"],
-        "list_connectors" | "list_engines" | "fixture_tone" | "benchmark_reference" | "harness_plan" | "library_list" | "voice_profile_list" => &[],
+        "list_connectors" | "list_engines" | "fixture_tone" | "benchmark_reference" | "harness_plan" | "library_list" | "voice_profile_list" | "viewport_get" => &[],
         "ui_navigate" => &["slide", "tileId", "uid"],
         "ui_select_tile" => &["tileId", "uid"],
         "ui_flip" => &["tileId", "uid", "flipped", "personaId"],
         "ui_playback" => &["tileId", "uid", "action", "seconds", "origin", "waitMs"],
+        "ui_cube" => &["mode", "tileId", "uid"],
         "ui_seek_report" => &["seq", "requested_t", "landed_t", "ok", "reason"],
         "asset_resolve" | "asset_glyph" => &["uid"],
         "asset_list" => &["kind", "cursor", "limit"],
@@ -667,6 +682,67 @@ mod tests {
         assert!(profile_text.contains("af_heart"), "{profile_text}");
         assert!(profile_text.contains("\"notPodcast\":true"), "{profile_text}");
         assert!(profile_text.contains("kokoro_onnx"), "{profile_text}");
+        let _ = std::fs::remove_dir_all(&server.scratch.dir);
+    }
+
+    /// Rule 5 falsifier: Compare is reachable and readable over MCP. Fails if
+    /// ui_cube or viewport_get is unregistered or unlisted, if the schema stops
+    /// constraining mode, or if viewport_get omits cube_mode / cube_compare.
+    /// The arguments are the ones the desktop Compare button posts
+    /// (schemas/examples/ui_cube.contract.json, also read by the npm test).
+    #[test]
+    fn ui_cube_enters_and_leaves_compare_and_viewport_get_reports_it() {
+        let server = Server::isolated();
+        let contract: Value = serde_json::from_str(include_str!("../../../schemas/examples/ui_cube.contract.json")).unwrap();
+        let rpc = |id: u64, call: &Value| handle(&server, json!({"jsonrpc":"2.0","id":id,"method":"tools/call","params":call})).unwrap().unwrap();
+        let body = |response: &Value| -> Value {
+            assert!(response.get("error").is_none(), "{response}");
+            serde_json::from_str(response["result"]["content"][0]["text"].as_str().unwrap()).unwrap()
+        };
+        let listed = handle(&server, json!({"jsonrpc":"2.0","id":1,"method":"tools/list"})).unwrap().unwrap();
+        let tools = listed["result"]["tools"].as_array().unwrap();
+        let find = |name: &str| tools.iter().find(|tool| tool["name"] == name).cloned().unwrap_or_else(|| panic!("{name} not listed"));
+        let cube = find("ui_cube");
+        assert_eq!(cube["inputSchema"]["properties"]["mode"]["enum"], json!(["single", "compare"]));
+        assert_eq!(cube["inputSchema"]["required"], json!(["mode"]));
+        assert_eq!(find("viewport_get")["inputSchema"]["properties"], json!({}));
+
+        let entered = body(&rpc(2, &contract["enter"]["call"]));
+        assert_eq!(entered["op"], "cube");
+        assert_eq!(entered["args"], contract["enter"]["state"], "the queued state is the contract state");
+        let seq = entered["seq"].as_u64().unwrap();
+        let (_, events) = control::since(seq - 1);
+        let event = events.iter().find(|event| event["seq"] == seq).expect("ui_cube queued a bus event");
+        assert_eq!(event["op"], "cube");
+        assert_eq!(event["args"], contract["enter"]["state"]);
+        let read = body(&rpc(3, &contract["read"]["call"]));
+        assert_eq!(read["cube_mode"], "compare");
+        assert_eq!(read["cube_compare"], contract["enter"]["state"]["cube_compare"]);
+        assert_eq!(read["cube_compare"]["left_method"], "library_r3");
+        assert_eq!(read["cube_compare"]["right_method"], "pipeline_r2");
+        assert_eq!(read["cube_seq"], seq);
+
+        // compare without a clip keeps the clip already in Compare.
+        let again = body(&rpc(4, &json!({"name": "ui_cube", "arguments": {"mode": "compare"}})));
+        assert_eq!(again["args"], contract["enter"]["state"]);
+        // A rejected call leaves the state alone.
+        let refused = rpc(5, &json!({"name": "ui_cube", "arguments": {"mode": "compare", "tileId": "lib-kokoro-onnx"}}));
+        assert_eq!(refused["error"]["code"], -32602);
+        assert_eq!(body(&rpc(6, &contract["read"]["call"]))["cube_mode"], "compare");
+        let extra = rpc(7, &json!({"name": "ui_cube", "arguments": {"mode": "single", "left": "pipeline_r2"}}));
+        assert!(extra["error"]["message"].as_str().unwrap().contains("unexpected argument left"));
+
+        let left = body(&rpc(8, &contract["exit"]["call"]));
+        assert_eq!(left["args"], contract["exit"]["state"]);
+        let read = body(&rpc(9, &contract["read"]["call"]));
+        assert_eq!(read["cube_mode"], "single");
+        assert!(read.get("cube_compare").is_some_and(Value::is_null), "single reports cube_compare: null, not a missing field");
+        let no_clip = rpc(10, &json!({"name": "ui_cube", "arguments": {"mode": "compare"}}));
+        assert!(no_clip["error"]["message"].as_str().unwrap().contains("needs tileId or uid"));
+        // A cube uid names its clip: either cube of the pair enters Compare on misaki.
+        let by_cube = body(&rpc(11, &json!({"name": "ui_cube", "arguments": {"mode": "compare", "uid": "ga:cube_ihdr:zq3x2xysrfaf4tunakpqz6vhxi"}})));
+        assert_eq!(by_cube["args"], contract["enter"]["state"]);
+        body(&rpc(12, &contract["exit"]["call"]));
         let _ = std::fs::remove_dir_all(&server.scratch.dir);
     }
 

@@ -22,7 +22,7 @@ export interface AssetEnvelope {
   src: string[];
   relations?: Record<string, unknown>;
   honesty?: { synthesized_speech?: boolean; fixture?: boolean; claims?: string[] };
-  provenance?: Record<string, unknown>;
+  provenance?: { [key: string]: unknown; generator?: string; params?: Record<string, unknown> };
   body?: Record<string, unknown>;
   display: { title: string; glyph: string; display_rev?: number };
 }
@@ -68,7 +68,10 @@ export function modelCubes(assets: readonly AssetEnvelope[], modelId: string): M
   }
   const rows: ModelCubeRow[] = [];
   for (const clip of clipsBy("voice_model")) {
-    const cube = assets.find((asset) => asset.kind === "cube_ihdr" && asset.src.length === 1 && asset.src[0] === clip.uid);
+    // The clip's own cube; a comparison cube (another layer_method) of the same WAV is not the model's cube.
+    const cube = assets.find(
+      (asset) => asset.kind === "cube_ihdr" && asset.src.length === 1 && asset.src[0] === clip.uid && !comparisonMethod(asset),
+    );
     if (!cube) continue;
     const shape = cube.body?.cube_shape_f_t;
     rows.push({
@@ -97,8 +100,23 @@ export interface LibraryCatalog {
   assets: readonly AssetEnvelope[];
   modelCubes(modelId: string): ModelCubes;
   clipForTile(tileId: string): AssetEnvelope | null;
+  /** The clip's own spectrogram or cube; comparison cubes (another layer_method) never count. */
   derivedFrom(clipUid: string, kind: "spectrogram_2d" | "cube_ihdr"): AssetEnvelope | null;
   cubeForUrl(url: string): AssetEnvelope | null;
+  /** Comparison cubes of the clip's WAV (cube_ihdr with provenance.params.layer_method, e.g. pipeline_r2). */
+  compareCubesFor(clipUid: string): AssetEnvelope[];
+}
+
+/** layer_method of a comparison cube envelope; null for a clip's own cube. */
+export function comparisonMethod(asset: AssetEnvelope): string | null {
+  const method = asset.provenance?.params?.layer_method;
+  return asset.kind === "cube_ihdr" && typeof method === "string" && method !== "library_r3" ? method : null;
+}
+
+/** fields.source_sha256 of a derived asset, when it is a sha256. */
+export function sourceSha256(asset: AssetEnvelope | null | undefined): string | null {
+  const sha = asset?.fields?.source_sha256;
+  return typeof sha === "string" && /^[0-9a-f]{64}$/.test(sha) ? sha : null;
 }
 
 let pending: Promise<LibraryCatalog | null> | null = null;
@@ -133,8 +151,11 @@ export function loadLibraryCatalog(extraAssets: Promise<unknown[]> = Promise.res
         assets,
         modelCubes: (modelId) => modelCubes(assets, modelId),
         clipForTile: (tileId) => assets.find((asset) => asset.kind === "audio_clip" && asset.legacy_id === tileId) ?? null,
-        derivedFrom: (clipUid, kind) => assets.find((asset) => asset.kind === kind && asset.src.length === 1 && asset.src[0] === clipUid) ?? null,
+        derivedFrom: (clipUid, kind) =>
+          assets.find((asset) => asset.kind === kind && asset.src.length === 1 && asset.src[0] === clipUid && !comparisonMethod(asset)) ?? null,
         cubeForUrl: (url) => assets.find((asset) => asset.kind === "cube_ihdr" && mediaUrl(asset, "cube_json") === url) ?? null,
+        compareCubesFor: (clipUid) =>
+          assets.filter((asset) => comparisonMethod(asset) !== null && asset.src.length === 1 && asset.src[0] === clipUid),
       } satisfies LibraryCatalog;
     })
     .catch(() => null);
