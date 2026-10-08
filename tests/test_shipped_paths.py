@@ -119,6 +119,7 @@ SIDECARS = sorted((REPO / "apps" / "desktop" / "public" / "library").glob("*.syn
 # the provenance to one machine's install (a venv's wheels, .pyc files and
 # absolute shebangs differ per machine). Its entry says so explicitly.
 DIRECTORY = {"kind": "directory", "content_identity": "none"}
+UNHASHED_FACT = {"transient": True, "unhashed": "not on this machine"}
 
 
 def _work(tmp_path):
@@ -626,4 +627,24 @@ def test_cube_revision_manifest_cli_passes_work_dir_to_the_sync(tmp_path):
     assert doc["outside_repo"] == {"<outside-repo>/genaid-podcast-compare/models/demo/run.py": code}
     again = subprocess.run(cli, capture_output=True, text=True)
     assert again.returncode == 0 and again.stdout.strip() == "manifest cube mirror: up to date", again
+
+
+def test_a_missing_file_named_by_a_transient_and_a_kept_key_is_not_waved_through(tmp_path):
+    """C1 Low 4: `log` may be gone (transient), `output` may not. When both
+    name the same missing file, the kept key wins: the sync fails and names
+    it, rather than record the output as unhashed."""
+    from gen_audio.library_manifest import sync_manifest
+
+    _, library = _work(tmp_path)
+    gone = "../genaid-podcast-compare/audio/gone.wav"
+    sidecar = library / "t.synth.json"
+    sidecar.write_text(json.dumps({"engine": "vibevoice", "log": gone, "output": gone}, indent=2), encoding="utf-8")
+    before = sidecar.read_bytes()
+    with pytest.raises(FileNotFoundError, match=r"t\.synth\.json: <outside-repo>/genaid-podcast-compare/audio/gone\.wav .* is not on this machine"):
+        sync_manifest(library / "manifest.json")
+    assert sidecar.read_bytes() == before
+    # The transient key alone is still marked, not invented.
+    sidecar.write_text(json.dumps({"engine": "vibevoice", "log": gone}, indent=2), encoding="utf-8")
+    assert "t.synth.json" in sync_manifest(library / "manifest.json")
+    assert json.loads(sidecar.read_text(encoding="utf-8"))["outside_repo"] == {"<outside-repo>/genaid-podcast-compare/audio/gone.wav": UNHASHED_FACT}
 

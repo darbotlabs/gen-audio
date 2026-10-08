@@ -241,12 +241,16 @@ def label_work_dir_paths(doc: dict, repo_root: Path, work_dir: Path | None, foun
 
 
 def _transient_labels(doc: dict) -> set[str]:
-    labels = set()
+    """Labels only transient keys name. C1 Low 4: one label named by both a
+    transient key (`log`) and a kept one (`output`) is the kept output: when
+    it is gone the sync fails, it is not waved through as unhashed."""
+    transient: set[str] = set()
+    kept: set[str] = set()
     for container, key, _ in _path_fields(doc):
         path, _ = _path_part(container[key])
-        if key in TRANSIENT_KEYS and _is_label(path):
-            labels.add(path)
-    return labels
+        if _is_label(path):
+            (transient if key in TRANSIENT_KEYS else kept).add(path)
+    return transient - kept
 
 
 def file_facts(path: Path) -> dict:
