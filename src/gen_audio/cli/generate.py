@@ -84,3 +84,7 @@ def _emit(out_dir: Path, manifest: dict) -> None:
         "speech_s": manifest.get("speech_s"),
     }
     print(json.dumps(summary))
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

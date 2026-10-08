@@ -42,8 +42,10 @@ pub const DEV_ONLY_COMMANDS: [&str; 2] = ["viewport_example", "run_fixture_impro
 #[cfg(debug_assertions)]
 #[tauri::command]
 fn viewport_example() -> Value {
-    serde_json::from_str(include_str!("../../../../schemas/examples/viewport.example.json"))
-        .expect("example viewport is valid json")
+    serde_json::from_str(include_str!(
+        "../../../../schemas/examples/viewport.example.json"
+    ))
+    .expect("example viewport is valid json")
 }
 
 #[cfg(debug_assertions)]
@@ -123,6 +125,7 @@ fn spawn_hidden(mut cmd: Command) -> std::io::Result<Child> {
 }
 
 fn boot_mcp() -> (McpRuntime, Option<Child>) {
+    gen_audio_core::paths::reap_stale_mcp_addr();
     let addr = preferred_addr();
     if http::initialize_handshake(&addr).is_ok() {
         let _ = gen_audio_core::paths::write_mcp_addr(&addr);
@@ -161,10 +164,7 @@ fn boot_mcp() -> (McpRuntime, Option<Child>) {
                 format!("{addr} was busy; bound {text}. Clients must use this address.")
             };
             match http::initialize_handshake(&text) {
-                Ok(_) => (
-                    runtime(text, true, detail, "in-process"),
-                    None,
-                ),
+                Ok(_) => (runtime(text, true, detail, "in-process"), None),
                 Err(err) => (runtime(text, false, err, "in-process"), None),
             }
         }
@@ -203,7 +203,6 @@ fn stop_sidecar(child: &mut Child) {
     let _ = child.kill();
     let _ = child.wait();
 }
-
 
 fn bind_loopback_range(preferred: &str) -> std::io::Result<std::net::SocketAddr> {
     let mut candidates = Vec::new();
@@ -267,12 +266,7 @@ fn invoke_handler() -> impl Fn(tauri::ipc::Invoke) -> bool + Send + Sync + 'stat
 pub fn run() {
     // Placeholder until setup boots MCP (second instance exits in the plugin
     // before setup, so it never starts a second sidecar or tray).
-    let pending = runtime(
-        preferred_addr(),
-        false,
-        "starting",
-        "starting",
-    );
+    let pending = runtime(preferred_addr(), false, "starting", "starting");
 
     let mut builder = tauri::Builder::default();
 
@@ -320,7 +314,7 @@ pub fn run() {
                     _ => {}
                 })
                 .build(app);
-            
+
             Ok(())
         })
         .on_window_event(|window, event| {

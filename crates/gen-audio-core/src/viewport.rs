@@ -26,7 +26,10 @@ pub struct ReduceError {
 
 impl ReduceError {
     fn invalid(message: impl Into<String>) -> Self {
-        Self { code: -32602, message: message.into() }
+        Self {
+            code: -32602,
+            message: message.into(),
+        }
     }
 }
 
@@ -55,16 +58,39 @@ impl Origin {
 
 #[derive(Clone, Debug)]
 pub enum Action {
-    Navigate { slide: String },
-    Focus { uid: Option<String> },
-    Compare { uids: Vec<String> },
+    Navigate {
+        slide: String,
+    },
+    Focus {
+        uid: Option<String>,
+    },
+    Compare {
+        uids: Vec<String>,
+    },
     /// Switches `clock.source` inside `compare` and does not change focus.
-    CompareSelect { uid: String },
-    Seek { uid: String, t: f64 },
-    Play { uid: String, origin: Origin },
-    Pause { uid: String },
-    Flip { view: String, face: String, section: Option<String> },
-    Rename { uid: String, name: String },
+    CompareSelect {
+        uid: String,
+    },
+    Seek {
+        uid: String,
+        t: f64,
+    },
+    Play {
+        uid: String,
+        origin: Origin,
+    },
+    Pause {
+        uid: String,
+    },
+    Flip {
+        view: String,
+        face: String,
+        section: Option<String>,
+    },
+    Rename {
+        uid: String,
+        name: String,
+    },
     Generate {
         prompt_ref: String,
         personas: Vec<String>,
@@ -82,8 +108,14 @@ pub enum Action {
         synthesized: bool,
         coverage: Option<CoverageInput>,
     },
-    Superseded { old: String, next: String },
-    Rebind { view: String, next: String },
+    Superseded {
+        old: String,
+        next: String,
+    },
+    Rebind {
+        view: String,
+        next: String,
+    },
 }
 
 #[derive(Clone, Debug)]
@@ -211,7 +243,12 @@ impl Viewport {
                     title: clip.title.to_string(),
                     honesty: honesty.into(),
                     duration_s: None,
-                    media: if clip.wav_url.is_some() { "present" } else { "wav_missing" }.into(),
+                    media: if clip.wav_url.is_some() {
+                        "present"
+                    } else {
+                        "wav_missing"
+                    }
+                    .into(),
                     display_rev: 1,
                 },
             );
@@ -225,6 +262,28 @@ impl Viewport {
             if let Some(members) = vp.slides.iter_mut().find(|item| item.id == "slide:library") {
                 members.members.push(view_id);
             }
+        }
+        for person in catalog::personas() {
+            let id = format!("profile-{}", person.id);
+            vp.assets.insert(
+                id.clone(),
+                Asset {
+                    kind: "voice_profile".into(),
+                    title: person.name.to_string(),
+                    honesty: "profile".into(),
+                    duration_s: None,
+                    media: "absent".into(),
+                    display_rev: 1,
+                },
+            );
+            let view_id = format!("view:{id}");
+            vp.views.push(View {
+                id: view_id.clone(),
+                asset: id,
+                home: "slide:profiles".into(),
+                reference: false,
+            });
+            append_member(&mut vp.slides, "slide:profiles", &view_id);
         }
         vp
     }
@@ -308,20 +367,35 @@ impl Viewport {
                 if self.playing.as_deref() == Some(uid.as_str()) {
                     self.playing = None;
                 }
-                Ok(json!({"op": "pause", "playing": self.playing, "clock": {"source": self.clock_source}}))
+                Ok(
+                    json!({"op": "pause", "playing": self.playing, "clock": {"source": self.clock_source}}),
+                )
             }
-            Action::Flip { view, face, section } => {
+            Action::Flip {
+                view,
+                face,
+                section,
+            } => {
                 if face != "front" && face != "back" {
                     return Err(ReduceError::invalid("face must be front or back"));
                 }
                 if !self.views.iter().any(|item| item.id == view) {
                     return Err(ReduceError::invalid(format!("unknown view {view}")));
                 }
-                self.flipped.insert(view.clone(), FlipState { face: face.clone(), section: section.clone() });
+                self.flipped.insert(
+                    view.clone(),
+                    FlipState {
+                        face: face.clone(),
+                        section: section.clone(),
+                    },
+                );
                 Ok(json!({"op": "flip", "view": view, "face": face, "section": section}))
             }
             Action::Rename { uid, name } => {
-                let asset = self.assets.get_mut(&uid).ok_or_else(|| ReduceError::invalid(format!("unknown asset {uid}")))?;
+                let asset = self
+                    .assets
+                    .get_mut(&uid)
+                    .ok_or_else(|| ReduceError::invalid(format!("unknown asset {uid}")))?;
                 let len = name.chars().count();
                 if !(1..=80).contains(&len) {
                     return Err(ReduceError::invalid("name length is out of range"));
@@ -329,9 +403,18 @@ impl Viewport {
                 asset.display_rev = asset.display_rev.saturating_add(1);
                 asset.title = name.clone();
                 self.names.insert(uid.clone(), name.clone());
-                Ok(json!({"op": "rename", "uid": uid, "name": name, "display_rev": asset.display_rev}))
+                Ok(
+                    json!({"op": "rename", "uid": uid, "name": name, "display_rev": asset.display_rev}),
+                )
             }
-            Action::Generate { prompt_ref, personas, voice, duration_s, focus, job } => {
+            Action::Generate {
+                prompt_ref,
+                personas,
+                voice,
+                duration_s,
+                focus,
+                job,
+            } => {
                 if self.jobs.iter().any(|item| item.id == job) {
                     return Ok(json!({"op": "generate", "job": job, "idempotent": true}));
                 }
@@ -350,9 +433,15 @@ impl Viewport {
                 });
                 Ok(json!({"op": "generate", "job": job, "phase": "queued", "landed": false}))
             }
-            Action::Job { job, target, phase, reason, kind, synthesized, coverage } => {
-                self.apply_job(job, target, phase, reason, kind, synthesized, coverage)
-            }
+            Action::Job {
+                job,
+                target,
+                phase,
+                reason,
+                kind,
+                synthesized,
+                coverage,
+            } => self.apply_job(job, target, phase, reason, kind, synthesized, coverage),
             Action::Superseded { old, next } => {
                 self.require_asset(&old)?;
                 self.require_asset(&next)?;
@@ -427,7 +516,12 @@ impl Viewport {
                 "refusing to land a real view without synthesized audio",
             ));
         }
-        let focus = self.jobs.iter().find(|item| item.id == job).map(|item| item.focus).unwrap_or(true);
+        let focus = self
+            .jobs
+            .iter()
+            .find(|item| item.id == job)
+            .map(|item| item.focus)
+            .unwrap_or(true);
         if kind == "audio_clip" {
             let created = self.land_clip(&uid, focus);
             let spec = derived_id(&uid, "spectrogram");
@@ -492,6 +586,16 @@ impl Viewport {
                 "landed": true,
                 "sec_per_bin": coverage.sec_per_bin
             }))
+        } else if kind == "video" {
+            self.promote_derived(&uid, &kind)?;
+            Ok(json!({
+                "op": "job",
+                "job": job,
+                "phase": "done",
+                "target": uid,
+                "honesty": "real",
+                "landed": true
+            }))
         } else {
             Err(ReduceError::invalid(format!("unknown job kind {kind}")))
         }
@@ -506,7 +610,12 @@ impl Viewport {
     }
 
     fn land_clip(&mut self, uid: &str, focus: bool) -> bool {
-        if self.assets.contains_key(uid) && self.views.iter().any(|view| view.asset == uid && !view.reference) {
+        if self.assets.contains_key(uid)
+            && self
+                .views
+                .iter()
+                .any(|view| view.asset == uid && !view.reference)
+        {
             return false;
         }
         self.assets.entry(uid.to_string()).or_insert_with(|| Asset {
@@ -534,10 +643,16 @@ impl Viewport {
         }
         let spec = derived_id(uid, "spectrogram");
         let cube = derived_id(uid, "cube");
+        let video = derived_id(uid, "video");
         self.ensure_derived(&spec, "spectrogram", "slide:studio", "pending");
         self.ensure_derived(&cube, "cube", "slide:spatial", "pending");
+        self.ensure_derived(&video, "video", "slide:video", "pending");
         append_member(&mut self.slides, "slide:pipeline", &format!("view:{cube}"));
-        if let Some(pipeline) = self.slides.iter_mut().find(|slide| slide.id == "slide:pipeline") {
+        if let Some(pipeline) = self
+            .slides
+            .iter_mut()
+            .find(|slide| slide.id == "slide:pipeline")
+        {
             if !pipeline.members.is_empty() {
                 pipeline.empty = None;
             }
@@ -561,14 +676,16 @@ impl Viewport {
     }
 
     fn ensure_derived(&mut self, asset: &str, kind: &str, home: &str, honesty: &str) {
-        self.assets.entry(asset.to_string()).or_insert_with(|| Asset {
-            kind: kind.into(),
-            title: asset.to_string(),
-            honesty: honesty.into(),
-            duration_s: None,
-            media: "pending".into(),
-            display_rev: 1,
-        });
+        self.assets
+            .entry(asset.to_string())
+            .or_insert_with(|| Asset {
+                kind: kind.into(),
+                title: asset.to_string(),
+                honesty: honesty.into(),
+                duration_s: None,
+                media: "pending".into(),
+                display_rev: 1,
+            });
         let view_id = format!("view:{asset}");
         if !self.views.iter().any(|view| view.id == view_id) {
             self.views.push(View {
@@ -582,9 +699,14 @@ impl Viewport {
     }
 
     fn promote_derived(&mut self, uid: &str, kind: &str) -> Result<(), ReduceError> {
-        let asset = self.assets.get_mut(uid).ok_or_else(|| ReduceError::invalid(format!("unknown derived asset {uid}")))?;
+        let asset = self
+            .assets
+            .get_mut(uid)
+            .ok_or_else(|| ReduceError::invalid(format!("unknown derived asset {uid}")))?;
         if asset.kind != kind {
-            return Err(ReduceError::invalid("derived job kind does not match the asset"));
+            return Err(ReduceError::invalid(
+                "derived job kind does not match the asset",
+            ));
         }
         asset.honesty = "real".into();
         asset.media = "present".into();
@@ -592,7 +714,10 @@ impl Viewport {
     }
 
     fn honesty_of(&self, uid: &str) -> String {
-        self.assets.get(uid).map(|asset| asset.honesty.clone()).unwrap_or_else(|| "unresolved".into())
+        self.assets
+            .get(uid)
+            .map(|asset| asset.honesty.clone())
+            .unwrap_or_else(|| "unresolved".into())
     }
 
     fn require_asset(&self, uid: &str) -> Result<(), ReduceError> {
@@ -703,8 +828,17 @@ impl Viewport {
     }
 
     pub fn export_card(&self, uid: &str) -> Result<Value, ReduceError> {
-        let asset = self.assets.get(uid).ok_or_else(|| ReduceError::invalid(format!("unknown asset {uid}")))?;
-        Ok(adaptive_card(&asset.title, &asset.kind, &asset.honesty, &asset.media, asset.display_rev))
+        let asset = self
+            .assets
+            .get(uid)
+            .ok_or_else(|| ReduceError::invalid(format!("unknown asset {uid}")))?;
+        Ok(adaptive_card(
+            &asset.title,
+            &asset.kind,
+            &asset.honesty,
+            &asset.media,
+            asset.display_rev,
+        ))
     }
 }
 
@@ -748,9 +882,17 @@ pub fn resolve_slide(slide: &str) -> Result<ResolvedSlide, ReduceError> {
     let canonical = format!("slide:{slug}");
     if deprecated {
         let log = format!("deprecated slide alias '{slide}'; use '{canonical}'");
-        Ok(ResolvedSlide { canonical, deprecated_alias: true, log: Some(log) })
+        Ok(ResolvedSlide {
+            canonical,
+            deprecated_alias: true,
+            log: Some(log),
+        })
     } else {
-        Ok(ResolvedSlide { canonical, deprecated_alias: false, log: None })
+        Ok(ResolvedSlide {
+            canonical,
+            deprecated_alias: false,
+            log: None,
+        })
     }
 }
 
@@ -758,7 +900,14 @@ pub fn canonical_slide(slide: &str) -> Result<String, ReduceError> {
     Ok(resolve_slide(slide)?.canonical)
 }
 
-pub fn facts_snapshot(uid: &str, kind: &str, title: &str, honesty: &str, media: &str, display_rev: u64) -> Value {
+pub fn facts_snapshot(
+    uid: &str,
+    kind: &str,
+    title: &str,
+    honesty: &str,
+    media: &str,
+    display_rev: u64,
+) -> Value {
     json!({
         "snapshot_of": uid,
         "kind": kind,
@@ -790,7 +939,13 @@ pub fn facts(uid: &str, kind: &str, title: &str, honesty: &str, media: &str) -> 
     ]
 }
 
-pub fn adaptive_card(title: &str, kind: &str, honesty: &str, media: &str, display_rev: u64) -> Value {
+pub fn adaptive_card(
+    title: &str,
+    kind: &str,
+    honesty: &str,
+    media: &str,
+    display_rev: u64,
+) -> Value {
     let sections = facts(title, kind, title, honesty, media);
     let mut body = vec![json!({
         "type": "TextBlock",
@@ -839,7 +994,9 @@ pub fn validate_coverage(input: &CoverageInput) -> Result<CoverageOk, String> {
     }
     let duration_delta = (input.recorded_source_duration_s - input.clip_duration_s).abs();
     if duration_delta > input.sec_per_bin + 1e-9 {
-        return Err("recorded source duration differs from clip duration by more than one bin".into());
+        return Err(
+            "recorded source duration differs from clip duration by more than one bin".into(),
+        );
     }
     if input.selector_end < input.selector_start {
         return Err("selector end is before the start".into());
@@ -852,7 +1009,12 @@ pub fn validate_coverage(input: &CoverageInput) -> Result<CoverageOk, String> {
     } else {
         None
     };
-    Ok(CoverageOk { covered_s: covered, of_s, ratio, partial })
+    Ok(CoverageOk {
+        covered_s: covered,
+        of_s,
+        ratio,
+        partial,
+    })
 }
 
 #[derive(Clone, Debug)]
@@ -886,6 +1048,10 @@ pub fn snapshot_global() -> Value {
     state().lock().expect("viewport").snapshot()
 }
 
+pub fn contains_global(uid: &str) -> bool {
+    state().lock().expect("viewport").assets.contains_key(uid)
+}
+
 pub fn export_global(uid: &str) -> Result<Value, ReduceError> {
     state().lock().expect("viewport").export_card(uid)
 }
@@ -905,14 +1071,21 @@ pub fn release_has_fixture(document: &Value) -> bool {
         .and_then(Value::as_array)
         .into_iter()
         .flatten()
-        .any(|view| honesty_state(&view["snapshot"]["honesty"]) == "fixture" || honesty_state(&view["honesty"]) == "fixture")
+        .any(|view| {
+            honesty_state(&view["snapshot"]["honesty"]) == "fixture"
+                || honesty_state(&view["honesty"]) == "fixture"
+        })
 }
 
 fn honesty_state(value: &Value) -> String {
     if let Some(text) = value.as_str() {
         return text.to_string();
     }
-    value.get("state").and_then(Value::as_str).unwrap_or("").to_string()
+    value
+        .get("state")
+        .and_then(Value::as_str)
+        .unwrap_or("")
+        .to_string()
 }
 
 #[cfg(test)]
@@ -934,14 +1107,24 @@ mod tests {
     fn t6_release_doc_has_no_fixture_and_pipeline_is_empty() {
         let doc = Viewport::release().snapshot();
         assert!(!release_has_fixture(&doc), "{doc}");
-        let pipeline = doc["slides"].as_array().unwrap().iter().find(|slide| slide["id"] == "slide:pipeline").unwrap();
+        let pipeline = doc["slides"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|slide| slide["id"] == "slide:pipeline")
+            .unwrap();
         assert_eq!(pipeline["members"].as_array().unwrap().len(), 0);
         assert_eq!(pipeline["empty"], "no pipeline output yet");
         let states: Vec<_> = doc["views"]
             .as_array()
             .unwrap()
             .iter()
-            .map(|view| view["snapshot"]["honesty"]["state"].as_str().unwrap().to_string())
+            .map(|view| {
+                view["snapshot"]["honesty"]["state"]
+                    .as_str()
+                    .unwrap()
+                    .to_string()
+            })
             .collect();
         assert!(states.iter().all(|state| state != "fixture"));
         assert!(states.iter().any(|state| state == "library"));
@@ -974,11 +1157,49 @@ mod tests {
         assert_eq!(done["spectrogram"]["honesty"], "pending");
         assert_eq!(done["cube"]["honesty"], "pending");
         let snap = vp.snapshot();
-        let library = snap["slides"].as_array().unwrap().iter().find(|slide| slide["id"] == "slide:library").unwrap();
-        assert!(library["members"].as_array().unwrap().iter().any(|id| id == "view:clip-brief"));
-        assert!(snap["views"].as_array().unwrap().iter().any(|view| view["asset"] == "clip-brief:spectrogram"));
-        assert!(snap["views"].as_array().unwrap().iter().any(|view| view["asset"] == "clip-brief:cube"));
-        assert!(snap["annotations"].as_array().unwrap().iter().any(|ann| ann["target"]["source"] == "clip-brief"));
+        let library = snap["slides"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|slide| slide["id"] == "slide:library")
+            .unwrap();
+        assert!(library["members"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|id| id == "view:clip-brief"));
+        assert!(snap["views"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|view| view["asset"] == "clip-brief:spectrogram"));
+        assert!(snap["views"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|view| view["asset"] == "clip-brief:cube"));
+        assert!(snap["views"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|view| view["asset"] == "clip-brief:video"
+                && view["snapshot"]["honesty"]["state"] == "pending"));
+        let video_slide = snap["slides"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|slide| slide["id"] == "slide:video")
+            .unwrap();
+        assert!(video_slide["members"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|id| id == "view:clip-brief:video"));
+        assert!(snap["annotations"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|ann| ann["target"]["source"] == "clip-brief"));
         assert_eq!(snap["ui"]["focus"], "clip-brief");
         assert_eq!(snap["ui"]["clock"]["source"], "clip-brief");
         let again = vp
@@ -1023,8 +1244,18 @@ mod tests {
         })
         .unwrap();
         let after = vp.snapshot();
-        let spec = after["views"].as_array().unwrap().iter().find(|view| view["asset"] == "clip-brief:spectrogram").unwrap();
-        let cube = after["views"].as_array().unwrap().iter().find(|view| view["asset"] == "clip-brief:cube").unwrap();
+        let spec = after["views"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|view| view["asset"] == "clip-brief:spectrogram")
+            .unwrap();
+        let cube = after["views"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|view| view["asset"] == "clip-brief:cube")
+            .unwrap();
         assert_eq!(spec["snapshot"]["honesty"]["state"], "real");
         assert_eq!(cube["snapshot"]["honesty"]["state"], "real");
         let annotation = after["annotations"]
@@ -1035,6 +1266,47 @@ mod tests {
             .unwrap();
         assert_eq!(annotation["sec_per_bin"], 0.352);
         assert_eq!(annotation["target"]["selector"]["value"], "t=0,139.04");
+        let video = vp
+            .apply(Action::Job {
+                job: "job-video".into(),
+                target: Some("clip-brief:video".into()),
+                phase: "done".into(),
+                reason: None,
+                kind: Some("video".into()),
+                synthesized: true,
+                coverage: None,
+            })
+            .unwrap();
+        assert_eq!(video["honesty"], "real");
+    }
+
+    #[test]
+    fn job_moves_queued_to_running_before_done() {
+        let mut vp = Viewport::release();
+        vp.apply(Action::Generate {
+            prompt_ref: "note".into(),
+            personas: vec!["alice".into()],
+            voice: "kokoro_onnx".into(),
+            duration_s: 3.0,
+            focus: true,
+            job: "job-run".into(),
+        })
+        .unwrap();
+        assert_eq!(vp.snapshot()["jobs"][0]["phase"], "queued");
+        let running = vp
+            .apply(Action::Job {
+                job: "job-run".into(),
+                target: None,
+                phase: "running".into(),
+                reason: None,
+                kind: Some("audio_clip".into()),
+                synthesized: false,
+                coverage: None,
+            })
+            .unwrap();
+        assert_eq!(running["phase"], "running");
+        assert_eq!(running["landed"], false);
+        assert_eq!(vp.snapshot()["jobs"][0]["phase"], "running");
     }
 
     #[test]
@@ -1057,8 +1329,17 @@ mod tests {
         assert_eq!(refused["target"], Value::Null);
         let snap = vp.snapshot();
         assert_eq!(snap["views"].as_array().unwrap().len(), before);
-        assert!(snap["views"].as_array().unwrap().iter().all(|view| view["snapshot"]["honesty"]["state"] != "real"));
-        let job = snap["jobs"].as_array().unwrap().iter().find(|job| job["job"] == "job-refuse").unwrap();
+        assert!(snap["views"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|view| view["snapshot"]["honesty"]["state"] != "real"));
+        let job = snap["jobs"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|job| job["job"] == "job-refuse")
+            .unwrap();
         assert_eq!(job["phase"], "refused");
         assert!(job["reason"].as_str().unwrap().contains("unset"));
     }
@@ -1066,23 +1347,45 @@ mod tests {
     #[test]
     fn t17_headless_actions_round_trip_through_viewport_get() {
         let mut vp = Viewport::release();
-        vp.apply(Action::Navigate { slide: "spatial".into() }).unwrap();
-        vp.apply(Action::Focus { uid: Some("lib-misaki-kokoro".into()) }).unwrap();
-        vp.apply(Action::Seek { uid: "lib-misaki-kokoro".into(), t: 12.5 }).unwrap();
+        vp.apply(Action::Navigate {
+            slide: "spatial".into(),
+        })
+        .unwrap();
+        vp.apply(Action::Focus {
+            uid: Some("lib-misaki-kokoro".into()),
+        })
+        .unwrap();
+        vp.apply(Action::Seek {
+            uid: "lib-misaki-kokoro".into(),
+            t: 12.5,
+        })
+        .unwrap();
         vp.apply(Action::Flip {
             view: "view:lib-misaki-kokoro".into(),
             face: "back".into(),
             section: Some("honesty".into()),
         })
         .unwrap();
-        vp.apply(Action::Rename { uid: "lib-misaki-kokoro".into(), name: "Narrator A".into() }).unwrap();
+        vp.apply(Action::Rename {
+            uid: "lib-misaki-kokoro".into(),
+            name: "Narrator A".into(),
+        })
+        .unwrap();
         let snap = vp.snapshot();
         assert_eq!(snap["ui"]["slide"], "slide:spatial");
         assert_eq!(snap["ui"]["focus"], "lib-misaki-kokoro");
         assert_eq!(snap["ui"]["clock"]["source"], "lib-misaki-kokoro");
         assert_eq!(snap["ui"]["clock"]["t"], 12.5);
-        assert_eq!(snap["ui"]["flipped"]["view:lib-misaki-kokoro"]["face"], "back");
-        let view = snap["views"].as_array().unwrap().iter().find(|view| view["asset"] == "lib-misaki-kokoro").unwrap();
+        assert_eq!(
+            snap["ui"]["flipped"]["view:lib-misaki-kokoro"]["face"],
+            "back"
+        );
+        let view = snap["views"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|view| view["asset"] == "lib-misaki-kokoro")
+            .unwrap();
         assert_eq!(view["snapshot"]["title"], "Narrator A");
         assert_eq!(view["snapshot"]["display_rev"], 2);
         assert!(snap["ui"]["clock"].get("playing").is_none());
@@ -1091,9 +1394,15 @@ mod tests {
     #[test]
     fn t4_user_play_rebinds_focus_and_autoplay_does_not() {
         let mut vp = Viewport::release();
-        vp.apply(Action::Focus { uid: Some("lib-misaki-kokoro".into()) }).unwrap();
+        vp.apply(Action::Focus {
+            uid: Some("lib-misaki-kokoro".into()),
+        })
+        .unwrap();
         let played = vp
-            .apply(Action::Play { uid: "lib-kokoro-onnx".into(), origin: Origin::User })
+            .apply(Action::Play {
+                uid: "lib-kokoro-onnx".into(),
+                origin: Origin::User,
+            })
             .unwrap();
         let events = played["events"].as_array().unwrap();
         assert_eq!(events[0]["op"], "focus");
@@ -1103,7 +1412,10 @@ mod tests {
         assert_eq!(vp.snapshot()["ui"]["focus"], "lib-kokoro-onnx");
         assert_eq!(vp.snapshot()["ui"]["clock"]["source"], "lib-kokoro-onnx");
         let auto = vp
-            .apply(Action::Play { uid: "lib-kokoro".into(), origin: Origin::Auto })
+            .apply(Action::Play {
+                uid: "lib-kokoro".into(),
+                origin: Origin::Auto,
+            })
             .unwrap();
         let auto_events = auto["events"].as_array().unwrap();
         assert_eq!(auto_events.len(), 1);
@@ -1118,19 +1430,37 @@ mod tests {
     #[test]
     fn t18_user_play_toggles_compare_and_rejects_three() {
         let mut vp = Viewport::release();
-        vp.apply(Action::Compare { uids: vec!["lib-kokoro-onnx".into(), "lib-misaki-kokoro".into()] }).unwrap();
-        vp.apply(Action::Focus { uid: Some("lib-kokoro".into()) }).unwrap();
-        vp.apply(Action::Play { uid: "lib-kokoro-onnx".into(), origin: Origin::User }).unwrap();
+        vp.apply(Action::Compare {
+            uids: vec!["lib-kokoro-onnx".into(), "lib-misaki-kokoro".into()],
+        })
+        .unwrap();
+        vp.apply(Action::Focus {
+            uid: Some("lib-kokoro".into()),
+        })
+        .unwrap();
+        vp.apply(Action::Play {
+            uid: "lib-kokoro-onnx".into(),
+            origin: Origin::User,
+        })
+        .unwrap();
         let side_a = vp.snapshot();
         assert_eq!(side_a["ui"]["focus"], "lib-kokoro-onnx");
         assert_eq!(side_a["ui"]["clock"]["source"], "lib-kokoro-onnx");
-        vp.apply(Action::Play { uid: "lib-misaki-kokoro".into(), origin: Origin::User }).unwrap();
+        vp.apply(Action::Play {
+            uid: "lib-misaki-kokoro".into(),
+            origin: Origin::User,
+        })
+        .unwrap();
         let side_b = vp.snapshot();
         assert_eq!(side_b["ui"]["focus"], "lib-misaki-kokoro");
         assert_eq!(side_b["ui"]["clock"]["source"], "lib-misaki-kokoro");
         let err = vp
             .apply(Action::Compare {
-                uids: vec!["lib-kokoro-onnx".into(), "lib-misaki-kokoro".into(), "lib-kokoro".into()],
+                uids: vec![
+                    "lib-kokoro-onnx".into(),
+                    "lib-misaki-kokoro".into(),
+                    "lib-kokoro".into(),
+                ],
             })
             .unwrap_err();
         assert_eq!(err.code, -32602);
@@ -1141,15 +1471,30 @@ mod tests {
     #[test]
     fn c5_canonical_slide_id_and_deprecated_bare_alias() {
         let mut vp = Viewport::release();
-        let canonical = vp.apply(Action::Navigate { slide: "slide:spatial".into() }).unwrap();
+        let canonical = vp
+            .apply(Action::Navigate {
+                slide: "slide:spatial".into(),
+            })
+            .unwrap();
         assert_eq!(canonical["slide"], "slide:spatial");
         assert!(canonical.get("deprecatedAlias").is_none());
-        let alias = vp.apply(Action::Navigate { slide: "library".into() }).unwrap();
+        let alias = vp
+            .apply(Action::Navigate {
+                slide: "library".into(),
+            })
+            .unwrap();
         assert_eq!(alias["slide"], "slide:library");
         assert_eq!(alias["deprecatedAlias"], true);
-        assert!(alias["log"].as_str().unwrap().contains("deprecated slide alias 'library'"));
+        assert!(alias["log"]
+            .as_str()
+            .unwrap()
+            .contains("deprecated slide alias 'library'"));
         assert_eq!(vp.snapshot()["ui"]["slide"], "slide:library");
-        assert!(vp.apply(Action::Navigate { slide: "slide:nope".into() }).is_err());
+        assert!(vp
+            .apply(Action::Navigate {
+                slide: "slide:nope".into()
+            })
+            .is_err());
     }
 
     #[test]
@@ -1167,7 +1512,10 @@ mod tests {
         let mut lie = misaki();
         lie.recorded_source_duration_s = 43.425;
         let err = validate_coverage(&lie).unwrap_err();
-        assert_eq!(err, "recorded source duration differs from clip duration by more than one bin");
+        assert_eq!(
+            err,
+            "recorded source duration differs from clip duration by more than one bin"
+        );
 
         let mut all = misaki();
         all.selector_start = -0.1;
@@ -1176,9 +1524,15 @@ mod tests {
         all.selector_end = 139.375 + 2.0 * 0.352;
         assert_eq!(validate_coverage(&all).unwrap_err(), "start < 0");
         all.selector_start = 0.0;
-        assert_eq!(validate_coverage(&all).unwrap_err(), "selector end > clip duration + one bin");
+        assert_eq!(
+            validate_coverage(&all).unwrap_err(),
+            "selector end > clip duration + one bin"
+        );
         all.selector_end = 139.04;
-        assert_eq!(validate_coverage(&all).unwrap_err(), "clip is not in the cube src");
+        assert_eq!(
+            validate_coverage(&all).unwrap_err(),
+            "clip is not in the cube src"
+        );
         all.clip_in_src = true;
         assert_eq!(
             validate_coverage(&all).unwrap_err(),
@@ -1192,7 +1546,10 @@ mod tests {
         other.selector_end = 10.4;
         assert!(validate_coverage(&other).is_ok());
         other.selector_end = 10.0 + 0.5 + 0.01;
-        assert_eq!(validate_coverage(&other).unwrap_err(), "selector end > clip duration + one bin");
+        assert_eq!(
+            validate_coverage(&other).unwrap_err(),
+            "selector end > clip duration + one bin"
+        );
     }
 
     #[test]
@@ -1203,7 +1560,12 @@ mod tests {
         assert_eq!(card["version"], "1.5");
         assert!(card["fallbackText"].as_str().unwrap().contains("library"));
         let facts = Viewport::release().snapshot();
-        let view = facts["views"].as_array().unwrap().iter().find(|view| view["asset"] == "lib-misaki-kokoro").unwrap();
+        let view = facts["views"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|view| view["asset"] == "lib-misaki-kokoro")
+            .unwrap();
         assert_eq!(view["snapshot"]["sections"][0]["id"], "identity");
         assert_eq!(view["snapshot"]["sections"][1]["id"], "honesty");
     }
@@ -1211,8 +1573,16 @@ mod tests {
     #[test]
     fn play_does_not_store_a_playhead_frame() {
         let mut vp = Viewport::release();
-        vp.apply(Action::Seek { uid: "lib-misaki-kokoro".into(), t: 4.0 }).unwrap();
-        vp.apply(Action::Play { uid: "lib-misaki-kokoro".into(), origin: Origin::User }).unwrap();
+        vp.apply(Action::Seek {
+            uid: "lib-misaki-kokoro".into(),
+            t: 4.0,
+        })
+        .unwrap();
+        vp.apply(Action::Play {
+            uid: "lib-misaki-kokoro".into(),
+            origin: Origin::User,
+        })
+        .unwrap();
         let snap = vp.snapshot();
         assert_eq!(snap["ui"]["clock"]["t"], 4.0);
         assert_eq!(snap["ui"]["playing"], "lib-misaki-kokoro");

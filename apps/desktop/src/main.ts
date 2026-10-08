@@ -13,7 +13,7 @@ import {
 } from "./cubeview";
 import { isClipPlaying, seekActiveFraction, seekClipFraction, setCubeClockClip } from "./playback";
 import { applyClipNames, harvestNames } from "./library-meta";
-import { bindFloatingPlayback, pauseClip, playClip, releaseAllSeekBlobs, releaseDetachedTransports, seekClipOutcome, setUserPlayReporter } from "./playback";
+import { bindFloatingPlayback, pauseClip, playClip, releaseAllSeekBlobs, releaseDetachedTransports, renderTransport, seekClipOutcome, setUserPlayReporter } from "./playback";
 import { controlPlayOrigin, McpFailureCounter, postMcp, seekReportControl, userPlayControl } from "./play-control";
 import { fixturesRequested, selectViewport } from "./viewport-source";
 import { glyphBadge } from "./glyph";
@@ -238,8 +238,16 @@ setUserPlayReporter((clipId) => {
   void mcpCall(request.name, request.args);
 });
 
+function libraryTile(clipId: string): HTMLElement | null {
+  const escaped = CSS.escape(clipId);
+  return (
+    board.querySelector<HTMLElement>(`.library-tile[data-id="${escaped}"]`) ??
+    board.querySelector<HTMLElement>(`.library-tile[data-uid="${escaped}"]`)
+  );
+}
+
 function bindCubeToPlayingClip(clipId: string): void {
-  const tile = board.querySelector<HTMLElement>(`.library-tile[data-id="${CSS.escape(clipId)}"]`);
+  const tile = libraryTile(clipId);
   if (!tile) return;
   const url = tile.dataset.cubeJson || "";
   if (url) {
@@ -256,7 +264,7 @@ function bindCubeToPlayingClip(clipId: string): void {
 
 /** Mark the focused clip without scrolling the deck (the user is already looking at it, or asked over MCP). */
 function focusClipTile(clipId: string): void {
-  const tile = board.querySelector<HTMLElement>(`.library-tile[data-id="${CSS.escape(clipId)}"]`);
+  const tile = libraryTile(clipId);
   if (!tile) return;
   board.querySelectorAll<HTMLElement>(".card.is-selected").forEach((node) => node.classList.remove("is-selected"));
   tile.classList.add("is-selected");
@@ -687,6 +695,8 @@ function applyControl(event: { seq?: number; op?: string; args?: Record<string, 
       voice: typeof args.voice === "string" ? args.voice : undefined,
       durationMin: typeof args.durationMin === "number" ? args.durationMin : undefined,
     });
+  } else if (event.op === "job") {
+    void applyJob(args);
   } else if (event.op === "rename" && typeof args.clipId === "string") {
     const tile = board.querySelector<HTMLElement>(`.card[data-id="${CSS.escape(args.clipId)}"]`);
     if (!tile) return;
@@ -700,6 +710,110 @@ function applyControl(event: { seq?: number; op?: string; args?: Record<string, 
     if (semantic && typeof args.semanticName === "string") semantic.value = args.semanticName;
     if (face && typeof args.faceName === "string") face.value = args.faceName;
   }
+}
+
+function honestyOf(value: unknown): string {
+  if (!value || typeof value !== "object") return "";
+  const honesty = (value as { honesty?: unknown }).honesty;
+  return typeof honesty === "string" ? honesty : "";
+}
+
+function setDerived(parentUid: string, role: string, honesty: string): void {
+  if (!parentUid || !honesty) return;
+  const node = libraryTile(parentUid)?.querySelector<HTMLElement>(`[data-derived="${role}"]`);
+  if (node) node.textContent = `${role}: ${honesty}`;
+}
+
+async function mediaBlob(urlPath: string): Promise<string | null> {
+  if (!urlPath.startsWith("/library/")) return null;
+  const origin = await mcpReady;
+  try {
+    const response = await fetch(`${origin}${urlPath}`);
+    if (!response.ok) return null;
+    return URL.createObjectURL(await response.blob());
+  } catch {
+    return null;
+  }
+}
+
+async function mountGeneratedVideo(urlPath: string): Promise<void> {
+  const section = board.querySelector<HTMLElement>('[data-slide="video"]');
+  if (!section) return;
+  const blob = await mediaBlob(urlPath);
+  if (!blob) return;
+  const status = section.querySelector<HTMLElement>("[data-video-status]");
+  if (status) status.textContent = "Generated clip.";
+  const slot = section.querySelector<HTMLElement>("[data-video-slot]") ?? section;
+  let video = slot.querySelector("video");
+  if (!video) {
+    video = document.createElement("video");
+    video.controls = true;
+    video.dataset.generated = "1";
+    slot.append(video);
+  }
+  video.src = blob;
+}
+
+async function insertGeneratedTile(uid: string, args: Record<string, unknown>): Promise<void> {
+  const slide = board.querySelector<HTMLElement>('[data-slide="library"]');
+  if (!slide) return;
+  const resolved = toolBody(await mcpCall("asset_resolve", { uid }));
+  if (!resolved || resolved.ok !== true) return;
+  const legacy = String(resolved.tileId ?? args.legacyId ?? uid);
+  const asset = (resolved.asset && typeof resolved.asset === "object" ? resolved.asset : {}) as Record<string, unknown>;
+  const display = (asset.display && typeof asset.display === "object" ? asset.display : {}) as Record<string, unknown>;
+  const title = String(display.title ?? "Generated clip");
+  let tile = libraryTile(uid) ?? libraryTile(legacy);
+  if (!tile) {
+    tile = document.createElement("article");
+    tile.className = "card livetile library-tile";
+    tile.tabIndex = -1;
+    const heading = document.createElement("h2");
+    heading.textContent = title;
+    const spec = document.createElement("p");
+    spec.dataset.derived = "spectrogram";
+    const cube = document.createElement("p");
+    cube.dataset.derived = "cube";
+    tile.append(heading, spec, cube);
+    slide.append(tile);
+  }
+  tile.dataset.id = legacy;
+  tile.dataset.uid = uid;
+  tile.dataset.kind = "LibraryClip";
+  const wavPath = typeof args.wavUrl === "string" ? args.wavUrl : "";
+  if (wavPath && !tile.querySelector("audio")) {
+    const blob = await mediaBlob(wavPath);
+    if (blob) {
+      tile.dataset.wavUrl = blob;
+      tile.dataset.hasWav = "1";
+      tile.append(renderTransport(legacy, blob));
+    }
+  }
+  if (typeof args.cubeUrl === "string" && args.cubeUrl.startsWith("/library/")) {
+    const origin = await mcpReady;
+    tile.dataset.cubeJson = `${origin}${args.cubeUrl}`;
+  }
+  setDerived(uid, "spectrogram", honestyOf(args.spectrogram) || "pending");
+  setDerived(uid, "cube", honestyOf(args.cube) || "pending");
+  if (typeof args.videoUrl === "string") await mountGeneratedVideo(args.videoUrl);
+}
+
+async function applyJob(args: Record<string, unknown>): Promise<void> {
+  const phase = String(args.phase ?? "");
+  const voice = typeof args.voice === "string" ? args.voice : "";
+  if (phase === "running") {
+    if (voice) showRun(voice, "running", "generating", false);
+    return;
+  }
+  const target = typeof args.target === "string" ? args.target : "";
+  if (phase === "done" && target.startsWith("ga:audio_clip:")) await insertGeneratedTile(target, args);
+  if (phase === "done" && target.endsWith(":spectrogram")) {
+    setDerived(target.slice(0, -":spectrogram".length), "spectrogram", String(args.honesty ?? "real"));
+  }
+  if (phase === "done" && target.endsWith(":cube")) {
+    setDerived(target.slice(0, -":cube".length), "cube", String(args.honesty ?? "real"));
+  }
+  if (typeof args.videoUrl === "string") await mountGeneratedVideo(args.videoUrl);
 }
 
 async function resyncViewport(): Promise<void> {

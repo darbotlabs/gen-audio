@@ -24,7 +24,8 @@ pub struct Server {
 impl Server {
     pub fn boot() -> Self {
         let scratch = if let Ok(raw) = std::env::var("GEN_AUDIO_WORK_DIR") {
-            Scratch::new(PathBuf::from(raw)).expect("GEN_AUDIO_WORK_DIR must be a dedicated directory outside the repository")
+            Scratch::new(PathBuf::from(raw))
+                .expect("GEN_AUDIO_WORK_DIR must be a dedicated directory outside the repository")
         } else {
             Scratch::create().expect("work directory")
         };
@@ -45,8 +46,11 @@ impl Server {
 
 pub fn smoke() -> Result<String, String> {
     let server = Server::boot();
-    let init = handle(&server, json!({"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}))?
-        .ok_or("initialize did not answer")?;
+    let init = handle(
+        &server,
+        json!({"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}),
+    )?
+    .ok_or("initialize did not answer")?;
     if init.get("id").is_none() {
         return Err("initialize did not answer".into());
     }
@@ -112,7 +116,11 @@ pub fn smoke() -> Result<String, String> {
 pub fn handle(server: &Server, message: Value) -> Result<Option<Value>, String> {
     let obj = message.as_object().ok_or("request must be an object")?;
     if obj.get("jsonrpc").and_then(Value::as_str) != Some("2.0") {
-        return Ok(Some(error_response(obj.get("id").cloned(), -32600, "jsonrpc must be 2.0")));
+        return Ok(Some(error_response(
+            obj.get("id").cloned(),
+            -32600,
+            "jsonrpc must be 2.0",
+        )));
     }
     let id = obj.get("id").cloned();
     let notification = match &id {
@@ -163,7 +171,7 @@ fn tool_defs() -> Vec<Value> {
         tool("improve", "Run the Python publish chain on a WAV already in the work directory."),
         tool("spectrogram", "Run the Python spectrogram helper on work-directory WAVs."),
         tool("cube_revision", "Run the Python inverse-HDR cube revision sketch on a work-directory WAV."),
-        tool("serve_health", "Build a per-node genaid-audio health URL. Optional TCP/HTTP probe is off unless probe=true."),
+        tool("serve_health", "Probe a configured genaid-audio host. With no host the result is unconfigured and is not a live probe."),
         tool("connector_health", "Health for one connector id or the full roster of seven."),
         tool("list_connectors", "List connector ids and modes."),
         tool("list_engines", "List compare-list engines and whether this repo can synthesize with them."),
@@ -176,12 +184,12 @@ fn tool_defs() -> Vec<Value> {
         tool("ui_playback", "Queue play, pause, or seek for a library tile. A seek waits (waitMs, default 2000) for the window and returns {requested_t, landed_t, ok, reason}. Does not open the WAV in this process."),
         tool("ui_seek_report", "Desktop window only: report where a queued ui_playback seek (bus seq) landed. Records the result ui_playback returns."),
         tool("ui_set_sidepane", "Queue Agent personas (max 8) and a Voice TTS model. Connector ids are rejected."),
-        tool("ui_generate", "Queue generation. Unset model env vars refuse and land no audio uid. synthesizedSpeech stays false."),
+        tool("ui_generate", "Start generation and return a job id. The clip lands in the library when the job reaches done. Unset model env vars refuse and invent no speech. cancel=true stops a running job."),
         tool("ui_compare", "Set the A/B compare list (max 2). Optional select is a user Play: focus and clock.source follow that side."),
         tool("viewport_get", "Return the reduced viewport: slides, views, focus, clock source, jobs. No webview."),
         tool("card_export", "Export facts() as an Adaptive Card 1.5 JSON document. The webview does not template cards."),
         tool("library_list", "List the library catalog. Does not open WAV bytes. Unavailable clips stay unavailable."),
-        tool("library_rename", "Queue a semantic name and/or face name. Does not rewrite the WAV."),
+        tool("library_rename", "Persist a semantic name and/or face name into the library catalog. Does not rewrite the WAV."),
         tool("library_harvest", "Propose a semantic name and face name from the filename and sidecar counts. apply writes a clip ref onto a persona. Does not decode the WAV."),
         tool("voice_profile_get", "Return one persona profile: tone, purpose, domain, accent, traits, refs. Not audio."),
         tool("voice_profile_list", "List personas and TTS voice models. LLM ids are connectors, not agents."),
@@ -192,17 +200,32 @@ fn tool_defs() -> Vec<Value> {
     ]
 }
 
-static UID_PROP: std::sync::LazyLock<Value> = std::sync::LazyLock::new(|| {
-    json!({"type": "string", "description": "ga1 asset uid, ga:<kind>:<26 base32>", "maxLength": 44})
-});
+static UID_PROP: std::sync::LazyLock<Value> = std::sync::LazyLock::new(
+    || json!({"type": "string", "description": "ga1 asset uid, ga:<kind>:<26 base32>", "maxLength": 44}),
+);
 
 fn tool(name: &str, description: &str) -> Value {
     let (properties, required) = match name {
-        "synth" => (json!({"script": {"type": "string"}, "castMap": {"type": "string"}, "output": {"type": "string"}}), json!(["output"])),
-        "improve" => (json!({"input": {"type": "string"}, "output": {"type": "string"}}), json!(["input", "output"])),
-        "cube_revision" => (json!({"input": {"type": "string"}, "output": {"type": "string"}, "maxSteps": {"type": "integer"}}), json!(["input", "output"])),
-        "spectrogram" => (json!({"before": {"type": "string"}, "after": {"type": "string"}}), json!(["before"])),
-        "serve_health" => (json!({"host": {"type": "string"}, "port": {"type": "integer"}, "probe": {"type": "boolean"}}), json!([])),
+        "synth" => (
+            json!({"script": {"type": "string"}, "castMap": {"type": "string"}, "output": {"type": "string"}}),
+            json!(["output"]),
+        ),
+        "improve" => (
+            json!({"input": {"type": "string"}, "output": {"type": "string"}}),
+            json!(["input", "output"]),
+        ),
+        "cube_revision" => (
+            json!({"input": {"type": "string"}, "output": {"type": "string"}, "maxSteps": {"type": "integer"}}),
+            json!(["input", "output"]),
+        ),
+        "spectrogram" => (
+            json!({"before": {"type": "string"}, "after": {"type": "string"}}),
+            json!(["before"]),
+        ),
+        "serve_health" => (
+            json!({"host": {"type": "string"}, "port": {"type": "integer"}, "probe": {"type": "boolean"}}),
+            json!([]),
+        ),
         "connector_health" => (json!({"id": {"type": "string"}}), json!([])),
         "ui_navigate" => (
             json!({
@@ -220,21 +243,39 @@ fn tool(name: &str, description: &str) -> Value {
             json!(["seq", "requested_t", "landed_t", "ok", "reason"]),
         ),
         "asset_resolve" | "asset_glyph" => (json!({"uid": UID_PROP.clone()}), json!(["uid"])),
-        "asset_list" => (json!({"kind": {"type": "string"}, "cursor": {"type": "string"}, "limit": {"type": "integer", "minimum": 1, "maximum": 100}}), json!([])),
+        "asset_list" => (
+            json!({"kind": {"type": "string"}, "cursor": {"type": "string"}, "limit": {"type": "integer", "minimum": 1, "maximum": 100}}),
+            json!([]),
+        ),
         "ui_set_sidepane" => (
             json!({"agents": {"type": "array"}, "voice": {"type": "string"}, "durationMin": {"type": "integer"}, "promptNote": {"type": "string"}}),
             json!(["agents", "voice"]),
         ),
         "ui_generate" => (
-            json!({"agents": {"type": "array"}, "voice": {"type": "string"}, "durationMin": {"type": "integer"}, "duration_s": {"type": "number"}, "prompt": {"type": "string"}, "promptNote": {"type": "string"}, "prompt_ref": {"type": "string"}, "focus": {"type": "boolean"}}),
+            json!({"agents": {"type": "array"}, "voice": {"type": "string"}, "durationMin": {"type": "integer"}, "duration_s": {"type": "number"}, "prompt": {"type": "string"}, "promptNote": {"type": "string"}, "prompt_ref": {"type": "string"}, "focus": {"type": "boolean"}, "cancel": {"type": "boolean"}, "job": {"type": "string"}}),
             json!(["agents", "voice"]),
         ),
-        "ui_compare" => (json!({"uids": {"type": "array"}, "select": {"type": "string"}}), json!(["uids"])),
-        "card_export" => (json!({"uid": {"type": "string"}, "format": {"type": "string"}}), json!(["uid"])),
-        "library_rename" => (json!({"clipId": {"type": "string"}, "semanticName": {"type": "string"}, "faceName": {"type": "string"}}), json!(["clipId"])),
-        "library_harvest" => (json!({"clipId": {"type": "string"}, "personaId": {"type": "string"}, "apply": {"type": "boolean"}}), json!(["clipId"])),
+        "ui_compare" => (
+            json!({"uids": {"type": "array"}, "select": {"type": "string"}}),
+            json!(["uids"]),
+        ),
+        "card_export" => (
+            json!({"uid": {"type": "string"}, "format": {"type": "string"}}),
+            json!(["uid"]),
+        ),
+        "library_rename" => (
+            json!({"clipId": {"type": "string"}, "semanticName": {"type": "string"}, "faceName": {"type": "string"}}),
+            json!(["clipId"]),
+        ),
+        "library_harvest" => (
+            json!({"clipId": {"type": "string"}, "personaId": {"type": "string"}, "apply": {"type": "boolean"}}),
+            json!(["clipId"]),
+        ),
         "cube_layers" => (json!({"clipId": {"type": "string"}}), json!(["clipId"])),
-        "voice_profile_get" => (json!({"personaId": {"type": "string"}, "agentName": {"type": "string"}}), json!(["personaId"])),
+        "voice_profile_get" => (
+            json!({"personaId": {"type": "string"}, "agentName": {"type": "string"}}),
+            json!(["personaId"]),
+        ),
         _ => (json!({}), json!([])),
     };
     json!({
@@ -264,9 +305,13 @@ pub fn call_tool(server: &Server, params: &Value) -> Result<Value, (i32, String)
         "serve_health" => serve_health(&args)?,
         "connector_health" => connector_health(&args)?,
         "list_connectors" => json!({"connectors": health_all()}),
-        "list_engines" => json!({"liveSynth": false, "weightsBundled": false, "engines": engines::engines()}),
+        "list_engines" => {
+            json!({"liveSynth": false, "weightsBundled": false, "engines": engines::engines()})
+        }
         "fixture_tone" => fixture(server)?,
-        "benchmark_reference" => json!({"measuredHere": false, "sourceNote": SOURCE_NOTE, "rows": reference_rows()}),
+        "benchmark_reference" => {
+            json!({"measuredHere": false, "sourceNote": SOURCE_NOTE, "rows": reference_rows()})
+        }
         "harness_plan" => harness_plan(server)?,
         "ui_navigate" => control::ui_navigate(&args)?,
         "ui_select_tile" => control::ui_select_tile(&args)?,
@@ -305,7 +350,13 @@ fn allowed_arguments(name: &str) -> &'static [&'static str] {
         "cube_revision" => &["input", "output", "maxSteps"],
         "serve_health" => &["host", "port", "probe"],
         "connector_health" => &["id"],
-        "list_connectors" | "list_engines" | "fixture_tone" | "benchmark_reference" | "harness_plan" | "library_list" | "voice_profile_list" => &[],
+        "list_connectors"
+        | "list_engines"
+        | "fixture_tone"
+        | "benchmark_reference"
+        | "harness_plan"
+        | "library_list"
+        | "voice_profile_list" => &[],
         "ui_navigate" => &["slide", "tileId", "uid"],
         "ui_select_tile" => &["tileId", "uid"],
         "ui_flip" => &["tileId", "uid", "view", "flipped", "face", "section", "personaId"],
@@ -314,7 +365,18 @@ fn allowed_arguments(name: &str) -> &'static [&'static str] {
         "asset_resolve" | "asset_glyph" => &["uid"],
         "asset_list" => &["kind", "cursor", "limit"],
         "ui_set_sidepane" => &["agents", "voice", "durationMin", "promptNote"],
-        "ui_generate" => &["agents", "voice", "durationMin", "duration_s", "prompt", "promptNote", "prompt_ref", "focus"],
+        "ui_generate" => &[
+            "agents",
+            "voice",
+            "durationMin",
+            "duration_s",
+            "prompt",
+            "promptNote",
+            "prompt_ref",
+            "focus",
+            "cancel",
+            "job",
+        ],
         "ui_compare" => &["uids", "select"],
         "viewport_get" => &[],
         "card_export" => &["uid", "format"],
@@ -356,7 +418,12 @@ fn synth(server: &Server, args: &Value) -> Result<Value, (i32, String)> {
             }
             Err(message) => Err((-32602, message)),
             Ok(plan) => {
-                let _ = control::note_progress("kokoro_onnx", "running", "kokoro-onnx synth started", false);
+                let _ = control::note_progress(
+                    "kokoro_onnx",
+                    "running",
+                    "kokoro-onnx synth started",
+                    false,
+                );
                 let mut ran = bridge::run_plan(&plan).map_err(|message| (-32603, message))?;
                 let speech = ran.get("synthesizedSpeech").and_then(Value::as_bool) == Some(true);
                 let phase = if speech { "ok" } else { "refused" };
@@ -384,7 +451,8 @@ fn python_tool(server: &Server, tool: PythonTool, args: &Value) -> Result<Value,
         .repo
         .as_ref()
         .ok_or((-32603, "repository root not found".to_string()))?;
-    let plan = bridge::plan(tool, repo, &server.scratch, args).map_err(|message| (-32602, message))?;
+    let plan =
+        bridge::plan(tool, repo, &server.scratch, args).map_err(|message| (-32602, message))?;
     let ran = bridge::run_plan(&plan).map_err(|message| (-32603, message))?;
     let _ = server.scratch.adopt_new_files();
     Ok(ran)
@@ -402,23 +470,24 @@ fn fixture(server: &Server) -> Result<Value, (i32, String)> {
 }
 
 fn serve_health(args: &Value) -> Result<Value, (i32, String)> {
-    let host = args.get("host").and_then(Value::as_str).unwrap_or("<node>");
-    let port = args.get("port").and_then(Value::as_u64).unwrap_or(8002) as u16;
-    if host == "<node>" {
+    let host = args
+        .get("host")
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|host| !host.is_empty());
+    let Some(host) = host else {
         return Ok(json!({
             "healthy": false,
             "probed": false,
-            "baseUrl": "http://<node>:8002/genaid-audio",
-            "healthUrl": "http://<node>:8002/genaid-audio/health",
-            "readyUrl": "http://<node>:8002/genaid-audio/ready",
-            "expectedBody": serve::health_payload(),
-            "note": "Placeholder host. This is not a live genaid-audio probe. Pass a real host to build a row. probe=true performs an HTTP GET."
+            "status": "unconfigured",
+            "note": "No host is configured. This is not a live genaid-audio probe."
         }));
-    }
+    };
+    let port = args.get("port").and_then(Value::as_u64).unwrap_or(8002) as u16;
     let base = node_base_url(host, port).map_err(|err| (-32602, err))?;
     let health = health_url(host, port).map_err(|err| (-32602, err))?;
     let ready = ready_url(host, port).map_err(|err| (-32602, err))?;
-    let probe = args.get("probe").and_then(Value::as_bool).unwrap_or(false);
+    let probe = args.get("probe").and_then(Value::as_bool).unwrap_or(true);
     if probe {
         serve::probe_host_allowed(host).map_err(|err| (-32602, err))?;
     }
@@ -471,7 +540,8 @@ fn serve_health(args: &Value) -> Result<Value, (i32, String)> {
 fn connector_health(args: &Value) -> Result<Value, (i32, String)> {
     match args.get("id").and_then(Value::as_str) {
         Some(id) => {
-            let report = gen_audio_connectors::health_one(id).map_err(|err| (-32602, err.to_string()))?;
+            let report =
+                gen_audio_connectors::health_one(id).map_err(|err| (-32602, err.to_string()))?;
             Ok(json!(report))
         }
         None => Ok(json!({"connectors": health_all()})),
@@ -484,7 +554,8 @@ fn harness_plan(server: &Server) -> Result<Value, (i32, String)> {
         .as_ref()
         .ok_or((-32603, "repository root not found".to_string()))?;
     let text = std::fs::read_to_string(
-        paths::read_user_repo_file(repo, "examples/podcast_script_sample.txt").map_err(|err| (-32603, err))?,
+        paths::read_user_repo_file(repo, "examples/podcast_script_sample.txt")
+            .map_err(|err| (-32603, err))?,
     )
     .map_err(|err| (-32603, err.to_string()))?;
     let turns = gen_audio_core::script::parse_script(&text).map_err(|err| (-32602, err))?;
@@ -517,7 +588,11 @@ pub fn stdio_loop(server: &Server) {
             continue;
         }
         if line.len() > 1024 * 1024 {
-            let _ = writeln!(stdout, "{}", error_response(None, -32600, "request larger than 1 MiB"));
+            let _ = writeln!(
+                stdout,
+                "{}",
+                error_response(None, -32600, "request larger than 1 MiB")
+            );
             let _ = stdout.flush();
             continue;
         }
@@ -560,14 +635,20 @@ mod tests {
         )
         .unwrap()
         .unwrap();
-        assert!(first["result"]["content"][0]["text"].as_str().unwrap().contains("mcp"));
+        assert!(first["result"]["content"][0]["text"]
+            .as_str()
+            .unwrap()
+            .contains("mcp"));
         let second = handle(
             &server,
             json!({"jsonrpc":"2.0","id":9,"method":"tools/call","params":{"name":"fixture_tone","arguments":{}}}),
         )
         .unwrap()
         .unwrap();
-        assert!(second["result"]["content"][0]["text"].as_str().unwrap().contains("notPodcast"));
+        assert!(second["result"]["content"][0]["text"]
+            .as_str()
+            .unwrap()
+            .contains("notPodcast"));
         let note = handle(
             &server,
             json!({"jsonrpc":"2.0","method":"notifications/initialized"}),
@@ -594,14 +675,20 @@ mod tests {
         )
         .unwrap()
         .unwrap();
-        assert!(extra["error"]["message"].as_str().unwrap_or("").contains("unexpected argument"));
+        assert!(extra["error"]["message"]
+            .as_str()
+            .unwrap_or("")
+            .contains("unexpected argument"));
         let probe = handle(
             &server,
             json!({"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"serve_health","arguments":{"host":"169.254.169.254","probe":true}}}),
         )
         .unwrap()
         .unwrap();
-        assert!(probe["error"]["message"].as_str().unwrap_or("").contains("allowlist"));
+        assert!(probe["error"]["message"]
+            .as_str()
+            .unwrap_or("")
+            .contains("allowlist"));
         let _ = std::fs::remove_dir_all(&server.scratch.dir);
     }
 
@@ -617,6 +704,9 @@ mod tests {
         let text = health["result"]["content"][0]["text"].as_str().unwrap();
         assert!(text.contains("\"healthy\":false"), "{text}");
         assert!(text.contains("\"probed\":false"), "{text}");
+        assert!(text.contains("unconfigured"), "{text}");
+        assert!(!text.contains("<node>"), "{text}");
+        assert!(!text.contains("Placeholder host"), "{text}");
         assert_eq!(health["result"]["isError"], false);
         let init = handle(
             &server,
@@ -631,7 +721,10 @@ mod tests {
         )
         .unwrap()
         .unwrap();
-        assert!(rejected["error"]["message"].as_str().unwrap().contains("unsupported"));
+        assert!(rejected["error"]["message"]
+            .as_str()
+            .unwrap()
+            .contains("unsupported"));
         let engines = handle(
             &server,
             json!({"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"list_engines","arguments":{}}}),
@@ -640,7 +733,11 @@ mod tests {
         .unwrap();
         let listed = engines["result"]["content"][0]["text"].as_str().unwrap();
         assert!(listed.contains("\"liveSynth\":false"), "{listed}");
-        assert!(listed.contains("\"weightsBundled\":false") || listed.contains("\"weights_bundled\":false"), "{listed}");
+        assert!(
+            listed.contains("\"weightsBundled\":false")
+                || listed.contains("\"weights_bundled\":false"),
+            "{listed}"
+        );
         let _ = std::fs::remove_dir_all(&server.scratch.dir);
     }
 
@@ -654,7 +751,10 @@ mod tests {
         .unwrap()
         .unwrap();
         let agent_msg = rejected_agent["error"]["message"].as_str().unwrap_or("");
-        assert!(agent_msg.contains("connector") || agent_msg.contains("persona"), "{agent_msg}");
+        assert!(
+            agent_msg.contains("connector") || agent_msg.contains("persona"),
+            "{agent_msg}"
+        );
         let rejected_voice = handle(
             &server,
             json!({"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"ui_set_sidepane","arguments":{"agents":["alice"],"voice":"af_heart"}}}),
@@ -680,7 +780,10 @@ mod tests {
         .unwrap();
         let profile_text = profile["result"]["content"][0]["text"].as_str().unwrap();
         assert!(profile_text.contains("af_heart"), "{profile_text}");
-        assert!(profile_text.contains("\"notPodcast\":true"), "{profile_text}");
+        assert!(
+            profile_text.contains("\"notPodcast\":true"),
+            "{profile_text}"
+        );
         assert!(profile_text.contains("kokoro_onnx"), "{profile_text}");
         let _ = std::fs::remove_dir_all(&server.scratch.dir);
     }
@@ -700,7 +803,12 @@ mod tests {
         let text = harvested["result"]["content"][0]["text"].as_str().unwrap();
         assert!(text.contains("\"decodedAudio\":false"), "{text}");
         assert!(text.contains("\"openedWav\":false"), "{text}");
-        assert!(text.contains("816 words") || text.contains("sidecar-counts") || text.contains("kokoro_onnx"), "{text}");
+        assert!(
+            text.contains("816 words")
+                || text.contains("sidecar-counts")
+                || text.contains("kokoro_onnx"),
+            "{text}"
+        );
         assert!(!text.contains("voices-v1.0.bin"), "{text}");
         assert!(!text.contains("D:\\\\"), "{text}");
         let profile = handle(
@@ -710,8 +818,14 @@ mod tests {
         .unwrap()
         .unwrap();
         let profile_text = profile["result"]["content"][0]["text"].as_str().unwrap();
-        assert!(profile_text.contains("clip:lib-kokoro-onnx"), "{profile_text}");
-        assert!(profile_text.contains("\"notPodcast\":true"), "{profile_text}");
+        assert!(
+            profile_text.contains("clip:lib-kokoro-onnx"),
+            "{profile_text}"
+        );
+        assert!(
+            profile_text.contains("\"notPodcast\":true"),
+            "{profile_text}"
+        );
         let cube = handle(
             &server,
             json!({"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"cube_layers","arguments":{"clipId":"lib-kokoro-onnx"}}}),
@@ -723,7 +837,10 @@ mod tests {
         assert!(cube_text.contains("tonality"), "{cube_text}");
         assert!(cube_text.contains("confidence"), "{cube_text}");
         assert!(cube_text.contains("quality"), "{cube_text}");
-        assert!(cube_text.contains("\"absolutePathsOmitted\":true"), "{cube_text}");
+        assert!(
+            cube_text.contains("\"absolutePathsOmitted\":true"),
+            "{cube_text}"
+        );
         assert!(!cube_text.contains("points_preview"), "{cube_text}");
         assert!(!cube_text.contains("D:\\\\"), "{cube_text}");
         let empty = handle(
@@ -752,8 +869,14 @@ mod tests {
         .unwrap();
         let synth_text = synth["result"]["content"][0]["text"].as_str().unwrap();
         assert!(synth_text.contains("\"phase\":\"refused\""), "{synth_text}");
-        assert!(synth_text.contains("No speech was invented"), "{synth_text}");
-        assert!(!synth_text.contains("\"synthesizedSpeech\":true"), "{synth_text}");
+        assert!(
+            synth_text.contains("No speech was invented"),
+            "{synth_text}"
+        );
+        assert!(
+            !synth_text.contains("\"synthesizedSpeech\":true"),
+            "{synth_text}"
+        );
         let _ = std::fs::remove_dir_all(&server.scratch.dir);
     }
 

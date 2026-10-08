@@ -11,6 +11,7 @@ pub mod cards;
 pub mod catalog;
 pub mod engines;
 pub mod fixture;
+pub mod library_store;
 pub mod paths;
 pub mod redact;
 pub mod script;

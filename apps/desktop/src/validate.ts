@@ -99,11 +99,15 @@ function validateBody(id: string, kind: string, body: Record<string, unknown>): 
     if (!boundedString(body.summary, 1, 400)) return `card ${id} summary is required`;
   }
   if (kind === "SpectrogramPanel" || kind === "Cube3D") {
-    if (body.source !== "fixture-tone" || body.notPodcast !== true) {
+    if (body.source === "pipeline" || body.source === "library-clip") {
+      /* measured output; fixture-tone is not required */
+    } else if (body.source === "fixture-tone") {
+      if (body.notPodcast !== true) return `card ${id} must be a labeled fixture, not a podcast claim`;
+      if (!boundedString(body.disclaimer, 12, 400) || !String(body.disclaimer).toLowerCase().includes("not")) {
+        return `card ${id} disclaimer must say the visual is not a podcast render`;
+      }
+    } else {
       return `card ${id} must be a labeled fixture, not a podcast claim`;
-    }
-    if (!boundedString(body.disclaimer, 12, 400) || !String(body.disclaimer).toLowerCase().includes("not")) {
-      return `card ${id} disclaimer must say the visual is not a podcast render`;
     }
   }
   if (kind === "PodcastCast") {

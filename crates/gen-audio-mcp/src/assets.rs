@@ -19,8 +19,8 @@ pub fn asset_resolve(args: &Value) -> Result<Value, (i32, String)> {
     let uid = uid_arg(args, "asset_resolve")?;
     match asset_catalog::resolve(uid).map_err(CatalogError::rpc)? {
         Resolve::Found(asset) => {
-            let found = asset["uid"].as_str().unwrap_or_default();
-            let glyph = asset_catalog::glyph_info(found).map_err(CatalogError::rpc)?;
+            let found = asset["uid"].as_str().unwrap_or_default().to_string();
+            let glyph = asset_catalog::glyph_info(&found).map_err(CatalogError::rpc)?;
             Ok(json!({
                 "ok": true,
                 "synthesizedSpeech": false,
@@ -29,8 +29,8 @@ pub fn asset_resolve(args: &Value) -> Result<Value, (i32, String)> {
                 "glyph": glyph["glyph"],
                 "hueClass": glyph["hueClass"],
                 "ariaLabel": glyph["ariaLabel"],
-                "tileId": asset_catalog::tile_id_for(asset),
-                "asset": asset_catalog::public_view(asset),
+                "tileId": asset_catalog::tile_id_for(&asset),
+                "asset": asset_catalog::public_view(&asset),
                 "absolutePathsOmitted": true
             }))
         }
@@ -53,17 +53,26 @@ pub fn asset_resolve(args: &Value) -> Result<Value, (i32, String)> {
 pub fn asset_list(args: &Value) -> Result<Value, (i32, String)> {
     let kind = match args.get("kind") {
         None => None,
-        Some(value) => Some(value.as_str().ok_or((-32602, "kind must be a string".to_string()))?),
+        Some(value) => Some(
+            value
+                .as_str()
+                .ok_or((-32602, "kind must be a string".to_string()))?,
+        ),
     };
     let cursor = match args.get("cursor") {
         None => None,
-        Some(value) => Some(value.as_str().ok_or((-32602, "cursor must be a uid string".to_string()))?),
+        Some(value) => Some(
+            value
+                .as_str()
+                .ok_or((-32602, "cursor must be a uid string".to_string()))?,
+        ),
     };
     let limit = match args.get("limit") {
         None => LIST_DEFAULT,
         Some(value) => value
             .as_u64()
-            .ok_or((-32602, "limit must be an integer from 1 to 100".to_string()))? as usize,
+            .ok_or((-32602, "limit must be an integer from 1 to 100".to_string()))?
+            as usize,
     };
     let (items, next) = asset_catalog::list(kind, cursor, limit).map_err(CatalogError::rpc)?;
     Ok(json!({
@@ -113,8 +122,14 @@ mod tests {
         assert_eq!(body["tileId"], "lib-misaki-kokoro");
         assert_eq!(body["absolutePathsOmitted"], true);
         let text = body.to_string();
-        assert!(!text.contains(":\\\\") && !text.contains("\"path\""), "{text}");
-        assert!(body["asset"]["media"][0]["url"].as_str().unwrap().starts_with("/library/"));
+        assert!(
+            !text.contains(":\\\\") && !text.contains("\"path\""),
+            "{text}"
+        );
+        assert!(body["asset"]["media"][0]["url"]
+            .as_str()
+            .unwrap()
+            .starts_with("/library/"));
     }
 
     #[test]
@@ -132,17 +147,31 @@ mod tests {
     #[test]
     fn list_and_glyph() {
         let page = payload(&call("asset_list", json!({"kind": "audio_clip"})));
-        assert_eq!(page["count"], 5); // cube explainer, kokoro-onnx, kokoro, misaki, bitdot
+        assert!(page["count"].as_u64().unwrap_or(0) >= 5, "{page}");
+        let misaki = asset_catalog::uid_for_legacy("audio_clip", "lib-misaki-kokoro").unwrap();
+        assert!(page["assets"].as_array().unwrap().iter().any(|item| item["uid"] == misaki));
         assert!(page["nextCursor"].is_null());
         let first = payload(&call("asset_list", json!({"limit": 2})));
         assert_eq!(first["count"], 2);
         let cursor = first["nextCursor"].as_str().unwrap().to_string();
         let second = payload(&call("asset_list", json!({"limit": 2, "cursor": cursor})));
         assert!(second["assets"][0]["uid"].as_str().unwrap() > cursor.as_str());
-        assert_eq!(call("asset_list", json!({"limit": 0}))["error"]["code"], -32602);
-        assert_eq!(call("asset_list", json!({"limit": 101}))["error"]["code"], -32602);
-        assert_eq!(call("asset_list", json!({"kind": "agent/VoiceProfile"}))["error"]["code"], -32602);
-        let glyph = payload(&call("asset_glyph", json!({"uid": "ga:transcript:ac3t5gk3b27ue5vriw5qo27ucy"})));
+        assert_eq!(
+            call("asset_list", json!({"limit": 0}))["error"]["code"],
+            -32602
+        );
+        assert_eq!(
+            call("asset_list", json!({"limit": 101}))["error"]["code"],
+            -32602
+        );
+        assert_eq!(
+            call("asset_list", json!({"kind": "agent/VoiceProfile"}))["error"]["code"],
+            -32602
+        );
+        let glyph = payload(&call(
+            "asset_glyph",
+            json!({"uid": "ga:transcript:ac3t5gk3b27ue5vriw5qo27ucy"}),
+        ));
         assert_eq!(glyph["codepoints"][0], 0x2800);
         assert_eq!(glyph["inCatalog"], false);
     }
@@ -152,11 +181,20 @@ mod tests {
         let clip = asset_catalog::uid_for_legacy("audio_clip", "lib-misaki-kokoro").unwrap();
         let ok = call("ui_playback", json!({"uid": clip, "action": "pause"}));
         assert_eq!(payload(&ok)["args"]["tileId"], "lib-misaki-kokoro");
-        let agree = call("ui_navigate", json!({"slide": "library", "tileId": "lib-misaki-kokoro", "uid": clip}));
+        let agree = call(
+            "ui_navigate",
+            json!({"slide": "library", "tileId": "lib-misaki-kokoro", "uid": clip}),
+        );
         assert_eq!(agree["result"]["isError"], false);
-        let clash = call("ui_select_tile", json!({"tileId": "lib-kokoro", "uid": clip}));
+        let clash = call(
+            "ui_select_tile",
+            json!({"tileId": "lib-kokoro", "uid": clip}),
+        );
         assert_eq!(clash["error"]["code"], -32602);
-        let unknown = call("ui_flip", json!({"uid": "ga:card:aaaaaaaaaaaaaaaaaaaaaaaaaa"}));
+        let unknown = call(
+            "ui_flip",
+            json!({"uid": "ga:card:aaaaaaaaaaaaaaaaaaaaaaaaaa"}),
+        );
         assert_eq!(unknown["error"]["code"], -32602);
     }
 }

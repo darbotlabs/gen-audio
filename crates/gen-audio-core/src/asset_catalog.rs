@@ -8,7 +8,10 @@ use std::sync::OnceLock;
 
 use serde_json::{json, Value};
 
-use crate::asset::{glyph_bytes_from_uid, glyph_dots, glyph_from_uid, hue_class, is_kind, parse_uid, validate_envelope, validate_set, AssetError};
+use crate::asset::{
+    glyph_bytes_from_uid, glyph_dots, glyph_from_uid, hue_class, is_kind, parse_uid, validate_envelope, validate_set,
+    AssetError,
+};
 
 const CATALOG_JSON: &str = include_str!("../../../apps/desktop/public/library/assets.json");
 pub const MIN_PREFIX_CHARS: usize = 8;
@@ -42,26 +45,40 @@ pub fn catalog_health() -> Result<usize, String> {
     loaded().as_ref().map(Vec::len).map_err(Clone::clone)
 }
 
-fn catalog() -> &'static [Value] {
-    loaded().as_deref().unwrap_or(&[])
-}
-
-fn served() -> Result<&'static [Value], CatalogError> {
-    loaded().as_deref().map_err(|error| CatalogError::Corrupt(error.clone()))
+fn catalog() -> Vec<Value> {
+    loaded().as_ref().cloned().unwrap_or_default()
 }
 
 fn uid_of(asset: &Value) -> &str {
     asset.get("uid").and_then(Value::as_str).unwrap_or_default()
 }
 
-pub fn assets() -> &'static [Value] {
-    catalog()
+/// Baked catalog plus runtime envelopes. A runtime uid replaces the baked row.
+pub fn assets() -> Vec<Value> {
+    merged()
+}
+
+fn merged() -> Vec<Value> {
+    let mut assets = catalog().clone();
+    for runtime in crate::library_store::runtime_assets() {
+        let uid = uid_of(&runtime).to_string();
+        if uid.is_empty() {
+            continue;
+        }
+        if let Some(slot) = assets.iter_mut().find(|item| uid_of(item) == uid) {
+            *slot = runtime;
+        } else {
+            assets.push(runtime);
+        }
+    }
+    assets.sort_by(|a, b| uid_of(a).cmp(uid_of(b)));
+    assets
 }
 
 /// Outcome of resolving a full uid or a uid prefix.
 #[derive(Debug)]
 pub enum Resolve {
-    Found(&'static Value),
+    Found(Value),
     NotFound,
     Ambiguous(Vec<String>),
 }
@@ -91,42 +108,65 @@ pub fn resolve(text: &str) -> Result<Resolve, CatalogError> {
     let rest = text
         .strip_prefix("ga:")
         .ok_or_else(|| CatalogError::Invalid(format!("bad_uid: {text:?} must start with ga:")))?;
-    let (kind, body) = rest
-        .split_once(':')
-        .ok_or_else(|| CatalogError::Invalid(format!("bad_uid: {text:?} must be ga:<kind>:<base32>")))?;
+    let (kind, body) = rest.split_once(':').ok_or_else(|| {
+        CatalogError::Invalid(format!("bad_uid: {text:?} must be ga:<kind>:<base32>"))
+    })?;
     if !is_kind(kind) {
-        return Err(CatalogError::Invalid(format!("unknown_kind: {kind:?} is not a v1 asset kind")));
+        return Err(CatalogError::Invalid(format!(
+            "unknown_kind: {kind:?} is not a v1 asset kind"
+        )));
     }
     if body.len() >= 26 {
         parse_uid(text).map_err(invalid)?;
-    } else if body.len() < MIN_PREFIX_CHARS || !body.bytes().all(|byte| matches!(byte, b'a'..=b'z' | b'2'..=b'7')) {
+    } else if body.len() < MIN_PREFIX_CHARS
+        || !body
+            .bytes()
+            .all(|byte| matches!(byte, b'a'..=b'z' | b'2'..=b'7'))
+    {
         return Err(CatalogError::Invalid(format!(
             "bad_uid: prefix needs at least {MIN_PREFIX_CHARS} lowercase base32 chars after ga:{kind}:"
         )));
     }
-    let matches: Vec<&'static Value> = served()?.iter().filter(|asset| uid_of(asset).starts_with(text)).collect();
-    let found = match matches.as_slice() {
-        [] => return Ok(Resolve::NotFound),
-        [one] => *one,
-        many => {
-            return Ok(Resolve::Ambiguous(many.iter().take(MAX_CANDIDATES).map(|asset| uid_of(asset).to_string()).collect()));
+    let matches: Vec<Value> = merged()
+        .into_iter()
+        .filter(|asset| uid_of(asset).starts_with(text))
+        .collect();
+    let found = match matches.len() {
+        0 => return Ok(Resolve::NotFound),
+        1 => matches.into_iter().next().expect("one match"),
+        _ => {
+            return Ok(Resolve::Ambiguous(
+                matches
+                    .iter()
+                    .take(MAX_CANDIDATES)
+                    .map(|asset| uid_of(asset).to_string())
+                    .collect(),
+            ));
         }
     };
-    check_stored(found, kind)?;
+    check_stored(&found, kind)?;
     Ok(Resolve::Found(found))
 }
 
 /// Stored data must still agree with its own uid (kind prefix, identity, honesty).
 fn check_stored(asset: &Value, kind: &str) -> Result<(), CatalogError> {
     if asset.get("kind").and_then(Value::as_str) != Some(kind) {
-        return Err(CatalogError::Corrupt(format!("kind_mismatch: stored asset {} does not have kind {kind}", uid_of(asset))));
+        return Err(CatalogError::Corrupt(format!(
+            "kind_mismatch: stored asset {} does not have kind {kind}",
+            uid_of(asset)
+        )));
     }
-    validate_envelope(asset).map_err(|error| CatalogError::Corrupt(format!("stored asset {} failed validation: {error}", uid_of(asset))))?;
+    validate_envelope(asset).map_err(|error| {
+        CatalogError::Corrupt(format!(
+            "stored asset {} failed validation: {error}",
+            uid_of(asset)
+        ))
+    })?;
     Ok(())
 }
 
 /// Full uid that must exist in the catalog (used by ACP and UI tools).
-pub fn require(uid: &str) -> Result<&'static Value, CatalogError> {
+pub fn require(uid: &str) -> Result<Value, CatalogError> {
     parse_uid(uid).map_err(invalid)?;
     match resolve(uid)? {
         Resolve::Found(asset) => Ok(asset),
@@ -159,7 +199,10 @@ pub fn public_view(asset: &Value) -> Value {
 
 pub fn summary(asset: &Value) -> Value {
     let uid = uid_of(asset);
-    let kind = asset.get("kind").and_then(Value::as_str).unwrap_or_default();
+    let kind = asset
+        .get("kind")
+        .and_then(Value::as_str)
+        .unwrap_or_default();
     json!({
         "uid": uid,
         "kind": kind,
@@ -187,32 +230,47 @@ pub fn glyph_info(uid: &str) -> Result<Value, CatalogError> {
         "dots": bytes.iter().map(|byte| glyph_dots(*byte)).collect::<Vec<_>>(),
         "hueClass": hue_class(kind),
         "ariaLabel": aria_label(uid),
-        "inCatalog": catalog().iter().any(|asset| uid_of(asset) == uid)
+        "inCatalog": merged().iter().any(|asset| uid_of(asset) == uid)
     }))
 }
 
 /// Page through the catalog in uid order; the cursor is the last uid returned.
-pub fn list(kind: Option<&str>, cursor: Option<&str>, limit: usize) -> Result<(Vec<Value>, Option<String>), CatalogError> {
+pub fn list(
+    kind: Option<&str>,
+    cursor: Option<&str>,
+    limit: usize,
+) -> Result<(Vec<Value>, Option<String>), CatalogError> {
     if let Some(kind) = kind {
         if !is_kind(kind) {
-            return Err(CatalogError::Invalid(format!("unknown_kind: {kind:?} is not a v1 asset kind")));
+            return Err(CatalogError::Invalid(format!(
+                "unknown_kind: {kind:?} is not a v1 asset kind"
+            )));
         }
     }
     if let Some(cursor) = cursor {
         parse_uid(cursor).map_err(invalid)?;
     }
     if !(1..=LIST_MAX).contains(&limit) {
-        return Err(CatalogError::Invalid(format!("limit must be 1 to {LIST_MAX}")));
+        return Err(CatalogError::Invalid(format!(
+            "limit must be 1 to {LIST_MAX}"
+        )));
     }
-    let mut page: Vec<&Value> = served()?
+    let merged = merged();
+    let mut page: Vec<&Value> = merged
         .iter()
-        .filter(|asset| kind.is_none_or(|kind| asset.get("kind").and_then(Value::as_str) == Some(kind)))
+        .filter(|asset| {
+            kind.is_none_or(|kind| asset.get("kind").and_then(Value::as_str) == Some(kind))
+        })
         .filter(|asset| cursor.is_none_or(|cursor| uid_of(asset) > cursor))
         .take(limit + 1)
         .collect();
     let more = page.len() > limit;
     page.truncate(limit);
-    let next = if more { page.last().map(|asset| uid_of(asset).to_string()) } else { None };
+    let next = if more {
+        page.last().map(|asset| uid_of(asset).to_string())
+    } else {
+        None
+    };
     Ok((page.into_iter().map(summary).collect(), next))
 }
 
@@ -220,23 +278,38 @@ pub fn list(kind: Option<&str>, cursor: Option<&str>, limit: usize) -> Result<(V
 pub fn tile_id_for(asset: &Value) -> Option<String> {
     let legacy = asset.get("legacy_id").and_then(Value::as_str)?;
     match asset.get("kind").and_then(Value::as_str)? {
-        "card" => asset.pointer("/fields/card_id").and_then(Value::as_str).map(str::to_string),
+        "card" => asset
+            .pointer("/fields/card_id")
+            .and_then(Value::as_str)
+            .map(str::to_string),
         "audio_clip" => Some(legacy.to_string()),
         "voice_profile" => Some(format!("profile-{legacy}")),
         "cube_ihdr" | "spectrogram_2d" => {
-            let parent = asset.get("src").and_then(Value::as_array)?.first()?.as_str()?;
-            catalog().iter().find(|item| uid_of(item) == parent)?.get("legacy_id")?.as_str().map(str::to_string)
+            let parent = asset
+                .get("src")
+                .and_then(Value::as_array)?
+                .first()?
+                .as_str()?;
+            merged()
+                .iter()
+                .find(|item| uid_of(item) == parent)?
+                .get("legacy_id")?
+                .as_str()
+                .map(str::to_string)
         }
         _ => None,
     }
 }
 
 /// Bound audio clip uid for a library tile id (card id == clip id), if any.
-pub fn uid_for_legacy(kind: &str, legacy_id: &str) -> Option<&'static str> {
-    catalog()
-        .iter()
-        .find(|asset| asset.get("kind").and_then(Value::as_str) == Some(kind) && asset.get("legacy_id").and_then(Value::as_str) == Some(legacy_id))
-        .map(uid_of)
+pub fn uid_for_legacy(kind: &str, legacy_id: &str) -> Option<String> {
+    merged()
+        .into_iter()
+        .find(|asset| {
+            asset.get("kind").and_then(Value::as_str) == Some(kind)
+                && asset.get("legacy_id").and_then(Value::as_str) == Some(legacy_id)
+        })
+        .and_then(|asset| asset.get("uid").and_then(Value::as_str).map(str::to_string))
 }
 
 #[cfg(test)]
@@ -258,9 +331,9 @@ mod tests {
     #[test]
     fn every_stored_asset_resolves_and_maps_media_to_library_urls() {
         for asset in assets() {
-            let uid = uid_of(asset);
+            let uid = uid_of(&asset);
             assert!(matches!(resolve(uid).unwrap(), Resolve::Found(_)), "{uid}");
-            for media in public_view(asset)["media"].as_array().unwrap() {
+            for media in public_view(&asset)["media"].as_array().unwrap() {
                 let url = media["url"].as_str().unwrap();
                 assert!(url.starts_with("/library/") && !url.contains(".."), "{url}");
                 assert!(media.get("path").is_none());
@@ -303,11 +376,23 @@ mod tests {
     #[test]
     fn tiles_map_back_from_uids() {
         let clip = uid_for_legacy("audio_clip", "lib-misaki-kokoro").unwrap();
-        assert_eq!(tile_id_for(require(clip).unwrap()).as_deref(), Some("lib-misaki-kokoro"));
-        assert_eq!(tile_id_for(require(MISAKI_CUBE).unwrap()).as_deref(), Some("lib-misaki-kokoro"));
+        assert_eq!(
+            tile_id_for(&require(&clip).unwrap()).as_deref(),
+            Some("lib-misaki-kokoro")
+        );
+        assert_eq!(
+            tile_id_for(&require(MISAKI_CUBE).unwrap()).as_deref(),
+            Some("lib-misaki-kokoro")
+        );
         let card = uid_for_legacy("card", "profile-optimus").unwrap();
-        assert_eq!(tile_id_for(require(card).unwrap()).as_deref(), Some("profile-optimus"));
+        assert_eq!(
+            tile_id_for(&require(&card).unwrap()).as_deref(),
+            Some("profile-optimus")
+        );
         let profile = uid_for_legacy("voice_profile", "optimus").unwrap();
-        assert_eq!(tile_id_for(require(profile).unwrap()).as_deref(), Some("profile-optimus"));
+        assert_eq!(
+            tile_id_for(&require(&profile).unwrap()).as_deref(),
+            Some("profile-optimus")
+        );
     }
 }

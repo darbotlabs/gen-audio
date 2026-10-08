@@ -221,7 +221,11 @@ export function renderTransport(clipId: string, wavUrl: string | undefined, dura
 }
 
 function player(clipId: string): HTMLAudioElement | undefined {
-  return players.get(clipId);
+  const direct = players.get(clipId);
+  if (direct) return direct;
+  const tile = document.querySelector<HTMLElement>(`.library-tile[data-uid="${CSS.escape(clipId)}"]`);
+  const id = tile?.dataset.id;
+  return id ? players.get(id) : undefined;
 }
 
 export async function playClip(clipId: string, origin: PlayOrigin = "auto"): Promise<string> {

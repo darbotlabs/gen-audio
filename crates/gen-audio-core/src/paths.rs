@@ -149,7 +149,9 @@ pub fn mcp_addr_path() -> PathBuf {
     }
     let base = std::env::var_os("XDG_STATE_HOME")
         .map(PathBuf::from)
-        .or_else(|| std::env::var_os("HOME").map(|home| PathBuf::from(home).join(".local").join("state")))
+        .or_else(|| {
+            std::env::var_os("HOME").map(|home| PathBuf::from(home).join(".local").join("state"))
+        })
         .unwrap_or_else(std::env::temp_dir);
     base.join("gen-audio").join("mcp.addr")
 }
@@ -159,7 +161,7 @@ pub fn write_mcp_addr(addr: &str) -> Result<(), String> {
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent).map_err(|err| err.to_string())?;
     }
-    fs::write(&path, format!("{addr}\n")).map_err(|err| err.to_string())
+    fs::write(&path, format!("{addr}\n{}\n", std::process::id())).map_err(|err| err.to_string())
 }
 
 pub fn delete_mcp_addr() {
@@ -168,8 +170,56 @@ pub fn delete_mcp_addr() {
 
 pub fn read_mcp_addr() -> Option<String> {
     let text = fs::read_to_string(mcp_addr_path()).ok()?;
-    let addr = text.trim();
-    if addr.is_empty() { None } else { Some(addr.to_string()) }
+    let addr = text.lines().next().unwrap_or("").trim();
+    if addr.is_empty() {
+        None
+    } else {
+        Some(addr.to_string())
+    }
+}
+
+/// Drop `mcp.addr` when the recorded pid is dead or the port is not accepting.
+/// A legacy one-line file is kept while its port still accepts connections.
+pub fn reap_stale_mcp_addr() {
+    let path = mcp_addr_path();
+    let Ok(text) = fs::read_to_string(&path) else {
+        return;
+    };
+    let mut lines = text.lines();
+    let Some(addr) = lines.next().map(str::trim).filter(|line| !line.is_empty()) else {
+        let _ = fs::remove_file(&path);
+        return;
+    };
+    let pid = lines
+        .next()
+        .and_then(|line| line.trim().parse::<u32>().ok());
+    let stale = match pid {
+        Some(pid) => !pid_alive(pid) || !port_accepts(addr),
+        None => !port_accepts(addr),
+    };
+    if stale {
+        let _ = fs::remove_file(&path);
+    }
+}
+
+fn pid_alive(pid: u32) -> bool {
+    if pid == 0 {
+        return false;
+    }
+    std::process::Command::new("kill")
+        .args(["-0", &pid.to_string()])
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .status()
+        .map(|status| status.success())
+        .unwrap_or(false)
+}
+
+fn port_accepts(addr: &str) -> bool {
+    let Ok(socket) = addr.parse::<std::net::SocketAddr>() else {
+        return false;
+    };
+    std::net::TcpStream::connect_timeout(&socket, std::time::Duration::from_millis(200)).is_ok()
 }
 
 pub fn find_repo_root() -> Option<PathBuf> {
@@ -196,7 +246,10 @@ fn is_repo(path: &Path) -> bool {
 
 pub fn write_name(work: &Path, name: &str) -> Result<PathBuf, String> {
     let file_name = single_component(name)?;
-    if !WRITE_SUFFIXES.iter().any(|suffix| file_name.ends_with(suffix)) {
+    if !WRITE_SUFFIXES
+        .iter()
+        .any(|suffix| file_name.ends_with(suffix))
+    {
         return Err("output name must end in .wav, .json, or .png".into());
     }
     let root = work
@@ -219,7 +272,10 @@ pub fn read_name_in_work(work: &Path, name: &str) -> Result<PathBuf, String> {
 
 pub fn read_user_repo_file(repo: &Path, raw: &str) -> Result<PathBuf, String> {
     let normalized = raw.replace('\\', "/");
-    if !USER_REPO_PREFIXES.iter().any(|prefix| normalized.starts_with(prefix)) {
+    if !USER_REPO_PREFIXES
+        .iter()
+        .any(|prefix| normalized.starts_with(prefix))
+    {
         return Err("tool arguments may only read files under examples/ or voices/".into());
     }
     if normalized
@@ -244,9 +300,7 @@ pub fn read_trusted_script(repo: &Path, rel: &str) -> Result<PathBuf, String> {
 }
 
 pub fn read_repo_relative(repo: &Path, raw: &str) -> Result<PathBuf, String> {
-    let root = repo
-        .canonicalize()
-        .map_err(|err| format!("repo: {err}"))?;
+    let root = repo.canonicalize().map_err(|err| format!("repo: {err}"))?;
     let joined = push_relative(&root, raw)?;
     let canon = joined
         .canonicalize()
@@ -343,6 +397,34 @@ mod tests {
         assert!(write_name(&work, r"C:\out.wav").is_err());
         assert!(read_trusted_script(&repo, "scripts/improve.py").is_ok());
         assert!(read_trusted_script(&repo, "scripts/not-real.py").is_err());
+        let addr_file = std::env::temp_dir().join(format!(
+            "gen-audio-mcp-addr-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_nanos())
+                .unwrap_or(0)
+        ));
+        let saved = std::env::var("GEN_AUDIO_MCP_ADDR_FILE").ok();
+        std::env::set_var("GEN_AUDIO_MCP_ADDR_FILE", &addr_file);
+        fs::write(&addr_file, "127.0.0.1:9\n4294967294\n").unwrap();
+        reap_stale_mcp_addr();
+        assert!(!addr_file.exists(), "a dead pid must remove mcp.addr");
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let live = listener.local_addr().unwrap().to_string();
+        fs::write(&addr_file, format!("{live}\n")).unwrap();
+        reap_stale_mcp_addr();
+        assert!(addr_file.exists(), "a legacy file with a live port stays");
+        drop(listener);
+        reap_stale_mcp_addr();
+        assert!(
+            !addr_file.exists(),
+            "a legacy file with a dead port is removed"
+        );
+        match saved {
+            Some(value) => std::env::set_var("GEN_AUDIO_MCP_ADDR_FILE", value),
+            None => std::env::remove_var("GEN_AUDIO_MCP_ADDR_FILE"),
+        }
         let scratch = Scratch::new(work.clone()).unwrap();
         fs::write(work.join("secret.json"), b"{\"token\":\"sekret\"}").unwrap();
         assert!(scratch.open_input("secret.json").is_err());

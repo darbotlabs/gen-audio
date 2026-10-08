@@ -782,9 +782,12 @@ function appendUtilitySlides(board: HTMLElement, startIndex: number): number {
   const videoTitle = window.document.createElement("h3");
   videoTitle.textContent = "Video";
   const videoCopy = window.document.createElement("p");
-  videoCopy.textContent = "No video clips in this library. Nothing here is a podcast.";
+  videoCopy.dataset.videoStatus = "empty";
+  videoCopy.textContent = "No generated clip yet.";
   videoBanner.append(videoTitle, videoCopy);
-  video.append(videoBanner);
+  const videoSlot = window.document.createElement("div");
+  videoSlot.dataset.videoSlot = "1";
+  video.append(videoBanner, videoSlot);
   board.append(video);
 
   const spatial = window.document.createElement("section");
