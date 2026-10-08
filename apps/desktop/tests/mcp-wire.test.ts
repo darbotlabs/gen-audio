@@ -267,6 +267,8 @@ test("main.ts counts a failed lookup, a failed library fetch, and a dropped reso
       discoverMcp: () => Promise<string>;
       mediaBlob: (urlPath: string) => Promise<string | null>;
       insertGeneratedTile: (uid: string, args: Record<string, unknown>) => Promise<void>;
+      presentLibraryCatalog: (work: Promise<null>) => void;
+      acceptControlFrame: (data: string) => void;
     };
     await new Promise((resolve) => setTimeout(resolve, 50));
     const bootStatus = byId.get("status");
@@ -298,6 +300,25 @@ test("main.ts counts a failed lookup, a failed library fetch, and a dropped reso
     assert.match(error?.textContent ?? "", /missing uid/);
     const afterResolve = JSON.parse(root.dataset.mcpFailures ?? "{}") as Record<string, number>;
     assert.equal(afterResolve["asset_resolve:ok_false"], 1);
+
+    const warnings: string[] = [];
+    const originalWarn = console.warn;
+    console.warn = (message?: unknown) => {
+      warnings.push(String(message));
+    };
+    try {
+      main.presentLibraryCatalog(Promise.reject(new TypeError("offline")));
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      assert.equal(byId.get("status")?.textContent, "library catalog: TypeError: offline");
+      assert.deepEqual(warnings, ["gen-audio: library catalog: TypeError: offline"]);
+
+      main.acceptControlFrame("{");
+      const malformed = JSON.parse(root.dataset.mcpFailures ?? "{}") as Record<string, number>;
+      assert.equal(malformed["control_stream:malformed"], 1);
+      assert.match(byId.get("status")?.textContent ?? "", /^control event: SyntaxError: /);
+    } finally {
+      console.warn = originalWarn;
+    }
   } finally {
     await server?.close();
   }

@@ -1,3 +1,5 @@
+import { surfaceUiError } from "./play-control";
+
 // Seeking a library WAV, honestly.
 //
 // Root cause this module fixes (PR #5, SMAX install 2026-10-07): the release
@@ -203,8 +205,9 @@ export class Seeker {
         if (media.paused) {
           try {
             await media.play();
-          } catch {
-            /* the result still says where the clock is */
+          } catch (error) {
+            // The result still says where the clock is. The rejection is logged.
+            surfaceUiError(error, "seek resume");
           }
         }
       }
@@ -268,6 +271,7 @@ export class Seeker {
           try {
             objectUrl = await this.ops.toObjectUrl(original);
           } catch (error) {
+            surfaceUiError(error, "seek reload");
             return { ok: false, reason: `blob reload failed: ${errorText(error)}` };
           }
           const prior = this.blobs.get(key);

@@ -1,5 +1,7 @@
 /** Browser fixture tone and drawings. Not a podcast and not the Python DSP chain. */
 
+import { surfaceUiError } from "./play-control";
+
 export interface FixtureBuffer {
   sampleRate: number;
   samples: Float32Array;
@@ -152,7 +154,9 @@ export function play(audio: FixtureBuffer): void {
   source.buffer = buffer;
   source.connect(context.destination);
   source.start();
-  source.onended = () => void context.close();
+  source.onended = () => {
+    void context.close().catch((error: unknown) => surfaceUiError(error, "fixture playback"));
+  };
 }
 
 function link(gl: WebGLRenderingContext, vsSource: string, fsSource: string): WebGLProgram {

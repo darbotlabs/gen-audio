@@ -3,6 +3,7 @@
 // CSP: no style attributes. Hue comes from the fixed per-kind class (ga-kind-<kind>).
 
 import { glyphBytesFromUid, glyphFromUid, hueClass, isUid, parseUid } from "./asset";
+import { surfaceUiError } from "./play-control";
 
 const SVG_NS = "http://www.w3.org/2000/svg";
 /** Braille dot k+1 for bit k: [column, row] inside one cell. */
@@ -59,11 +60,13 @@ export function glyphBadge(uid: unknown, options: BadgeOptions = {}): HTMLButton
   }
   badge.addEventListener("click", (event) => {
     event.stopPropagation();
-    void copyText(uid).then((copied) => {
-      badge.classList.toggle("is-copied", copied);
-      window.setTimeout(() => badge.classList.remove("is-copied"), 1200);
-      options.onCopy?.(uid, copied);
-    });
+    void copyText(uid)
+      .then((copied) => {
+        badge.classList.toggle("is-copied", copied);
+        window.setTimeout(() => badge.classList.remove("is-copied"), 1200);
+        options.onCopy?.(uid, copied);
+      })
+      .catch((error: unknown) => surfaceUiError(error, "copy uid"));
   });
   return badge;
 }
@@ -72,7 +75,8 @@ async function copyText(text: string): Promise<boolean> {
   try {
     await navigator.clipboard.writeText(text);
     return true;
-  } catch {
+  } catch (error) {
+    surfaceUiError(error, "copy uid");
     return false;
   }
 }

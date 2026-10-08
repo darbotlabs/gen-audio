@@ -1,6 +1,6 @@
 import { clipDrivesCube } from "./clock-bind";
 import { getCubeMeta, setCubeScrub, startLiveCubeClock, stopLiveCubeClock } from "./cubeview";
-import type { PlayOrigin } from "./play-control";
+import { surfaceUiError, type PlayOrigin } from "./play-control";
 import { Seeker, type MediaLike, type SeekResult } from "./seek";
 export type { PlayOrigin };
 /** What a play listener learns: who started it. Focus is not decided here (C1: Rust reducer, PR #4). */
@@ -203,13 +203,13 @@ export function renderTransport(clipId: string, wavUrl: string | undefined, dura
     event.stopPropagation();
     if (audio.paused) {
       reportUserPlay(clipId);
-      void playClip(clipId, "user");
+      void playClip(clipId, "user").catch((error: unknown) => surfaceUiError(error, "play"));
     } else pauseClip(clipId);
   });
   scrub.addEventListener("input", () => {
     const duration = audio.duration || durationHint || 0;
     if (duration > 0 && wrap.dataset.missing !== "1") {
-      void seekTo(clipId, audio, (Number(scrub.value) / 1000) * duration);
+      void seekTo(clipId, audio, (Number(scrub.value) / 1000) * duration).catch((error: unknown) => surfaceUiError(error, "seek"));
     }
   });
 
@@ -245,6 +245,7 @@ export async function playClip(clipId: string, origin: PlayOrigin = "auto"): Pro
     return "playing";
   } catch (error) {
     if (!anyPlaying()) setPlayingChrome(false);
+    surfaceUiError(error, "play");
     return `play failed: ${String(error)}`;
   }
 }
@@ -380,7 +381,7 @@ export function bindFloatingPlayback(): void {
     if (!activeId) return;
     const audio = player(activeId);
     if (!audio) return;
-    if (audio.paused) void playClip(activeId, "resume");
+    if (audio.paused) void playClip(activeId, "resume").catch((error: unknown) => surfaceUiError(error, "play"));
     else pauseClip(activeId);
   });
   ui.scrub.addEventListener("input", () => {
@@ -388,7 +389,7 @@ export function bindFloatingPlayback(): void {
     const audio = player(activeId);
     if (!audio || !audio.duration) return;
     const fraction = Number(ui.scrub.value) / 1000;
-    void seekTo(activeId, audio, fraction * audio.duration);
+    void seekTo(activeId, audio, fraction * audio.duration).catch((error: unknown) => surfaceUiError(error, "seek"));
   });
   for (const [clipId, audio] of players) {
     audio.addEventListener("play", () => {

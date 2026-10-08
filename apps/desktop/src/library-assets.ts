@@ -3,6 +3,7 @@
 // malformed uid or an unsafe media path are dropped rather than trusted.
 
 import { checkMediaPath, isUid } from "./asset";
+import { surfaceUiError } from "./play-control";
 
 export interface AssetMedia {
   role: string;
@@ -110,7 +111,10 @@ function safe(asset: unknown): asset is AssetEnvelope {
   if (!Array.isArray(record.media) || !Array.isArray(record.src)) return false;
   try {
     record.media.forEach((item) => checkMediaPath(item.path));
-  } catch {
+  } catch (error) {
+    // A bad path is dropped, and the drop is logged. A silent false is how a
+    // path traversal used to disappear.
+    surfaceUiError(error, "library asset");
     return false;
   }
   return record.src.every((uid) => isUid(uid));
@@ -123,12 +127,18 @@ export function mediaUrl(asset: AssetEnvelope, role: string): string | null {
 
 /** `extraAssets`: dev/test-only envelopes (VITE_GEN_AUDIO_FIXTURES=1); release passes none. */
 function loggedEmpty<T>(error: unknown, where: string, empty: T): T {
-  const detail = error instanceof Error ? `${error.name}: ${error.message}` : String(error);
-  console.warn(`gen-audio: ${where}: ${detail}`);
+  surfaceUiError(error, where);
   return empty;
 }
 
+/** Tests start from an empty cache. A failed load already clears `pending` itself. */
+export function resetLibraryCatalogForTest(): void {
+  pending = null;
+}
+
 export function loadLibraryCatalog(extraAssets: Promise<unknown[]> = Promise.resolve([])): Promise<LibraryCatalog | null> {
+  // A fetch failure rejects. The window's presentLibraryCatalog catch is what
+  // logs it; swallowing here made that catch dead and cached the miss forever.
   pending ??= Promise.all([
     fetch("/library/assets.json").then((response) => (response.ok ? response.json() : null)),
     extraAssets.catch((error: unknown) => loggedEmpty(error, "dev assets", [] as unknown[])),
@@ -146,6 +156,9 @@ export function loadLibraryCatalog(extraAssets: Promise<unknown[]> = Promise.res
         cubeForUrl: (url) => assets.find((asset) => asset.kind === "cube_ihdr" && mediaUrl(asset, "cube_json") === url) ?? null,
       } satisfies LibraryCatalog;
     })
-    .catch((error: unknown) => loggedEmpty(error, "library catalog", null));
+    .catch((error: unknown) => {
+      pending = null;
+      throw error;
+    });
   return pending;
 }

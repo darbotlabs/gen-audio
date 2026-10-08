@@ -1,5 +1,7 @@
 /** Interactive library cube. Points come from cube JSON only. No invented layers. */
 
+import { surfaceUiError } from "./play-control";
+
 export interface CubePoint {
   t: number;
   f: number;
@@ -393,6 +395,7 @@ export async function loadCube(url: string): Promise<string> {
   } catch (error) {
     resetCube();
     draw();
+    surfaceUiError(error, "cube");
     return `Cube JSON did not load (${String(error)}).`;
   }
   const points = Array.isArray(data.points_preview) ? data.points_preview : [];
@@ -725,7 +728,7 @@ function glCache(): GlCache | null {
     state.builtVersion = -1;
     return state.glCache;
   } catch (error) {
-    console.error("[cube]", error);
+    surfaceUiError(error, "cube");
     showFallback(`WebGL shader error: ${String(error)}`);
     return null;
   }

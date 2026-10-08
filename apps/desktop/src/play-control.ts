@@ -217,7 +217,7 @@ export function controlDisconnectedNotice(attempt: number): string {
   return `Control stream disconnected. Retrying in ${when}.`;
 }
 
-/** One sentence for a failure the window used to drop. Also written to the console. */
+/** One sentence for a failure the window used to drop. The only UI error log. */
 export function surfaceUiError(error: unknown, where: string): string {
   const detail = error instanceof Error ? `${error.name}: ${error.message}` : String(error);
   const message = `${where}: ${detail}`;

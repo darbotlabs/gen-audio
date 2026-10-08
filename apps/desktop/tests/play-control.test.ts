@@ -91,7 +91,7 @@ test("contract: the window's seek report body is the seek-round-trip fixture", (
     fixture.agentResult,
   );
   const main = readFileSync(repo("apps/desktop/src/main.ts"), "utf8");
-  assert.match(main, /const report = seekReportControl\(event\.seq, requested, landing\);\s*void mcpCall\(report\.name, report\.args\);/);
+  assert.match(main, /const report = seekReportControl\(event\.seq, requested, landing\);\s*reportAsync\(mcpCall\(report\.name, report\.args\), "seek report"\);/);
   // Superseded and missing-element landings are reported honestly.
   assert.deepEqual(seekReportControl(3, 10, { ok: false, actual: 4, status: "superseded" }).args, {
     seq: 3, requested_t: 10, landed_t: 4, ok: false, reason: "superseded by a newer seek",
@@ -217,6 +217,16 @@ test("control reconnect backs off and the disconnected state is visible", () => 
 });
 
 test("a surfaced UI error names where it happened and the error", () => {
-  const message = surfaceUiError(new TypeError("offline"), "play");
-  assert.match(message, /^play: TypeError: offline$/);
+  const warnings: string[] = [];
+  const original = console.warn;
+  console.warn = (message?: unknown) => {
+    warnings.push(String(message));
+  };
+  try {
+    const message = surfaceUiError(new TypeError("offline"), "play");
+    assert.equal(message, "play: TypeError: offline");
+    assert.deepEqual(warnings, ["gen-audio: play: TypeError: offline"]);
+  } finally {
+    console.warn = original;
+  }
 });

@@ -104,11 +104,51 @@ let selection: VoiceSelection = {
 let activePreview: ProfilePreview = profilePreview(selection);
 let controlCursor = 0;
 const seenControl = new Set<number>();
+let libraryCatalog: LibraryCatalog | null = null;
 let mcpOrigin = "http://127.0.0.1:8765";
 let controlAttempt = 0;
 
 function failUi(error: unknown, where: string): void {
   status.textContent = surfaceUiError(error, where);
+}
+
+/** A bare `void` promise used to drop its rejection. This is the only attach. */
+function reportAsync(work: Promise<unknown>, where: string): void {
+  void work.catch((error: unknown) => failUi(error, where));
+}
+
+/**
+ * Paint a catalog load. The rejection lands here: loadLibraryCatalog does not
+ * swallow it, so removing this catch leaves the failure unlogged.
+ */
+export function presentLibraryCatalog(work: Promise<LibraryCatalog | null>): void {
+  void work
+    .then((catalog) => {
+      libraryCatalog = catalog;
+      decorateLibraryTiles(board, catalog, (uid) => glyphBadge(uid, { role: "clip", onCopy: announceCopy }));
+      fillModelCubes(board, catalog, {
+        openCube: (url, source) => reportAsync(openCube(url, source), "cube"),
+        selectTile,
+      });
+      syncCubeChrome();
+    })
+    .catch((error: unknown) => failUi(error, "library catalog"));
+}
+
+/** One control-stream frame. A bad frame is counted and shown; the stream stays up. */
+export function acceptControlFrame(data: string): void {
+  try {
+    const parsed = JSON.parse(data) as { seq?: number; op?: string; args?: Record<string, unknown> };
+    if (typeof parsed.seq === "number" && parsed.seq > controlCursor + 1) {
+      reportAsync(resyncViewport(), "viewport");
+      return;
+    }
+    applyControl(parsed);
+  } catch (error) {
+    // Keep the stream. One bad frame must not look like a disconnect.
+    mcpFailures.note("control_stream", "malformed");
+    failUi(error, "control event");
+  }
 }
 
 export async function discoverMcp(): Promise<string> {
@@ -150,16 +190,9 @@ function show(documentIn: unknown): void {
   paintProfile();
   bindCubeCanvas();
   bindRename();
-  void harvestLibrary();
+  reportAsync(harvestLibrary(), "library harvest");
   bindFloatingPlayback();
-  void loadLibraryCatalog(loadDevAssets())
-    .then((catalog) => {
-      libraryCatalog = catalog;
-      decorateLibraryTiles(board, catalog, (uid) => glyphBadge(uid, { role: "clip", onCopy: announceCopy }));
-      fillModelCubes(board, catalog, { openCube: (url, source) => void openCube(url, source), selectTile });
-      syncCubeChrome();
-    })
-    .catch((error: unknown) => failUi(error, "library catalog"));
+  presentLibraryCatalog(loadLibraryCatalog(loadDevAssets()));
   const n = slides(board).length;
   if (status.dataset.control !== "disconnected") {
     status.textContent = `${doc.cards.length} cards · ${n} snap slides · spectrogram follows side pane`;
@@ -204,7 +237,6 @@ let cubeClipId = "";
 /** Set when focus binds the Cube tab to a clip that has no cube: the tab says so and borrows nothing. */
 let noCubeClipId = "";
 let cubeBindSeq = 0;
-let libraryCatalog: LibraryCatalog | null = null;
 
 function clipUid(clipId: string): string | null {
   return libraryCatalog?.clipForTile(clipId)?.uid ?? null;
@@ -260,7 +292,7 @@ function ensureDefaultCube(): void {
     clearCube("No library clip has cube JSON yet. Nothing is drawn.");
     return;
   }
-  void bindCubeSource(preferred.clipId, preferred.url, "default");
+  reportAsync(bindCubeSource(preferred.clipId, preferred.url, "default"), "cube");
 }
 
 async function bindCubeSource(clipId: string, url: string, source: string): Promise<void> {
@@ -287,7 +319,7 @@ window.addEventListener("pagehide", () => releaseAllSeekBlobs());
 
 setUserPlayReporter((clipId) => {
   const request = userPlayControl(clipId);
-  void mcpCall(request.name, request.args);
+  reportAsync(mcpCall(request.name, request.args), "play");
 });
 
 function libraryTile(clipId: string): HTMLElement | null {
@@ -303,7 +335,7 @@ function bindCubeToPlayingClip(clipId: string): void {
   if (!tile) return;
   const url = tile.dataset.cubeJson || "";
   if (url) {
-    if (cubeClipId !== clipId || boundCubeUrl() !== url) void bindCubeSource(clipId, url, "focus");
+    if (cubeClipId !== clipId || boundCubeUrl() !== url) reportAsync(bindCubeSource(clipId, url, "focus"), "cube");
     return;
   }
   cubeBindSeq += 1;
@@ -344,7 +376,7 @@ function bindCubeCanvas(): void {
     }
     select.addEventListener("change", () => {
       const option = select.selectedOptions[0];
-      if (option?.dataset.cubeJson) void bindCubeSource(option.value, option.dataset.cubeJson, option.value);
+      if (option?.dataset.cubeJson) reportAsync(bindCubeSource(option.value, option.dataset.cubeJson, option.value), "cube");
     });
   }
   const layersToggle = document.querySelector<HTMLButtonElement>("#cube-matrix-toggle");
@@ -361,7 +393,7 @@ function bindCubeCanvas(): void {
       return;
     }
     const request = userPlayControl(cubeClipId);
-    void mcpCall(request.name, request.args);
+    reportAsync(mcpCall(request.name, request.args), "play");
     void playClip(cubeClipId, "user")
       .then((result) => {
         status.textContent = result === "playing" ? `Cube live clock follows ${cubeClipId}` : result;
@@ -398,7 +430,7 @@ function bindCubeCanvas(): void {
   }
   // Re-render keeps the bound cube; first render binds the default cube.
   const already = boundCubeUrl();
-  if (already) void bindCubeSource(cubeClipId || DEFAULT_CUBE_CLIP, already, "default");
+  if (already) reportAsync(bindCubeSource(cubeClipId || DEFAULT_CUBE_CLIP, already, "default"), "cube");
   else ensureDefaultCube();
 }
 
@@ -413,7 +445,7 @@ function bindRename(): void {
       const face = tile.querySelector<HTMLInputElement>("[data-field='face']")?.value ?? "";
       applyClipNames(tile, semantic, face);
       status.textContent = `Renamed ${id} in this window. The WAV file was not rewritten.`;
-      void mcpCall("library_rename", { clipId: id, semanticName: semantic, faceName: face });
+      reportAsync(mcpCall("library_rename", { clipId: id, semanticName: semantic, faceName: face }), "library rename");
     });
   });
   board.querySelectorAll<HTMLButtonElement>("[data-action='attach-profile']").forEach((node) => {
@@ -497,7 +529,7 @@ function selectTile(id: string): void {
   if (slide?.dataset.slide) goToSlideId(board, slide.dataset.slide);
   tile.focus({ preventScroll: true });
   const cube = tile.dataset.cubeJson;
-  if (cube) void openCube(cube, id);
+  if (cube) reportAsync(openCube(cube, id), "cube");
 }
 
 async function refreshConnectors(doc: ViewportDocument): Promise<ViewportDocument> {
@@ -556,6 +588,7 @@ if (import.meta.env.VITE_GEN_AUDIO_FIXTURES === "1") {
         ? "Python improve finished on the fixture tone (fixture only — not podcast speech)."
         : `Python improve did not finish: ${JSON.stringify(result)}`;
     } catch (error) {
+      surfaceUiError(error, "python improve");
       status.textContent = `Python improve needs a debug desktop shell. ${String(error)}`;
     }
   });
@@ -563,7 +596,7 @@ if (import.meta.env.VITE_GEN_AUDIO_FIXTURES === "1") {
   toolbar?.append(runImprove);
 }
 document.querySelector("#generate-podcast")?.addEventListener("click", () => {
-  void submitGenerate();
+  reportAsync(submitGenerate(), "generate");
 });
 
 document.querySelectorAll<HTMLButtonElement>("#layer-switch [data-layer]").forEach((button) => {
@@ -744,7 +777,7 @@ function applyControl(event: { seq?: number; op?: string; args?: Record<string, 
           // Tell MCP where it landed: ui_playback answers the agent with {requested_t, landed_t, ok, reason}.
           if (typeof event.seq === "number") {
             const report = seekReportControl(event.seq, requested, landing);
-            void mcpCall(report.name, report.args);
+            reportAsync(mcpCall(report.name, report.args), "seek report");
           }
         })
         .catch((error: unknown) => failUi(error, "seek"));
@@ -762,7 +795,7 @@ function applyControl(event: { seq?: number; op?: string; args?: Record<string, 
       durationMin: typeof args.durationMin === "number" ? args.durationMin : undefined,
     });
   } else if (event.op === "job") {
-    void applyJob(args);
+    reportAsync(applyJob(args), "job");
   } else if (event.op === "rename" && typeof args.clipId === "string") {
     const tile = board.querySelector<HTMLElement>(`.card[data-id="${CSS.escape(args.clipId)}"]`);
     if (!tile) return;
@@ -969,21 +1002,10 @@ function connectControl(): void {
       }
       source.onopen = () => markControlUp();
       source.addEventListener("gap", () => {
-        void resyncViewport();
+        reportAsync(resyncViewport(), "viewport");
       });
       source.addEventListener("control", (event) => {
-        try {
-          const parsed = JSON.parse((event as MessageEvent).data) as { seq?: number; op?: string; args?: Record<string, unknown> };
-          if (typeof parsed.seq === "number" && parsed.seq > controlCursor + 1) {
-            void resyncViewport();
-            return;
-          }
-          applyControl(parsed);
-        } catch (error) {
-          // Keep the stream. One bad frame must not look like a disconnect.
-          mcpFailures.note("control_stream", "malformed");
-          failUi(error, "control event");
-        }
+        acceptControlFrame(String((event as MessageEvent).data));
       });
       source.onerror = () => {
         source.close();
