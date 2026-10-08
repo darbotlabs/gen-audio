@@ -874,6 +874,9 @@ impl Viewport {
             "face_id": face.id,
             "face_index": index,
             "face_count": count,
+            // One release. The desktop still reads args.flipped (`!== false`
+            // is the back face). C-M4 switches that read to face_index.
+            "flipped": index != 0,
         });
         if let Some(label) = single_face_glyph_label(&faces) {
             body["glyph_label"] = json!(label);

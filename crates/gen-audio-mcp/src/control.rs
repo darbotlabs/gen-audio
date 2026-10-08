@@ -1725,6 +1725,14 @@ mod tests {
         gen_audio_core::viewport::bind_viewport(gen_audio_core::viewport::ViewportHandle::release())
     }
 
+    fn bus_flip(seq: u64) -> Value {
+        since(0)
+            .events
+            .into_iter()
+            .find(|event| event["seq"].as_u64() == Some(seq))
+            .unwrap_or(Value::Null)
+    }
+
     #[test]
     fn validate_track_and_voice_profile_get_accept_optimus() {
         validate_track(&[json!("optimus")], "kokoro_onnx").expect("optimus track");
@@ -2027,6 +2035,46 @@ mod tests {
                 .0,
             -32602
         );
+    }
+
+    /// Desktop `setCardFlip` still reads `args.flipped !== false`. A missing
+    /// key is the back face, so face_index 0 must publish `flipped: false`.
+    #[test]
+    fn flip_bus_payload_derives_flipped_from_face_index() {
+        let _viewport = fresh_viewport();
+        let _bus = bind_fresh_bus();
+        let front = ui_flip(&json!({"tileId": "lib-misaki-kokoro", "face": "front"})).unwrap();
+        let front_event = bus_flip(front["seq"].as_u64().unwrap());
+        assert_eq!(front_event["op"], "flip");
+        assert_eq!(front_event["args"]["tileId"], "lib-misaki-kokoro");
+        assert_eq!(front_event["args"]["face_index"], 0);
+        assert_eq!(
+            front_event["args"]["flipped"],
+            false,
+            "face front bus payload: {front_event}"
+        );
+        let explicit = ui_flip(&json!({"tileId": "lib-misaki-kokoro", "flipped": false})).unwrap();
+        let explicit_event = bus_flip(explicit["seq"].as_u64().unwrap());
+        assert_eq!(explicit_event["args"]["face_index"], 0);
+        assert_eq!(
+            explicit_event["args"]["flipped"],
+            false,
+            "flipped false bus payload: {explicit_event}"
+        );
+        ui_flip(&json!({"tileId": "lib-misaki-kokoro", "face": "relations"})).unwrap();
+        let wrapped = ui_flip(&json!({"tileId": "lib-misaki-kokoro", "next": true})).unwrap();
+        assert_eq!(wrapped["args"]["face_id"], "clip");
+        assert_eq!(wrapped["args"]["face_index"], 0);
+        let wrapped_event = bus_flip(wrapped["seq"].as_u64().unwrap());
+        assert_eq!(
+            wrapped_event["args"]["flipped"],
+            false,
+            "next wrap bus payload: {wrapped_event}"
+        );
+        let back = ui_flip(&json!({"tileId": "lib-misaki-kokoro", "face": "back"})).unwrap();
+        let back_event = bus_flip(back["seq"].as_u64().unwrap());
+        assert_eq!(back_event["args"]["face_index"], 1);
+        assert_eq!(back_event["args"]["flipped"], true, "face back bus payload: {back_event}");
     }
 
     #[test]
