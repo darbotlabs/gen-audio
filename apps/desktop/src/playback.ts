@@ -1,6 +1,10 @@
 import { getCubeMeta, setCubeScrub, startLiveCubeClock, stopLiveCubeClock } from "./cubeview";
-import { isFocusPlay, type PlayInfo, type PlayOrigin } from "./play-origin";
-export { isFocusPlay, type PlayInfo, type PlayOrigin };
+import type { PlayOrigin } from "./play-control";
+export type { PlayOrigin };
+/** What a play listener learns: who started it. Focus is not decided here (C1: Rust reducer, PR #4). */
+export interface PlayInfo {
+  origin: PlayOrigin;
+}
 /** HTML audio transport for library tiles. Missing files stay missing. */
 
 const players = new Map<string, HTMLAudioElement>();
@@ -13,6 +17,18 @@ let cubeClockClip: string | null = null;
 let cubeClockUid: string | null = null;
 const playListeners = new Set<(clipId: string, info: PlayInfo) => void>();
 
+/** Reports a UI Play click (origin "user") to the control bus; set by main.ts. */
+let reportUserPlay: (clipId: string) => void = () => {};
+
+export function setUserPlayReporter(report: (clipId: string) => void): void {
+  reportUserPlay = report;
+}
+
+/** Test seam: register a transport element without building the tile DOM. */
+export function registerPlayer(clipId: string, audio: HTMLAudioElement): void {
+  players.set(clipId, audio);
+}
+
 export function setCubeClockClip(clipId: string | null, uid: string | null = null): void {
   cubeClockClip = clipId;
   cubeClockUid = clipId ? uid : null;
@@ -23,7 +39,7 @@ export function getClockSource(): { clipId: string | null; uid: string | null } 
   return { clipId: cubeClockClip, uid: cubeClockUid };
 }
 
-/** Called after a library clip starts playing; `info.focus` says whether it is a focus action (C1). */
+/** Called after a library clip starts playing, with its origin. Listeners must not move focus. */
 export function onClipPlay(listener: (clipId: string, info: PlayInfo) => void): () => void {
   playListeners.add(listener);
   return () => playListeners.delete(listener);
@@ -71,7 +87,7 @@ export function renderTransport(clipId: string, wavUrl: string | undefined, dura
   audio.preload = "metadata";
   audio.dataset.clipId = clipId;
   if (wavUrl) audio.src = wavUrl;
-  players.set(clipId, audio);
+  registerPlayer(clipId, audio);
 
   const toggle = document.createElement("button");
   toggle.type = "button";
@@ -131,8 +147,10 @@ export function renderTransport(clipId: string, wavUrl: string | undefined, dura
 
   toggle.addEventListener("click", (event) => {
     event.stopPropagation();
-    if (audio.paused) void playClip(clipId, "user");
-    else pauseClip(clipId);
+    if (audio.paused) {
+      reportUserPlay(clipId);
+      void playClip(clipId, "user");
+    } else pauseClip(clipId);
   });
   scrub.addEventListener("input", () => {
     const duration = audio.duration || durationHint || 0;
@@ -164,7 +182,7 @@ export async function playClip(clipId: string, origin: PlayOrigin = "auto"): Pro
     await audio.play();
     syncFloater(clipId);
     startLiveCubeClock(cubeFraction);
-    const info: PlayInfo = { origin, focus: isFocusPlay(origin) };
+    const info: PlayInfo = { origin };
     for (const listener of playListeners) listener(clipId, info);
     return "playing";
   } catch (error) {

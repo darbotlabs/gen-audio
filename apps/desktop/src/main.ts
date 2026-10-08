@@ -13,7 +13,8 @@ import {
 } from "./cubeview";
 import { isClipPlaying, seekActiveFraction, seekClipFraction, setCubeClockClip } from "./playback";
 import { applyClipNames, harvestNames } from "./library-meta";
-import { bindFloatingPlayback, onClipPlay, pauseClip, playClip, seekClip } from "./playback";
+import { bindFloatingPlayback, pauseClip, playClip, seekClip, setUserPlayReporter } from "./playback";
+import { controlPlayOrigin, userPlayControl } from "./play-control";
 import { glyphBadge } from "./glyph";
 import { loadLibraryCatalog, type LibraryCatalog } from "./library-assets";
 import { decorateLibraryTiles } from "./livestrip";
@@ -125,17 +126,11 @@ function paintProfile(): boolean {
 /** Default Cube-tab binding: the misaki\u2192kokoro Inverse-HDR cube (real WAV + cube JSON). */
 const DEFAULT_CUBE_CLIP = "lib-misaki-kokoro";
 let cubeClipId = "";
-/** Set when a focus Play (C1) bound the Cube tab to a clip that has no cube: the tab says so and borrows nothing. */
-let noCubeClipId = "";
 let cubeBindSeq = 0;
 let libraryCatalog: LibraryCatalog | null = null;
 
 function clipUid(clipId: string): string | null {
   return libraryCatalog?.clipForTile(clipId)?.uid ?? null;
-}
-
-function tileTitle(clipId: string): string {
-  return board.querySelector<HTMLElement>(`.card[data-id="${CSS.escape(clipId)}"] h2`)?.textContent?.trim() || clipId;
 }
 
 function cubeSources(): Array<{ clipId: string; url: string; label: string }> {
@@ -152,11 +147,7 @@ function syncCubeChrome(): void {
   const meta = getCubeMeta();
   const title = document.querySelector<HTMLElement>("#cube-title");
   if (title) {
-    title.textContent = meta
-      ? meta.title
-      : noCubeClipId
-        ? `No cube for this clip \u2014 ${tileTitle(noCubeClipId)}`
-        : "Inverse-HDR bitdot cube \u2014 nothing bound";
+    title.textContent = meta ? meta.title : "Inverse-HDR bitdot cube \u2014 nothing bound";
   }
   const glyphSlot = document.querySelector<HTMLElement>("#cube-glyph");
   if (glyphSlot) {
@@ -177,7 +168,7 @@ function syncCubeChrome(): void {
 
 /** When the Cube tab opens with nothing bound, bind the default library cube. */
 function ensureDefaultCube(): void {
-  if (boundCubeUrl() || noCubeClipId) return;
+  if (boundCubeUrl()) return;
   const sources = cubeSources();
   const preferred = sources.find((item) => item.clipId === DEFAULT_CUBE_CLIP) ?? sources[0];
   if (!preferred) {
@@ -190,7 +181,6 @@ function ensureDefaultCube(): void {
 async function bindCubeSource(clipId: string, url: string, source: string): Promise<void> {
   const seq = ++cubeBindSeq;
   cubeClipId = clipId;
-  noCubeClipId = "";
   setCubeClockClip(clipId, clipUid(clipId));
   const caption = document.querySelector<HTMLElement>("#cube-caption");
   const message = await loadCube(url);
@@ -200,41 +190,16 @@ async function bindCubeSource(clipId: string, url: string, source: string): Prom
 }
 
 /**
- * Focus binding (Optimus ruling C1). Only an explicit, user-initiated Play, a
- * click on a tile's Play / the Cube tab's Play or MCP `ui_playback play`, is a
- * focus action: that clip takes focus, and the Cube tab and the shared clock
- * follow focus. Autoplay, snap-scroll and any other non-user start do NOT
- * rebind (playback.ts `PlayOrigin`). A focused clip without a cube clears the
- * tab instead of borrowing another clip's cube.
+ * Play origin (Optimus ruling on PR #5, C1): TS never rebinds the Cube tab or
+ * the shared clock on Play. A UI Play click plays locally and posts
+ * `ui_playback {action:"play", origin:"user"}` on the control bus; focus and
+ * rebind belong to the Rust viewport reducer (PR #4), not to this file.
+ * Autoplay and other non-user starts use `playClip(..., "auto")` and change
+ * nothing but the audio.
  */
-function bindCubeToPlayingClip(clipId: string): void {
-  const tile = board.querySelector<HTMLElement>(`.library-tile[data-id="${CSS.escape(clipId)}"]`);
-  if (!tile) return;
-  const url = tile.dataset.cubeJson || "";
-  if (url) {
-    if (cubeClipId !== clipId || boundCubeUrl() !== url) void bindCubeSource(clipId, url, "focus");
-    return;
-  }
-  cubeBindSeq += 1;
-  cubeClipId = clipId;
-  noCubeClipId = clipId;
-  setCubeClockClip(clipId, clipUid(clipId));
-  clearCube(`No cube for this clip (${tileTitle(clipId)}). Nothing is drawn; another clip's cube is not borrowed.`);
-  syncCubeChrome();
-}
-
-/** Mark the focused clip without scrolling the deck (the user is already looking at it, or asked over MCP). */
-function focusClipTile(clipId: string): void {
-  const tile = board.querySelector<HTMLElement>(`.library-tile[data-id="${CSS.escape(clipId)}"]`);
-  if (!tile) return;
-  board.querySelectorAll<HTMLElement>(".card.is-selected").forEach((node) => node.classList.remove("is-selected"));
-  tile.classList.add("is-selected");
-}
-
-onClipPlay((clipId, info) => {
-  if (!info.focus) return; // C1: non-user starts never rebind the cube or the clock
-  focusClipTile(clipId);
-  bindCubeToPlayingClip(clipId);
+setUserPlayReporter((clipId) => {
+  const request = userPlayControl(clipId);
+  void mcpCall(request.name, request.args);
 });
 
 function bindCubeCanvas(): void {
@@ -275,6 +240,8 @@ function bindCubeCanvas(): void {
       syncCubeChrome();
       return;
     }
+    const request = userPlayControl(cubeClipId);
+    void mcpCall(request.name, request.args);
     void playClip(cubeClipId, "user").then((result) => {
       status.textContent = result === "playing" ? `Cube live clock follows ${cubeClipId}` : result;
       syncCubeChrome();
@@ -389,7 +356,6 @@ async function openCube(url: string, source: string): Promise<void> {
   const owner = board.querySelector<HTMLElement>(`.library-tile[data-cube-json="${CSS.escape(url)}"]`);
   cubeBindSeq += 1;
   cubeClipId = owner?.dataset.id ?? "";
-  noCubeClipId = "";
   setCubeClockClip(cubeClipId || null, cubeClipId ? clipUid(cubeClipId) : null);
   const message = await loadCube(url);
   if (caption) caption.textContent = `${source}: ${message}`;
@@ -638,7 +604,7 @@ function applyControl(event: { seq?: number; op?: string; args?: Record<string, 
     showRun(args.voice, String(args.phase ?? "unavailable"), String(args.detail ?? ""), args.synthesizedSpeech === true);
   } else if (event.op === "playback" && typeof args.tileId === "string") {
     const action = String(args.action ?? "");
-    if (action === "play") void playClip(args.tileId, "mcp").then((result) => {
+    if (action === "play") void playClip(args.tileId, controlPlayOrigin(args)).then((result) => {
       status.textContent = result === "playing" ? `Playing ${args.tileId}` : result;
     });
     else if (action === "pause") status.textContent = pauseClip(args.tileId);

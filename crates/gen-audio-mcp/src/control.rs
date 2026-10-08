@@ -233,6 +233,20 @@ pub fn ui_playback(args: &Value) -> Result<Value, (i32, String)> {
     if !matches!(action, "play" | "pause" | "seek") {
         return Err((-32602, "action must be play, pause, or seek".into()));
     }
+    // Who started it (Optimus ruling on PR #5, C1): "user" (default; a UI
+    // Play click posts it) or "auto". Carried on the bus as-is; focus and
+    // rebind are the viewport reducer's job (PR #4), not this tool's.
+    let mut args = args.clone();
+    if action == "play" {
+        let origin = args.get("origin").map_or(Some("user"), Value::as_str);
+        match origin {
+            Some(origin @ ("user" | "auto")) => args["origin"] = json!(origin),
+            _ => return Err((-32602, "origin must be user or auto".into())),
+        }
+    } else if args.get("origin").is_some() {
+        return Err((-32602, "origin applies to action play only".into()));
+    }
+    let args = &args;
     if action == "seek" {
         let seconds = args
             .get("seconds")
@@ -642,5 +656,18 @@ mod tests {
         assert_eq!(ui_navigate(&json!({"slide": "slide:nope"})).unwrap_err().0, -32602);
         assert_eq!(ui_navigate(&json!({"slide": "slide:"})).unwrap_err().0, -32602);
         assert_eq!(resolve_slide("slide:spatial").unwrap(), ("spatial", false));
+    }
+
+    #[test]
+    fn ui_playback_carries_play_origin_user_by_default() {
+        let user = ui_playback(&json!({"tileId": "lib-kokoro", "action": "play", "origin": "user"})).unwrap();
+        assert_eq!(user["args"]["origin"], "user");
+        let default = ui_playback(&json!({"tileId": "lib-kokoro", "action": "play"})).unwrap();
+        assert_eq!(default["args"]["origin"], "user");
+        let auto = ui_playback(&json!({"tileId": "lib-kokoro", "action": "play", "origin": "auto"})).unwrap();
+        assert_eq!(auto["args"]["origin"], "auto");
+        assert_eq!(ui_playback(&json!({"tileId": "lib-kokoro", "action": "play", "origin": "mcp"})).unwrap_err().0, -32602);
+        assert_eq!(ui_playback(&json!({"tileId": "lib-kokoro", "action": "pause", "origin": "user"})).unwrap_err().0, -32602);
+        assert!(ui_playback(&json!({"tileId": "lib-kokoro", "action": "pause"})).unwrap()["args"].get("origin").is_none());
     }
 }

@@ -367,14 +367,15 @@ not_a_podcast_render, engine_unavailable, g2p_only, status_only`.
   is a deprecated alias: it still resolves, the MCP server logs a deprecation
   line on stderr, and the result carries `deprecation`. The queued event
   always carries the canonical `slide:<slug>`; the UI accepts both forms.
-- **Livetile focus (C1).** Only an explicit, user-initiated Play is a focus
-  action: a click on a tile's Play or the Cube tab's Play, or MCP
-  `ui_playback {action:"play"}`. That clip takes focus, and the Cube tab and
-  the shared seconds clock (on the clip uid) follow focus. Autoplay,
-  snap-scroll, resuming from the floating bar and any other non-user start
-  never rebind the cube or the clock (`apps/desktop/src/play-origin.ts`,
-  `PlayOrigin`; gate in `main.ts` `onClipPlay`). The playhead stays
-  transport-local.
+- **Play origin (C1, Optimus ruling on PR #5).** TS does not decide focus
+  and never rebinds the Cube tab or the shared clock on Play. A UI Play click
+  (tile or Cube tab) plays locally and posts MCP `ui_playback
+  {action:"play", origin:"user"}` on the control bus
+  (`apps/desktop/src/play-control.ts`); `origin` is `user` (default) or
+  `auto` and applies to `play` only. Autoplay and other programmatic starts
+  call `playClip(..., "auto")` and change nothing but the audio. Focus and
+  rebind belong to the Rust viewport reducer (PR #4), which is not part of
+  this change. The playhead stays transport-local.
 - **ACP `session/new`** accepts `assets:[uid]` (at most 8, resolved through
   the same catalog) and stores uids in the track, never paths.
 
