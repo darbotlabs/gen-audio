@@ -23,6 +23,7 @@ pub const SLIDES: &[&str] = &[
 const CONNECTOR_IDS: &[&str] = &["mcp", "acp", "harness", "copilot", "claude", "gpt", "gemini", "local"];
 
 #[derive(Debug, Clone, Copy, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct Persona {
     pub id: &'static str,
     pub name: &'static str,
@@ -35,6 +36,7 @@ pub struct Persona {
 }
 
 #[derive(Debug, Clone, Copy, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct VoiceModel {
     pub id: &'static str,
     pub label: &'static str,
@@ -45,6 +47,7 @@ pub struct VoiceModel {
 }
 
 #[derive(Debug, Clone, Copy, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct LibraryClipMeta {
     pub id: &'static str,
     pub title: &'static str,
@@ -307,7 +310,7 @@ pub fn voice_profile_value(id: &str) -> Option<Value> {
     let person = persona(id)?;
     let voice = voice_models().iter().find(|item| item.id == "kokoro_onnx");
     let voice_label = voice.map(|item| item.label).unwrap_or("kokoro-onnx");
-    Some(json!({
+    let mut profile = json!({
         "agentName": person.name,
         "personaId": person.id,
         "voiceModel": "kokoro_onnx",
@@ -320,18 +323,24 @@ pub fn voice_profile_value(id: &str) -> Option<Value> {
         "refs": person.refs,
         "spectrogram2d": "browser-profile-map",
         "spectrogram3d": if matches!(person.id, "alice" | "optimus") { "library-cube-hook" } else { "none" },
-        "cubeJsonUrl": match person.id {
-            "alice" => Value::String("/library/library_kokoro_onnx_cube3d.json".into()),
-            "optimus" => Value::String("/library/library_cube_explainer_kokoro_onnx_cube3d.json".into()),
-            _ => Value::Null,
-        },
         "notPodcast": true,
         "synthesizedSpeech": false,
         "disclaimer": format!(
             "Profile for persona {}. Voice model is {}. Not a podcast render and not a Python spectrogram.",
             person.name, voice_label
         )
-    }))
+    });
+    // Omit cubeJsonUrl when there is no cube hook. A null value fails the
+    // VoiceProfile schema (type string) and the Rust checker.
+    let cube = match person.id {
+        "alice" => Some("/library/library_kokoro_onnx_cube3d.json"),
+        "optimus" => Some("/library/library_cube_explainer_kokoro_onnx_cube3d.json"),
+        _ => None,
+    };
+    if let (Some(url), Some(map)) = (cube, profile.as_object_mut()) {
+        map.insert("cubeJsonUrl".into(), Value::String(url.into()));
+    }
+    Some(profile)
 }
 
 #[cfg(test)]
@@ -363,5 +372,27 @@ mod tests {
             clip.cube_json_url,
             Some("/library/library_genaid_full_misaki_kokoro_cube3d.json")
         );
+    }
+
+    #[test]
+    fn profiles_omit_cube_url_instead_of_null() {
+        for person in personas() {
+            let profile = voice_profile_value(person.id).expect("profile");
+            match profile.get("cubeJsonUrl") {
+                None => assert_ne!(profile["spectrogram3d"], "library-cube-hook", "{}", person.id),
+                Some(url) => assert!(url.is_string(), "{} cubeJsonUrl must be a string", person.id),
+            }
+        }
+    }
+
+    #[test]
+    fn catalog_serializes_camel_case_like_the_manifest() {
+        let clip = serde_json::to_value(library_clip("lib-misaki-kokoro").expect("clip")).expect("json");
+        assert!(clip.get("engineId").is_some());
+        assert!(clip.get("wavUrl").is_some());
+        assert!(clip.get("cubeJsonUrl").is_some());
+        assert!(clip.get("engine_id").is_none());
+        let model = serde_json::to_value(voice_models()[0]).expect("json");
+        assert!(model.get("synthAdapter").is_some());
     }
 }

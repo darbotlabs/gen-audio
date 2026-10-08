@@ -12,7 +12,7 @@ export const CARD_KINDS = [
   "VoiceProfile",
 ] as const;
 
-export const CONNECTOR_IDS = ["mcp", "acp", "harness", "copilot", "claude", "gpt", "gemini"] as const;
+export const CONNECTOR_IDS = ["mcp", "acp", "harness", "copilot", "claude", "gpt", "gemini", "local"] as const;
 export const CONNECTOR_MODES = ["mock", "live", "local", "token_present", "misconfigured"] as const;
 export const ENGINE_STATUSES = ["implemented", "external", "library", "weights_absent", "unavailable"] as const;
 export const LIBRARY_STATUSES = ["ok", "running", "weights_absent", "unavailable", "external"] as const;
@@ -206,8 +206,17 @@ function validateAdaptive(id: string, adaptive: unknown): string | null {
   return null;
 }
 
+/** Length in Unicode code points, matching JSON Schema minLength/maxLength and Rust chars(). */
+export function charLength(value: string): number {
+  let count = 0;
+  for (const _ of value) count += 1;
+  return count;
+}
+
 function boundedString(value: unknown, min: number, max: number): value is string {
-  return typeof value === "string" && value.length >= min && value.length <= max;
+  if (typeof value !== "string") return false;
+  const length = charLength(value);
+  return length >= min && length <= max;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

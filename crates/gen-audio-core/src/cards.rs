@@ -26,6 +26,7 @@ pub const CONNECTOR_IDS: &[&str] = &[
     "claude",
     "gpt",
     "gemini",
+    "local",
 ];
 
 pub fn validate_viewport(document: &Value) -> Result<(), String> {

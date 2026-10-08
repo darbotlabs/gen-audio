@@ -544,6 +544,12 @@ fn allowlisted_library_file(repo: &Path, web_path: &str) -> Option<PathBuf> {
     let rel = match web_path {
         "/library/library_kokoro_onnx.synth.json" => "apps/desktop/public/library/library_kokoro_onnx.synth.json",
         "/library/library_kokoro_onnx_cube3d.json" => "apps/desktop/public/library/library_kokoro_onnx_cube3d.json",
+        "/library/library_genaid_full_misaki_kokoro_cube3d.json" => {
+            "apps/desktop/public/library/library_genaid_full_misaki_kokoro_cube3d.json"
+        }
+        "/library/library_cube_explainer_kokoro_onnx_cube3d.json" => {
+            "apps/desktop/public/library/library_cube_explainer_kokoro_onnx_cube3d.json"
+        }
         _ => return None,
     };
     let root = repo.canonicalize().ok()?;
