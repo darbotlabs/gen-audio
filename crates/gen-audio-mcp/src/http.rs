@@ -324,6 +324,14 @@ fn first_line(buf: &[u8]) -> String {
 /// Recent rejection log lines (the same lines go to stderr), newest last.
 static REJECTIONS: std::sync::Mutex<std::collections::VecDeque<String>> = std::sync::Mutex::new(std::collections::VecDeque::new());
 
+#[cfg(test)]
+thread_local! {
+    /// Test-only: the rejection lines logged on this thread. A test's worker
+    /// thread serves exactly one connection, so these are that connection's
+    /// lines, whatever its client port.
+    static LOGGED_ON_THIS_THREAD: std::cell::RefCell<Vec<String>> = const { std::cell::RefCell::new(Vec::new()) };
+}
+
 /// One stderr line per rejected request: method, path or tool, code, reason
 /// and peer. Kept in a small ring so tests (and a future status read) can see it.
 fn log_rejection(stream: &TcpStream, method: &str, target: &str, code: &str, reason: &str) {
@@ -332,6 +340,8 @@ fn log_rejection(stream: &TcpStream, method: &str, target: &str, code: &str, rea
     let target = if target.is_empty() { "-" } else { target };
     let line = format!("gen-audio-mcp http: rejected {method} {target} {code} {reason} peer={peer}");
     eprintln!("{line}");
+    #[cfg(test)]
+    LOGGED_ON_THIS_THREAD.with(|lines| lines.borrow_mut().push(line.clone()));
     if let Ok(mut ring) = REJECTIONS.lock() {
         if ring.len() >= 256 {
             ring.pop_front();
@@ -602,26 +612,8 @@ mod tests {
 
     /// One request against a fresh loopback listener; `build` gets the port.
     fn roundtrip(build: impl FnOnce(u16) -> String) -> (u16, String) {
-        let (status, text, _peer) = roundtrip_peer(build);
+        let (status, text, _peer, _served) = roundtrip_seeded(build, |_| {});
         (status, text)
-    }
-
-    /// Like `roundtrip`, plus the client's own address (the server logs it as peer=).
-    fn roundtrip_peer(build: impl FnOnce(u16) -> String) -> (u16, String, String) {
-        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
-        let port = listener.local_addr().unwrap().port();
-        let worker = std::thread::spawn(move || {
-            let (stream, _) = listener.accept().unwrap();
-            let _ = handle_connection(&Server::boot(), stream);
-        });
-        let mut stream = TcpStream::connect(("127.0.0.1", port)).unwrap();
-        let peer = stream.local_addr().unwrap().to_string();
-        stream.write_all(build(port).as_bytes()).unwrap();
-        let mut text = String::new();
-        stream.read_to_string(&mut text).unwrap();
-        worker.join().unwrap();
-        let status = text.split_whitespace().nth(1).and_then(|code| code.parse().ok()).unwrap_or(0);
-        (status, text, peer)
     }
 
     fn post(port: u16, headers: &str, body: &str) -> String {
@@ -723,8 +715,50 @@ mod tests {
         assert_eq!(status, 411, "{text}");
     }
 
-    fn logged(peer: &str) -> Vec<String> {
-        recent_rejections().into_iter().filter(|line| line.ends_with(&format!("peer={peer}"))).collect()
+    /// One request on a fresh listener. `seed` runs once the client is
+    /// connected (it gets the client address), before the request is sent.
+    /// Returns the status, the response, the client address and the lines the
+    /// worker thread that served this one connection logged.
+    fn roundtrip_seeded(build: impl FnOnce(u16) -> String, seed: impl FnOnce(&str)) -> (u16, String, String, Vec<String>) {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let worker = std::thread::spawn(move || {
+            let (stream, _) = listener.accept().unwrap();
+            let _ = handle_connection(&Server::boot(), stream);
+            LOGGED_ON_THIS_THREAD.with(|lines| lines.take())
+        });
+        let mut stream = TcpStream::connect(("127.0.0.1", port)).unwrap();
+        let peer = stream.local_addr().unwrap().to_string();
+        seed(&peer);
+        stream.write_all(build(port).as_bytes()).unwrap();
+        let mut text = String::new();
+        stream.read_to_string(&mut text).unwrap();
+        let served = worker.join().unwrap();
+        let status = text.split_whitespace().nth(1).and_then(|code| code.parse().ok()).unwrap_or(0);
+        (status, text, peer, served)
+    }
+
+    /// The lines this test counts as one connection's rejection log: the ones
+    /// its own worker logged. Never keyed on `peer=`: the client port is the
+    /// OS's choice, and a reused one matched another connection's line.
+    fn rejection_lines(_peer: &str, served: &[String]) -> Vec<String> {
+        served.to_vec()
+    }
+
+    /// The flake seen at 06:1x PT on 2026-10-08: an earlier connection from
+    /// the same client port had left `... 403 host peer=127.0.0.1:55556` in the
+    /// shared ring, and keying on `peer=` counted it as the next request's
+    /// line. Forced here, not left to port reuse: a line from "another
+    /// connection" with this client's address is in the ring before the
+    /// request goes out.
+    #[test]
+    fn a_rejection_is_counted_for_its_own_connection_even_on_a_reused_client_port() {
+        let request = |port: u16| format!("POST /mcp HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\nContent-Type: application/json\r\nConnection: close\r\n\r\n");
+        let stale = |peer: &str| REJECTIONS.lock().unwrap().push_back(format!("gen-audio-mcp http: rejected POST /mcp 403 host peer={peer}"));
+        let (status, text, peer, served) = roundtrip_seeded(request, stale);
+        let lines = rejection_lines(&peer, &served);
+        assert_eq!(lines.len(), 1, "status {status}: {lines:?} {text}");
+        assert!(lines[0].starts_with("gen-audio-mcp http: rejected POST /mcp 411 read "), "{lines:?}");
     }
 
     #[test]
@@ -741,14 +775,15 @@ mod tests {
              "rejected POST tools/call ui_navigate -32602 rpc"),
         ];
         for (build, want) in cases {
-            let (status, text, peer) = roundtrip_peer(build);
-            let lines = logged(&peer);
+            let (status, text, peer, served) = roundtrip_seeded(build, |_| {});
+            let lines = rejection_lines(&peer, &served);
             assert_eq!(lines.len(), 1, "one line per rejection ({want}), status {status}: {lines:?} {text}");
             assert!(lines[0].starts_with(&format!("gen-audio-mcp http: {want} ")), "{lines:?}");
+            assert!(lines[0].ends_with(&format!(" peer={peer}")), "the line still names the peer: {lines:?}");
         }
         // Accepted requests log nothing.
-        let (status, _text, peer) = roundtrip_peer(|port| post(port, "Content-Type: application/json\r\n", NAVIGATE));
+        let (status, _text, peer, served) = roundtrip_seeded(|port| post(port, "Content-Type: application/json\r\n", NAVIGATE), |_| {});
         assert_eq!(status, 200);
-        assert!(logged(&peer).is_empty());
+        assert!(rejection_lines(&peer, &served).is_empty());
     }
 }
