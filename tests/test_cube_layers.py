@@ -25,7 +25,7 @@ from gen_audio.cube_layers import (
     generator_sha256,
     library_cube,
 )
-from gen_audio.library_manifest import commit_holds_generator, normalized_sha256, record_generator_commits
+from gen_audio.library_manifest import normalized_sha256, record_generator_commits
 from gen_audio.cube_revision import measure
 
 LIBRARY = Path(__file__).resolve().parents[1] / "apps" / "desktop" / "public" / "library"
@@ -173,28 +173,28 @@ def test_cube_provenance_is_rev3_from_this_generators_bytes(stem, cube, engine, 
     check_generator(doc)
 
 
-def test_manifest_generator_commit_is_information_that_holds_the_generator_bytes():
-    """A recorded generator_commit (outside the uid) must hold the bytes it claims.
+def test_shipped_cubes_omit_generator_commit_and_carry_generator_sha256():
+    """The shipped contract: generator_commit is absent, generator_sha256 is present.
 
-    Skips per cube when the commit is not in this clone (shallow, or rewritten
-    by a rebase/squash): the pointer is informational and identity does not
-    depend on it.
+    A skip when this clone has no resolvable commit never checks anything.
+    Identity is the generator bytes, not a commit SHA.
     """
     manifest = json.loads((LIBRARY / "manifest.json").read_text(encoding="utf-8"))
-    checked = 0
+    seen = 0
     for clip in manifest["clips"]:
         block = clip.get("cube") or {}
-        commit = block.get("generator_commit")
-        if commit is None:
+        if not block:
             continue
+        assert "generator_commit" not in block, clip["id"]
         doc = json.loads((LIBRARY / block["jsonUrl"].rsplit("/", 1)[-1]).read_text(encoding="utf-8"))
-        held = commit_holds_generator(REPO_ROOT, commit, GENERATOR_PATH, doc["provenance"]["generator_sha256"])
-        if held is None:
-            continue
-        assert held, f"{clip['id']}: generator_commit {commit} does not hold the generator bytes of {block['jsonUrl']}"
-        checked += 1
-    if checked == 0:
-        pytest.skip("no recorded generator_commit resolvable in this clone")
+        provenance = doc["provenance"]
+        assert "generator_commit" not in provenance, clip["id"]
+        assert "generator_commit" not in doc, clip["id"]
+        sha = provenance["generator_sha256"]
+        assert isinstance(sha, str) and len(sha) == 64, clip["id"]
+        assert sha == generator_sha256(), clip["id"]
+        seen += 1
+    assert seen == 5, seen
 
 
 @pytest.mark.skipif(shutil.which("git") is None, reason="needs git")
