@@ -69,8 +69,9 @@ fn clip_voice_model(engine: &str) -> Option<(&'static str, Option<&'static str>)
     }
 }
 
-/// Layer methods a manifest `cube.compare` entry may name (gen_audio.cube_layers
-/// LAYER_METHODS minus the default library_r3, which is the clip's own cube).
+/// Layer methods a manifest `cube.compare` entry may name (gen_audio.cli.cube
+/// LAYER_METHODS minus the default library_r3, which is the clip's own cube;
+/// pipeline_r2 is gen_audio.cube_pipeline_r2).
 pub const COMPARE_LAYER_METHODS: &[&str] = &["pipeline_r2"];
 
 /// cube_ihdr identity fields, body and "bins inferred" flag from a cube JSON
@@ -316,7 +317,7 @@ pub fn migrate_v0_to_v1(bundle: &Value) -> Result<Value, AssetError> {
         }
 
         // Comparison cubes of the same WAV under another layer_method
-        // (gen_audio.cube_layers, e.g. pipeline_r2 = PR #4's formulas). Cube
+        // (e.g. pipeline_r2 = PR #4's formulas, gen_audio.cube_pipeline_r2). Cube
         // tab Compare mode only; never the clip's primary cube.
         for entry in cube.get("compare").and_then(Value::as_array).cloned().unwrap_or_default() {
             let method = entry["layer_method"].as_str().unwrap_or_default().to_string();
@@ -350,7 +351,7 @@ pub fn migrate_v0_to_v1(bundle: &Value) -> Result<Value, AssetError> {
                 relations: Map::new(),
                 honesty: honesty(false, false, &["library_cube"]),
                 provenance: obj(vec![
-                    ("generator", json!(format!("gen_audio.cube_layers layer_method {method} (comparison variant)"))),
+                    ("generator", json!(format!("gen_audio.cube_pipeline_r2 layer_method {method} (comparison variant)"))),
                     (
                         "params",
                         json!({

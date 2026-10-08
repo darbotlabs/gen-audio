@@ -9,7 +9,9 @@ Two commands share this entry point (scripts/cube_revision.py):
   cube JSON (and PNG) that the Library tiles and the Cube tab load. ``--method
   pipeline_r2`` writes the comparison cube (PR #4's formulas) that the Cube
   tab's Compare mode draws next to the library_r3 cube; it records the WAV's
-  sha256 as ``source_sha256``. See gen_audio.cube_layers.
+  sha256 as ``source_sha256``. The command dispatches by method to the module
+  that owns the formulas (``LAYER_METHODS``): library_r3 is
+  gen_audio.cube_layers, pipeline_r2 is gen_audio.cube_pipeline_r2.
 """
 
 from __future__ import annotations
@@ -22,8 +24,25 @@ from pathlib import Path
 
 from gen_audio.artifacts import publish_copy
 from gen_audio.audio_io import read_wav, write_wav
-from gen_audio.cube_layers import DEFAULT_LAYER_METHOD, LAYER_METHODS, library_cube, write_cube_png
+from gen_audio import cube_pipeline_r2
+from gen_audio.cube_layers import library_cube, write_cube_png
 from gen_audio.cube_revision import DEFAULT_MAX_STEPS, revise, write_cube_plot
+
+
+def _library_r3(audio, sample_rate, args):
+    return library_cube(audio, sample_rate, stem=args.stem, engine=args.engine, revision=args.revision)
+
+
+def _pipeline_r2(audio, sample_rate, args):
+    return cube_pipeline_r2.pipeline_r2_cube(
+        audio, sample_rate, stem=args.stem, engine=args.engine, source_sha256=file_sha256(args.wav), revision=args.revision
+    )
+
+
+# layer_method -> builder in the module that owns those formulas (each module's
+# bytes are its cubes' identity, so one method's edit never moves the other).
+LAYER_METHODS = {"library_r3": _library_r3, cube_pipeline_r2.LAYER_METHOD: _pipeline_r2}
+DEFAULT_LAYER_METHOD = "library_r3"
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -52,7 +71,7 @@ def build_layers_parser() -> argparse.ArgumentParser:
     parser.add_argument("--png", type=Path, help="also write the 3D scatter PNG here")
     parser.add_argument(
         "--method",
-        choices=LAYER_METHODS,
+        choices=tuple(LAYER_METHODS),
         default=DEFAULT_LAYER_METHOD,
         help="layer formulas: library_r3 (default, the Library cube) or pipeline_r2 (PR #4's formulas, comparison only)",
     )
@@ -71,10 +90,7 @@ def layers_main(argv: list[str]) -> int:
     args = build_layers_parser().parse_args(argv)
     try:
         audio, sample_rate = read_wav(args.wav)
-        sha = file_sha256(args.wav) if args.method != DEFAULT_LAYER_METHOD else None
-        doc, cloud = library_cube(
-            audio, sample_rate, stem=args.stem, engine=args.engine, revision=args.revision, method=args.method, source_sha256=sha
-        )
+        doc, cloud = LAYER_METHODS[args.method](audio, sample_rate, args)
         args.out.parent.mkdir(parents=True, exist_ok=True)
         args.out.write_text(json.dumps(doc, ensure_ascii=False), encoding="utf-8")
         written = [args.out]
