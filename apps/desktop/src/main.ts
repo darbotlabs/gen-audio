@@ -20,7 +20,7 @@ import { applyClipNames, harvestNames } from "./library-meta";
 import { bindFloatingPlayback, pauseClip, playClip, releaseAllSeekBlobs, releaseDetachedTransports, seekClipOutcome, setUserPlayReporter } from "./playback";
 import { controlPlayOrigin, McpFailureCounter, postMcp, seekReportControl, userPlayControl } from "./play-control";
 import { fixturesRequested, selectViewport } from "./viewport-source";
-import { glyphBadge } from "./glyph";
+import { glyphMark } from "./glyph";
 import { loadLibraryCatalog, mediaUrl, sourceSha256, type LibraryCatalog } from "./library-assets";
 import { decorateLibraryTiles } from "./livestrip";
 import { profilePreview, type ProfilePreview, type VoiceSelection } from "./profiles";
@@ -112,7 +112,7 @@ function show(documentIn: unknown): void {
   bindFloatingPlayback();
   void loadLibraryCatalog(loadDevAssets()).then((catalog) => {
     libraryCatalog = catalog;
-    decorateLibraryTiles(board, catalog, (uid) => glyphBadge(uid, { role: "clip", onCopy: announceCopy }));
+    decorateLibraryTiles(board, catalog, { onCopy: announceCopy });
     fillModelCubes(board, catalog, { openCube: (url, source) => void openCube(url, source), selectTile });
     syncCubeChrome();
   });
@@ -182,7 +182,7 @@ function syncCubeChrome(): void {
   const glyphSlot = document.querySelector<HTMLElement>("#cube-glyph");
   if (glyphSlot) {
     const cube = meta && libraryCatalog ? libraryCatalog.cubeForUrl(meta.url) : null;
-    const badge = cube ? glyphBadge(cube.uid, { role: "cube", onCopy: announceCopy }) : null;
+    const badge = cube ? glyphMark(cube.uid, { role: "cube" }) : null;
     if (badge) glyphSlot.replaceChildren(badge);
     else glyphSlot.replaceChildren();
   }

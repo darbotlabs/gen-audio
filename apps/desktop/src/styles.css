@@ -544,6 +544,8 @@ body.is-dragging { cursor: grabbing; user-select: none; }
   height: 100%;
   perspective: 1100px;
   overflow: hidden;
+  /* Anchors the flip glyph: one corner for every face (Optimus ruling 2). */
+  position: relative;
 }
 .flip {
   position: relative;
@@ -612,11 +614,36 @@ body.is-dragging { cursor: grabbing; user-select: none; }
   box-shadow: 0 0 0 0 rgba(62, 224, 197, 0.7);
   animation: livetile-pulse 2.4s ease-out infinite;
 }
-.flip-toggle { margin-top: auto; align-self: start; padding: 0.22rem 0.55rem; font-size: 0.72rem; }
+/* The card's glyph is its only flip control. It is a child of the card, not of
+   a face, so it never rotates away and sits in the same top-right corner on
+   every face. Face content leaves room for it. */
+.card > .flip-glyph {
+  position: absolute;
+  top: 0.4rem;
+  right: 0.45rem;
+  z-index: 3;
+  cursor: pointer;
+  padding: 0.2rem 0.3rem;
+  transition: background-color 0.15s ease;
+}
+.card > .flip-glyph:hover { background: rgba(62, 224, 197, 0.18); }
+.card > .flip > .face > :first-child { margin-right: 2.1rem; }
+.clip-identity {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  min-width: 0;
+  flex: 0 0 auto;
+  font-size: 0.66rem;
+}
+.clip-uid { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted); }
+.copy-uid { flex: 0 0 auto; padding: 0.12rem 0.45rem; font-size: 0.66rem; cursor: copy; }
+.copy-uid.is-copied { background: rgba(62, 224, 197, 0.25); }
 
 @media (prefers-reduced-motion: reduce) {
   .board { scroll-behavior: auto; }
   .flip { transition: none; }
+  .card > .flip-glyph { transition: none; }
   .face.front::after, .live-mark::before { animation: none; }
 }
 
@@ -922,15 +949,12 @@ th, td { text-align: left; padding: 0.12rem 0.25rem; border-bottom: 1px solid va
   line-height: 1;
   letter-spacing: 0.06em;
   text-transform: uppercase;
-  cursor: copy;
   flex: 0 0 auto;
 }
 .ga-glyph:focus-visible { outline: 2px solid var(--focus); outline-offset: 1px; }
-.ga-glyph.is-copied { background: rgba(62, 224, 197, 0.25); }
 .ga-glyph-svg { width: 1.05rem; height: 0.95rem; display: block; }
 .ga-dot.is-on { fill: currentColor; }
 .ga-dot.is-off { fill: none; stroke: currentColor; stroke-width: 0.3; opacity: 0.28; }
-.live-row .ga-glyph:first-of-type { margin-left: auto; }
 /* Fixed hue per kind; never derived from the hash. */
 .ga-kind-voice_model { color: #7fb4ff; }
 .ga-kind-voice_profile { color: #c99bff; }

@@ -257,8 +257,11 @@ through `src`.
     Unicode string is the text form.
   - The hue is a fixed CSS class per kind (`ga-kind-<kind>`, plus
     `ga-kind-unknown`), never derived from the hash.
-  - The SVG is `aria-hidden`; the badge's `aria-label` and tooltip carry the
-    kind and the uid (copy on click).
+  - The SVG is `aria-hidden`. On a card the glyph is a button with one
+    meaning, flip (`aria-label` "Flip card, face N of M: <next face>"); it
+    never copies. Elsewhere it is a passive mark whose `aria-label` and
+    tooltip carry the kind and the uid. Copying is the labelled "Copy uid"
+    button on an Audio Clips tile's Clip face; MCP reads uids on its own path.
   - No style attributes are used (CSP `style-src 'self'`).
 
 ## 4. Kinds and back-compat

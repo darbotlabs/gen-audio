@@ -6,6 +6,7 @@
 // placed against the clip duration. Past the strip's coverage it is marked
 // "beyond". Clips without data say so; nothing is drawn in their place.
 
+import { copyUidButton, glyphMark } from "./glyph";
 import type { AssetEnvelope, LibraryCatalog } from "./library-assets";
 import { mediaUrl } from "./library-assets";
 
@@ -149,21 +150,42 @@ export function spectrogramStrip(spec: AssetEnvelope, clip: AssetEnvelope, audio
  * Fill each library tile's strip slot from the catalog and add the bound
  * audio_clip glyph. Tiles keep their legacy id; the clip uid is added beside it.
  */
-export function decorateLibraryTiles(
-  board: HTMLElement,
-  catalog: LibraryCatalog | null,
-  badge: (uid: string) => HTMLElement | null,
-): void {
+export interface DecorateOptions {
+  /** Status line after a Copy uid press (copied, or the clipboard refused). */
+  onCopy?: (uid: string, copied: boolean) => void;
+}
+
+/**
+ * The clip's identity row on the Clip (front) face: its glyph as a passive
+ * mark, the uid, and the labelled Copy uid button (Optimus ruling 1). The
+ * card's own glyph in the corner is the flip control and copies nothing.
+ */
+function clipIdentity(uid: string, options: DecorateOptions): HTMLElement | null {
+  const copy = copyUidButton(uid, options.onCopy);
+  if (!copy) return null;
+  const row = document.createElement("div");
+  row.className = "clip-identity";
+  row.dataset.clipUid = uid;
+  const mark = glyphMark(uid, { role: "clip" });
+  const code = document.createElement("code");
+  code.className = "clip-uid";
+  code.textContent = uid;
+  if (mark) row.append(mark);
+  row.append(code, copy);
+  return row;
+}
+
+export function decorateLibraryTiles(board: HTMLElement, catalog: LibraryCatalog | null, options: DecorateOptions = {}): void {
   board.querySelectorAll<HTMLElement>(".library-tile").forEach((tile) => {
     const slot = tile.querySelector<HTMLElement>(".spec-strip-slot");
     const id = tile.dataset.id ?? "";
     const clip = catalog?.clipForTile(id) ?? null;
     if (clip) {
       tile.dataset.clipUid = clip.uid;
-      const row = tile.querySelector(".face.front .live-row");
-      if (row && !row.querySelector(`[data-uid="${CSS.escape(clip.uid)}"]`)) {
-        const node = badge(clip.uid);
-        if (node) row.append(node);
+      const title = tile.querySelector(".face.front > h2");
+      if (title && !tile.querySelector(".face.front .clip-identity")) {
+        const node = clipIdentity(clip.uid, options);
+        if (node) title.after(node);
       }
       const cube = catalog?.derivedFrom(clip.uid, "cube_ihdr");
       if (cube) tile.dataset.cubeUid = cube.uid;

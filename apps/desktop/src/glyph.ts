@@ -1,5 +1,7 @@
 // Glyph badge: a 2-cell braille SVG drawn from the first 16 bits of an asset uid.
-// The glyph is a visual hint only; the uid lives in aria-label/title and copies on click.
+// On a card the glyph is the flip control and nothing else (Optimus ruling 1,
+// 2026-10-08); elsewhere it is a passive mark. Copying a uid is the labelled
+// "Copy uid" button on a tile's Clip face.
 // CSP: no style attributes. Hue comes from the fixed per-kind class (ga-kind-<kind>).
 
 import { glyphBytesFromUid, glyphFromUid, hueClass, isUid, parseUid } from "./asset";
@@ -32,40 +34,94 @@ export function glyphSvg(uid: string): SVGSVGElement {
   return svg;
 }
 
-export interface BadgeOptions {
+export interface MarkOptions {
   /** Short visible role tag, e.g. "clip" for the bound audio clip on a library tile. */
   role?: string;
-  onCopy?: (uid: string, copied: boolean) => void;
 }
 
-/** A focusable badge button. Returns null for anything that is not a valid v1 uid. */
-export function glyphBadge(uid: unknown, options: BadgeOptions = {}): HTMLButtonElement | null {
-  if (!isUid(uid)) return null;
-  const { kind } = parseUid(uid);
-  const badge = document.createElement("button");
-  badge.type = "button";
-  badge.className = `ga-glyph ${hueClass(kind)}`;
-  badge.dataset.uid = uid;
-  badge.dataset.glyph = glyphFromUid(uid);
-  const label = `${kind.replace(/_/g, " ")} ${uid}`;
-  badge.setAttribute("aria-label", `${label}. Activate to copy the uid.`);
-  badge.title = `${uid}\nClick to copy`;
-  badge.append(glyphSvg(uid));
-  if (options.role) {
+function glyphNode<T extends HTMLElement>(node: T, uid: string, kind: string, role?: string): T {
+  node.className = `ga-glyph ${hueClass(kind)}`;
+  node.dataset.uid = uid;
+  node.dataset.glyph = glyphFromUid(uid);
+  node.append(glyphSvg(uid));
+  if (role) {
     const tag = document.createElement("span");
     tag.className = "ga-glyph-role";
-    tag.textContent = options.role;
-    badge.append(tag);
+    tag.textContent = role;
+    node.append(tag);
   }
-  badge.addEventListener("click", (event) => {
+  return node;
+}
+
+/**
+ * A passive glyph: the uid's braille mark with the uid in its title. It is not
+ * a control (Optimus ruling 1: the glyph has one meaning, and on a card that
+ * meaning is flip). Returns null for anything that is not a valid v1 uid.
+ */
+export function glyphMark(uid: unknown, options: MarkOptions = {}): HTMLSpanElement | null {
+  if (!isUid(uid)) return null;
+  const { kind } = parseUid(uid);
+  const mark = glyphNode(document.createElement("span"), uid, kind, options.role);
+  mark.classList.add("ga-glyph-mark");
+  mark.setAttribute("role", "img");
+  mark.setAttribute("aria-label", `${kind.replace(/_/g, " ")} ${uid}`);
+  mark.title = uid;
+  return mark;
+}
+
+/**
+ * The card's flip control: the card uid's glyph as a real button. The caller
+ * owns the faces and keeps aria-label current (flipGlyphLabel). Click, Enter
+ * and Space all call onFlip once; Enter/Space are consumed so the browser does
+ * not also synthesize a click. It never copies anything.
+ */
+export function flipGlyph(uid: unknown, onFlip: () => void): HTMLButtonElement | null {
+  if (!isUid(uid)) return null;
+  const { kind } = parseUid(uid);
+  const button = glyphNode(document.createElement("button"), uid, kind);
+  button.type = "button";
+  button.classList.add("flip-glyph");
+  button.addEventListener("click", (event) => {
+    event.stopPropagation();
+    onFlip();
+  });
+  button.addEventListener("keydown", (event) => {
+    if (event.key !== "Enter" && event.key !== " ") return;
+    event.preventDefault();
+    event.stopPropagation();
+    onFlip();
+  });
+  return button;
+}
+
+/** "Flip card, face N of M: <next face name>" for face index `index` of `faces`. */
+export function flipGlyphLabel(index: number, faces: readonly string[]): string {
+  const count = faces.length;
+  return `Flip card, face ${index + 1} of ${count}: ${faces[(index + 1) % count]}`;
+}
+
+/**
+ * The explicit, labelled copy control (ruling 1). It lives on a tile's Clip
+ * face only; MCP keeps its own path to uids.
+ */
+export function copyUidButton(uid: unknown, onCopy?: (uid: string, copied: boolean) => void): HTMLButtonElement | null {
+  if (!isUid(uid)) return null;
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = "copy-uid";
+  button.dataset.action = "copy-uid";
+  button.dataset.uid = uid;
+  button.textContent = "Copy uid";
+  button.title = uid;
+  button.addEventListener("click", (event) => {
     event.stopPropagation();
     void copyText(uid).then((copied) => {
-      badge.classList.toggle("is-copied", copied);
-      window.setTimeout(() => badge.classList.remove("is-copied"), 1200);
-      options.onCopy?.(uid, copied);
+      button.classList.toggle("is-copied", copied);
+      window.setTimeout(() => button.classList.remove("is-copied"), 1200);
+      onCopy?.(uid, copied);
     });
   });
-  return badge;
+  return button;
 }
 
 async function copyText(text: string): Promise<boolean> {

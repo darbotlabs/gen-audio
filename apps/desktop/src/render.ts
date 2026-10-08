@@ -1,4 +1,4 @@
-import { glyphBadge } from "./glyph";
+import { flipGlyph, flipGlyphLabel } from "./glyph";
 import type { LibraryCatalog, ModelCubes } from "./library-assets";
 import { emptyStrip } from "./livestrip";
 import { renderTransport } from "./playback";
@@ -86,7 +86,6 @@ export const SLIDE_SCHEMAS: SlideSchema[] = [
 ];
 
 export function showRejected(board: HTMLElement, empty: HTMLElement, error: string): void {
-  stopLiveCycle(board);
   board.replaceChildren();
   board.hidden = true;
   empty.hidden = false;
@@ -94,10 +93,7 @@ export function showRejected(board: HTMLElement, empty: HTMLElement, error: stri
   syncSlideChrome(0, 0);
 }
 
-const liveTimers = new WeakMap<HTMLElement, number>();
-
 export function renderBoard(board: HTMLElement, empty: HTMLElement, document: ViewportDocument): void {
-  stopLiveCycle(board);
   board.replaceChildren();
   empty.hidden = document.cards.length > 0;
   board.hidden = document.cards.length === 0;
@@ -183,13 +179,12 @@ export function renderBoard(board: HTMLElement, empty: HTMLElement, document: Vi
       flip.className = "flip";
       flip.append(frontFace(card), backFace(card));
       article.append(flip);
-      article.addEventListener("keydown", (event) => {
-        if (event.key !== "Enter" && event.key !== " ") return;
-        const target = event.target as HTMLElement | null;
-        if (target && target.closest("button, input, audio, select, textarea") && !target.classList.contains("flip-toggle")) return;
-        event.preventDefault();
-        toggleFlip(article);
-      });
+      // Optimus ruling 2: the card's glyph is its only flip control. It sits
+      // outside the rotating faces, so it is the same node in the same corner
+      // on every face. A click or Enter on the tile body never flips.
+      const glyph = flipGlyph(card.uid, () => stepFace(article));
+      if (glyph) article.append(glyph);
+      setFace(article, 0);
       section.append(article);
       globalIndex += 1;
     });
@@ -201,7 +196,6 @@ export function renderBoard(board: HTMLElement, empty: HTMLElement, document: Vi
   const total = slides.length + extra;
   buildSlideDots(total);
   syncSlideChrome(0, total);
-  startLiveCycle(board);
   board.scrollTop = 0;
 }
 
@@ -217,21 +211,10 @@ function frontFace(card: ViewportCard): HTMLElement {
   live.className = "live-mark";
   live.textContent = liveLabel(card);
   row.append(kind, live);
-  // Asset object model v1: every card shows its uid glyph (uid on hover, copy on click).
-  const badge = glyphBadge(card.uid, { onCopy: announceCopy });
-  if (badge) row.append(badge);
   const title = window.document.createElement("h2");
   title.textContent = card.title;
   if (card.kind === "SpectrogramPanel") title.classList.add("spec-title");
-  const flip = button("Flip");
-  flip.className = "flip-toggle";
-  flip.setAttribute("aria-pressed", "false");
-  flip.addEventListener("click", (event) => {
-    event.stopPropagation();
-    const article = flip.closest(".card");
-    if (article instanceof HTMLElement) toggleFlip(article);
-  });
-  face.append(row, title, bodyFor(card, card.kind, card.body), flip);
+  face.append(row, title, bodyFor(card, card.kind, card.body));
   return face;
 }
 
@@ -276,33 +259,44 @@ function backFace(card: ViewportCard): HTMLElement {
   else if (card.kind === "EngineStatus") face.append(engineBack(card));
   else face.append(adaptiveFace(card));
   if (card.kind === "LibraryClip") face.append(renameBlock(card));
-  const flip = button("Show front");
-  flip.className = "flip-toggle";
-  flip.addEventListener("click", (event) => {
-    event.stopPropagation();
-    const article = flip.closest(".card");
-    if (article instanceof HTMLElement) toggleFlip(article);
-  });
-  face.append(flip);
   return face;
 }
 
-function toggleFlip(article: HTMLElement): void {
-  setCardFlipState(article, !article.classList.contains("is-flipped"));
+/**
+ * The faces a card turns through, in order: the two faces every card renders
+ * (frontFace, backFace), so M is 2. Face state lives on the card as
+ * data-face / data-faces; the glyph label and MCP Flip both read it there.
+ */
+const CARD_FACES = ["front", "back"] as const;
+
+function facesOf(article: HTMLElement): string[] {
+  return (article.dataset.faces ?? CARD_FACES.join(" ")).split(" ");
 }
 
+/** Show face `index` (mod M): face state, the turn, inert on hidden faces, and the glyph label. */
+function setFace(article: HTMLElement, index: number): void {
+  const faces = facesOf(article);
+  const n = ((index % faces.length) + faces.length) % faces.length;
+  article.dataset.faces = faces.join(" ");
+  article.dataset.face = faces[n];
+  article.classList.toggle("is-flipped", n % 2 === 1);
+  article.querySelectorAll<HTMLElement>(":scope > .flip > .face").forEach((node, i) => {
+    node.inert = i !== n;
+  });
+  article.querySelector<HTMLButtonElement>(":scope > .flip-glyph")?.setAttribute("aria-label", flipGlyphLabel(n, faces));
+}
+
+/** One glyph activation: the next face, wrapping after the last. */
+function stepFace(article: HTMLElement): void {
+  setFace(article, facesOf(article).indexOf(article.dataset.face ?? "") + 1);
+}
+
+/** MCP Flip (ui_flip): flipped=true shows the back, false the front. */
 export function setCardFlip(board: HTMLElement, tileId: string, flipped: boolean): boolean {
   const tile = board.querySelector<HTMLElement>(`.card[data-id="${CSS.escape(tileId)}"]`);
   if (!tile) return false;
-  setCardFlipState(tile, flipped);
+  setFace(tile, flipped ? 1 : 0);
   return true;
-}
-
-function setCardFlipState(article: HTMLElement, flipped: boolean): void {
-  article.classList.toggle("is-flipped", flipped);
-  article.querySelectorAll<HTMLButtonElement>(".flip-toggle").forEach((node) => {
-    node.setAttribute("aria-pressed", flipped ? "true" : "false");
-  });
 }
 
 function syncLayerTabs(slideId: string | undefined): void {
@@ -311,38 +305,6 @@ function syncLayerTabs(slideId: string | undefined): void {
   window.document.querySelectorAll<HTMLButtonElement>("#layer-switch [data-layer]").forEach((button) => {
     button.setAttribute("aria-selected", button.dataset.layer === layer ? "true" : "false");
   });
-}
-
-function startLiveCycle(board: HTMLElement): void {
-  if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
-  let cursor = 0;
-  const timer = window.setInterval(() => {
-    const slide = currentSlide(board);
-    const tiles = slide
-      ? Array.from(slide.querySelectorAll<HTMLElement>(".livetile"))
-      : Array.from(board.querySelectorAll<HTMLElement>(".livetile"));
-    // Auto-flip only engine/connector tiles — never fixture theater.
-    const idle = tiles.filter(
-      (tile) =>
-        !tile.matches(":hover") &&
-        !tile.matches(":focus-within") &&
-        tile.dataset.kind !== "SpectrogramPanel" &&
-        tile.dataset.kind !== "Cube3D" &&
-        tile.dataset.kind !== "PodcastCast" &&
-        tile.dataset.kind !== "LibraryClip" &&
-        tile.dataset.kind !== "VoiceProfile",
-    );
-    if (idle.length === 0) return;
-    toggleFlip(idle[cursor % idle.length]);
-    cursor += 1;
-  }, 7000);
-  liveTimers.set(board, timer);
-}
-
-function stopLiveCycle(board: HTMLElement): void {
-  const timer = liveTimers.get(board);
-  if (timer !== undefined) window.clearInterval(timer);
-  liveTimers.delete(board);
 }
 
 function bodyFor(card: ViewportCard, kind: string, body: Record<string, unknown>): HTMLElement {
