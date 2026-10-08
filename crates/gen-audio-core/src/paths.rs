@@ -528,6 +528,73 @@ fn single_component(name: &str) -> Result<String, String> {
 mod tests {
     use super::*;
 
+    /// TCP port held without `listen()`. `connect` is refused immediately, and
+    /// another process cannot bind the same address. Non-Linux uses TEST-NET-1
+    /// (RFC 5737), which is not a host that accepts connections.
+    struct RefusingPort {
+        addr: std::net::SocketAddr,
+        #[cfg(target_os = "linux")]
+        fd: i32,
+    }
+
+    #[cfg(target_os = "linux")]
+    #[repr(C)]
+    struct SockAddrIn {
+        sin_family: u16,
+        sin_port: u16,
+        sin_addr: u32,
+        sin_zero: [u8; 8],
+    }
+
+    #[cfg(target_os = "linux")]
+    extern "C" {
+        fn socket(domain: i32, ty: i32, protocol: i32) -> i32;
+        fn bind(fd: i32, addr: *const SockAddrIn, len: u32) -> i32;
+        fn getsockname(fd: i32, addr: *mut SockAddrIn, len: *mut u32) -> i32;
+        fn close(fd: i32) -> i32;
+    }
+
+    impl RefusingPort {
+        fn bind() -> Self {
+            #[cfg(target_os = "linux")]
+            {
+                // AF_INET, SOCK_STREAM, IPPROTO_TCP. Bind only — no listen().
+                let fd = unsafe { socket(2, 1, 6) };
+                assert!(fd >= 0, "socket");
+                let mut raw = SockAddrIn {
+                    sin_family: 2,
+                    sin_port: 0,
+                    sin_addr: u32::from_be(0x7f00_0001),
+                    sin_zero: [0; 8],
+                };
+                let rc = unsafe { self::bind(fd, &raw, 16) };
+                assert_eq!(rc, 0, "bind");
+                let mut len: u32 = 16;
+                let rc = unsafe { getsockname(fd, &mut raw, &mut len) };
+                assert_eq!(rc, 0, "getsockname");
+                let port = u16::from_be(raw.sin_port);
+                assert_ne!(port, 0, "kernel assigned a port");
+                Self {
+                    addr: std::net::SocketAddr::from(([127, 0, 0, 1], port)),
+                    fd,
+                }
+            }
+            #[cfg(not(target_os = "linux"))]
+            {
+                Self {
+                    addr: "192.0.2.1:9".parse().unwrap(),
+                }
+            }
+        }
+    }
+
+    #[cfg(target_os = "linux")]
+    impl Drop for RefusingPort {
+        fn drop(&mut self) {
+            unsafe { close(self.fd) };
+        }
+    }
+
     #[test]
     fn work_dir_is_removed_when_its_owner_drops_or_panics() {
         let scratch = Scratch::create().unwrap();
@@ -585,10 +652,20 @@ mod tests {
         reap_stale_mcp_addr();
         assert!(addr_file.exists(), "a legacy file with a live port stays");
         drop(listener);
+        // Closing the listener and expecting the port to stay free races with
+        // any other process that binds it before the connect check. Hold a
+        // socket that is bound but not listening: connect is refused, and
+        // the port cannot be taken.
+        let dead = RefusingPort::bind();
+        fs::write(&addr_file, format!("{}\n", dead.addr)).unwrap();
         reap_stale_mcp_addr();
         assert!(
             !addr_file.exists(),
             "a legacy file with a dead port is removed"
+        );
+        assert!(
+            !port_accepts(&dead.addr.to_string()),
+            "the held port still refuses connections"
         );
         drop(_addr);
         let scratch = Scratch::new(work.path().to_path_buf()).unwrap();
