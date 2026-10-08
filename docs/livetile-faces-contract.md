@@ -330,7 +330,18 @@ Each step reads back through `viewport_get`.
     (and any other non-Flip mutation under §7.1). `viewport_get` still reads
     `face_id: "cube", face_index: 1`. A following `ui_flip {next: true}` is the only step that moves it.
 
-## 9. Open questions
+## 9. Bus op rename (Optimus Q11)
+
+Today the desktop bus uses `op: "flipcard"` for a voice-profile update after `library_harvest`
+apply (see `apps/desktop/src/render.ts` `applyCardOp` / `applyProfileUpdate`). That name is
+misleading: the op never flips.
+
+**Contract item (cloud agent on PR #4):** rename the bus op to **`card_status`**. Keep
+`flipcard` as a read/write alias for **one release**, then drop it. Do **not** change
+`control.rs` on this line; PR #4 owns the rename. Desktop `applyCardOp` will accept both
+names during the alias window.
+
+## 10. Open questions
 
 - **Q1. `section` (PR #4 `Action::Flip.section`).** The faces in §1 make "back + section" redundant.
   Should `section: "<id>"` with the `back` alias select the face that renders that section (for example
