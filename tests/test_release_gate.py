@@ -184,7 +184,7 @@ def test_dist_scan_fails_on_a_planted_catalog_title(tmp_path):
     hits = dist_hits(bundle)
     blob = " ".join(hits)
     assert "assets.json" in blob and "placeholder" in blob.lower(), hits
-    assert "app.js" in blob and "PLACEHOLDER" in blob, hits
+    assert "app.js" in blob and "placeholder" in blob.lower(), hits
     (assets / "app.js").write_text("const title = 'Pocket TTS';", encoding="utf-8")
     (library / "assets.json").write_text(
         json.dumps(
@@ -282,19 +282,50 @@ def test_dist_scan_catches_stub_strings_in_any_case(tmp_path):
     assert any("todo stub" in hit.lower() for hit in title_hits), title_hits
 
 
-def test_dist_scan_allows_placeholder_syntax_and_rejects_stub_text(tmp_path):
-    """A quoted placeholder= attribute, .placeholder, and ::placeholder are not stubs.
+# (source, expect_hit, term, html). html rows are unquoted text nodes.
+_DENYLIST_ROWS = (
+    ('const title = "Placeholder = demo clip";', True, "placeholder", False),
+    ('const title = "placeholder=yes";', True, "placeholder", False),
+    ('const title = "Demo-placeholder";', True, "placeholder", False),
+    ('const title = "Clip:placeholder";', True, "placeholder", False),
+    ('const title = "v1.placeholder";', True, "placeholder", False),
+    ("<h1>PLACEHOLDER</h1>", True, "placeholder", True),
+    ('const title = "fixtures";', True, "fixture", False),
+    ('const title = "FIXTURE_CLIP";', True, "fixture", False),
+    ('const title = "TODO: stub";', True, "todo stub", False),
+    ('const title = "todo  stub";', True, "todo stub", False),
+    ('const title = "Sample clip(preview)";', True, "sample clip (preview)", False),
+    ('const title = "Sample   clip  (  preview )";', True, "sample clip (preview)", False),
+    ('const title = "\\u0070laceholder";', True, "placeholder", False),
+    ('const title = "place" + "holder";', True, "placeholder", False),
+    ("el.setAttribute('placeholder', 'name');", False, "placeholder", False),
+    ("el.querySelector('[placeholder]');", False, "placeholder", False),
+    ('el.getAttribute("placeholder");', False, "placeholder", False),
+    ('el["placeholder"];', False, "placeholder", False),
+    ('const html = \'<input placeholder="name">\';', False, "placeholder", False),
+    ('const prop = ".placeholder";', False, "placeholder", False),
+    ('const css = "input::placeholder { color: gray }";', False, "placeholder", False),
+    ('semantic.placeholder = "Semantic name";', False, "placeholder", False),
+    ('const note = "Not a fixture.";', False, "fixture", False),
+    ('const id = "fixture-tone";', False, "fixture", False),
+    ('const id = "labeled fixture";', False, "fixture", False),
+    ('const id = "fixture-cube";', False, "fixture", False),
+    ('const title = "stub the todo list";', False, "todo stub", False),
+    ('const title = "sample_rate of the clip";', False, "sample clip (preview)", False),
+)
 
-    Each row is one quoted string. The syntax rows must produce no hit. The
-    stub rows must. A pattern that matches every occurrence of "placeholder"
-    fails the three syntax rows.
+
+def test_dist_scan_normalizes_sneaks_and_allows_placeholder_syntax(tmp_path):
+    """Punctuation, escapes, concatenation and unquoted HTML cannot hide a stub.
+
+    Each row names the stub term it covers. A must-fail row has to hit. A
+    must-pass row is a legitimate use of that term and has to stay clean.
     """
     bundle = tmp_path / "dist"
     assets = bundle / "assets"
     library = bundle / "library"
     assets.mkdir(parents=True)
     library.mkdir()
-    (bundle / "index.html").write_text("<p>ok</p>", encoding="utf-8")
     (library / "assets.json").write_text(
         json.dumps(
             {
@@ -314,16 +345,25 @@ def test_dist_scan_allows_placeholder_syntax_and_rejects_stub_text(tmp_path):
         ),
         encoding="utf-8",
     )
-    rows = (
-        ('const html = \'<input placeholder="name">\';', False),
-        ('const prop = ".placeholder";', False),
-        ('const css = "input::placeholder { color: gray }";', False),
-        ('const title = "placeholder clip";', True),
-        ('const title = "FIXTURE";', True),
-        ('const title = "TODO stub";', True),
-        ('const title = "Sample clip (preview)";', True),
-    )
-    for source, stub in rows:
-        (assets / "app.js").write_text(source, encoding="utf-8")
+    for source, stub, term, html in _DENYLIST_ROWS:
+        if html:
+            (bundle / "index.html").write_text(source, encoding="utf-8")
+            (assets / "app.js").write_text("const title = 'Pocket TTS';", encoding="utf-8")
+        else:
+            (bundle / "index.html").write_text("<p>ok</p>", encoding="utf-8")
+            (assets / "app.js").write_text(source, encoding="utf-8")
         hits = dist_hits(bundle)
-        assert bool(hits) is stub, f"{source!r} -> {hits}"
+        matched = any(term in hit for hit in hits)
+        assert matched is stub, f"{term}: {source!r} -> {hits}"
+
+
+def test_every_stub_term_has_a_fail_row_and_a_pass_row():
+    """A term added to STUB_TERMS with only one kind of row fails here."""
+    from gen_audio.release_gate import STUB_TERMS
+
+    failed = {term for _source, hit, term, _html in _DENYLIST_ROWS if hit}
+    passed = {term for _source, hit, term, _html in _DENYLIST_ROWS if not hit}
+    missing_fail = set(STUB_TERMS) - failed
+    missing_pass = set(STUB_TERMS) - passed
+    assert not missing_fail, f"stub terms with no must-fail row: {sorted(missing_fail)}"
+    assert not missing_pass, f"stub terms with no must-pass row: {sorted(missing_pass)}"

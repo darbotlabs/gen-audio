@@ -11,23 +11,143 @@ _FORBIDDEN = re.compile(
     re.IGNORECASE,
 )
 _SKIP_KEYS = {"sample_rate", "samples", "n_samples"}
-# Stub words in shipped strings. Case-insensitive, so "FIXTURE", "placeholder",
-# "TODO stub" and "Sample clip (preview)" all fail the gate (AP-OPT-1).
-# Scanned inside quoted strings. A placeholder= attribute, a .placeholder
-# property and a ::placeholder selector are syntax, not stub copy, even when
-# a script quotes them.
-_STUB_TEXT = re.compile(
-    r"(?<![\w.:-])placeholder(?!\s*=)|\bfixture\b|todo stub|sample clip \(preview\)",
-    re.IGNORECASE,
+# Stub copy the dist denylist rejects. The honesty boundary is the structured
+# fields (AP-OPT-1); this list is defense in depth. Adding a term here without
+# a must-fail row and a must-pass row fails tests/test_release_gate.py.
+STUB_TERMS: tuple[str, ...] = (
+    "placeholder",
+    "fixture",
+    "todo stub",
+    "sample clip (preview)",
 )
 # Honest copy and ids. "Not a fixture." is the opposite of a stub label.
+# Masked before `-` `_` `.` `:` `=` are turned into word boundaries, so
+# fixture-tone does not become the word fixture.
 _FIXTURE_OK = re.compile(r"not a fixture|labeled fixture|fixture-tone|fixture-cube", re.IGNORECASE)
+# DOM and CSS uses of the attribute name. Applied to the raw bundle text,
+# before string bodies are lifted, so setAttribute('placeholder') is syntax
+# and "v1.placeholder" is still copy.
+_PLACEHOLDER_OK = re.compile(
+    r"::placeholder\b"
+    r"|(?<![\w])\.placeholder\b"
+    r"|\.placeholder\s*="
+    r"|\bsetAttribute\s*\(\s*[\"']placeholder[\"']"
+    r"|\bgetAttribute\s*\(\s*[\"']placeholder[\"']"
+    r"|\bquerySelector(?:All)?\s*\(\s*[\"']\[placeholder\][\"']"
+    r"|\[\s*[\"']placeholder[\"']\s*\]",
+    re.IGNORECASE,
+)
+# An HTML attribute whose value is quoted: placeholder="name". placeholder=yes
+# has no quotes, so it is copy, not this form.
+_PLACEHOLDER_ATTR = re.compile(
+    r"""\bplaceholder\s*=\s*(["'`])(?:\\.|(?!\1).)*\1""",
+    re.IGNORECASE,
+)
 _QUOTED = re.compile(r'"(?:\\.|[^"\\])*"|\'(?:\\.|[^\'\\])*\'|`(?:\\.|[^`\\])*`', re.DOTALL)
+_JS_ESCAPE = re.compile(
+    r"\\(?:u\{([0-9A-Fa-f]+)\}|u([0-9A-Fa-f]{4})|x([0-9A-Fa-f]{2})|([nrtbfv0\\\"'`])|\n)"
+)
+# Phrases whose sneak forms are not a single word after normalization.
+_TERM_PATTERN = {
+    "fixture": re.compile(r"\bfixtures?\b"),
+    "todo stub": re.compile(r"\btodo\s+stub\b"),
+    "sample clip (preview)": re.compile(r"\bsample\s+clip\s*\(\s*preview\s*\)"),
+}
+
+
+def _decode_js_string(literal: str) -> str:
+    """Decode one JS string literal, including ``\\u``, ``\\x`` and line continuations."""
+    if len(literal) < 2 or literal[0] not in "\"'`" or literal[-1] != literal[0]:
+        return literal
+    body = literal[1:-1]
+
+    def repl(match: re.Match[str]) -> str:
+        if match.group(1):
+            return chr(int(match.group(1), 16))
+        if match.group(2):
+            return chr(int(match.group(2), 16))
+        if match.group(3):
+            return chr(int(match.group(3), 16))
+        simple = match.group(4)
+        if simple is None:
+            return ""
+        return {"n": "\n", "r": "\r", "t": "\t", "b": "\b", "f": "\f", "v": "\v", "0": "\0", "\\": "\\", "'": "'", '"': '"', "`": "`"}.get(simple, simple)
+
+    return _JS_ESCAPE.sub(repl, body)
+
+
+def _evaluated_strings(text: str) -> str:
+    """String bodies in ``text``, with ``+`` concatenations joined and escapes decoded.
+
+    A template that interpolates is split into its static pieces. That is the
+    feasible part of evaluating the bundle; it is not a JS interpreter.
+    """
+    matches = list(_QUOTED.finditer(text))
+    parts: list[str] = []
+    index = 0
+    while index < len(matches):
+        literal = matches[index].group(0)
+        decoded = _decode_js_string(literal)
+        if literal.startswith("`") and "${" in decoded:
+            parts.extend(re.split(r"\$\{[^}]*\}", decoded))
+            index += 1
+            continue
+        end = index
+        while end + 1 < len(matches):
+            gap = text[matches[end].end() : matches[end + 1].start()]
+            nxt = matches[end + 1].group(0)
+            if nxt.startswith("`") and "${" in nxt:
+                break
+            if re.fullmatch(r"\s*\+\s*", gap):
+                end += 1
+                decoded += _decode_js_string(matches[end].group(0))
+            else:
+                break
+        parts.append(decoded)
+        index = end + 1
+    return "\n".join(parts)
+
+
+def _html_text(text: str) -> str:
+    """Text nodes. Script and style bodies are not HTML copy."""
+    stripped = re.sub(r"<script\b[^>]*>.*?</script>", " ", text, flags=re.IGNORECASE | re.DOTALL)
+    stripped = re.sub(r"<style\b[^>]*>.*?</style>", " ", stripped, flags=re.IGNORECASE | re.DOTALL)
+    return re.sub(r"<[^>]+>", " ", stripped)
+
+
+def _mask_legitimate(text: str) -> str:
+    masked = _FIXTURE_OK.sub(" ", text)
+    masked = _PLACEHOLDER_ATTR.sub(" ", masked)
+    return _PLACEHOLDER_OK.sub(" ", masked)
+
+
+def _normalize_stub_text(text: str) -> str:
+    """Casefold, collapse whitespace, and treat ``- _ . : =`` as word breaks."""
+    folded = text.casefold()
+    broken = re.sub(r"[-_.:;=]+", " ", folded)
+    return re.sub(r"\s+", " ", broken)
+
+
+def bundle_scan_text(text: str, *, html: bool) -> str:
+    """What the dist denylist reads: decoded strings, plus HTML text nodes."""
+    masked = _mask_legitimate(text)
+    parts = [_evaluated_strings(masked)]
+    if html:
+        parts.append(_html_text(masked))
+    return "\n".join(parts)
+
+
+def _pattern_for(term: str) -> re.Pattern[str]:
+    special = _TERM_PATTERN.get(term)
+    if special is not None:
+        return special
+    return re.compile(rf"\b{re.escape(term)}\b")
 
 
 def _stub_matches(text: str) -> list[str]:
-    """Stub words in ``text`` after honest fixture phrases are set aside."""
-    return [match.group(0) for match in _STUB_TEXT.finditer(_FIXTURE_OK.sub(" ", text))]
+    """Stub terms in ``text`` after legitimate syntax is masked and punctuation is normalized."""
+    normalized = _normalize_stub_text(_mask_legitimate(text))
+    return [term for term in STUB_TERMS if _pattern_for(term).search(normalized)]
 
 
 def label_hits(document: dict) -> list[str]:
@@ -267,9 +387,9 @@ def dist_hits(dist: Path) -> list[str]:
             if needle in text:
                 hits.append(f"{path.name}: {needle}")
         if path.suffix != ".json":
-            for literal in _QUOTED.findall(text):
-                for match in _stub_matches(literal):
-                    hits.append(f"{path.name}: {match}")
+            scanned = bundle_scan_text(text, html=path.suffix == ".html")
+            for match in _stub_matches(scanned):
+                hits.append(f"{path.name}: {match}")
         if path.suffix != ".json":
             continue
         try:
