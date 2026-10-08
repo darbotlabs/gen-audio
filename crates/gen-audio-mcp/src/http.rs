@@ -202,7 +202,25 @@ pub fn ensure_bind_allowed(addr: &str) -> std::io::Result<()> {
     Ok(())
 }
 
+/// Ports whose `handle_connection` should record the `Server` it was given.
+/// Keyed by the listener port so parallel tests do not share a list. Absent
+/// from the release binary: this is `cfg(test)` only.
+#[cfg(test)]
+static HANDLED_SERVERS: std::sync::LazyLock<std::sync::Mutex<std::collections::HashMap<u16, Vec<usize>>>> =
+    std::sync::LazyLock::new(|| std::sync::Mutex::new(std::collections::HashMap::new()));
+
+#[cfg(test)]
+fn note_handled_server(server: &Server, stream: &TcpStream) {
+    let Ok(addr) = stream.local_addr() else { return };
+    let Ok(mut watched) = HANDLED_SERVERS.lock() else { return };
+    if let Some(ids) = watched.get_mut(&addr.port()) {
+        ids.push(server as *const Server as usize);
+    }
+}
+
 pub fn handle_connection(server: &Server, mut stream: TcpStream) -> std::io::Result<()> {
+    #[cfg(test)]
+    note_handled_server(server, &stream);
     stream.set_read_timeout(Some(Duration::from_secs(5)))?;
     let (head, body) = match read_request(&mut stream) {
         Ok(parts) => parts,
@@ -695,6 +713,39 @@ mod tests {
             assert!(!text.contains(leaked), "/health must not echo request bodies or headers ({leaked}): {text}");
         }
         assert_eq!(after_415["status"], "ok");
+    }
+
+    #[test]
+    fn remote_accept_loop_shares_rejection_stats_across_connections() {
+        // Bind the wildcard directly. accept_loop treats a non-loopback local
+        // address as remote, without GEN_AUDIO_MCP_HTTP_ALLOW_REMOTE.
+        let listener = TcpListener::bind("0.0.0.0:0").unwrap();
+        let port = listener.local_addr().unwrap().port();
+        std::thread::spawn(move || accept_loop(listener));
+        let send = |request: String| {
+            let mut stream = TcpStream::connect(("127.0.0.1", port)).unwrap();
+            stream.write_all(request.as_bytes()).unwrap();
+            let mut text = String::new();
+            stream.read_to_string(&mut text).unwrap();
+            text.split_whitespace().nth(1).and_then(|code| code.parse::<u16>().ok()).unwrap_or(0)
+        };
+        assert_eq!(send(post(port, "Content-Type: text/plain\r\n", "{}")), 415);
+        assert_eq!(send(post(port, "Content-Type: text/plain\r\n", "{}")), 415);
+        let health = health_of(port);
+        assert_eq!(health["rejected"]["415"], 2, "remote connections dropped the shared stats: {health}");
+    }
+
+    #[test]
+    fn local_accept_loop_hands_each_connection_the_same_server() {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = listener.local_addr().unwrap().port();
+        super::HANDLED_SERVERS.lock().unwrap().insert(port, Vec::new());
+        std::thread::spawn(move || accept_loop(listener));
+        let _ = health_of(port);
+        let _ = health_of(port);
+        let ids = super::HANDLED_SERVERS.lock().unwrap().remove(&port).unwrap_or_default();
+        assert_eq!(ids.len(), 2, "expected one server id per connection, got {ids:?}");
+        assert_eq!(ids[0], ids[1], "local connections were given different Server instances: {ids:?}");
     }
 
     #[test]
