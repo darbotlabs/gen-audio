@@ -564,7 +564,6 @@ async function refreshConnectors(doc: ViewportDocument): Promise<ViewportDocumen
 document.querySelector("#show-empty")?.addEventListener("click", () => {
   show({ version: "1.0", title: "Darbot Gen-Audio", columns: 3, cards: [] });
 });
-
 document.querySelector("#generate-podcast")?.addEventListener("click", () => {
   void submitGenerate();
 });

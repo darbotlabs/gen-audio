@@ -170,3 +170,73 @@ test("L2: main.ts wiring is live — elapsed time never flips a card (fake timer
   }
 });
 
+test("L2/A-M1: flipcard bus event updates the profile and never flips it (kills C13)", async () => {
+  const board = await waitForCards(10);
+  resetFaces(board);
+  const profile = board.querySelector<HTMLElement>('.card[data-id="profile-anton"]');
+  assert.ok(profile, "anton profile tile");
+  assert.equal(controlListeners.length > 0, true, "main.ts connectControl registered a control listener");
+  assert.equal(face(profile!), "front");
+  fireControl("flipcard", { profile: harvestProfile, tileId: "profile-anton" }, 101);
+  await new Promise((r) => setImmediate(r));
+  assert.equal(face(profile!), "front", "flipcard must not flip (C13 / PR4 applyFlipcard)");
+  assert.match(profile!.querySelector('[data-field="refs"]')?.textContent ?? "", /clip:lib-misaki-kokoro/);
+});
+
+test("L2/A-M1: flip on tile X with a profile payload does not flip the profile tile", async () => {
+  const board = await waitForCards(10);
+  resetFaces(board);
+  const profile = board.querySelector<HTMLElement>('.card[data-id="profile-anton"]');
+  const clip = board.querySelector<HTMLElement>('.card[data-id="lib-misaki-kokoro"]');
+  assert.ok(profile && clip);
+  fireControl("flip", { tileId: "lib-misaki-kokoro", flipped: true, profile: harvestProfile }, 102);
+  await new Promise((r) => setImmediate(r));
+  assert.equal(face(clip!), "back", "tile X flipped");
+  assert.equal(face(profile!), "front", "profile tile stayed put");
+});
+
+test("L2/C12: Attach to profile via the real button path never flips the profile tile", async () => {
+  const board = await waitForCards(10);
+  resetFaces(board);
+  // studio defaults the agent slot to alice; C12 flips profile-${personaId} for that selection.
+  const slot = happy.document.querySelector<HTMLSelectElement>("#agents .agent-slot");
+  assert.ok(slot, "agent slot exists");
+  const personaId = slot!.value || "alice";
+  const profile = board.querySelector<HTMLElement>(`.card[data-id="profile-${personaId}"]`);
+  assert.ok(profile, `profile tile for selected agent ${personaId}`);
+  const attach = board.querySelector<HTMLButtonElement>("[data-action='attach-profile'][data-clip-id='lib-misaki-kokoro']")
+    ?? board.querySelector<HTMLButtonElement>("[data-action='attach-profile']");
+  assert.ok(attach, "Attach to profile control exists after main.ts bindRename");
+  assert.equal(face(profile!), "front");
+  attach!.dispatchEvent(new happy.MouseEvent("click", { bubbles: true, cancelable: true }) as unknown as Event);
+  for (let i = 0; i < 20; i += 1) {
+    await new Promise((r) => setImmediate(r));
+    mock.timers.tick(1);
+  }
+  assert.equal(face(profile!), "front", "attach button path must not flip (C12)");
+});
+
+test("L2/B8: syncCubeChrome passes the bound cube uid into fillCubeGlyph (not null)", async () => {
+  const board = await waitForCards(10);
+  const catalog = await loadLibraryCatalog();
+  assert.ok(catalog);
+  const cube = catalog!.assets.find((a) => a.kind === "cube_ihdr" && a.legacy_id === "lib-misaki-kokoro.cube");
+  assert.ok(cube, "misaki library cube in assets.json");
+  // Bind the spatial cube the same way a library tile click does: open its cube JSON URL.
+  const tile = board.querySelector<HTMLElement>('.card[data-id="lib-misaki-kokoro"]');
+  assert.ok(tile?.dataset.cubeJson, "lib-misaki-kokoro has cubeJson after decorate");
+  // Clicking the tile selects and opens the cube (main.ts selectTile → openCube → syncCubeChrome).
+  click(tile!);
+  for (let i = 0; i < 40; i += 1) {
+    await new Promise((r) => setImmediate(r));
+    mock.timers.tick(5);
+    const slot = happy.document.querySelector("#cube-glyph");
+    const copy = slot?.querySelector<HTMLButtonElement>("button.copy-uid, button");
+    if (copy && (copy.textContent ?? "").includes("Copy cube uid")) {
+      assert.equal(copy.dataset.uid, cube!.uid, "B8: syncCubeChrome must pass the cube uid, not null");
+      return;
+    }
+  }
+  const slot = happy.document.querySelector("#cube-glyph");
+  assert.fail(`B8: #cube-glyph never got Copy cube uid (slot text=${JSON.stringify(slot?.textContent)} children=${slot?.childElementCount})`);
+});
