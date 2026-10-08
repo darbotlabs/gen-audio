@@ -8,9 +8,11 @@
 //! diagnostic.
 //!
 //! Every line is redacted whole, before it is capped: no request bodies, no
-//! header values, no query strings or `token=`/`key=`/`password=` values, no
-//! emails, no home-directory user names, nothing token-shaped. In-crate
-//! rotation, no new dependency.
+//! header values, no query strings or `token=`/`key=`/`password=`-style values
+//! (also `:`, spaced, quoted and URL-encoded), no URL userinfo, no emails, no
+//! home-directory user names, nothing token-shaped. The classes are one table,
+//! CLASSES; it is defense in depth, not the boundary. In-crate rotation, no new
+//! dependency.
 
 use std::fs::{self, File, OpenOptions};
 use std::io::{self, BufRead, BufReader, Read, Write};
@@ -43,9 +45,11 @@ pub fn log_path(dir: &Path, index: usize) -> PathBuf {
 /// `files * max_bytes` bytes on disk).
 ///
 /// A line that cannot be written (a rotation that fails, a closed file) is
-/// never lost silently: the first failure says so once on the desktop's own
-/// stderr, every lost line is counted, and the first write that succeeds
-/// again is preceded by one marker line with the count and the reason.
+/// never lost silently: the first failure of an outage says so once on the
+/// desktop's own stderr, every lost line is counted, and the first write that
+/// succeeds again is preceded by one marker line with the count and the
+/// reason. A failed rename names its paths; the reason is redacted like a log
+/// line, in the notice and in the marker.
 pub struct RotatingLog {
     dir: PathBuf,
     max_bytes: u64,
@@ -54,6 +58,8 @@ pub struct RotatingLog {
     size: u64,
     dropped: u64,
     drop_reason: String,
+    /// Where the one notice per outage goes: the desktop's own stderr.
+    notice: Box<dyn Write + Send>,
 }
 
 impl RotatingLog {
@@ -69,7 +75,14 @@ impl RotatingLog {
             size,
             dropped: 0,
             drop_reason: String::new(),
+            notice: Box::new(io::stderr()),
         })
+    }
+
+    /// Sends the one-time failure notice to `sink` instead of stderr.
+    pub fn notice_to(mut self, sink: impl Write + Send + 'static) -> Self {
+        self.notice = Box::new(sink);
+        self
     }
 
     /// Lines lost since the last successful write (0 once a marker reported them).
@@ -80,11 +93,14 @@ impl RotatingLog {
     pub fn write_line(&mut self, line: &str) -> io::Result<()> {
         let result = self.report_drops().and_then(|()| self.append(line));
         if let Err(err) = &result {
+            // The reason can name the log dir (a home path) and so goes
+            // through the same redactor as every log line, in the marker
+            // and in the notice alike.
+            self.drop_reason = redact(&err.to_string());
             if self.dropped == 0 {
-                eprintln!("gen-audio-desktop: sidecar log write failed ({err}); counting dropped lines until it recovers");
+                let _ = writeln!(self.notice, "gen-audio-desktop: sidecar log write failed ({}); counting dropped lines until it recovers", self.drop_reason);
             }
             self.dropped += 1;
-            self.drop_reason = redact(&err.to_string());
         }
         result
     }
@@ -123,8 +139,11 @@ impl RotatingLog {
         self.file = None;
         let _ = fs::remove_file(log_path(&self.dir, self.files - 1));
         for index in (0..self.files - 1).rev() {
-            match fs::rename(log_path(&self.dir, index), log_path(&self.dir, index + 1)) {
-                Err(err) if err.kind() != io::ErrorKind::NotFound => return Err(err),
+            let (from, to) = (log_path(&self.dir, index), log_path(&self.dir, index + 1));
+            match fs::rename(&from, &to) {
+                Err(err) if err.kind() != io::ErrorKind::NotFound => {
+                    return Err(io::Error::new(err.kind(), format!("rename {} -> {}: {err}", from.display(), to.display())));
+                }
                 _ => {}
             }
         }
@@ -146,12 +165,71 @@ fn cut(text: &str, max: usize) -> &str {
     &text[..end]
 }
 
-/// Words that start header- or secret-shaped content; the rest of the line goes.
-const SENSITIVE: [&str; 8] = ["authorization", "cookie", "bearer", "basic ", "x-api-key", "api_key", "password", "secret"];
+/// How one redaction class finds what it removes.
+#[derive(Clone, Copy, Debug)]
+pub enum Rule {
+    /// Control characters become spaces (no terminal escapes in the log).
+    Control,
+    /// From the first `{` on is a request body.
+    Body,
+    /// A `?query`, up to the next whitespace.
+    Query,
+    /// `scheme://user:pass@host`: the userinfo, whatever the host (dotless
+    /// `localhost` too).
+    Userinfo,
+    /// The value after a name ending in this word, whatever its length. The
+    /// separator is `=`, `:`, `%3D` or `%3A`, with optional spaces around it
+    /// (`token = x`, `pwd: x`, `x%26sig%3Dv`, `#access_token=x`); a quoted
+    /// value goes to its closing quote (a second word goes too), else it ends
+    /// at whitespace, `&`, `;`, `,` or `%26`.
+    Value(&'static str),
+    /// `name@host.tld`.
+    Email,
+    /// The user name after `\Users\`, `/Users/` or `/home/`, past any number
+    /// of separators, so a Debug-escaped `C:\\Users\\name` goes too.
+    HomePath,
+    /// From this word on, the rest of the line.
+    Rest(&'static str),
+    /// Credential-shaped runs, including base64 ones that contain `/`.
+    TokenShaped,
+}
 
-/// `name=value` pairs whose value goes, whatever its length: a name ending in
-/// one of these (token, access_token, key, api_key, apikey, password, ...).
-const SECRET_NAMES: [&str; 5] = ["token", "key", "password", "passwd", "secret"];
+/// Every redaction class, in the order `redact` applies them. ONE table:
+/// adding a class is one line here (and its row in the tests, which fail
+/// until every class has one; a `Value` class is also tried in every
+/// separator form).
+///
+/// Denylist redaction is defense in depth, not the boundary. The boundary is
+/// what is written at all: the sidecar's rejection lines carry method, target,
+/// status, reason and peer, never a body or a header value. This table only
+/// catches what slips through anyway and can never be complete, so a miss is
+/// first a reason to stop writing that thing, then a new row here.
+pub const CLASSES: &[(&str, Rule)] = &[
+    ("control characters", Rule::Control),
+    ("request body", Rule::Body),
+    ("query string", Rule::Query),
+    ("url userinfo", Rule::Userinfo),
+    ("token", Rule::Value("token")),
+    ("key", Rule::Value("key")),
+    ("passwd", Rule::Value("passwd")),
+    ("pwd", Rule::Value("pwd")),
+    ("pass", Rule::Value("pass")),
+    ("auth", Rule::Value("auth")),
+    ("credential", Rule::Value("credential")),
+    ("session", Rule::Value("session")),
+    ("sig", Rule::Value("sig")),
+    ("email", Rule::Email),
+    ("home directory", Rule::HomePath),
+    ("authorization", Rule::Rest("authorization")),
+    ("cookie", Rule::Rest("cookie")),
+    ("bearer", Rule::Rest("bearer")),
+    ("basic", Rule::Rest("basic ")),
+    ("x-api-key", Rule::Rest("x-api-key")),
+    ("api_key", Rule::Rest("api_key")),
+    ("password", Rule::Rest("password")),
+    ("secret", Rule::Rest("secret")),
+    ("token-shaped", Rule::TokenShaped),
+];
 
 fn token_char(c: char) -> bool {
     c.is_ascii_alphanumeric() || matches!(c, '_' | '-' | '+' | '=' | '~')
@@ -167,25 +245,129 @@ fn token_shaped(run: &str) -> bool {
     run.len() >= 32 || (run.len() >= 16 && ((digits >= 3 && letters >= 3) || mixed))
 }
 
-/// `token=abc` -> `token=<redacted>` for every SECRET_NAMES name, any length.
-fn redact_secret_values(line: &str) -> String {
+/// A `/`-joined run that is a credential as a whole: 16+ long with a
+/// segment of 6+ that mixes upper case, lower case and digits (base64), so no
+/// short piece of it survives. Paths (`/tmp/gen-audio/library`) don't mix.
+fn slash_secret(run: &str) -> bool {
+    let mixed = |seg: &str| seg.len() >= 6 && seg.chars().any(|c| c.is_ascii_uppercase()) && seg.chars().any(|c| c.is_ascii_lowercase()) && seg.chars().any(|c| c.is_ascii_digit());
+    run.contains('/') && run.len() >= 16 && run.split('/').any(mixed)
+}
+
+fn redact_token_runs(line: &str) -> String {
+    let mut out = String::with_capacity(line.len());
+    let mut run = String::new();
+    let flush = |run: &mut String, out: &mut String| {
+        // A `/` run is judged whole only by slash_secret: a long path is
+        // not a credential, its token-shaped segments are.
+        if slash_secret(run) {
+            out.push_str("<redacted>");
+        } else {
+            for (i, seg) in run.split('/').enumerate() {
+                if i > 0 {
+                    out.push('/');
+                }
+                out.push_str(if token_shaped(seg) { "<redacted>" } else { seg });
+            }
+        }
+        run.clear();
+    };
+    for c in line.chars() {
+        if token_char(c) || c == '/' {
+            run.push(c);
+        } else {
+            flush(&mut run, &mut out);
+            out.push(c);
+        }
+    }
+    flush(&mut run, &mut out);
+    out
+}
+
+fn name_byte(b: u8) -> bool {
+    b.is_ascii_alphanumeric() || b == b'_' || b == b'-'
+}
+
+/// Bytes in the separator at `at`: `=` or `:` (1), `%3D` or `%3A` (3), else 0.
+fn separator_len(bytes: &[u8], at: usize) -> usize {
+    match bytes[at] {
+        b'=' | b':' => 1,
+        b'%' if bytes.get(at + 1) == Some(&b'3') && matches!(bytes.get(at + 2).map(u8::to_ascii_uppercase), Some(b'D' | b'A')) => 3,
+        _ => 0,
+    }
+}
+
+/// Where an unquoted value starting at `start` ends.
+fn plain_value_end(bytes: &[u8], start: usize) -> usize {
+    let mut i = start;
+    while i < bytes.len() {
+        match bytes[i] {
+            b if b.is_ascii_whitespace() => break,
+            b'&' | b';' | b',' => break,
+            b'%' if bytes.get(i + 1) == Some(&b'2') && bytes.get(i + 2) == Some(&b'6') => break,
+            _ => i += 1,
+        }
+    }
+    i
+}
+
+/// Rule::Value: every value whose name ends in `word`.
+fn redact_values(line: &str, word: &str) -> String {
+    let bytes = line.as_bytes();
+    let mut out = String::with_capacity(line.len());
+    let mut copied = 0;
+    let mut at = 0;
+    while at < bytes.len() {
+        let sep = separator_len(bytes, at);
+        if sep == 0 {
+            at += 1;
+            continue;
+        }
+        let mut name_end = at;
+        while name_end > 0 && bytes[name_end - 1] == b' ' {
+            name_end -= 1;
+        }
+        let mut name_start = name_end;
+        while name_start > 0 && name_byte(bytes[name_start - 1]) {
+            name_start -= 1;
+        }
+        if name_start == name_end || !line[name_start..name_end].to_ascii_lowercase().ends_with(word) {
+            at += sep;
+            continue;
+        }
+        let mut start = at + sep;
+        while start < bytes.len() && bytes[start] == b' ' {
+            start += 1;
+        }
+        let end = match bytes.get(start) {
+            Some(&quote @ (b'"' | b'\'')) => line[start + 1..].find(quote as char).map_or(bytes.len(), |i| start + 1 + i + 1),
+            Some(_) => plain_value_end(bytes, start),
+            None => start,
+        };
+        if end > start && &line[start..end] != "<redacted>" {
+            out.push_str(&line[copied..start]);
+            out.push_str("<redacted>");
+            copied = end;
+        }
+        at = end.max(at + sep);
+    }
+    out.push_str(&line[copied..]);
+    out
+}
+
+/// Rule::Userinfo: `scheme://user:pass@host` -> `scheme://<redacted>@host`.
+fn redact_userinfo(line: &str) -> String {
     let mut out = String::with_capacity(line.len());
     let mut rest = line;
-    while let Some(eq) = rest.find('=') {
-        let (head, tail) = rest.split_at(eq);
-        let name_start = head.rfind(|c: char| !(c.is_ascii_alphanumeric() || c == '_' || c == '-')).map_or(0, |i| i + 1);
-        let name = head[name_start..].to_ascii_lowercase();
-        out.push_str(head);
-        out.push('=');
-        let value = &tail[1..];
-        if SECRET_NAMES.iter().any(|secret| name.ends_with(secret)) {
-            let end = value.find(|c: char| c.is_whitespace() || c == '&' || c == ';' || c == ',').unwrap_or(value.len());
-            if end > 0 {
+    while let Some(at) = rest.find("://") {
+        let tail = &rest[at + 3..];
+        out.push_str(&rest[..at + 3]);
+        let authority = tail.find(|c: char| matches!(c, '/' | '?' | '#') || c.is_whitespace()).unwrap_or(tail.len());
+        match tail[..authority].rfind('@') {
+            Some(user_end) if user_end > 0 => {
                 out.push_str("<redacted>");
+                rest = &tail[user_end..];
             }
-            rest = &value[end..];
-        } else {
-            rest = value;
+            _ => rest = tail,
         }
     }
     out.push_str(rest);
@@ -221,15 +403,18 @@ fn redact_emails(line: &str) -> String {
     out
 }
 
-/// `C:\\Users\\<name>`, `C:/Users/<name>`, `/Users/<name>`, `/home/<name>` ->
-/// the same prefix with `<user>`.
+/// Rule::HomePath: `C:\Users\<name>`, `C:\\Users\\<name>`, `C:/Users/<name>`,
+/// `/Users/<name>`, `/home/<name>` -> the same prefix with `<user>`.
 fn redact_home_paths(line: &str) -> String {
     let lower = line.to_ascii_lowercase();
     let mut cuts: Vec<(usize, usize)> = Vec::new();
     for prefix in ["\\users\\", "/users/", "/home/"] {
         let mut from = 0;
         while let Some(found) = lower[from..].find(prefix) {
-            let start = from + found + prefix.len();
+            let mut start = from + found + prefix.len();
+            while matches!(line.as_bytes().get(start), Some(b'\\' | b'/')) {
+                start += 1;
+            }
             let len = line[start..].find(|c: char| matches!(c, '\\' | '/' | '"' | '\'' | ':' | ';' | ',') || c.is_whitespace()).unwrap_or(line.len() - start);
             if len > 0 {
                 cuts.push((start, start + len));
@@ -252,53 +437,47 @@ fn redact_home_paths(line: &str) -> String {
     out
 }
 
-/// One stderr line made safe to keep. The whole line is redacted first and
-/// only then capped, so no cut can separate a secret from what marks it:
-/// control characters become spaces; from the first `{` on is a request body;
-/// a `?query` is dropped; `token=`/`key=`/`password=`-style values go whatever
-/// their length; emails and home-directory user names go; from a header or
-/// secret word on is dropped; token-shaped runs are replaced; the result is
-/// capped at MAX_LINE bytes on a char boundary.
+fn apply(rule: Rule, mut line: String) -> String {
+    match rule {
+        Rule::Control => line.chars().map(|c| if c.is_control() { ' ' } else { c }).collect(),
+        Rule::Body => {
+            if let Some(start) = line.find('{') {
+                line.truncate(start);
+                line.push_str("<body redacted>");
+            }
+            line
+        }
+        Rule::Query => {
+            let mut from = 0;
+            while let Some(found) = line[from..].find('?') {
+                let start = from + found;
+                let end = line[start..].find(char::is_whitespace).map_or(line.len(), |i| start + i);
+                line.replace_range(start..end, "?<redacted>");
+                from = start + "?<redacted>".len();
+            }
+            line
+        }
+        Rule::Userinfo => redact_userinfo(&line),
+        Rule::Value(word) => redact_values(&line, word),
+        Rule::Email => redact_emails(&line),
+        Rule::HomePath => redact_home_paths(&line),
+        Rule::Rest(word) => {
+            if let Some(start) = line.to_ascii_lowercase().find(word) {
+                line.truncate(start);
+                line.push_str("<redacted>");
+            }
+            line
+        }
+        Rule::TokenShaped => redact_token_runs(&line),
+    }
+}
+
+/// One stderr line made safe to keep: every class in CLASSES, in order, over
+/// the whole line; only then is it capped at MAX_LINE bytes on a char
+/// boundary, so no cut can separate a secret from what marks it.
 pub fn redact(raw: &str) -> String {
-    let mut line: String = raw.chars().map(|c| if c.is_control() { ' ' } else { c }).collect();
-    if let Some(start) = line.find('{') {
-        line.truncate(start);
-        line.push_str("<body redacted>");
-    }
-    let mut from = 0;
-    while let Some(found) = line[from..].find('?') {
-        let start = from + found;
-        let end = line[start..].find(char::is_whitespace).map_or(line.len(), |i| start + i);
-        line.replace_range(start..end, "?<redacted>");
-        from = start + "?<redacted>".len();
-    }
-    let line = redact_home_paths(&redact_emails(&redact_secret_values(&line)));
-    let mut line = line;
-    let lower = line.to_ascii_lowercase();
-    if let Some(start) = SENSITIVE.iter().filter_map(|word| lower.find(word)).min() {
-        line.truncate(start);
-        line.push_str("<redacted>");
-    }
-    let mut out = String::with_capacity(line.len());
-    let mut run = String::new();
-    let flush = |run: &mut String, out: &mut String| {
-        if token_shaped(run) {
-            out.push_str("<redacted>");
-        } else {
-            out.push_str(run);
-        }
-        run.clear();
-    };
-    for c in line.chars() {
-        if token_char(c) {
-            run.push(c);
-        } else {
-            flush(&mut run, &mut out);
-            out.push(c);
-        }
-    }
-    flush(&mut run, &mut out);
-    cut(&out, MAX_LINE).trim_end().to_string()
+    let line = CLASSES.iter().fold(raw.to_string(), |line, (_, rule)| apply(*rule, line));
+    cut(&line, MAX_LINE).trim_end().to_string()
 }
 
 fn now_ms() -> u128 {
@@ -460,6 +639,63 @@ mod tests {
         let _ = fs::remove_dir_all(&dir);
     }
 
+    /// A Write that tests can read back: the notice sink.
+    #[derive(Clone, Default)]
+    struct Captured(std::sync::Arc<std::sync::Mutex<Vec<u8>>>);
+
+    impl Write for Captured {
+        fn write(&mut self, bytes: &[u8]) -> io::Result<usize> {
+            self.0.lock().unwrap().extend_from_slice(bytes);
+            Ok(bytes.len())
+        }
+        fn flush(&mut self) -> io::Result<()> {
+            Ok(())
+        }
+    }
+
+    impl Captured {
+        fn text(&self) -> String {
+            String::from_utf8_lossy(&self.0.lock().unwrap()).into_owned()
+        }
+    }
+
+    /// B2, pinned: an outage says so on stderr exactly once, however many
+    /// lines it drops, and both that notice and the marker's reason go
+    /// through `redact` like any log line. The log dir here holds a home
+    /// path and a `token=` value, and the failed rotation names its paths.
+    #[test]
+    fn an_outage_is_noticed_once_and_its_reason_is_redacted() {
+        let secret = "Zk3Qx9Lm2R";
+        let dir = scratch("notice").join("Users").join("dayour").join(format!("token={secret}"));
+        let notices = Captured::default();
+        let mut log = RotatingLog::open(&dir, 256, FILES).unwrap().notice_to(notices.clone());
+        log.write_line(&format!("first line {}", "x".repeat(200))).unwrap();
+        fs::write(log_path(&dir, 1), "older\n").unwrap();
+        fs::create_dir_all(log_path(&dir, 2).join("blocker")).unwrap();
+        for i in 0..5 {
+            assert!(log.write_line(&format!("lost {i} {}", "y".repeat(100))).is_err(), "rotation should fail");
+        }
+        let said = notices.text();
+        assert_eq!(said.matches("sidecar log write failed").count(), 1, "one notice for 5 lost lines: {said:?}");
+        fs::remove_dir_all(log_path(&dir, 2)).unwrap();
+        log.write_line("after recovery").unwrap();
+        // All files: a long reason can rotate the marker into `.log.1`.
+        let current = log_text(&dir);
+        let marker = current.lines().find(|line| line.contains("sidecar log dropped 5 line(s)")).unwrap_or_else(|| panic!("no drop marker in {current:?}"));
+        for (what, text) in [("marker", marker), ("notice", said.as_str())] {
+            assert!(text.contains("rotate failed") && (text.contains("Users/<user>/token=<redacted>") || text.contains("Users\\<user>\\token=<redacted>")), "{what} names the redacted path: {text:?}");
+            assert!(!text.contains("dayour") && !text.contains(secret), "{what} leaks: {text:?}");
+        }
+        // A second outage is a new one: one more notice, not one per line.
+        let _ = fs::remove_file(log_path(&dir, 2));
+        fs::create_dir_all(log_path(&dir, 2).join("blocker")).unwrap();
+        for _ in 0..3 {
+            let _ = log.write_line(&"z".repeat(200));
+        }
+        assert_eq!(notices.text().matches("sidecar log write failed").count(), 2, "{:?}", notices.text());
+        let _ = fs::remove_dir_all(scratch("notice"));
+    }
+
     /// Feeds `input` through `pump` into a fresh log and returns its lines,
     /// without the unix-ms stamp.
     fn pumped(name: &str, input: &str) -> (Vec<String>, PathBuf) {
@@ -523,6 +759,113 @@ mod tests {
         }
         let plain = "gen-audio-mcp http: rejected POST /mcp 403 origin peer=127.0.0.1:51234";
         assert_eq!(redact(plain), plain, "a peer address is not an email or a secret");
+    }
+
+    /// Optimus's L1 probe: a secret and an email that straddle the 512-byte
+    /// cap. Capped first, the cut leaves `Zk3Qx9Lm2R` (too short to look like
+    /// a token) and `dayour@micro` (no dot, so not an email), and both leak.
+    /// Redacted whole and then capped, neither does.
+    #[test]
+    fn a_secret_and_an_email_straddling_the_line_cap_are_redacted_whole() {
+        let token = "Zk3Qx9Lm2Rt7Vb4NwY8pH6cJ";
+        let email = "dayour@microsoft.com";
+        let mut leaks = Vec::new();
+        for (lead, secret, head, marker) in [("error: key ", token, "Zk3Qx9Lm2R", "<redacted>"), ("error: notify ", email, "dayour@micro", "<email>")] {
+            let pad = MAX_LINE - head.len() - lead.len();
+            let raw = format!("{}{}{lead}{secret} refused", "ok ".repeat(pad / 3), " ".repeat(pad % 3));
+            assert!(raw[..MAX_LINE].ends_with(head), "{secret:?} straddles byte {MAX_LINE}");
+            let line = redact(&raw);
+            assert!(line.len() <= MAX_LINE, "{} bytes", line.len());
+            // The longest piece (4+ bytes) of the secret that reached the line.
+            let leaked = (0..secret.len()).flat_map(|start| (start + 4..=secret.len()).map(move |end| &secret[start..end])).filter(|piece| line.contains(piece)).max_by_key(|piece| piece.len());
+            if let Some(piece) = leaked {
+                leaks.push(format!("{piece:?} of {secret:?}"));
+            } else if !line.contains(marker) {
+                leaks.push(format!("no {marker} for {secret:?}"));
+            }
+        }
+        assert!(leaks.is_empty(), "leaked across the {MAX_LINE}-byte cap: {leaks:?}");
+    }
+
+    /// One row per redaction class: (class, raw line, what must go, what
+    /// must stay). Adding a class to CLASSES without a row here fails
+    /// `every_redaction_class_has_a_row`.
+    const ROWS: &[(&str, &str, &[&str], &str)] = &[
+        ("control characters", "a\u{1b}[31mred\rb", &["\u{1b}", "\r"], "red"),
+        ("request body", "rejected {\"params\":{\"x\":\"body-marker\"}} - 400", &["body-marker"], "rejected <body redacted>"),
+        ("query string", "rejected POST /mcp?q=find-me 403", &["find-me"], "/mcp?<redacted> 403"),
+        ("url userinfo", "fetch http://u:p4ss@localhost:8080/x failed", &["u:p4ss", "p4ss"], "http://<redacted>@localhost:8080/x failed"),
+        ("token", "fetch failed token=t0k 403", &["t0k"], "token=<redacted> 403"),
+        ("key", "fetch failed key=k1 status 403", &["k1"], "key=<redacted> status 403"),
+        ("passwd", "login passwd=pw1 next", &["pw1"], "passwd=<redacted> next"),
+        ("pwd", "login pwd=pw2 next", &["pw2"], "pwd=<redacted> next"),
+        ("pass", "login pass=pw3 next", &["pw3"], "pass=<redacted> next"),
+        ("auth", "proxy auth=au7 next", &["au7"], "auth=<redacted> next"),
+        ("credential", "load credential=cr8 next", &["cr8"], "credential=<redacted> next"),
+        ("session", "resume session=se9 next", &["se9"], "session=<redacted> next"),
+        ("sig", "blob sig=sg0 next", &["sg0"], "sig=<redacted> next"),
+        ("email", "error: notify dayour@example.com failed", &["dayour", "example.com"], "notify <email> failed"),
+        ("home directory", r"open C:\Users\dayour\AppData\Local\x.wav failed", &["dayour"], r"C:\Users\<user>\AppData"),
+        ("home directory", r#"open "C:\\Users\\dayour\\AppData\\x.wav" failed"#, &["dayour"], r"C:\\Users\\<user>\\AppData"),
+        ("authorization", "Authorization: zz9", &["zz9"], "<redacted>"),
+        ("cookie", "upstream said cookie=c00kie-v", &["c00kie"], "upstream said <redacted>"),
+        ("bearer", "upstream said bearer q7", &["q7"], "upstream said <redacted>"),
+        ("basic", "upstream said basic dTpw", &["dTpw"], "upstream said <redacted>"),
+        ("x-api-key", "header x-api-key: xk1", &["xk1"], "header <redacted>"),
+        ("api_key", "fetch failed api_key=k2&x=1 403", &["k2"], "fetch failed <redacted>"),
+        ("password", "login password: hunter2 next", &["hunter2"], "login <redacted>"),
+        ("secret", "client secret is s3cr", &["s3cr"], "client <redacted>"),
+        ("token-shaped", "error: id ghp_16C7e42F292c6912E7710c838347Ae178B4a refused", &["ghp_16C7"], "error: id <redacted> refused"),
+        ("token-shaped", "error: id Zk3Q/x9Lm2Rt7Vb4/NwY8pH6c refused", &["Zk3Q", "x9Lm", "NwY8"], "error: id <redacted> refused"),
+    ];
+
+    /// The forms every `name=value` class is caught in: colon and spaced
+    /// separators, a quoted value with a second word, URL-encoded `%3D`
+    /// (with `%26` ending the value), and a `#access_...=` fragment.
+    const FORMS: &[&str] = &[
+        "{n}=Qv7r next",
+        "{n}: Qv7r next",
+        "{n} = Qv7r next",
+        "{n} : Qv7r next",
+        "{n}=\"Qv7r Wy3z\" next",
+        "{n}: 'Qv7r Wy3z' next",
+        "cb%3Fx%3D1%26{n}%3DQv7r%26y%3D1 next",
+        "https://h/cb#access_{n}=Qv7r&state=ok next",
+    ];
+
+    #[test]
+    fn every_redaction_class_has_a_row() {
+        for (class, _) in CLASSES {
+            assert!(ROWS.iter().any(|(row, ..)| row == class), "class {class:?} has no row in ROWS");
+        }
+        for (row, ..) in ROWS {
+            assert!(CLASSES.iter().any(|(class, _)| class == row), "row {row:?} names no class");
+        }
+    }
+
+    #[test]
+    fn each_redaction_class_row_goes_and_keeps_what_it_says() {
+        let mut misses = Vec::new();
+        for (class, raw, secrets, kept) in ROWS {
+            let line = redact(raw);
+            if secrets.iter().any(|secret| line.contains(secret)) || !line.contains(kept) {
+                misses.push(format!("{class}: {raw:?} -> {line:?}"));
+            }
+        }
+        let value_names = CLASSES.iter().filter_map(|(_, rule)| if let Rule::Value(name) = rule { Some(*name) } else { None });
+        for name in value_names {
+            for form in FORMS {
+                let raw = form.replace("{n}", name);
+                let line = redact(&raw);
+                if line.contains("Qv7r") || line.contains("Wy3z") || !line.ends_with(" next") {
+                    misses.push(format!("{name} form: {raw:?} -> {line:?}"));
+                }
+            }
+        }
+        assert!(misses.is_empty(), "{} miss(es):\n{}", misses.len(), misses.join("\n"));
+        for plain in ["gen-audio-mcp http: rejected POST /mcp 403 origin peer=127.0.0.1:51234", "gen-audio-mcp: listening on 127.0.0.1:8765", "open /tmp/gen-audio/library/x.wav failed: not found"] {
+            assert_eq!(redact(plain), plain, "kept whole");
+        }
     }
 
     #[test]

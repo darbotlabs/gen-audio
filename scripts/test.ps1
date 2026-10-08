@@ -20,12 +20,14 @@ Steps, in order (skip any with -Skip):
             media.lock.json)
           cargo run -p gen-audio-core --example asset_vectors  (v1.json)
           python scripts/cube_revision.py manifest             (manifest.json
-            cube mirror, from the cube JSON)
-          then git diff --exit-code over those files. build_assets hashes the
+            cube mirror, from the cube JSON; *.synth.json outside-repo labels)
+          then git diff --exit-code over those files, the same set CI's
+          Regen gate diffs. build_assets hashes the
           gitignored library WAVs into clip uids: a missing WAV FAILS the step
           (never a skip). -FromLock (CI, which has no WAVs) takes their facts
-          from schemas/asset-object/media.lock.json instead and still checks
-          each cube JSON's source_sha256 against them.
+          from schemas/asset-object/media.lock.json instead, still checks
+          each cube JSON's source_sha256 against them, and checks every cube
+          file (JSON and PNG) byte for byte against media.lock.json "cubes".
           PNGs (*_spec2d.png, cube PNGs) are not byte-diffed: CPython on
           Windows ships zlib-ng, so the same pixels compress to different bytes.
           tests/test_spectrogram_strip.py regenerates each strip and compares
@@ -39,7 +41,9 @@ Steps, in order (skip any with -Skip):
 Modes:
   default   Regen needs the library WAVs on disk; a missing one FAILS Regen.
   -FromLock CI, no WAVs: Regen takes WAV facts from media.lock.json. It ties
-            each cube JSON to its WAV sha256 but cannot see a hand-edited cube.
+            each cube JSON to its WAV sha256, and (since M8) checks every cube
+            file's sha256 and size against media.lock.json "cubes", so a
+            hand-edited cube fails it, naming the file.
   -WithWav  the merge check (SMAX before review, Optimus before stamping; the
             PR template asks for it). Adds the Wavs step, runs Regen in the
             default mode, and sets GEN_AUDIO_REQUIRE_WAVS=1 so pytest FAILS
@@ -350,7 +354,8 @@ Invoke-Step 'Regen' {
     $library = 'apps/desktop/public/library'
     $generated = @("$library/assets.json", "$library/manifest.json", 'schemas/asset-object/fixtures/assets.dev.json',
         'schemas/asset-object/media.lock.json', 'schemas/asset-object/vectors/fixtures_v1.json',
-        'schemas/asset-object/vectors/v1.json', 'schemas/examples/viewport.example.json', 'schemas/examples/viewport.release.json')
+        'schemas/asset-object/vectors/v1.json', 'schemas/examples/viewport.example.json', 'schemas/examples/viewport.release.json',
+        "$library/*.synth.json")
     # Start from the committed bytes, or the diff below would blame the generators for hand edits.
     $dirty = @(& git status --porcelain -- @generated)
     if ($LASTEXITCODE -ne 0) { throw 'git status failed' }
