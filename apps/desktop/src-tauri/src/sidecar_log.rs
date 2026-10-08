@@ -7,9 +7,10 @@
 //! nowhere: a diagnostic written to a stream nobody can read is the same as no
 //! diagnostic.
 //!
-//! Every line is redacted before it is written: no request bodies, no header
-//! values, no query strings, nothing token-shaped. In-crate rotation, no new
-//! dependency.
+//! Every line is redacted whole, before it is capped: no request bodies, no
+//! header values, no query strings or `token=`/`key=`/`password=` values, no
+//! emails, no home-directory user names, nothing token-shaped. In-crate
+//! rotation, no new dependency.
 
 use std::fs::{self, File, OpenOptions};
 use std::io::{self, BufRead, BufReader, Read, Write};
@@ -21,10 +22,12 @@ pub const LOG_NAME: &str = "gen-audio-mcp.log";
 pub const MAX_BYTES: u64 = 1024 * 1024;
 /// Files kept: the current one plus `.1` and `.2`.
 pub const FILES: usize = 3;
-/// Characters of one redacted line that are kept.
+/// Bytes (UTF-8, cut on a char boundary) of one redacted line that are kept.
 pub const MAX_LINE: usize = 512;
-/// Bytes read from the pipe per line at most (a longer line is split).
-const MAX_READ: u64 = 4096;
+/// Bytes of one stderr line read before redaction. The rest of a longer line
+/// is drained and dropped, never logged as a line of its own: a split before
+/// redaction let a secret's tail through as an innocent-looking line.
+pub const MAX_PIPE_LINE: usize = 64 * 1024;
 
 /// `gen-audio-mcp.log` for index 0, else `gen-audio-mcp.log.<index>`.
 pub fn log_path(dir: &Path, index: usize) -> PathBuf {
@@ -109,6 +112,10 @@ fn cut(text: &str, max: usize) -> &str {
 /// Words that start header- or secret-shaped content; the rest of the line goes.
 const SENSITIVE: [&str; 8] = ["authorization", "cookie", "bearer", "basic ", "x-api-key", "api_key", "password", "secret"];
 
+/// `name=value` pairs whose value goes, whatever its length: a name ending in
+/// one of these (token, access_token, key, api_key, apikey, password, ...).
+const SECRET_NAMES: [&str; 5] = ["token", "key", "password", "passwd", "secret"];
+
 fn token_char(c: char) -> bool {
     c.is_ascii_alphanumeric() || matches!(c, '_' | '-' | '+' | '=' | '~')
 }
@@ -123,10 +130,98 @@ fn token_shaped(run: &str) -> bool {
     run.len() >= 32 || (run.len() >= 16 && ((digits >= 3 && letters >= 3) || mixed))
 }
 
-/// One stderr line made safe to keep: control characters become spaces; from
-/// the first `{` on is a request body; a `?query` is dropped; from a header or
+/// `token=abc` -> `token=<redacted>` for every SECRET_NAMES name, any length.
+fn redact_secret_values(line: &str) -> String {
+    let mut out = String::with_capacity(line.len());
+    let mut rest = line;
+    while let Some(eq) = rest.find('=') {
+        let (head, tail) = rest.split_at(eq);
+        let name_start = head.rfind(|c: char| !(c.is_ascii_alphanumeric() || c == '_' || c == '-')).map_or(0, |i| i + 1);
+        let name = head[name_start..].to_ascii_lowercase();
+        out.push_str(head);
+        out.push('=');
+        let value = &tail[1..];
+        if SECRET_NAMES.iter().any(|secret| name.ends_with(secret)) {
+            let end = value.find(|c: char| c.is_whitespace() || c == '&' || c == ';' || c == ',').unwrap_or(value.len());
+            if end > 0 {
+                out.push_str("<redacted>");
+            }
+            rest = &value[end..];
+        } else {
+            rest = value;
+        }
+    }
+    out.push_str(rest);
+    out
+}
+
+fn email_local(c: char) -> bool {
+    c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '%' | '+' | '-')
+}
+
+fn email_domain(c: char) -> bool {
+    c.is_ascii_alphanumeric() || matches!(c, '.' | '-')
+}
+
+/// `name@host.tld` -> `<email>`.
+fn redact_emails(line: &str) -> String {
+    let mut out = String::with_capacity(line.len());
+    let mut rest = line;
+    while let Some(at) = rest.find('@') {
+        let local_start = rest[..at].rfind(|c: char| !email_local(c)).map_or(0, |i| i + 1);
+        let domain_len = rest[at + 1..].find(|c: char| !email_domain(c)).unwrap_or(rest.len() - at - 1);
+        let domain = rest[at + 1..at + 1 + domain_len].trim_end_matches('.');
+        if local_start < at && domain.contains('.') && !domain.starts_with('.') {
+            out.push_str(&rest[..local_start]);
+            out.push_str("<email>");
+            rest = &rest[at + 1 + domain.len()..];
+        } else {
+            out.push_str(&rest[..=at]);
+            rest = &rest[at + 1..];
+        }
+    }
+    out.push_str(rest);
+    out
+}
+
+/// `C:\\Users\\<name>`, `C:/Users/<name>`, `/Users/<name>`, `/home/<name>` ->
+/// the same prefix with `<user>`.
+fn redact_home_paths(line: &str) -> String {
+    let lower = line.to_ascii_lowercase();
+    let mut cuts: Vec<(usize, usize)> = Vec::new();
+    for prefix in ["\\users\\", "/users/", "/home/"] {
+        let mut from = 0;
+        while let Some(found) = lower[from..].find(prefix) {
+            let start = from + found + prefix.len();
+            let len = line[start..].find(|c: char| matches!(c, '\\' | '/' | '"' | '\'' | ':' | ';' | ',') || c.is_whitespace()).unwrap_or(line.len() - start);
+            if len > 0 {
+                cuts.push((start, start + len));
+            }
+            from = start;
+        }
+    }
+    cuts.sort_unstable();
+    let mut out = String::with_capacity(line.len());
+    let mut at = 0;
+    for (start, end) in cuts {
+        if start < at {
+            continue;
+        }
+        out.push_str(&line[at..start]);
+        out.push_str("<user>");
+        at = end;
+    }
+    out.push_str(&line[at..]);
+    out
+}
+
+/// One stderr line made safe to keep. The whole line is redacted first and
+/// only then capped, so no cut can separate a secret from what marks it:
+/// control characters become spaces; from the first `{` on is a request body;
+/// a `?query` is dropped; `token=`/`key=`/`password=`-style values go whatever
+/// their length; emails and home-directory user names go; from a header or
 /// secret word on is dropped; token-shaped runs are replaced; the result is
-/// capped at MAX_LINE characters.
+/// capped at MAX_LINE bytes on a char boundary.
 pub fn redact(raw: &str) -> String {
     let mut line: String = raw.chars().map(|c| if c.is_control() { ' ' } else { c }).collect();
     if let Some(start) = line.find('{') {
@@ -140,6 +235,8 @@ pub fn redact(raw: &str) -> String {
         line.replace_range(start..end, "?<redacted>");
         from = start + "?<redacted>".len();
     }
+    let line = redact_home_paths(&redact_emails(&redact_secret_values(&line)));
+    let mut line = line;
     let lower = line.to_ascii_lowercase();
     if let Some(start) = SENSITIVE.iter().filter_map(|word| lower.find(word)).min() {
         line.truncate(start);
@@ -164,8 +261,7 @@ pub fn redact(raw: &str) -> String {
         }
     }
     flush(&mut run, &mut out);
-    let kept: String = out.chars().take(MAX_LINE).collect();
-    kept.trim_end().to_string()
+    cut(&out, MAX_LINE).trim_end().to_string()
 }
 
 fn now_ms() -> u128 {
@@ -179,14 +275,42 @@ pub fn pump(mut reader: impl BufRead, mut log: Option<RotatingLog>) {
     let mut buf = Vec::new();
     loop {
         buf.clear();
-        match reader.by_ref().take(MAX_READ).read_until(b'\n', &mut buf) {
+        match reader.by_ref().take(MAX_PIPE_LINE as u64).read_until(b'\n', &mut buf) {
             Ok(0) | Err(_) => break,
             Ok(_) => {}
+        }
+        if buf.last() != Some(&b'\n') && buf.len() == MAX_PIPE_LINE {
+            // Over the ceiling: drop the rest of this line, and the partial
+            // word at the cut (it may be a secret's head), so nothing of it
+            // is logged, and never as a line of its own.
+            if !drain_line(&mut reader) {
+                break;
+            }
+            let keep = buf.iter().rposition(u8::is_ascii_whitespace).unwrap_or(0);
+            buf.truncate(keep);
         }
         let Some(log) = log.as_mut() else { continue };
         let line = redact(String::from_utf8_lossy(&buf).trim_end());
         if !line.is_empty() {
             let _ = log.write_line(&format!("{} {line}", now_ms()));
+        }
+    }
+}
+
+/// Reads and discards up to and including the next newline; false at the end
+/// of the stream or on a read error.
+fn drain_line(reader: &mut impl BufRead) -> bool {
+    loop {
+        let (consumed, done) = match reader.fill_buf() {
+            Ok([]) | Err(_) => return false,
+            Ok(bytes) => match bytes.iter().position(|b| *b == b'\n') {
+                Some(at) => (at + 1, true),
+                None => (bytes.len(), false),
+            },
+        };
+        reader.consume(consumed);
+        if done {
+            return true;
         }
     }
 }
@@ -272,6 +396,83 @@ mod tests {
         assert_eq!(redact("gen-audio-mcp: listening on library_kokoro_cube3d"), "gen-audio-mcp: listening on library_kokoro_cube3d");
         assert!(redact(&"a".repeat(5000)).len() <= MAX_LINE + "<redacted>".len());
         assert!(!redact("a\u{1b}[31mred\rb").contains(['\u{1b}', '\r']));
+    }
+
+    /// Feeds `input` through `pump` into a fresh log and returns its lines,
+    /// without the unix-ms stamp.
+    fn pumped(name: &str, input: &str) -> (Vec<String>, PathBuf) {
+        let dir = scratch(name);
+        let log = RotatingLog::open(&dir, MAX_BYTES, FILES).unwrap();
+        pump(std::io::Cursor::new(input.as_bytes().to_vec()), Some(log));
+        let lines = log_text(&dir).lines().map(|line| line.split_once(' ').map_or(String::new(), |(_, rest)| rest.to_string())).collect();
+        (lines, dir)
+    }
+
+    /// Optimus's probe: a stderr line over 4 KiB was split before redaction,
+    /// so a secret straddling the split lost its head to `<redacted>` and its
+    /// tail ('ECRETxyz') reached the log as a new, innocent-looking line.
+    #[test]
+    fn a_secret_straddling_the_read_split_leaks_no_fragment() {
+        let filler = "ok ".repeat(1362); // 4086 bytes: "password=S" ends at byte 4096
+        let token = "Zk3Qx9Lm2Rt7Vb4NwY8pH6cJ"; // token-shaped whole, not in halves
+        let token_filler = "ok ".repeat(1362 - 4);
+        for (secret_line, secret) in [
+            (format!("{filler}password=SECRETxyz tail-marker"), "SECRETxyz"),
+            (format!("{token_filler}error: key {token} refused"), token),
+        ] {
+            let (lines, dir) = pumped("straddle", &format!("{secret_line}\nsecond line\n"));
+            assert_eq!(lines.len(), 2, "one stderr line is one log line: {lines:?}");
+            assert_eq!(lines[1], "second line");
+            let text = lines.join("\n");
+            for start in 0..secret.len() - 2 {
+                let fragment = &secret[start..];
+                assert!(!text.contains(fragment), "{fragment:?} of {secret:?} reached the log");
+            }
+            let _ = fs::remove_dir_all(&dir);
+        }
+        // Past the 64 KiB read ceiling the rest of the line is drained, never logged.
+        let long = format!("{}password=SECRETxyz {}", "ok ".repeat(64 * 1024 / 3), "tail ".repeat(10));
+        let (lines, dir) = pumped("ceiling", &format!("{long}\nafter\n"));
+        assert_eq!(lines.len(), 2, "{:?}", lines.iter().map(String::len).collect::<Vec<_>>());
+        assert!(!lines.join("\n").contains("ECRET") && lines[1] == "after");
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn redact_covers_emails_home_paths_query_values_and_auth_of_any_length() {
+        let cases = [
+            ("error: notify dayour@example.com failed", "dayour@example.com", "<email>"),
+            (r"open C:\Users\dayour\AppData\Local\x.wav failed", "dayour", r"C:\Users\<user>\AppData"),
+            ("open c:/users/dayour/x.wav failed", "dayour", "c:/users/<user>/x.wav"),
+            ("open /home/dayour/gen-audio/x.wav failed", "dayour", "/home/<user>/gen-audio/x.wav"),
+            ("open /Users/dayour/x.wav failed", "dayour", "/Users/<user>/x.wav"),
+            ("fetch failed token=abc 403", "abc", "token=<redacted> 403"),
+            ("fetch failed access_token=t0 403", "t0", "access_token=<redacted> 403"),
+            ("fetch failed key=k1 status 403", "k1", "key=<redacted> status 403"),
+            ("fetch failed api_key=k2&x=1 403", "k2", "<redacted>"),
+            ("fetch failed password=pw 403", "pw 403", "<redacted>"),
+            ("Authorization: zz9", "zz9", "<redacted>"),
+            ("upstream said bearer q7", "q7", "<redacted>"),
+        ];
+        for (raw, secret, kept) in cases {
+            let line = redact(raw);
+            assert!(!line.contains(secret), "{raw:?} -> {line:?} still has {secret:?}");
+            assert!(line.contains(kept), "{raw:?} -> {line:?} should keep {kept:?}");
+        }
+        let plain = "gen-audio-mcp http: rejected POST /mcp 403 origin peer=127.0.0.1:51234";
+        assert_eq!(redact(plain), plain, "a peer address is not an email or a secret");
+    }
+
+    #[test]
+    fn the_line_cap_counts_bytes_and_cuts_on_a_char_boundary() {
+        // 511 bytes of short words, then a 2-byte char straddling byte 512.
+        let straddle = format!("{}xé tail", "x ".repeat((MAX_LINE - 1) / 2));
+        for raw in ["é".repeat(300), straddle.clone(), "日本語 ".repeat(200)] {
+            let line = redact(&raw);
+            assert!(line.len() <= MAX_LINE, "{} bytes > {MAX_LINE}", line.len());
+            assert!(line.len() >= MAX_LINE - 4, "cut at the byte cap, not far before it: {}", line.len());
+        }
+        assert_eq!(redact(&straddle), format!("{}x", "x ".repeat((MAX_LINE - 1) / 2)));
     }
 
     /// The child half of the pipe tests: a real loopback server in its own
