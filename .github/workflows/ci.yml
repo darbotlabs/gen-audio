@@ -45,4 +45,6 @@ jobs:
         with:
           node-version: "22"
       - run: npm ci
+      - name: Asset object golden vectors + Ajv2020 (shared with cargo test)
+        run: npm test
       - run: npm run build

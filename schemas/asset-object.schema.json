@@ -1,0 +1,1356 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://darbotlabs.dev/gen-audio/schemas/asset-object/v1.schema.json",
+  "title": "Gen-Audio asset object (v1 draft)",
+  "description": "One envelope for every composable asset. uid = ga:<kind>:base32(SHA-256(\"ga-asset-v1\\u0000\" + JCS({kind, schema_major, fields, media:[{role,sha256}], src})))[0..26]. Only kind, schema major, fields, media digests and src are hashed. See docs/ASSET_OBJECT_MODEL.md. Rules JSON Schema cannot state (NFC, '..' inside a path segment, uid recomputation, cross-asset sha/duration checks, link cycles, secrets in mcp_tool) are enforced by gen_audio_core::asset and pinned by schemas/asset-object/vectors/v1.json.",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "uid_scheme",
+    "kind",
+    "uid",
+    "status",
+    "fields",
+    "media",
+    "src",
+    "honesty",
+    "display"
+  ],
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "pattern": "^1\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(-[0-9A-Za-z.-]+)?$",
+      "description": "Semver. Only the major (1) enters the uid preimage; an unknown major is rejected."
+    },
+    "uid_scheme": {
+      "const": "ga1"
+    },
+    "kind": {
+      "enum": [
+        "voice_model",
+        "voice_profile",
+        "audio_clip",
+        "spectrogram_2d",
+        "cube_ihdr",
+        "layer",
+        "podcast_script",
+        "transcript",
+        "card",
+        "mcp_tool"
+      ]
+    },
+    "uid": {
+      "$ref": "#/$defs/uid"
+    },
+    "legacy_id": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_.-]{1,96}$",
+      "description": "Pre-v1 id (card id, tileId, clipId, persona id). Never hashed."
+    },
+    "status": {
+      "enum": [
+        "ok",
+        "missing",
+        "unavailable"
+      ],
+      "description": "Never hashed. `missing` = media sha known but the file is absent on this machine."
+    },
+    "fields": {
+      "type": "object",
+      "description": "Hashed identity fields; per-kind allowlist. Integers, booleans and NFC strings only."
+    },
+    "media": {
+      "type": "array",
+      "maxItems": 8,
+      "items": {
+        "$ref": "#/$defs/media"
+      }
+    },
+    "src": {
+      "type": "array",
+      "maxItems": 16,
+      "uniqueItems": true,
+      "items": {
+        "$ref": "#/$defs/uid"
+      },
+      "description": "Hashed derived_from parents (a DAG: a uid cannot contain itself)."
+    },
+    "relations": {
+      "$ref": "#/$defs/relations"
+    },
+    "honesty": {
+      "$ref": "#/$defs/honesty"
+    },
+    "provenance": {
+      "$ref": "#/$defs/provenance"
+    },
+    "display": {
+      "$ref": "#/$defs/display"
+    },
+    "body": {
+      "description": "Per-kind unhashed payload (float views live here)."
+    },
+    "extensions": {
+      "type": "object",
+      "propertyNames": {
+        "pattern": "^x-[a-z0-9-]+$"
+      },
+      "description": "Namespaced, never hashed."
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "kind": {
+            "const": "voice_model"
+          }
+        },
+        "required": [
+          "kind"
+        ]
+      },
+      "then": {
+        "properties": {
+          "uid": {
+            "$ref": "#/$defs/voice_model_uid"
+          },
+          "fields": {
+            "$ref": "#/$defs/voice_model_fields"
+          },
+          "body": {
+            "$ref": "#/$defs/voice_model_body"
+          },
+          "media": {
+            "maxItems": 0
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "kind": {
+            "const": "voice_profile"
+          }
+        },
+        "required": [
+          "kind"
+        ]
+      },
+      "then": {
+        "properties": {
+          "uid": {
+            "$ref": "#/$defs/voice_profile_uid"
+          },
+          "fields": {
+            "$ref": "#/$defs/voice_profile_fields"
+          },
+          "body": {
+            "$ref": "#/$defs/voice_profile_body"
+          },
+          "media": {
+            "items": {
+              "properties": {
+                "role": {
+                  "enum": [
+                    "profile_json"
+                  ]
+                }
+              }
+            }
+          },
+          "honesty": {
+            "required": [
+              "not_podcast"
+            ],
+            "properties": {
+              "synthesized_speech": {
+                "const": false
+              },
+              "not_podcast": {
+                "const": true
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "kind": {
+            "const": "audio_clip"
+          }
+        },
+        "required": [
+          "kind"
+        ]
+      },
+      "then": {
+        "properties": {
+          "uid": {
+            "$ref": "#/$defs/audio_clip_uid"
+          },
+          "fields": {
+            "$ref": "#/$defs/audio_clip_fields"
+          },
+          "body": {
+            "$ref": "#/$defs/audio_clip_body"
+          },
+          "media": {
+            "items": {
+              "properties": {
+                "role": {
+                  "enum": [
+                    "wav"
+                  ]
+                }
+              }
+            }
+          },
+          "status": {
+            "enum": [
+              "ok",
+              "missing"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "kind": {
+            "const": "spectrogram_2d"
+          }
+        },
+        "required": [
+          "kind"
+        ]
+      },
+      "then": {
+        "properties": {
+          "uid": {
+            "$ref": "#/$defs/spectrogram_2d_uid"
+          },
+          "fields": {
+            "$ref": "#/$defs/spectrogram_2d_fields"
+          },
+          "body": {
+            "$ref": "#/$defs/spectrogram_2d_body"
+          },
+          "media": {
+            "minItems": 1,
+            "items": {
+              "properties": {
+                "role": {
+                  "enum": [
+                    "spectrogram_png"
+                  ]
+                }
+              }
+            }
+          },
+          "src": {
+            "minItems": 1,
+            "maxItems": 1,
+            "items": {
+              "$ref": "#/$defs/audio_clip_uid"
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "kind": {
+            "const": "cube_ihdr"
+          }
+        },
+        "required": [
+          "kind"
+        ]
+      },
+      "then": {
+        "properties": {
+          "uid": {
+            "$ref": "#/$defs/cube_ihdr_uid"
+          },
+          "fields": {
+            "$ref": "#/$defs/cube_ihdr_fields"
+          },
+          "body": {
+            "$ref": "#/$defs/cube_ihdr_body"
+          },
+          "media": {
+            "minItems": 1,
+            "items": {
+              "properties": {
+                "role": {
+                  "enum": [
+                    "cube_json",
+                    "cube_png"
+                  ]
+                }
+              }
+            }
+          },
+          "src": {
+            "minItems": 1,
+            "maxItems": 1,
+            "items": {
+              "$ref": "#/$defs/audio_clip_uid"
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "kind": {
+            "const": "layer"
+          }
+        },
+        "required": [
+          "kind"
+        ]
+      },
+      "then": {
+        "properties": {
+          "uid": {
+            "$ref": "#/$defs/layer_uid"
+          },
+          "fields": {
+            "$ref": "#/$defs/layer_fields"
+          },
+          "body": {
+            "$ref": "#/$defs/layer_body"
+          },
+          "media": {
+            "maxItems": 0
+          },
+          "src": {
+            "minItems": 1,
+            "maxItems": 1,
+            "items": {
+              "$ref": "#/$defs/cube_ihdr_uid"
+            }
+          },
+          "relations": {
+            "required": [
+              "layer_of"
+            ]
+          }
+        },
+        "required": [
+          "relations"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "kind": {
+            "const": "podcast_script"
+          }
+        },
+        "required": [
+          "kind"
+        ]
+      },
+      "then": {
+        "properties": {
+          "uid": {
+            "$ref": "#/$defs/podcast_script_uid"
+          },
+          "fields": {
+            "$ref": "#/$defs/podcast_script_fields"
+          },
+          "body": {
+            "$ref": "#/$defs/podcast_script_body"
+          },
+          "media": {
+            "items": {
+              "properties": {
+                "role": {
+                  "enum": [
+                    "script_txt"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "kind": {
+            "const": "transcript"
+          }
+        },
+        "required": [
+          "kind"
+        ]
+      },
+      "then": {
+        "properties": {
+          "uid": {
+            "$ref": "#/$defs/transcript_uid"
+          },
+          "fields": {
+            "$ref": "#/$defs/transcript_fields"
+          },
+          "body": {
+            "$ref": "#/$defs/transcript_body"
+          },
+          "media": {
+            "items": {
+              "properties": {
+                "role": {
+                  "enum": [
+                    "transcript_json",
+                    "transcript_txt"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "kind": {
+            "const": "card"
+          }
+        },
+        "required": [
+          "kind"
+        ]
+      },
+      "then": {
+        "properties": {
+          "uid": {
+            "$ref": "#/$defs/card_uid"
+          },
+          "fields": {
+            "$ref": "#/$defs/card_fields"
+          },
+          "body": {
+            "$ref": "#/$defs/card_body"
+          },
+          "media": {
+            "maxItems": 0
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "kind": {
+            "const": "mcp_tool"
+          }
+        },
+        "required": [
+          "kind"
+        ]
+      },
+      "then": {
+        "properties": {
+          "uid": {
+            "$ref": "#/$defs/mcp_tool_uid"
+          },
+          "fields": {
+            "$ref": "#/$defs/mcp_tool_fields"
+          },
+          "body": {
+            "$ref": "#/$defs/mcp_tool_body"
+          },
+          "media": {
+            "maxItems": 0
+          }
+        }
+      }
+    },
+    {
+      "description": "A synthesized audio_clip needs a wav sha256, provenance.engine and a provenance.voice_model uid.",
+      "if": {
+        "properties": {
+          "kind": {
+            "const": "audio_clip"
+          },
+          "honesty": {
+            "properties": {
+              "synthesized_speech": {
+                "const": true
+              }
+            },
+            "required": [
+              "synthesized_speech"
+            ]
+          }
+        },
+        "required": [
+          "kind",
+          "honesty"
+        ]
+      },
+      "then": {
+        "required": [
+          "provenance",
+          "media"
+        ],
+        "properties": {
+          "provenance": {
+            "required": [
+              "engine",
+              "voice_model"
+            ]
+          },
+          "media": {
+            "contains": {
+              "properties": {
+                "role": {
+                  "const": "wav"
+                }
+              },
+              "required": [
+                "role"
+              ]
+            }
+          }
+        }
+      }
+    }
+  ],
+  "unevaluatedProperties": false,
+  "$defs": {
+    "identity_key": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_]{0,63}$",
+      "description": "Identity field names: snake_case ASCII, so UTF-8 and UTF-16 key order agree (JCS)."
+    },
+    "identity_text": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 400,
+      "pattern": "^[^\\u0000-\\u001f\\u007f]*$",
+      "description": "NFC text without control characters (NFC is checked by the validators; JSON Schema cannot express it)."
+    },
+    "sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "uid": {
+      "type": "string",
+      "pattern": "^ga:(voice_model|voice_profile|audio_clip|spectrogram_2d|cube_ihdr|layer|podcast_script|transcript|card|mcp_tool):[a-z2-7]{25}[aeimquy4]$",
+      "description": "ga:<kind>:<26 lowercase RFC 4648 base32 chars> = first 128 bits of SHA-256(preimage); the last char carries 3 data bits and 2 zero pad bits, so it is one of a e i m q u y 4."
+    },
+    "voice_model_uid": {
+      "type": "string",
+      "pattern": "^ga:voice_model:[a-z2-7]{25}[aeimquy4]$"
+    },
+    "voice_profile_uid": {
+      "type": "string",
+      "pattern": "^ga:voice_profile:[a-z2-7]{25}[aeimquy4]$"
+    },
+    "audio_clip_uid": {
+      "type": "string",
+      "pattern": "^ga:audio_clip:[a-z2-7]{25}[aeimquy4]$"
+    },
+    "spectrogram_2d_uid": {
+      "type": "string",
+      "pattern": "^ga:spectrogram_2d:[a-z2-7]{25}[aeimquy4]$"
+    },
+    "cube_ihdr_uid": {
+      "type": "string",
+      "pattern": "^ga:cube_ihdr:[a-z2-7]{25}[aeimquy4]$"
+    },
+    "layer_uid": {
+      "type": "string",
+      "pattern": "^ga:layer:[a-z2-7]{25}[aeimquy4]$"
+    },
+    "podcast_script_uid": {
+      "type": "string",
+      "pattern": "^ga:podcast_script:[a-z2-7]{25}[aeimquy4]$"
+    },
+    "transcript_uid": {
+      "type": "string",
+      "pattern": "^ga:transcript:[a-z2-7]{25}[aeimquy4]$"
+    },
+    "card_uid": {
+      "type": "string",
+      "pattern": "^ga:card:[a-z2-7]{25}[aeimquy4]$"
+    },
+    "mcp_tool_uid": {
+      "type": "string",
+      "pattern": "^ga:mcp_tool:[a-z2-7]{25}[aeimquy4]$"
+    },
+    "uid_list": {
+      "type": "array",
+      "maxItems": 8,
+      "uniqueItems": true,
+      "items": {
+        "$ref": "#/$defs/uid"
+      }
+    },
+    "media_path": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_-][A-Za-z0-9_.-]{0,127}(/[A-Za-z0-9_-][A-Za-z0-9_.-]{0,127}){0,3}$",
+      "description": "Relative to the library root. No '..', no leading '/', no '\\\\', no drive letter, no UNC, no URL scheme (the validators also reject '..' inside a segment)."
+    },
+    "media": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "role",
+        "path",
+        "sha256",
+        "bytes"
+      ],
+      "properties": {
+        "role": {
+          "enum": [
+            "wav",
+            "spectrogram_png",
+            "cube_json",
+            "cube_png",
+            "script_txt",
+            "transcript_json",
+            "transcript_txt",
+            "profile_json"
+          ]
+        },
+        "path": {
+          "$ref": "#/$defs/media_path"
+        },
+        "sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "bytes": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 268435456,
+          "description": "Verified on load together with sha256; 256 MiB cap."
+        },
+        "mime": {
+          "enum": [
+            "audio/wav",
+            "image/png",
+            "application/json",
+            "text/plain"
+          ]
+        }
+      }
+    },
+    "honesty": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "synthesized_speech",
+        "fixture"
+      ],
+      "properties": {
+        "synthesized_speech": {
+          "type": "boolean"
+        },
+        "fixture": {
+          "type": "boolean"
+        },
+        "not_podcast": {
+          "type": "boolean"
+        },
+        "claims": {
+          "type": "array",
+          "uniqueItems": true,
+          "maxItems": 8,
+          "items": {
+            "enum": [
+              "real_wav",
+              "synthesized_speech",
+              "library_cube",
+              "library_spectrogram",
+              "fixture_tone",
+              "profile_preview",
+              "reference_only",
+              "not_a_podcast_render",
+              "engine_unavailable",
+              "g2p_only",
+              "status_only"
+            ]
+          }
+        },
+        "note": {
+          "type": "string",
+          "maxLength": 400
+        }
+      },
+      "if": {
+        "properties": {
+          "fixture": {
+            "const": true
+          }
+        },
+        "required": [
+          "fixture"
+        ]
+      },
+      "then": {
+        "properties": {
+          "synthesized_speech": {
+            "const": false
+          }
+        }
+      }
+    },
+    "provenance": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "generator": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "engine": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "voice_model": {
+          "$ref": "#/$defs/voice_model_uid"
+        },
+        "g2p_model": {
+          "$ref": "#/$defs/voice_model_uid"
+        },
+        "params": {
+          "type": "object",
+          "description": "Generator parameters. Unhashed; floats allowed."
+        },
+        "created_at": {
+          "type": "string",
+          "format": "date-time"
+        }
+      }
+    },
+    "relations": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Unhashed links. derived_from lives in the hashed `src`.",
+      "properties": {
+        "composes": {
+          "$ref": "#/$defs/uid_list"
+        },
+        "bound_to": {
+          "$ref": "#/$defs/uid_list"
+        },
+        "supersedes": {
+          "$ref": "#/$defs/uid_list"
+        },
+        "layer_of": {
+          "$ref": "#/$defs/cube_ihdr_uid"
+        }
+      }
+    },
+    "display": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "title",
+        "glyph"
+      ],
+      "properties": {
+        "title": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "summary": {
+          "type": "string",
+          "maxLength": 400
+        },
+        "semantic_name": {
+          "type": "string",
+          "maxLength": 160
+        },
+        "face_name": {
+          "type": "string",
+          "maxLength": 160
+        },
+        "glyph": {
+          "type": "string",
+          "pattern": "^[\\u2800-\\u28ff]{2}$",
+          "description": "Text form: U+2800+digest[0], U+2800+digest[1]. Visual hint only."
+        }
+      }
+    },
+    "voice_model_fields": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "model_id",
+        "waveform"
+      ],
+      "propertyNames": {
+        "$ref": "#/$defs/identity_key"
+      },
+      "properties": {
+        "model_id": {
+          "type": "string",
+          "pattern": "^[a-z0-9_]{1,64}$"
+        },
+        "waveform": {
+          "type": "boolean"
+        }
+      }
+    },
+    "voice_profile_fields": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "persona_id",
+        "voice_model",
+        "tone",
+        "purpose",
+        "domain",
+        "accent",
+        "traits",
+        "refs"
+      ],
+      "propertyNames": {
+        "$ref": "#/$defs/identity_key"
+      },
+      "properties": {
+        "persona_id": {
+          "type": "string",
+          "pattern": "^[a-z0-9_-]{1,64}$"
+        },
+        "voice_model": {
+          "$ref": "#/$defs/voice_model_uid"
+        },
+        "tone": {
+          "$ref": "#/$defs/identity_text"
+        },
+        "purpose": {
+          "$ref": "#/$defs/identity_text"
+        },
+        "domain": {
+          "$ref": "#/$defs/identity_text"
+        },
+        "accent": {
+          "$ref": "#/$defs/identity_text"
+        },
+        "traits": {
+          "$ref": "#/$defs/identity_text"
+        },
+        "refs": {
+          "type": "array",
+          "maxItems": 8,
+          "items": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9:_-]{1,80}$"
+          }
+        }
+      }
+    },
+    "audio_clip_fields": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "engine",
+        "sample_rate_hz",
+        "duration_ms"
+      ],
+      "propertyNames": {
+        "$ref": "#/$defs/identity_key"
+      },
+      "properties": {
+        "engine": {
+          "type": "string",
+          "pattern": "^[a-z0-9_]{1,64}$"
+        },
+        "sample_rate_hz": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "duration_ms": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "channels": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 32
+        }
+      }
+    },
+    "spectrogram_2d_fields": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "source_sha256",
+        "sample_rate_hz",
+        "n_fft",
+        "hop_frames",
+        "n_bands",
+        "width_px",
+        "height_px",
+        "duration_ms",
+        "covers_ms",
+        "db_floor",
+        "colormap"
+      ],
+      "propertyNames": {
+        "$ref": "#/$defs/identity_key"
+      },
+      "properties": {
+        "source_sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "sample_rate_hz": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "n_fft": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "hop_frames": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "n_bands": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "width_px": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "height_px": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "duration_ms": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "covers_ms": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "db_floor": {
+          "type": "integer",
+          "minimum": -200,
+          "maximum": 0
+        },
+        "colormap": {
+          "type": "string",
+          "pattern": "^[a-z0-9-]{1,32}$"
+        }
+      }
+    },
+    "cube_ihdr_fields": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "source_sha256",
+        "sample_rate_hz",
+        "bin_frames",
+        "time_bins",
+        "freq_bins",
+        "duration_ms",
+        "covers_ms",
+        "inv_hdr_ppm",
+        "cube_revision",
+        "n_points"
+      ],
+      "propertyNames": {
+        "$ref": "#/$defs/identity_key"
+      },
+      "properties": {
+        "source_sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "sample_rate_hz": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "bin_frames": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "time_bins": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "freq_bins": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "duration_ms": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "covers_ms": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "inv_hdr_ppm": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "cube_revision": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "n_points": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "n_fft": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "hop_frames": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        }
+      }
+    },
+    "layer_fields": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "index"
+      ],
+      "propertyNames": {
+        "$ref": "#/$defs/identity_key"
+      },
+      "properties": {
+        "name": {
+          "enum": [
+            "signal",
+            "tonality",
+            "confidence",
+            "quality"
+          ]
+        },
+        "index": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 3
+        }
+      }
+    },
+    "podcast_script_fields": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "format",
+        "n_turns",
+        "n_words"
+      ],
+      "propertyNames": {
+        "$ref": "#/$defs/identity_key"
+      },
+      "properties": {
+        "format": {
+          "enum": [
+            "text/plain",
+            "application/json"
+          ]
+        },
+        "n_turns": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "n_words": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        }
+      }
+    },
+    "transcript_fields": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "language",
+        "n_words"
+      ],
+      "propertyNames": {
+        "$ref": "#/$defs/identity_key"
+      },
+      "properties": {
+        "language": {
+          "type": "string",
+          "pattern": "^[a-z]{2,3}(-[A-Za-z0-9]{2,8})?$"
+        },
+        "n_words": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        }
+      }
+    },
+    "card_fields": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "card_id",
+        "view"
+      ],
+      "propertyNames": {
+        "$ref": "#/$defs/identity_key"
+      },
+      "properties": {
+        "card_id": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_-]{1,64}$"
+        },
+        "view": {
+          "enum": [
+            "EngineStatus",
+            "SpectrogramPanel",
+            "Cube3D",
+            "PodcastCast",
+            "ServeHealth",
+            "BenchmarkCompare",
+            "ConnectorStatus",
+            "LibraryClip",
+            "VoiceProfile"
+          ]
+        }
+      }
+    },
+    "mcp_tool_fields": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "input_schema"
+      ],
+      "propertyNames": {
+        "$ref": "#/$defs/identity_key"
+      },
+      "properties": {
+        "name": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_]{0,63}$"
+        },
+        "input_schema": {
+          "type": "object",
+          "description": "JCS-hashed inputSchema (ASCII keys, no floats)."
+        }
+      }
+    },
+    "voice_model_body": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "label": {
+          "type": "string"
+        },
+        "waveform": {
+          "type": "boolean"
+        },
+        "synth_adapter": {
+          "type": "boolean"
+        },
+        "unavailable": {
+          "type": "boolean"
+        },
+        "note": {
+          "type": "string"
+        },
+        "availability": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "status": {
+              "enum": [
+                "unavailable",
+                "weights_absent",
+                "external",
+                "running"
+              ]
+            },
+            "reason": {
+              "type": "string"
+            },
+            "legacy_clip_id": {
+              "type": "string"
+            }
+          }
+        }
+      }
+    },
+    "audio_clip_body": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "duration_s": {
+          "type": "number"
+        },
+        "sample_rate": {
+          "type": "integer"
+        },
+        "wav_url": {
+          "type": "string",
+          "pattern": "^/library/[A-Za-z0-9_.-]+$"
+        },
+        "n_words": {
+          "type": "integer"
+        },
+        "n_turns": {
+          "type": "integer"
+        }
+      }
+    },
+    "cube_ihdr_body": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "inv_hdr": {
+          "type": "number"
+        },
+        "duration_s": {
+          "type": "number"
+        },
+        "bin_seconds": {
+          "type": "number"
+        },
+        "cube_covers_s": {
+          "type": "number"
+        },
+        "cube_shape_f_t": {
+          "type": "array",
+          "items": {
+            "type": "integer"
+          },
+          "minItems": 2,
+          "maxItems": 2
+        },
+        "json_url": {
+          "type": "string",
+          "pattern": "^/library/[A-Za-z0-9_.-]+$"
+        },
+        "png_url": {
+          "type": "string",
+          "pattern": "^/library/[A-Za-z0-9_.-]+$"
+        }
+      }
+    },
+    "spectrogram_2d_body": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "png_url": {
+          "type": "string",
+          "pattern": "^/library/[A-Za-z0-9_.-]+$"
+        },
+        "seconds_per_px": {
+          "type": "number"
+        }
+      }
+    },
+    "layer_body": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "mean": {
+          "type": "number"
+        },
+        "std": {
+          "type": "number"
+        },
+        "p50": {
+          "type": "number"
+        },
+        "p90": {
+          "type": "number"
+        },
+        "active_frac": {
+          "type": "number"
+        },
+        "shape": {
+          "type": "array",
+          "items": {
+            "type": "integer"
+          }
+        }
+      }
+    },
+    "podcast_script_body": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "speakers": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "text_url": {
+          "type": "string"
+        }
+      }
+    },
+    "transcript_body": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "text_url": {
+          "type": "string"
+        }
+      }
+    },
+    "mcp_tool_body": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "description": {
+          "type": "string",
+          "maxLength": 400
+        }
+      }
+    },
+    "voice_profile_body": {
+      "$ref": "https://darbotlabs.dev/gen-audio/voice-profile.schema.json"
+    },
+    "card_body": {
+      "$ref": "https://github.com/darbotlabs/gen-audio/schemas/card-viewport.schema.json#/$defs/card"
+    }
+  }
+}

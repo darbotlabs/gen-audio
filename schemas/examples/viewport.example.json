@@ -5,6 +5,7 @@
   "cards": [
     {
       "id": "engine-kokoro",
+      "uid": "ga:card:wgi2proc543zzqzfa2ydlfbnl4",
       "kind": "EngineStatus",
       "title": "kokoro-onnx",
       "body": {
@@ -27,6 +28,7 @@
     },
     {
       "id": "engine-vibevoice",
+      "uid": "ga:card:bvm7yk6rqz5ir4ms5oej62rhra",
       "kind": "EngineStatus",
       "title": "VibeVoice",
       "body": {
@@ -37,6 +39,7 @@
     },
     {
       "id": "engine-magpie",
+      "uid": "ga:card:fijqhsk7xhpcgehxdeexal6jnm",
       "kind": "EngineStatus",
       "title": "Magpie",
       "body": {
@@ -47,6 +50,7 @@
     },
     {
       "id": "engine-pocket",
+      "uid": "ga:card:nmfqip53e5thxk43egqjzl27da",
       "kind": "EngineStatus",
       "title": "Pocket TTS",
       "body": {
@@ -57,6 +61,7 @@
     },
     {
       "id": "spec-fixture",
+      "uid": "ga:card:rt6iial7o6xf7oetud56lcmv54",
       "kind": "SpectrogramPanel",
       "title": "Spectrogram panel",
       "span": 2,
@@ -68,6 +73,7 @@
     },
     {
       "id": "cube-fixture",
+      "uid": "ga:card:eclezl34uhr3fuj6pukt7r6wkm",
       "kind": "Cube3D",
       "title": "Inverse-HDR cube",
       "span": 2,
@@ -79,6 +85,7 @@
     },
     {
       "id": "cast-sample",
+      "uid": "ga:card:u73p3l6n7w2lelaz6kzpflydjy",
       "kind": "PodcastCast",
       "title": "Sample cast",
       "body": {
@@ -99,6 +106,7 @@
     },
     {
       "id": "serve-node",
+      "uid": "ga:card:3kc35sblccksmpuwia6s5xobae",
       "kind": "ServeHealth",
       "title": "Node health",
       "body": {
@@ -112,6 +120,7 @@
     },
     {
       "id": "serve-gateway",
+      "uid": "ga:card:ayvizyvubrzigxewm2bjzjmvam",
       "kind": "ServeHealth",
       "title": "Shared gateway",
       "body": {
@@ -125,6 +134,7 @@
     },
     {
       "id": "bench-ref",
+      "uid": "ga:card:qngf7e45ixbikcdywhenhtoibe",
       "kind": "BenchmarkCompare",
       "title": "Compare notes",
       "span": 3,
@@ -172,6 +182,7 @@
     },
     {
       "id": "conn-mcp",
+      "uid": "ga:card:3hv5wsdt3mrcylczexvlnfk6li",
       "kind": "ConnectorStatus",
       "title": "MCP",
       "body": {
@@ -183,6 +194,7 @@
     },
     {
       "id": "conn-acp",
+      "uid": "ga:card:pwlbnygt4dzqdyvwc6fwj6basy",
       "kind": "ConnectorStatus",
       "title": "ACP",
       "body": {
@@ -194,6 +206,7 @@
     },
     {
       "id": "conn-harness",
+      "uid": "ga:card:ihkozqfhv44hffgriz6cu2rqre",
       "kind": "ConnectorStatus",
       "title": "Harness",
       "body": {
@@ -205,6 +218,7 @@
     },
     {
       "id": "conn-copilot",
+      "uid": "ga:card:oxeufq3ckwj4dxcvnv2uyih7ce",
       "kind": "ConnectorStatus",
       "title": "Copilot",
       "body": {
@@ -216,6 +230,7 @@
     },
     {
       "id": "conn-claude",
+      "uid": "ga:card:tg4uitpjeeazn7rnuxtxyxag2m",
       "kind": "ConnectorStatus",
       "title": "Claude",
       "body": {
@@ -227,6 +242,7 @@
     },
     {
       "id": "conn-gpt",
+      "uid": "ga:card:vyjhtyqvyqntcapxjbpgdhdd7i",
       "kind": "ConnectorStatus",
       "title": "GPT",
       "body": {
@@ -238,6 +254,7 @@
     },
     {
       "id": "conn-gemini",
+      "uid": "ga:card:yzvustpx2xm6tnm2skebvrr46i",
       "kind": "ConnectorStatus",
       "title": "Gemini",
       "body": {
@@ -249,6 +266,7 @@
     },
     {
       "id": "profile-anton",
+      "uid": "ga:card:tpwzqqirpudx6ovxgar7wts2dy",
       "kind": "VoiceProfile",
       "title": "Anton",
       "body": {
@@ -271,6 +289,7 @@
     },
     {
       "id": "profile-alice",
+      "uid": "ga:card:qulz3iikyxho672tdit55u6zeu",
       "kind": "VoiceProfile",
       "title": "Alice",
       "body": {
@@ -295,6 +314,7 @@
     },
     {
       "id": "profile-khortana",
+      "uid": "ga:card:f34lg4dv277pdlfsede7sr7ulm",
       "kind": "VoiceProfile",
       "title": "Khortana",
       "body": {
@@ -317,6 +337,7 @@
     },
     {
       "id": "profile-rocky",
+      "uid": "ga:card:pj4ogcnj42gzli7ql2daqz53em",
       "kind": "VoiceProfile",
       "title": "Rocky",
       "body": {
@@ -339,6 +360,7 @@
     },
     {
       "id": "lib-kokoro-onnx",
+      "uid": "ga:card:mkkpjlcv232f4yyyzkolrvw3yu",
       "kind": "LibraryClip",
       "title": "kokoro-onnx",
       "body": {
@@ -385,6 +407,7 @@
     },
     {
       "id": "lib-kokoro",
+      "uid": "ga:card:a2ti6pijkx6p2qp46yrsaxvwve",
       "kind": "LibraryClip",
       "title": "dayour/kokoro",
       "body": {
@@ -410,6 +433,7 @@
     },
     {
       "id": "lib-misaki-kokoro",
+      "uid": "ga:card:n7xzajd6l6oxupq4n5yeh5v4h4",
       "kind": "LibraryClip",
       "title": "misaki\u2192kokoro",
       "body": {
@@ -463,6 +487,7 @@
     },
     {
       "id": "lib-magpie",
+      "uid": "ga:card:z2ghwc3rentj2grxbsbp5najzy",
       "kind": "LibraryClip",
       "title": "Magpie",
       "body": {
@@ -474,6 +499,7 @@
     },
     {
       "id": "lib-vibevoice",
+      "uid": "ga:card:hyvutp3odbc2myw6ej22ov2a2e",
       "kind": "LibraryClip",
       "title": "VibeVoice",
       "body": {
@@ -485,6 +511,7 @@
     },
     {
       "id": "lib-pocket",
+      "uid": "ga:card:w4o2cnrusd3h5rqtjv7hs6jd5q",
       "kind": "LibraryClip",
       "title": "Pocket TTS",
       "body": {
@@ -496,6 +523,7 @@
     },
     {
       "id": "profile-optimus",
+      "uid": "ga:card:4qprunbbtl3h3teawtaq5agmc4",
       "kind": "VoiceProfile",
       "title": "Optimus Timelarp",
       "body": {
@@ -523,6 +551,7 @@
     },
     {
       "id": "lib-cube-explainer",
+      "uid": "ga:card:72pxivh23dgi6hruzry7hzykbu",
       "kind": "LibraryClip",
       "title": "Cube explainer",
       "body": {
