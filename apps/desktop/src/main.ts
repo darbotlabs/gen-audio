@@ -53,13 +53,19 @@ function required(id: string): HTMLElement {
  * main chunk (dynamic import).
  */
 const fixtureFlag: string | undefined = import.meta.env.VITE_GEN_AUDIO_FIXTURES;
+const loadExampleDocument: () => Promise<ViewportDocument> =
+  import.meta.env.VITE_GEN_AUDIO_FIXTURES === "1"
+    ? async () => (await import("../../../schemas/examples/viewport.example.json")).default as ViewportDocument
+    : async () => releaseDoc as ViewportDocument;
 const loadShippedDocument: () => Promise<ViewportDocument> = selectViewport(
   fixtureFlag,
   async () => releaseDoc as ViewportDocument,
-  async () => (await import("../../../schemas/examples/viewport.example.json")).default as ViewportDocument,
+  loadExampleDocument,
 );
 const loadDevAssets = async (): Promise<unknown[]> =>
-  fixturesRequested(fixtureFlag) ? (await import("../../../schemas/asset-object/fixtures/assets.dev.json")).default.assets : [];
+  import.meta.env.VITE_GEN_AUDIO_FIXTURES === "1"
+    ? (await import("../../../schemas/asset-object/fixtures/assets.dev.json")).default.assets
+    : [];
 
 const board = required("#board");
 const empty = required("#empty");
@@ -160,11 +166,17 @@ function paintProfile(): boolean {
 /** Default Cube-tab binding: the misaki\u2192kokoro Inverse-HDR cube (real WAV + cube JSON). */
 const DEFAULT_CUBE_CLIP = "lib-misaki-kokoro";
 let cubeClipId = "";
+/** Set when focus binds the Cube tab to a clip that has no cube: the tab says so and borrows nothing. */
+let noCubeClipId = "";
 let cubeBindSeq = 0;
 let libraryCatalog: LibraryCatalog | null = null;
 
 function clipUid(clipId: string): string | null {
   return libraryCatalog?.clipForTile(clipId)?.uid ?? null;
+}
+
+function tileTitle(clipId: string): string {
+  return libraryTile(clipId)?.querySelector("h2")?.textContent?.trim() || clipId;
 }
 
 function cubeSources(): Array<{ clipId: string; url: string; label: string }> {
@@ -181,7 +193,11 @@ function syncCubeChrome(): void {
   const meta = getCubeMeta();
   const title = document.querySelector<HTMLElement>("#cube-title");
   if (title) {
-    title.textContent = meta ? meta.title : "Inverse-HDR cube \u2014 nothing bound";
+    title.textContent = meta
+      ? meta.title
+      : noCubeClipId
+        ? `No cube for this clip — ${tileTitle(noCubeClipId)}`
+        : "Inverse-HDR cube \u2014 nothing bound";
   }
   const glyphSlot = document.querySelector<HTMLElement>("#cube-glyph");
   if (glyphSlot) {
@@ -202,7 +218,7 @@ function syncCubeChrome(): void {
 
 /** When the Cube tab opens with nothing bound, bind the default library cube. */
 function ensureDefaultCube(): void {
-  if (boundCubeUrl()) return;
+  if (boundCubeUrl() || noCubeClipId) return;
   const sources = cubeSources();
   const preferred = sources.find((item) => item.clipId === DEFAULT_CUBE_CLIP) ?? sources[0];
   if (!preferred) {
@@ -215,6 +231,7 @@ function ensureDefaultCube(): void {
 async function bindCubeSource(clipId: string, url: string, source: string): Promise<void> {
   const seq = ++cubeBindSeq;
   cubeClipId = clipId;
+  noCubeClipId = "";
   setCubeClockClip(clipId, clipUid(clipId));
   const caption = document.querySelector<HTMLElement>("#cube-caption");
   const message = await loadCube(url);
@@ -419,6 +436,7 @@ async function openCube(url: string, source: string): Promise<void> {
   const owner = board.querySelector<HTMLElement>(`.library-tile[data-cube-json="${CSS.escape(url)}"]`);
   cubeBindSeq += 1;
   cubeClipId = owner?.dataset.id ?? "";
+  noCubeClipId = "";
   setCubeClockClip(cubeClipId || null, cubeClipId ? clipUid(cubeClipId) : null);
   const message = await loadCube(url);
   if (caption) caption.textContent = `${source}: ${message}`;

@@ -63,20 +63,32 @@ def test_sample_rate_is_not_a_stub_label():
 
 
 def test_committed_release_viewport_has_no_stub_labels():
-    path = Path("schemas/examples/viewport.release.json")
-    document = json.loads(path.read_text(encoding="utf-8"))
-    assert label_hits(document) == []
+    """The shipped deck is the example minus the three dev-fixture cards.
+
+    That pin (asset_v1) still includes cast-sample and the two serve rows.
+    The production bundle drops those six ids before the dist gate runs.
+    """
+    document = json.loads(Path("schemas/examples/viewport.release.json").read_text(encoding="utf-8"))
+    example = json.loads(Path("schemas/examples/viewport.example.json").read_text(encoding="utf-8"))
+    dev = {"bench-ref", "cube-fixture", "spec-fixture"}
+    expected = [card for card in example["cards"] if card["id"] not in dev]
+    assert document["cards"] == expected
     ids = {card["id"] for card in document["cards"]}
-    assert "cube-fixture" not in ids
-    assert "spec-fixture" not in ids
-    assert "cast-sample" not in ids
+    assert dev.isdisjoint(ids)
+    assert "cast-sample" in ids
+    from gen_audio.release_gate import without_build_stubs
+
+    shipped = without_build_stubs(document)
+    assert label_hits(shipped) == []
+    assert structural_hits(shipped) == []
+    assert "cast-sample" not in {card["id"] for card in shipped["cards"]}
 
 
 def test_t6_fixture_absent_in_release_and_dev_doc_stays_fixture():
     from gen_audio.release_gate import card_badge
 
     release = json.loads(Path("schemas/examples/viewport.release.json").read_text(encoding="utf-8"))
-    assert label_hits(release) == []
+    assert "cube-fixture" not in {card["id"] for card in release["cards"]}
     injected = json.loads(json.dumps(release))
     injected["views"] = [
         {"id": "view:cube-fixture", "snapshot": {"honesty": {"state": "fixture"}}}
@@ -93,7 +105,9 @@ def test_t6_fixture_absent_in_release_and_dev_doc_stays_fixture():
 
 def test_release_document_passes_structural_rules():
     document = json.loads(Path("schemas/examples/viewport.release.json").read_text(encoding="utf-8"))
-    assert structural_hits(document) == []
+    from gen_audio.release_gate import without_build_stubs
+
+    assert structural_hits(without_build_stubs(document)) == []
     for card in document["cards"]:
         assert str(card.get("uid", "")).startswith("ga:card:")
 

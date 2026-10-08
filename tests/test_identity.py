@@ -6,7 +6,7 @@ import json
 import unicodedata
 from pathlib import Path
 
-from gen_audio.identity import SCHEMA_MAJOR, canonicalize, mint, ms_from_frames, round_half_up
+from gen_audio.identity import SCHEMA_MAJOR, bin_frames_inferred, canonicalize, mint, ms_from_frames, round_half_up
 
 ROOT = Path(__file__).resolve().parents[1]
 VECTORS = ROOT / "schemas" / "asset-object" / "vectors" / "v1.json"
@@ -22,6 +22,11 @@ def test_rounding_and_mint_vectors() -> None:
             assert ms_from_frames(vector["frames"], vector["rate"]) == vector["expect"]
         elif vector["op"] == "round_half_up":
             assert round_half_up(vector["value"] * vector["scale"]) == vector["expect"]
+        elif vector["op"] == "bin_frames_inferred":
+            assert (
+                bin_frames_inferred(vector["duration_s"], vector["sample_rate_hz"], vector["time_bins"])
+                == vector["expect"]
+            )
         else:
             raise AssertionError(vector["op"])
     for row in minted:

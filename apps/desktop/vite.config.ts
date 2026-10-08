@@ -33,6 +33,22 @@ function shipsInRelease(asset: unknown): boolean {
   return !STUB_PHRASE.test(JSON.stringify(record));
 }
 
+/** Drop stub cards from the release deck module so they are not in the JS bundle. The source file stays the example minus the dev-fixture assets (the Rust pin). */
+function stripReleaseDeck(): Plugin {
+  return {
+    name: "strip-release-deck",
+    apply: "build",
+    enforce: "pre",
+    transform(code, id) {
+      const path = id.split("?")[0]?.replaceAll("\\", "/");
+      if (!path?.endsWith("schemas/examples/viewport.release.json")) return null;
+      const document = JSON.parse(code) as { cards?: Array<{ id?: string }> };
+      document.cards = (document.cards ?? []).filter((card) => !STUB_CARD_IDS.has(String(card.id)));
+      return { code: JSON.stringify(document), map: null };
+    },
+  };
+}
+
 /** Vite copies public/ as-is. Drop fixture and placeholder cards from the bundle the release gate scans. */
 function stripReleaseCatalog(): Plugin {
   return {
@@ -68,7 +84,7 @@ function stripReleaseCatalog(): Plugin {
 
 export default defineConfig({
   clearScreen: false,
-  plugins: [stripReleaseCatalog()],
+  plugins: [stripReleaseDeck(), stripReleaseCatalog()],
   server: {
     port: 1420,
     strictPort: true,

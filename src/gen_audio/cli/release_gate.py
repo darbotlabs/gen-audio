@@ -6,7 +6,7 @@ import argparse
 import sys
 from pathlib import Path
 
-from gen_audio.release_gate import dist_hits, label_hits, structural_hits
+from gen_audio.release_gate import dist_hits, label_hits, structural_hits, without_build_stubs
 
 
 def _repo() -> Path:
@@ -27,7 +27,7 @@ def main(argv: list[str] | None = None) -> int:
     dist = args.dist or (root / "apps" / "desktop" / "dist")
     import json
 
-    document = json.loads(viewport.read_text(encoding="utf-8"))
+    document = without_build_stubs(json.loads(viewport.read_text(encoding="utf-8")))
     hits = label_hits(document) + structural_hits(document) + dist_hits(dist)
     if hits:
         print("release gate failed:")

@@ -26,6 +26,7 @@ def test_cube_duration_matches_the_buffer():
     assert document["duration_s"] == duration
     assert document["cube_revision"] == 2
     assert document["inv_hdr"] == measure(audio, rate).inv_hdr
+    assert 0.0 < document["layer_score"] < 1.0
     assert document["cube_shape_f_t"][0] == (1024 // 2 + 1) // 5
     assert document["bin_seconds"] == pytest.approx(33 * 256 / rate)
     assert document["cube_covers_s"] == pytest.approx(document["cube_shape_f_t"][1] * document["bin_seconds"])

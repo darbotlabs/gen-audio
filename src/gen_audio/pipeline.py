@@ -15,6 +15,7 @@ import numpy as np
 from gen_audio.asr_wer import AsrError, transcribe, word_error_rate
 from gen_audio.assets import asset_object
 from gen_audio.audio_io import read_wav, write_wav
+from gen_audio.cube_layers import layer_score
 from gen_audio.cube_revision import bandwidth_95, measure
 from gen_audio.identity import ms_from_frames, round_half_up
 from gen_audio.improve import improve
@@ -317,6 +318,7 @@ def cube_document(
         "duration_s": float(duration_s),
         "sample_rate": int(sample_rate),
         "inv_hdr": metrics.inv_hdr,
+        "layer_score": layer_score(matrices),
         "bw95_hz": metrics.bw95_hz,
         "n_fft": CUBE_N_FFT,
         "hop": CUBE_HOP,
