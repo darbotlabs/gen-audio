@@ -153,7 +153,14 @@ foreach ($marker in 'brand-row', 'ga-header-toolbar') {
     if ($html -notmatch [regex]::Escape($marker)) { throw "dist/index.html has no '$marker'; the embedded UI is not the Gen-Audio header build" }
 }
 if ($html -match '/src/main\.ts') { throw 'dist/index.html references /src/main.ts; that is the Vite dev page, not a production build' }
-Write-Step "frontend dist ok $($index.FullName)"
+# Release ships the Library deck only: no dev fixture assets, no example deck chunk.
+$distAssets = Get-Content -Raw -LiteralPath (Join-Path $desktop 'dist\library\assets.json')
+foreach ($claim in 'fixture_tone', 'reference_only') {
+    if ($distAssets -match [regex]::Escape("`"$claim`"")) { throw "dist/library/assets.json carries a dev fixture ($claim); release must not ship spec-fixture, cube-fixture or bench-ref" }
+}
+$exampleChunk = @(Get-ChildItem -LiteralPath (Join-Path $desktop 'dist\assets') -Filter 'viewport.example-*.js' -ErrorAction SilentlyContinue)
+if ($exampleChunk.Count -gt 0) { throw "dist has $($exampleChunk[0].Name); VITE_GEN_AUDIO_FIXTURES leaked into a release build" }
+Write-Step "frontend dist ok $($index.FullName) (no dev fixtures)"
 
 # No localhost: a dev build (no custom-protocol) makes tauri-build emit
 # cargo:rustc-cfg=dev, and that exe loads devUrl http://localhost:1420.
