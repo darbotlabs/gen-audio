@@ -1,10 +1,14 @@
 import releaseDoc from "../../../schemas/examples/viewport.release.json";
 import {
+  bindCompareCube,
   bindCube,
   boundCubeUrl,
   clearCube,
   cubeNameFromUrl,
+  exitCompare,
   getCubeMeta,
+  isCompareOn,
+  loadCompareCube,
   loadCube,
   onCubeClock,
   rebuildLayerMatrixUi,
@@ -17,7 +21,7 @@ import { bindFloatingPlayback, pauseClip, playClip, seekClip, setUserPlayReporte
 import { controlPlayOrigin, userPlayControl } from "./play-control";
 import { fixturesRequested, selectViewport } from "./viewport-source";
 import { glyphBadge } from "./glyph";
-import { loadLibraryCatalog, type LibraryCatalog } from "./library-assets";
+import { loadLibraryCatalog, mediaUrl, sourceSha256, type LibraryCatalog } from "./library-assets";
 import { decorateLibraryTiles } from "./livestrip";
 import { profilePreview, type ProfilePreview, type VoiceSelection } from "./profiles";
 import {
@@ -145,6 +149,8 @@ const DEFAULT_CUBE_CLIP = "lib-misaki-kokoro";
 let cubeClipId = "";
 let cubeBindSeq = 0;
 let libraryCatalog: LibraryCatalog | null = null;
+/** The user asked for Compare; a rebind to another clip re-enters it for that clip (or says why not). */
+let compareWanted = false;
 
 function clipUid(clipId: string): string | null {
   return libraryCatalog?.clipForTile(clipId)?.uid ?? null;
@@ -175,6 +181,14 @@ function syncCubeChrome(): void {
   }
   const select = document.querySelector<HTMLSelectElement>("#cube-source");
   if (select && cubeClipId) select.value = cubeClipId;
+  const compareToggle = document.querySelector<HTMLButtonElement>("#cube-compare-toggle");
+  if (compareToggle) {
+    const available = Boolean(compareCubeFor(cubeClipId));
+    compareToggle.disabled = !isCompareOn() && !available;
+    compareToggle.title = available || isCompareOn()
+      ? "Library formulas (rev 3) beside pipeline formulas (rev 2, PR #4) on the same WAV, one playback slice"
+      : "No comparison cube for this clip in assets.json";
+  }
   const play = document.querySelector<HTMLButtonElement>("#cube-play");
   if (play) {
     const tile = cubeClipId ? board.querySelector<HTMLElement>(`.card[data-id="${CSS.escape(cubeClipId)}"]`) : null;
@@ -204,6 +218,56 @@ async function bindCubeSource(clipId: string, url: string, source: string): Prom
   if (seq !== cubeBindSeq) return; // a newer binding won
   if (caption) caption.textContent = source === "default" ? message : `${source}: ${message}`;
   syncCubeChrome();
+  if (compareWanted) await enterCompare();
+}
+
+/** The bound clip's comparison cube envelope (release assets.json only; no stand-in). */
+function compareCubeFor(clipId: string) {
+  const uid = clipId ? clipUid(clipId) : null;
+  return uid && libraryCatalog ? libraryCatalog.compareCubesFor(uid)[0] ?? null : null;
+}
+
+/**
+ * Compare mode: the bound clip's Library cube beside the same WAV's
+ * pipeline_r2 cube. Both slices follow the one cube clock (setCubeScrub),
+ * which the bound clip's audio drives, so Play/Pause/Seek/scrub move both.
+ */
+async function enterCompare(): Promise<void> {
+  const caption = document.querySelector<HTMLElement>("#cube-caption");
+  const meta = getCubeMeta();
+  const compare = compareCubeFor(cubeClipId);
+  const url = compare ? mediaUrl(compare, "cube_json") : null;
+  if (!meta || !compare || !url) {
+    exitCompare();
+    if (caption) {
+      caption.textContent = meta
+        ? `No comparison cube for ${cubeClipId || "this cube"} in assets.json. Nothing is drawn in its place.`
+        : "Bind a library cube before comparing.";
+    }
+    syncCubeChrome();
+    return;
+  }
+  const seq = cubeBindSeq;
+  const result = await loadCompareCube(url, {
+    primary: sourceSha256(libraryCatalog?.cubeForUrl(meta.url)),
+    compare: sourceSha256(compare),
+  });
+  if (seq !== cubeBindSeq) return;
+  if (caption) caption.textContent = result.ok ? result.message : result.reason;
+  status.textContent = result.ok ? `Compare on: one slice follows ${cubeClipId}` : result.reason;
+  if (result.ok) {
+    // Two half-width cubes: fold the layer matrix away (the Layers button reopens it).
+    const matrix = document.querySelector("#cube-layer-matrix");
+    const layersToggle = document.querySelector<HTMLButtonElement>("#cube-matrix-toggle");
+    if (matrix && !matrix.classList.contains("is-collapsed")) {
+      matrix.classList.add("is-collapsed");
+      if (layersToggle) {
+        layersToggle.textContent = "Layers \u25b8";
+        layersToggle.setAttribute("aria-expanded", "false");
+      }
+    }
+  }
+  syncCubeChrome();
 }
 
 /**
@@ -228,6 +292,16 @@ function bindCubeCanvas(): void {
   if (canvas.dataset.bound === "1") return;
   canvas.dataset.bound = "1";
   bindCube(canvas, document.querySelector<HTMLCanvasElement>("#cube-labels"));
+  const compareCanvas = document.querySelector<HTMLCanvasElement>("#cube-compare-viewport");
+  if (compareCanvas) bindCompareCube(compareCanvas, document.querySelector<HTMLCanvasElement>("#cube-compare-labels"));
+  document.querySelector<HTMLButtonElement>("#cube-compare-toggle")?.addEventListener("click", () => {
+    compareWanted = !isCompareOn();
+    if (compareWanted) void enterCompare();
+    else {
+      exitCompare();
+      syncCubeChrome();
+    }
+  });
   rebuildLayerMatrixUi();
   const select = document.querySelector<HTMLSelectElement>("#cube-source");
   if (select) {
@@ -377,6 +451,7 @@ async function openCube(url: string, source: string): Promise<void> {
   const message = await loadCube(url);
   if (caption) caption.textContent = `${source}: ${message}`;
   syncCubeChrome();
+  if (compareWanted) await enterCompare();
   // The Pipeline cube-fixture card keeps its FIXTURE mark: its canvas still paints the
   // fixture tone. Only the Cube tab stage (badge "Library ...") draws the library cube.
   status.textContent = `Cube tab bound (${source}). The Pipeline cube card stays FIXTURE.`;

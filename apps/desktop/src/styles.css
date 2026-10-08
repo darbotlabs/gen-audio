@@ -845,6 +845,69 @@ th, td { text-align: left; padding: 0.12rem 0.25rem; border-bottom: 1px solid va
 }
 .cube-clock.is-beyond { color: var(--warn); }
 
+/* Cube tab Compare mode: two cubes of one WAV side by side, shared axes, one slice. */
+.cube-stage canvas[hidden], .cube-stage img[hidden], .cube-pane-head[hidden] { display: none; }
+.cube-stage canvas.cube-compare-canvas, .cube-stage canvas.cube-compare-labels {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 50%;
+  width: 50%;
+  height: 100%;
+  max-height: none;
+  border-radius: 0;
+  display: block;
+}
+.cube-stage canvas.cube-compare-canvas { background: #090b12; touch-action: none; cursor: grab; }
+.cube-stage canvas.cube-compare-canvas:active { cursor: grabbing; }
+.cube-stage.is-compare canvas#cube-viewport, .cube-stage.is-compare canvas#cube-labels { right: auto; width: 50%; }
+.cube-stage.is-compare .cube-fallback:not(.cube-compare-fallback) { width: 50%; }
+.cube-stage .cube-compare-fallback { left: 50%; width: 50%; }
+.cube-stage.is-compare::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 50%;
+  width: 1px;
+  z-index: 1;
+  background: rgba(138, 243, 226, 0.35);
+  pointer-events: none;
+}
+.cube-pane-head {
+  top: 4.4rem;
+  max-width: calc(50% - 1rem);
+  padding: 0.2rem 0.55rem;
+  font-size: 0.74rem;
+  font-weight: 650;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-variant-numeric: tabular-nums;
+}
+.cube-pane-head-primary { left: 0.5rem; color: #8af3e2; }
+.cube-pane-head-compare { left: calc(50% + 0.5rem); color: #ffd27a; border-color: rgba(255, 210, 122, 0.4); }
+.cube-stage.is-compare .cube-legend {
+  top: 2.35rem;
+  display: flex;
+  gap: 0.6rem;
+  padding: 0.18rem 0.5rem;
+}
+.cube-stage.is-compare .cube-badge { top: 2.35rem; left: auto; right: 0.5rem; transform: none; }
+.cube-stage.is-compare .cube-layer-matrix { top: 6.3rem; width: min(18rem, 30%); }
+.cube-compare-clock {
+  left: 50%;
+  transform: translateX(-50%);
+  bottom: 3.75rem;
+  padding: 0.22rem 0.6rem;
+  font-size: 0.74rem;
+  color: #29d3ff;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.cube-compare-clock:empty { display: none; }
+#cube-compare-toggle[aria-pressed="true"] { background: #1d4e5a; color: #e7fff6; }
+
 /* ---- Asset glyph badge (asset object model v1). Classes only: CSP style-src 'self'. ---- */
 .ga-glyph {
   display: inline-flex;
