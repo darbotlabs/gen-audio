@@ -288,7 +288,10 @@ test("second ruling 5 + Q12: the spatial cube's glyph never copies; its labelled
   assert.deepEqual(copied, [cube!.uid], "the labelled button copied the cube uid");
   assert.deepEqual(announced, [[cube!.uid, true]]);
   render.fillCubeGlyph(slot!, null, () => {});
-  assert.equal(slot!.childElementCount, 0, "nothing bound: the slot is empty, no stand-in uid");
+  // Low (c): childElementCount alone lets stand-in text pass (mutant B5).
+  assert.equal(slot!.childElementCount, 0, "nothing bound: no element children");
+  assert.equal((slot!.textContent ?? "").trim(), "", "nothing bound: no stand-in text");
+  assert.equal(slot!.querySelector("button"), null, "nothing bound: no Copy cube uid button");
 });
 
 function profileTile(board: HTMLElement): HTMLElement {
