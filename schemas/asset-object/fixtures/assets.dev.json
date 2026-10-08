@@ -167,7 +167,7 @@
               "value": "826.9"
             }
           ],
-          "sourceNote": "Reference figures from the 2026-10-06 GenAID podcast compare notes. Not measured in this repository."
+          "sourceNote": "Reference figures from the 2026-10-06 GenAID podcast compare notes. Not remeasured in this repository."
         },
         "id": "bench-ref",
         "kind": "BenchmarkCompare",
@@ -300,6 +300,6 @@
     "card:serve-node": "ga:card:3kc35sblccksmpuwia6s5xobae",
     "card:spec-fixture": "ga:card:rt6iial7o6xf7oetud56lcmv54"
   },
-  "note": "Dev/test-only assets (honesty.fixture or fixture_tone / reference_only / sample_content claims). Never shipped; the desktop shows these cards only with VITE_GEN_AUDIO_FIXTURES=1. Regenerate with build_assets.",
+  "note": "Dev/test-only assets (honesty.fixture, fixture_tone / reference_only / sample_content claims, or stand-in cards). Never shipped; the desktop shows these cards only with VITE_GEN_AUDIO_FIXTURES=1. Regenerate with build_assets.",
   "schema_version": "1.0.0"
 }

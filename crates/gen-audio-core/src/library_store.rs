@@ -459,10 +459,10 @@ fn upsert(root: &Path, incoming: Vec<Value>) -> Result<(), String> {
 }
 
 /// Copy the cube JSON provenance onto the envelope in the library-cube shape:
-/// `generator` is the module path, `layer_method` is the method name, and
-/// `params` are the generator parameters. This base records the module in
-/// `provenance.module`; a document that already stores the path in
-/// `generator` (the library-cube shape) is copied as-is. Missing keys stay absent.
+/// `generator` is the module path, `generator_sha256` is the content hash of
+/// that file, `layer_method` is the method name, and `params` are the
+/// generator parameters. Missing keys stay absent. A document that only
+/// recorded `module` still fills `generator` from that path.
 fn apply_cube_provenance(provenance: &mut Value, cube: &Value) {
     let Some(recorded) = cube.get("provenance").and_then(Value::as_object) else {
         return;
@@ -470,18 +470,21 @@ fn apply_cube_provenance(provenance: &mut Value, cube: &Value) {
     if let Some(method) = recorded.get("layer_method").filter(|value| value.is_string()) {
         provenance["layer_method"] = method.clone();
     }
-    let module = recorded
-        .get("module")
+    if let Some(hash) = recorded.get("generator_sha256").filter(|value| value.is_string()) {
+        provenance["generator_sha256"] = hash.clone();
+    }
+    let generator = recorded
+        .get("generator")
         .and_then(Value::as_str)
         .filter(|text| !text.is_empty())
         .or_else(|| {
             recorded
-                .get("generator")
+                .get("module")
                 .and_then(Value::as_str)
                 .filter(|text| !text.is_empty())
         });
-    if let Some(module) = module {
-        provenance["generator"] = json!(module);
+    if let Some(generator) = generator {
+        provenance["generator"] = json!(generator);
     }
     if let Some(params) = recorded.get("params").filter(|value| value.is_object()) {
         provenance["params"] = params.clone();
@@ -802,13 +805,17 @@ mod tests {
         let _ = fs::remove_dir_all(&work);
         fs::create_dir_all(&work).unwrap();
         let wav_bytes = b"RIFF-library-clip";
-        let json_bytes = br#"{"speakers":"unresolved","duration_s":1.0,"provenance":{"module":"gen_audio.cube_layers","generator":"gen_audio.cube_layers.library_cube","layer_method":"library_r3","params":{"n_fft":1024,"hop":256}}}"#;
+        let hash = "ab".repeat(32);
+        let json_bytes = format!(
+            r#"{{"speakers":"unresolved","duration_s":1.0,"provenance":{{"generator":"src/gen_audio/cube_layers.py","generator_sha256":"{hash}","layer_method":"library_r3","params":{{"n_fft":1024,"hop":256}}}}}}"#
+        )
+        .into_bytes();
         let png_bytes = b"\x89PNG-cube";
         fs::write(work.join("fitted.wav"), wav_bytes).unwrap();
-        fs::write(work.join("cube.json"), json_bytes).unwrap();
+        fs::write(work.join("cube.json"), &json_bytes).unwrap();
         fs::write(work.join("cube.png"), png_bytes).unwrap();
         let wav_sha = sha256_hex(wav_bytes);
-        let json_sha = sha256_hex(json_bytes);
+        let json_sha = sha256_hex(&json_bytes);
         let png_sha = sha256_hex(png_bytes);
         let wav_fields = json!({"engine": "kokoro_onnx", "sample_rate_hz": 24000, "duration_ms": 1000});
         let wav = asset::mint(
@@ -828,7 +835,9 @@ mod tests {
             "covers_ms": 1000,
             "inv_hdr_ppm": 70211,
             "cube_revision": 3,
-            "n_points": 1
+            "n_points": 1,
+            "generator_sha256": hash,
+            "layer_method": "library_r3"
         });
         let cube = asset::mint(
             "cube_ihdr",
@@ -868,8 +877,12 @@ mod tests {
                 assert_eq!(roles, ["cube_json", "cube_png"]);
                 assert!(asset["honesty"]["claims"].as_array().unwrap().iter().any(|claim| claim == "library_cube"));
                 assert_eq!(asset["provenance"]["layer_method"], "library_r3");
-                assert_eq!(asset["provenance"]["generator"], "gen_audio.cube_layers");
+                assert_eq!(asset["provenance"]["generator"], "src/gen_audio/cube_layers.py");
+                assert_eq!(asset["provenance"]["generator_sha256"], hash);
+                assert_eq!(asset["fields"]["generator_sha256"], hash);
+                assert_eq!(asset["fields"]["layer_method"], "library_r3");
                 assert_eq!(asset["provenance"]["params"]["n_fft"], 1024);
+                assert!(asset["provenance"].get("module").is_none());
             }
             other => panic!("expected the imported cube, got {other:?}"),
         }

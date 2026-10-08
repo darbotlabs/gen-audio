@@ -9,7 +9,8 @@ import pytest
 
 from gen_audio.asr_wer import AsrError
 from gen_audio.assets import asset_object
-from gen_audio.audio_io import write_wav
+from gen_audio.audio_io import read_wav, write_wav
+from gen_audio.cube_layers import library_cube
 from gen_audio.improve import improve
 from gen_audio.pipeline import run_pipeline
 from gen_audio.speakers import (
@@ -167,3 +168,35 @@ def test_pipeline_cube_uses_remapped_sample_offsets(tmp_path, monkeypatch):
     assert len(document["speaker_idx"]) == document["cube_shape_f_t"][1]
     assert set(document["speaker_idx"]) <= {0, 1, 255}
     assert 255 in document["speaker_idx"]
+    fitted, fitted_sr = read_wav(tmp_path / "fitted.wav")
+    library, _cloud = library_cube(
+        np.asarray(fitted, dtype=np.float64),
+        fitted_sr,
+        stem="pipeline",
+        engine="tone",
+        source_sha256=document["source_sha256"],
+    )
+    shared = (
+        "layers",
+        "layer_score",
+        "inv_hdr",
+        "points_preview",
+        "cube_shape_f_t",
+        "downsample_sf_st",
+        "bin_seconds",
+        "cube_covers_s",
+        "stft_frames",
+        "n_points",
+        "n_points_source",
+        "n_points_source_per_layer",
+        "cube_revision",
+        "n_fft",
+        "hop",
+        "sample_rate",
+        "source_sha256",
+        "duration_s",
+        "provenance",
+    )
+    assert len(shared) == 19
+    for key in shared:
+        assert document[key] == library[key], key

@@ -20,6 +20,16 @@ export const LIBRARY_STATUSES = ["ok", "running", "weights_absent", "unavailable
 /** Same grammar as asset.ts parseUid, narrowed to kind card (pad bits zero). */
 export const CARD_UID = /^ga:card:[a-z2-7]{25}[aeimquy4]$/;
 
+function benchmarkNoteNamesTheGap(note: string): boolean {
+  const lower = note.toLowerCase();
+  // The example deck's phrase stays in the dev build only. Vite constant-folds
+  // this flag, so a release bundle does not contain that phrase.
+  if (import.meta.env.VITE_GEN_AUDIO_FIXTURES === "1") {
+    return lower.includes("not remeasured") || lower.includes("not measured");
+  }
+  return lower.includes("not measured");
+}
+
 export type CardKind = (typeof CARD_KINDS)[number];
 
 export interface ViewportCard {
@@ -131,7 +141,8 @@ function validateBody(id: string, kind: string, body: Record<string, unknown>): 
   if (kind === "BenchmarkCompare") {
     if (typeof body.measuredHere !== "boolean") return "benchmark measuredHere must be a boolean";
     if (body.measuredHere === false) {
-      if (!boundedString(body.sourceNote, 12, 400) || !String(body.sourceNote).toLowerCase().includes("not measured")) {
+      const note = String(body.sourceNote ?? "");
+      if (!boundedString(note, 12, 400) || !benchmarkNoteNamesTheGap(note)) {
         return "benchmark sourceNote must say the figures were not measured in this build";
       }
     }

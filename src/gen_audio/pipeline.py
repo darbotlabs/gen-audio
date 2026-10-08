@@ -15,7 +15,7 @@ import numpy as np
 from gen_audio.asr_wer import AsrError, transcribe, word_error_rate
 from gen_audio.assets import asset_object, sha256_file
 from gen_audio.audio_io import read_wav, write_wav
-from gen_audio.cube_layers import CubeParams, library_cube, write_cube_png
+from gen_audio.cube_layers import library_cube, write_cube_png
 from gen_audio.cube_revision import bandwidth_95, measure
 from gen_audio.identity import ms_from_frames, round_half_up
 from gen_audio.improve import improve
@@ -177,6 +177,8 @@ def run_pipeline(
         "n_points": int(cube_doc["n_points"]),
         "n_fft": int(cube_doc["n_fft"]),
         "hop_frames": int(cube_doc["hop"]),
+        "generator_sha256": cube_doc["provenance"]["generator_sha256"],
+        "layer_method": cube_doc["provenance"]["layer_method"],
     }
     cube_asset = asset_object(
         cube_json_path,
@@ -279,8 +281,6 @@ def run_pipeline(
     }
 
 
-# Generated cubes report revision 3: the cube_layers set the Library misaki cube uses.
-GENERATED_CUBE_REVISION = 3
 # Paths library_cube writes for a shipped Library stem. A pipeline cube is not
 # one of those files, so they stay off the generated document.
 _LIBRARY_STEM_KEYS = frozenset({"source_wav", "title", "pngUrl", "wavUrl"})
@@ -299,50 +299,29 @@ def cube_document(
 ) -> dict:
     """Inverse-HDR bitdot cube on the samples that were passed in.
 
-    Layers, the downsample, the preview points, ``layer_score``, and the PNG
-    come from :func:`gen_audio.cube_layers.library_cube` and
-    :func:`gen_audio.cube_layers.write_cube_png`. ``inv_hdr`` is that
-    function's rms/peak. ``bw95_hz`` is :func:`gen_audio.cube_revision.measure`.
-
-    ``library_cube`` on this base does not return a provenance block or
-    ``generator_sha256`` (that hash lands with PR #5). The block below records
-    the module, the layer method, and the params actually passed. If the
-    library document already carries provenance, those keys win.
+    Layers, the downsample, the preview points, ``layer_score``, the PNG, and
+    provenance come from :func:`gen_audio.cube_layers.library_cube` and
+    :func:`gen_audio.cube_layers.write_cube_png`. Provenance is that
+    function's block unchanged: generator path, ``generator_sha256``,
+    ``layer_method``, and params. ``inv_hdr`` is rms/peak. ``bw95_hz`` is
+    :func:`gen_audio.cube_revision.measure`.
     """
     values = np.asarray(audio, dtype=np.float64).reshape(-1)
     rate = int(sample_rate)
     if values.size == 0 or rate <= 0:
         raise ValueError("audio is too short for a cube")
-    params = CubeParams()
     doc, cloud = library_cube(
         values,
         rate,
         stem="pipeline",
         engine=engine,
-        revision=GENERATED_CUBE_REVISION,
-        params=params,
+        source_sha256=source_sha256,
     )
-    library_provenance = doc.get("provenance") if isinstance(doc.get("provenance"), dict) else {}
-    document = {key: value for key, value in doc.items() if key not in _LIBRARY_STEM_KEYS and key != "provenance"}
+    document = {key: value for key, value in doc.items() if key not in _LIBRARY_STEM_KEYS}
     document["duration_s"] = float(duration_s)
     document["bw95_hz"] = measure(values, rate).bw95_hz
     document["source_sha256"] = source_sha256
     document["derived_from"] = list(derived_from)
-    provenance = {
-        "module": "gen_audio.cube_layers",
-        "generator": "gen_audio.cube_layers.library_cube",
-        "layer_method": "library_r3",
-        "params": {
-            "n_fft": params.n_fft,
-            "hop": params.hop,
-            "max_f": params.max_f,
-            "max_t": params.max_t,
-            "thresh": params.thresh,
-            "per_layer": params.per_layer,
-        },
-    }
-    provenance.update(library_provenance)
-    document["provenance"] = provenance
     shape = document["cube_shape_f_t"]
     document.update(
         _speech_facts(

@@ -611,7 +611,7 @@ mod tests {
             });
             let mut stream = TcpStream::connect(addr).unwrap();
             let req = format!(
-                "GET /control/stream?after={}&wait=0 HTTP/1.1\r\nHost: 127.0.0.1\r\nConnection: close\r\n\r\n",
+                "GET /control/stream?after={}&wait=0 HTTP/1.1\r\nHost: {addr}\r\nConnection: close\r\n\r\n",
                 seq.saturating_sub(1)
             );
             stream.write_all(req.as_bytes()).unwrap();
@@ -807,7 +807,7 @@ mod tests {
             handle_connection(&Server::boot(), stream).unwrap();
         });
         let mut stream = TcpStream::connect(addr).unwrap();
-        let req = format!("GET /control/stream?after={anchor}&wait=0 HTTP/1.1\r\nHost: 127.0.0.1\r\nConnection: close\r\n\r\n");
+        let req = format!("GET /control/stream?after={anchor}&wait=0 HTTP/1.1\r\nHost: {addr}\r\nConnection: close\r\n\r\n");
         stream.write_all(req.as_bytes()).unwrap();
         let mut text = String::new();
         stream.read_to_string(&mut text).unwrap();

@@ -71,8 +71,10 @@ test("contract: the Play button's ui_playback body is schemas/examples/control/d
   assert.deepEqual(mcpRequestBody(request.name, request.args), fixture);
   // main.ts posts through these exact builders (Play click and Cube tab Play).
   const main = readFileSync(repo("apps/desktop/src/main.ts"), "utf8");
-  // mcpCall goes through postMcp, which posts exactly mcpRequestBody (tested against a live listener below).
-  assert.match(main, /postMcp\(fetch, "http:\/\/127\.0\.0\.1:8765\/mcp", name, args, mcpFailures\)/);
+  // mcpCall goes through postMcp on the discovered origin (8765–8770), which posts
+  // exactly mcpRequestBody (tested against a live listener below).
+  assert.match(main, /postMcp\(fetch, `\$\{origin\}\/mcp`, name, args, mcpFailures\)/);
+  assert.match(main, /const origin = await mcpReady/);
   const control = readFileSync(repo("apps/desktop/src/play-control.ts"), "utf8");
   assert.match(control, /body: JSON\.stringify\(mcpRequestBody\(name, args\)\)/);
   assert.equal(main.match(/const request = userPlayControl\(/g)?.length, 2);
@@ -184,18 +186,18 @@ test("observability: network errors and JSON-RPC errors are counted too; success
 test("csp: connect-src is exactly self, Tauri IPC and the MCP origin mcpCall posts to", () => {
   const csp: string = load("apps/desktop/src-tauri/tauri.conf.json").app.security.csp;
   const directives = new Map(csp.split(";").map((part) => part.trim().split(/\s+/)).map(([name, ...values]) => [name, values]));
+  const ports = ["8765", "8766", "8767", "8768", "8769", "8770"];
   assert.deepEqual(directives.get("connect-src"), [
     "'self'",
     "ipc:",
     "http://ipc.localhost",
-    "http://127.0.0.1:8765",
-    "http://localhost:8765",
+    ...ports.map((port) => `http://127.0.0.1:${port}`),
+    ...ports.map((port) => `http://localhost:${port}`),
   ]);
   assert.ok(!csp.includes("*"), csp);
   const main = readFileSync(repo("apps/desktop/src/main.ts"), "utf8");
-  const posted = main.match(/postMcp\(fetch, "([^"]+)"/)?.[1];
-  assert.ok(posted, "mcpCall's URL");
-  assert.ok(directives.get("connect-src")?.includes(new URL(posted).origin), posted);
+  assert.match(main, /postMcp\(fetch, `\$\{origin\}\/mcp`, name, args, mcpFailures\)/);
+  assert.equal(main.match(/fetch\(/g)?.length, 1, "library media is the only other fetch");
   // Only connect-src changed.
   assert.deepEqual(directives.get("default-src"), ["'self'"]);
   assert.deepEqual(directives.get("script-src"), ["'self'"]);

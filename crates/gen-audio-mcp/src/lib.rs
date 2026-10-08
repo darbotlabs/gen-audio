@@ -892,7 +892,7 @@ mod tests {
     }
 
     fn bus_events_for(tile: &str, after: u64) -> Vec<Value> {
-        control::since(after).1.into_iter().filter(|event| event["args"]["tileId"] == tile).collect()
+        control::since(after).events.into_iter().filter(|event| event["args"]["tileId"] == tile).collect()
     }
 
     #[test]
@@ -900,7 +900,7 @@ mod tests {
         let server = Server::boot();
         let request: Value = serde_json::from_str(DESKTOP_USER_PLAY).unwrap();
         let tile = request["params"]["arguments"]["tileId"].as_str().unwrap().to_string();
-        let before = control::since(0).0;
+        let before = control::since(0).cursor;
         let response = handle(&server, request).unwrap().unwrap();
         assert!(response.get("error").is_none(), "the server rejected the desktop's Play payload: {response}");
         let body = tool_text(&response);
@@ -917,7 +917,7 @@ mod tests {
         request["params"]["arguments"]["tileId"] = json!("contract-origin-bad");
         for bad in [json!("agent"), json!("mcp"), json!(""), json!(5), json!(null)] {
             request["params"]["arguments"]["origin"] = bad.clone();
-            let before = control::since(0).0;
+            let before = control::since(0).cursor;
             let response = handle(&server, request.clone()).unwrap().unwrap();
             assert_eq!(response["error"]["code"], -32602, "origin {bad}: {response}");
             assert!(bus_events_for("contract-origin-bad", before).is_empty(), "origin {bad} reached the bus");
@@ -944,7 +944,7 @@ mod tests {
         let fixture: Value = serde_json::from_str(SEEK_ROUND_TRIP).unwrap();
         let seek = fixture["agentSeek"].clone();
         let seconds = seek["params"]["arguments"]["seconds"].as_f64().unwrap();
-        let before = control::since(0).0;
+        let before = control::since(0).cursor;
         let agent = std::thread::spawn(move || {
             let server = Server::boot();
             handle(&server, seek).unwrap().unwrap()
@@ -952,7 +952,7 @@ mod tests {
         // The window: find the queued seek, then post the fixture report for its seq.
         let deadline = std::time::Instant::now() + std::time::Duration::from_secs(4);
         let seq = loop {
-            let found = control::since(before).1.into_iter().find(|event| {
+            let found = control::since(before).events.into_iter().find(|event| {
                 event["op"] == "playback" && event["args"]["action"] == "seek" && event["args"]["seconds"].as_f64() == Some(seconds)
             });
             if let Some(event) = found {

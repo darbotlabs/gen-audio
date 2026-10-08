@@ -297,14 +297,7 @@ fn desktop_addr() -> Result<Option<String>, String> {
     Ok(Some(addr))
 }
 
-fn raw_desktop_addr() -> Option<String> {
-    #[cfg(test)]
-    {
-        let overridden = DESKTOP_ADDR.with(|slot| slot.borrow().clone());
-        if overridden.is_some() {
-            return overridden;
-        }
-    }
+fn read_configured_addr() -> Option<String> {
     if let Ok(addr) = std::env::var("GEN_AUDIO_MCP_ADDR") {
         let addr = addr.trim();
         if !addr.is_empty() {
@@ -312,6 +305,29 @@ fn raw_desktop_addr() -> Option<String> {
         }
     }
     gen_audio_core::paths::read_mcp_addr()
+}
+
+fn raw_desktop_addr() -> Option<String> {
+    #[cfg(test)]
+    {
+        let overridden = DESKTOP_ADDR.with(|slot| slot.borrow().clone());
+        if overridden.is_some() {
+            return overridden;
+        }
+        // GEN_AUDIO_MCP_ADDR is process-global. Tests that swap it hold this
+        // lock across the swap and the read, so a parallel test cannot observe
+        // the temporary non-loopback value.
+        let _guard = mcp_addr_env_lock();
+        return read_configured_addr();
+    }
+    #[cfg(not(test))]
+    read_configured_addr()
+}
+
+#[cfg(test)]
+fn mcp_addr_env_lock() -> std::sync::MutexGuard<'static, ()> {
+    static LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+    LOCK.lock().unwrap_or_else(|poison| poison.into_inner())
 }
 
 fn ensure_loopback_target(addr: &str) -> Result<(), String> {
@@ -803,9 +819,10 @@ mod tests {
     #[test]
     fn desktop_target_must_be_loopback() {
         bind_desktop_for_test(None);
+        let _guard = mcp_addr_env_lock();
         let saved = std::env::var("GEN_AUDIO_MCP_ADDR").ok();
         std::env::set_var("GEN_AUDIO_MCP_ADDR", "10.1.8.70:8765");
-        let err = desktop_addr().unwrap_err();
+        let err = ensure_loopback_target(&read_configured_addr().expect("env addr")).unwrap_err();
         assert!(err.contains("loopback") || err.contains("non-loopback"), "{err}");
         match saved {
             Some(value) => std::env::set_var("GEN_AUDIO_MCP_ADDR", value),

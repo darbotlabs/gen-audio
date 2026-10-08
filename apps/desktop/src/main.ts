@@ -15,7 +15,7 @@ import { isClipPlaying, seekActiveFraction, seekClipFraction, setCubeClockClip }
 import { applyClipNames, harvestNames } from "./library-meta";
 import { bindFloatingPlayback, pauseClip, playClip, releaseAllSeekBlobs, releaseDetachedTransports, renderTransport, seekClipOutcome, setUserPlayReporter } from "./playback";
 import { controlPlayOrigin, McpFailureCounter, postMcp, seekReportControl, userPlayControl } from "./play-control";
-import { fixturesRequested, selectViewport } from "./viewport-source";
+import { selectViewport } from "./viewport-source";
 import { glyphBadge } from "./glyph";
 import { loadLibraryCatalog, type LibraryCatalog } from "./library-assets";
 import { decorateLibraryTiles } from "./livestrip";

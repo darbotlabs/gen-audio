@@ -153,7 +153,11 @@ fn validate_body(id: &str, kind: &str, body: &Value) -> Result<(), String> {
             let measured = obj.get("measuredHere").and_then(Value::as_bool).ok_or("benchmark measuredHere must be a boolean")?;
             if !measured {
                 let note = expect_string(obj.get("sourceNote"), "sourceNote", 12, 400)?;
-                if !note.to_ascii_lowercase().contains("not measured") {
+                let lower = note.to_ascii_lowercase();
+                // The example deck says "not remeasured". A release note may say
+                // "not measured". Either phrase is the honesty statement; a note
+                // with neither is rejected.
+                if !lower.contains("not remeasured") && !lower.contains("not measured") {
                     return Err("benchmark sourceNote must say the figures were not measured in this build".into());
                 }
             }
