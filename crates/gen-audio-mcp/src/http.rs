@@ -28,6 +28,9 @@ pub const ALLOWED_ORIGINS: &[&str] = &[
 
 pub fn serve(addr: &str) -> std::io::Result<()> {
     let listener = bind_listener(addr)?;
+    if let Ok(bound) = listener.local_addr() {
+        let _ = gen_audio_core::paths::write_mcp_addr(&bound.to_string());
+    }
     accept_loop(listener);
     Ok(())
 }
@@ -79,6 +82,57 @@ pub fn initialize_handshake(addr: &str) -> Result<Value, String> {
         return Err("handshake serverInfo.name".into());
     }
     Ok(value)
+}
+
+/// POST one `tools/call` to a running desktop listener and return the tool JSON.
+pub fn tools_call(addr: &str, name: &str, args: &Value) -> Result<Value, String> {
+    let payload = serde_json::json!({
+        "jsonrpc": "2.0",
+        "id": 1,
+        "method": "tools/call",
+        "params": {"name": name, "arguments": args}
+    });
+    let response = post_mcp(addr, &payload)?;
+    if let Some(message) = response["error"]["message"].as_str() {
+        return Err(message.to_string());
+    }
+    let text = response["result"]["content"][0]["text"]
+        .as_str()
+        .ok_or("tools/call returned no text")?;
+    serde_json::from_str(text).map_err(|err| err.to_string())
+}
+
+pub fn get_control(addr: &str, after: u64) -> Result<Value, String> {
+    let mut stream = TcpStream::connect(addr).map_err(|err| err.to_string())?;
+    stream.set_read_timeout(Some(Duration::from_secs(5))).map_err(|err| err.to_string())?;
+    let req = format!("GET /control?after={after} HTTP/1.1\r\nHost: {addr}\r\nConnection: close\r\n\r\n");
+    stream.write_all(req.as_bytes()).map_err(|err| err.to_string())?;
+    let mut buf = Vec::new();
+    stream.read_to_end(&mut buf).map_err(|err| err.to_string())?;
+    let text = String::from_utf8_lossy(&buf);
+    let Some((_, rest)) = text.split_once("\r\n\r\n") else {
+        return Err("control response had no body".into());
+    };
+    serde_json::from_str(rest.trim()).map_err(|err| err.to_string())
+}
+
+fn post_mcp(addr: &str, payload: &Value) -> Result<Value, String> {
+    let body = serde_json::to_vec(payload).map_err(|err| err.to_string())?;
+    let mut stream = TcpStream::connect(addr).map_err(|err| err.to_string())?;
+    stream.set_read_timeout(Some(Duration::from_secs(5))).map_err(|err| err.to_string())?;
+    let header = format!(
+        "POST /mcp HTTP/1.1\r\nHost: {addr}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+        body.len()
+    );
+    stream.write_all(header.as_bytes()).map_err(|err| err.to_string())?;
+    stream.write_all(&body).map_err(|err| err.to_string())?;
+    let mut buf = Vec::new();
+    stream.read_to_end(&mut buf).map_err(|err| err.to_string())?;
+    let text = String::from_utf8_lossy(&buf);
+    let Some((_, rest)) = text.split_once("\r\n\r\n") else {
+        return Err("mcp response had no body".into());
+    };
+    serde_json::from_str(rest.trim()).map_err(|err| err.to_string())
 }
 
 fn bind_listener(addr: &str) -> std::io::Result<TcpListener> {
@@ -165,12 +219,15 @@ pub fn handle_connection(server: &Server, mut stream: TcpStream) -> std::io::Res
     }
     if method == "GET" && (path == "/control" || path.starts_with("/control?")) {
         let after = query_u64(path, "after").unwrap_or(0);
-        let (cursor, events) = crate::control::since(after);
+        let delta = crate::control::since(after);
         let body = serde_json::to_vec(&serde_json::json!({
             "stateless": true,
             "speech": false,
-            "cursor": cursor,
-            "events": events
+            "cursor": delta.cursor,
+            "gap": delta.gap,
+            "oldest": delta.oldest,
+            "resync": "viewport_get",
+            "events": delta.events
         }))
         .unwrap_or_else(|_| b"{}".to_vec());
         return write_response(&mut stream, 200, &body, &cors);
@@ -368,8 +425,19 @@ fn write_control_stream(stream: &mut TcpStream, path: &str, cors: &str) -> std::
     );
     stream.write_all(header.as_bytes())?;
     loop {
-        let (_cursor, events) = crate::control::since(sent);
-        for event in events {
+        let delta = crate::control::since(sent);
+        if delta.gap {
+            let data = serde_json::json!({
+                "gap": true,
+                "after": sent,
+                "oldest": delta.oldest,
+                "cursor": delta.cursor,
+                "resync": "viewport_get"
+            });
+            stream.write_all(format!("event: gap\ndata: {data}\n\n").as_bytes())?;
+            break;
+        }
+        for event in delta.events {
             let seq = event.get("seq").and_then(|value| value.as_u64()).unwrap_or(sent);
             sent = sent.max(seq);
             let data = serde_json::to_string(&event).unwrap_or_else(|_| "{}".into());
@@ -640,5 +708,29 @@ mod tests {
         let (status, _text, peer) = roundtrip_peer(|port| post(port, "Content-Type: application/json\r\n", NAVIGATE));
         assert_eq!(status, 200);
         assert!(logged(&peer).is_empty());
+    }
+
+    #[test]
+    fn t15_sse_gap_is_signalled_when_the_ring_drops_events() {
+        let anchor = crate::control::publish("gap-anchor", &serde_json::json!({"marker": "t15"}));
+        for index in 0..(crate::control::CAP + 1) {
+            crate::control::publish("gap-fill", &serde_json::json!({"index": index}));
+        }
+        let delta = crate::control::since(anchor);
+        assert!(delta.gap, "dropped events must set gap");
+        assert!(delta.oldest.unwrap_or(0) > anchor + 1);
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let addr = listener.local_addr().unwrap();
+        std::thread::spawn(move || {
+            let (stream, _) = listener.accept().unwrap();
+            handle_connection(&Server::boot(), stream).unwrap();
+        });
+        let mut stream = TcpStream::connect(addr).unwrap();
+        let req = format!("GET /control/stream?after={anchor}&wait=0 HTTP/1.1\r\nHost: 127.0.0.1\r\nConnection: close\r\n\r\n");
+        stream.write_all(req.as_bytes()).unwrap();
+        let mut text = String::new();
+        stream.read_to_string(&mut text).unwrap();
+        assert!(text.contains("event: gap"), "{text}");
+        assert!(text.contains("viewport_get"), "{text}");
     }
 }

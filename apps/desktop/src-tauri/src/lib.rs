@@ -125,6 +125,7 @@ fn spawn_hidden(mut cmd: Command) -> std::io::Result<Child> {
 fn boot_mcp() -> (McpRuntime, Option<Child>) {
     let addr = preferred_addr();
     if http::initialize_handshake(&addr).is_ok() {
+        let _ = gen_audio_core::paths::write_mcp_addr(&addr);
         return (
             runtime(addr, true, "initialize ok (already listening)", "existing"),
             None,
@@ -136,6 +137,7 @@ fn boot_mcp() -> (McpRuntime, Option<Child>) {
         match spawn_hidden(cmd) {
             Ok(child) => {
                 if wait_for_handshake(&addr) {
+                    let _ = gen_audio_core::paths::write_mcp_addr(&addr);
                     register_login_autostart();
                     return (
                         runtime(addr, true, "initialize ok (sidecar)", "sidecar"),
@@ -152,9 +154,15 @@ fn boot_mcp() -> (McpRuntime, Option<Child>) {
     match http::spawn_loopback(&addr).or_else(|_| http::spawn_loopback("127.0.0.1:0")) {
         Ok(bound) => {
             let text = bound.to_string();
+            let _ = gen_audio_core::paths::write_mcp_addr(&text);
+            let detail = if text == addr {
+                "initialize ok (in-process)".to_string()
+            } else {
+                format!("{addr} was busy; bound {text}. Clients must use this address.")
+            };
             match http::initialize_handshake(&text) {
                 Ok(_) => (
-                    runtime(text, true, "initialize ok (in-process)", "in-process"),
+                    runtime(text, true, detail, "in-process"),
                     None,
                 ),
                 Err(err) => (runtime(text, false, err, "in-process"), None),

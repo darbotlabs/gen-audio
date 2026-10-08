@@ -76,6 +76,22 @@ let selection: VoiceSelection = {
 let activePreview: ProfilePreview = profilePreview(selection);
 let controlCursor = 0;
 const seenControl = new Set<number>();
+let mcpOrigin = "http://127.0.0.1:8765";
+
+async function discoverMcp(): Promise<string> {
+  try {
+    const { invoke } = await import("@tauri-apps/api/core");
+    const status = await invoke<{ addr?: string; handshake_ok?: boolean }>("mcp_status");
+    if (status?.addr && status.handshake_ok !== false) {
+      mcpOrigin = `http://${status.addr}`;
+    }
+  } catch {
+    /* Vite without the Tauri shell keeps the default loopback port. */
+  }
+  return mcpOrigin;
+}
+
+const mcpReady = discoverMcp();
 
 bindSlideScroll(board);
 
@@ -378,7 +394,10 @@ async function openCube(url: string, source: string): Promise<void> {
   syncCubeChrome();
   // The Pipeline cube-fixture card keeps its FIXTURE mark: its canvas still paints the
   // fixture tone. Only the Cube tab stage (badge "Library ...") draws the library cube.
-  status.textContent = `Cube tab bound (${source}). The Pipeline cube card stays FIXTURE.`;
+  const pipelineCube = board.querySelector(".card[data-id='cube-fixture']");
+  status.textContent = pipelineCube
+    ? `Cube tab bound (${source}). The Pipeline cube card stays FIXTURE.`
+    : `Cube tab bound (${source}). No pipeline output yet.`;
 }
 
 function selectTile(id: string): void {
@@ -509,7 +528,7 @@ async function submitGenerate(): Promise<void> {
     promptNote: promptNote(),
   });
   if (!recorded) {
-    showRun(selectionNow.voice, "unavailable", "MCP is not listening on 127.0.0.1:8765", false);
+    showRun(selectionNow.voice, "unavailable", `MCP is not listening on ${mcpOrigin}`, false);
     return;
   }
   if (voice?.synthAdapter) {
@@ -584,7 +603,8 @@ const mcpFailures = new McpFailureCounter(undefined, (snapshot) => {
 });
 
 async function mcpCall(name: string, args: Record<string, unknown>): Promise<unknown | null> {
-  const payload = await postMcp(fetch, "http://127.0.0.1:8765/mcp", name, args, mcpFailures);
+  const origin = await mcpReady;
+  const payload = await postMcp(fetch, `${origin}/mcp`, name, args, mcpFailures);
   if (payload !== null) noteControlSeq(payload);
   return payload;
 }
@@ -672,29 +692,50 @@ function applyControl(event: { seq?: number; op?: string; args?: Record<string, 
   }
 }
 
-function connectControl(): void {
-  let source: EventSource;
-  try {
-    source = new EventSource(`http://127.0.0.1:8765/control/stream?after=${controlCursor}&wait=2000`);
-  } catch {
-    return;
+async function resyncViewport(): Promise<void> {
+  const payload = await mcpCall("viewport_get", {});
+  const body = toolBody(payload);
+  if (!body) return;
+  if (typeof body.cursor === "number") controlCursor = body.cursor;
+  const ui = body.ui;
+  if (ui && typeof ui === "object") {
+    const slide = (ui as { slide?: unknown }).slide;
+    if (typeof slide === "string") goToSlideId(board, slide.replace(/^slide:/, ""));
   }
-  source.addEventListener("control", (event) => {
-    try {
-      applyControl(JSON.parse((event as MessageEvent).data) as { seq?: number; op?: string; args?: Record<string, unknown> });
-    } catch {
-      /* ignore malformed events */
-    }
-  });
-  source.onerror = () => {
-    source.close();
-    window.setTimeout(connectControl, 50);
-  };
 }
 
 void loadShippedDocument().then(refreshConnectors).then(show);
-// Test hook (dev/test builds only, E1 addendum): scrubs the cube and ONLY the
-// clip the cube is bound to (never whatever played last).
+
+function connectControl(): void {
+  void mcpReady.then((origin) => {
+    let source: EventSource;
+    try {
+      source = new EventSource(`${origin}/control/stream?after=${controlCursor}&wait=2000`);
+    } catch {
+      return;
+    }
+    source.addEventListener("gap", () => {
+      void resyncViewport();
+    });
+    source.addEventListener("control", (event) => {
+      try {
+        const parsed = JSON.parse((event as MessageEvent).data) as { seq?: number; op?: string; args?: Record<string, unknown> };
+        if (typeof parsed.seq === "number" && parsed.seq > controlCursor + 1) {
+          void resyncViewport();
+          return;
+        }
+        applyControl(parsed);
+      } catch {
+        /* ignore malformed events */
+      }
+    });
+    source.onerror = () => {
+      source.close();
+      window.setTimeout(connectControl, 50);
+    };
+  });
+}
+// Test hook (dev/test builds only): scrubs the cube and ONLY the clip the cube is bound to.
 if (import.meta.env.VITE_GEN_AUDIO_FIXTURES === "1") {
   (window as unknown as { __genAudioScrub?: (f: number) => Promise<string> }).__genAudioScrub = (fraction: number) => {
     setCubeScrub(fraction, { silent: true });

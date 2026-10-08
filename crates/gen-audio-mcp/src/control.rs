@@ -11,6 +11,7 @@ use std::time::{Duration, Instant};
 
 use gen_audio_core::asset_catalog;
 use gen_audio_core::catalog::{self, MAX_AGENTS_PER_TRACK};
+use gen_audio_core::viewport::{self, Action};
 use serde_json::{json, Value};
 
 struct Event {
@@ -23,7 +24,7 @@ struct Bus {
     events: VecDeque<Event>,
 }
 
-const CAP: usize = 128;
+pub const CAP: usize = 128;
 
 static BUS: Mutex<Bus> = Mutex::new(Bus {
     next: 1,
@@ -95,8 +96,22 @@ pub fn publish(op: &str, args: &Value) -> u64 {
     seq
 }
 
-pub fn since(after: u64) -> (u64, Vec<Value>) {
+pub struct ControlDelta {
+    pub cursor: u64,
+    pub gap: bool,
+    pub oldest: Option<u64>,
+    pub events: Vec<Value>,
+}
+
+/// Events with `seq > after`. `gap` is true when the ring dropped `after + 1`.
+/// Clients must call `viewport_get` and discard the partial delta.
+pub fn since(after: u64) -> ControlDelta {
     let bus = BUS.lock().expect("control bus");
+    let oldest = bus.events.front().map(|event| event.seq);
+    let gap = match oldest {
+        Some(first) => first > after.saturating_add(1),
+        None => bus.next > after.saturating_add(1),
+    };
     let events = bus
         .events
         .iter()
@@ -104,7 +119,7 @@ pub fn since(after: u64) -> (u64, Vec<Value>) {
         .map(|event| event.body.clone())
         .collect();
     let cursor = bus.next.saturating_sub(1);
-    (cursor, events)
+    ControlDelta { cursor, gap, oldest, events }
 }
 
 fn queued(op: &str, args: Value, note: &str) -> Value {
@@ -235,6 +250,7 @@ pub fn ui_navigate(args: &Value) -> Result<Value, (i32, String)> {
         .to_string();
     let (slug, deprecated) = resolve_slide(&reference)?;
     let slug = slug.to_string();
+    viewport::apply_global(Action::Navigate { slide: reference.clone() }).map_err(|err| (err.code, err.message))?;
     if let Some(tile) = args.get("tileId").and_then(Value::as_str) {
         if !id_ok(tile) {
             return Err((-32602, "tileId is invalid".into()));
@@ -255,10 +271,16 @@ pub fn ui_select_tile(args: &Value) -> Result<Value, (i32, String)> {
     let args = &with_uid_tile(args)?;
     let tile = args
         .get("tileId")
+        .or_else(|| args.get("uid"))
         .and_then(Value::as_str)
         .ok_or((-32602, "ui_select_tile needs tileId or uid".to_string()))?;
     if !id_ok(tile) {
         return Err((-32602, "tileId is invalid".into()));
+    }
+    if let Err(err) = viewport::apply_global(Action::Focus { uid: Some(tile.to_string()) }) {
+        if err.code != -32602 || !err.message.contains("unknown asset") {
+            return Err((err.code, err.message));
+        }
     }
     Ok(queued(
         "select",
@@ -319,6 +341,11 @@ pub fn ui_playback(args: &Value) -> Result<Value, (i32, String)> {
             return Err((-32602, "seconds out of range".into()));
         }
         requested = Some(seconds);
+    }
+    if let Err(err) = apply_playback(tile, action, args) {
+        if err.0 != -32602 || !err.1.contains("unknown asset") {
+            return Err(err);
+        }
     }
     let clip = catalog::library_clip(tile);
     let has_wav = clip.and_then(|item| item.wav_url).is_some();
@@ -391,17 +418,44 @@ pub fn ui_seek_report(args: &Value) -> Result<Value, (i32, String)> {
     Ok(json!({"recorded": true, "seekSeq": seq, "report": report, "synthesizedSpeech": false}))
 }
 
+fn apply_playback(tile: &str, action: &str, args: &Value) -> Result<(), (i32, String)> {
+    let action = match action {
+        "play" => Action::Play { uid: tile.to_string() },
+        "pause" => Action::Pause { uid: tile.to_string() },
+        "seek" => Action::Seek {
+            uid: tile.to_string(),
+            t: args.get("seconds").and_then(Value::as_f64).unwrap_or(0.0),
+        },
+        _ => return Ok(()),
+    };
+    viewport::apply_global(action).map(|_| ()).map_err(|err| (err.code, err.message))
+}
+
 pub fn ui_flip(args: &Value) -> Result<Value, (i32, String)> {
     let args = &with_uid_tile(args)?;
     let tile = args
         .get("tileId")
+        .or_else(|| args.get("view"))
         .and_then(Value::as_str)
         .ok_or((-32602, "ui_flip needs tileId or uid".to_string()))?;
-    if !id_ok(tile) {
+    if !id_ok(tile) && !tile.starts_with("view:") {
         return Err((-32602, "tileId is invalid".into()));
     }
     let flipped = args.get("flipped").and_then(Value::as_bool).unwrap_or(true);
-    let mut payload = json!({"tileId": tile, "flipped": flipped});
+    let face = args
+        .get("face")
+        .and_then(Value::as_str)
+        .unwrap_or(if flipped { "back" } else { "front" });
+    if face != "front" && face != "back" {
+        return Err((-32602, "face must be front or back".into()));
+    }
+    let section = args.get("section").and_then(Value::as_str).map(str::to_string);
+    let _ = viewport::apply_global(Action::Flip {
+        view: tile.to_string(),
+        face: face.to_string(),
+        section: section.clone(),
+    });
+    let mut payload = json!({"tileId": tile, "flipped": face == "back", "face": face, "section": section});
     if let Some(persona) = args.get("personaId").and_then(Value::as_str) {
         if catalog::persona(persona).is_none() {
             return Err((-32602, format!("unknown persona {persona}")));
@@ -446,37 +500,154 @@ pub fn ui_set_sidepane(args: &Value) -> Result<Value, (i32, String)> {
     Ok(payload)
 }
 
+fn canonical_voice(voice: &str) -> String {
+    match voice {
+        "kokoro-onnx" => "kokoro_onnx".into(),
+        "pocket-tts" => "pocket_tts".into(),
+        other => other.to_string(),
+    }
+}
+
+fn kokoro_weights_ready() -> bool {
+    std::env::var("GEN_AUDIO_KOKORO_MODEL").ok().filter(|value| !value.is_empty()).is_some()
+        && std::env::var("GEN_AUDIO_KOKORO_VOICES").ok().filter(|value| !value.is_empty()).is_some()
+}
+
 pub fn ui_generate(args: &Value) -> Result<Value, (i32, String)> {
     let prompt_note = args.get("promptNote").and_then(Value::as_str).unwrap_or("");
     if prompt_note.chars().count() > 200 {
         return Err((-32602, "promptNote is too long".into()));
     }
-    let side = ui_set_sidepane(args)?;
-    let voice = args.get("voice").and_then(Value::as_str).unwrap_or("");
-    let model = catalog::voice_model(voice);
+    let mut normalized = args.clone();
+    let voice = canonical_voice(args.get("voice").and_then(Value::as_str).unwrap_or(""));
+    normalized["voice"] = json!(voice);
+    let side = ui_set_sidepane(&normalized)?;
+    let model = catalog::voice_model(&voice);
     let adapter = model.map(|item| item.synth_adapter).unwrap_or(false);
-    let seq = publish("generate", args);
-    let phase = if adapter { "running" } else { "unavailable" };
-    let detail = if adapter {
-        "Request recorded. Synth has not written audio. Unset model env vars refuse with no invented speech."
+    let focus = args.get("focus").and_then(Value::as_bool).unwrap_or(true);
+    let duration_s = args
+        .get("duration_s")
+        .and_then(Value::as_f64)
+        .or_else(|| args.get("durationMin").and_then(Value::as_u64).map(|minutes| minutes as f64 * 60.0))
+        .unwrap_or(180.0);
+    let personas = args
+        .get("agents")
+        .and_then(Value::as_array)
+        .map(|items| items.iter().filter_map(|item| item.as_str().map(str::to_string)).collect())
+        .unwrap_or_default();
+    let seq = publish("generate", &normalized);
+    let job = format!("job-{seq}");
+    viewport::apply_global(Action::Generate {
+        prompt_ref: prompt_note.to_string(),
+        personas,
+        voice: voice.clone(),
+        duration_s,
+        focus,
+        job: job.clone(),
+    })
+    .map_err(|err| (err.code, err.message))?;
+    let (phase, detail) = if !adapter {
+        (
+            "unavailable",
+            format!("{voice} has no synth adapter. No audio was written."),
+        )
+    } else if voice == "kokoro_onnx" && !kokoro_weights_ready() {
+        (
+            "refused",
+            "GEN_AUDIO_KOKORO_MODEL and GEN_AUDIO_KOKORO_VOICES are unset. No speech was invented.".into(),
+        )
+    } else if adapter {
+        (
+            "running",
+            "Weights are configured. synthesizedSpeech stays false until a job done lands a measured clip.".into(),
+        )
     } else {
-        "Request recorded. This voice model has no synth adapter. No audio was written."
+        ("refused", "No speech was invented.".into())
     };
-    let progress = note_progress(voice, phase, detail, false);
+    if phase != "running" {
+        viewport::apply_global(Action::Job {
+            job: job.clone(),
+            target: None,
+            phase: phase.into(),
+            reason: Some(detail.clone()),
+            kind: Some("audio_clip".into()),
+            synthesized: false,
+        })
+        .map_err(|err| (err.code, err.message))?;
+    }
+    let job_seq = publish(
+        "job",
+        &json!({
+            "job": job,
+            "phase": phase,
+            "reason": detail,
+            "target": Value::Null,
+            "voice": voice,
+            "synthesizedSpeech": false
+        }),
+    );
+    let progress = note_progress(&voice, phase, &detail, false);
     Ok(json!({
-        "ok": true,
+        "ok": phase != "refused" && phase != "unavailable",
         "synthesizedSpeech": false,
         "synthesized": false,
         "op": "generate",
         "seq": seq,
-        "args": args,
+        "jobSeq": job_seq,
+        "job": job,
+        "args": normalized,
         "sidepane": side,
         "synthInvoked": false,
-        "synthTool": if adapter { "synth" } else { "" },
+        "landed": false,
+        "createdUid": Value::Null,
         "phase": phase,
         "progress": progress,
         "note": detail,
         "stream": {"path": "/control/stream", "transport": "sse", "stateless": true}
+    }))
+}
+
+pub fn ui_compare(args: &Value) -> Result<Value, (i32, String)> {
+    let uids = args
+        .get("uids")
+        .and_then(Value::as_array)
+        .ok_or((-32602, "ui_compare needs uids".to_string()))?;
+    let uids: Vec<String> = uids.iter().filter_map(|item| item.as_str().map(str::to_string)).collect();
+    if uids.len() != args["uids"].as_array().map(|items| items.len()).unwrap_or(0) {
+        return Err((-32602, "uids must be strings".into()));
+    }
+    viewport::apply_global(Action::Compare { uids: uids.clone() }).map_err(|err| (err.code, err.message))?;
+    if let Some(select) = args.get("select").and_then(Value::as_str) {
+        viewport::apply_global(Action::CompareSelect { uid: select.to_string() }).map_err(|err| (err.code, err.message))?;
+    }
+    Ok(queued("compare", args.clone(), "Queued compare. The cube follows focus, not the A/B clock."))
+}
+
+pub fn viewport_get() -> Value {
+    let mut snap = viewport::snapshot_global();
+    let delta = since(0);
+    snap["cursor"] = json!(delta.cursor);
+    snap["gap"] = json!(false);
+    snap["resync"] = json!("viewport_get");
+    snap
+}
+
+pub fn card_export(args: &Value) -> Result<Value, (i32, String)> {
+    let uid = args
+        .get("uid")
+        .and_then(Value::as_str)
+        .ok_or((-32602, "card_export needs uid".to_string()))?;
+    let format = args.get("format").and_then(Value::as_str).unwrap_or("adaptivecard");
+    if format != "adaptivecard" {
+        return Err((-32602, "format must be adaptivecard".into()));
+    }
+    let card = viewport::export_global(uid).map_err(|err| (err.code, err.message))?;
+    Ok(json!({
+        "ok": true,
+        "synthesizedSpeech": false,
+        "format": "adaptivecard",
+        "version": "1.5",
+        "card": card
     }))
 }
 
@@ -511,6 +682,9 @@ pub fn library_rename(args: &Value) -> Result<Value, (i32, String)> {
                 return Err((-32602, format!("{field} length is out of range")));
             }
         }
+    }
+    if let (Some(name), true) = (semantic.or(face), true) {
+        let _ = viewport::apply_global(Action::Rename { uid: clip_id.to_string(), name: name.to_string() });
     }
     Ok(queued(
         "rename",
@@ -803,5 +977,51 @@ mod tests {
         assert_eq!(ui_playback(&json!({"tileId": "lib-kokoro", "action": "play", "origin": "mcp"})).unwrap_err().0, -32602);
         assert_eq!(ui_playback(&json!({"tileId": "lib-kokoro", "action": "pause", "origin": "user"})).unwrap_err().0, -32602);
         assert!(ui_playback(&json!({"tileId": "lib-kokoro", "action": "pause"})).unwrap()["args"].get("origin").is_none());
+    }
+
+    #[test]
+    fn t8_generate_refuses_when_kokoro_env_is_unset() {
+        std::env::remove_var("GEN_AUDIO_KOKORO_MODEL");
+        std::env::remove_var("GEN_AUDIO_KOKORO_VOICES");
+        let body = ui_generate(&json!({
+            "agents": ["alice", "frank"],
+            "voice": "kokoro-onnx",
+            "durationMin": 3,
+            "promptNote": "two personas"
+        }))
+        .expect("generate");
+        assert_eq!(body["phase"], "refused");
+        assert_eq!(body["synthesizedSpeech"], false);
+        assert_eq!(body["landed"], false);
+        assert!(body["createdUid"].is_null());
+        let note = body["note"].as_str().unwrap();
+        assert!(note.contains("unset"), "{note}");
+        assert!(note.contains("No speech was invented"), "{note}");
+        let job = body["job"].as_str().unwrap();
+        let snap = gen_audio_core::viewport::snapshot_global();
+        let recorded = snap["jobs"].as_array().unwrap().iter().find(|item| item["job"] == job).unwrap();
+        assert_eq!(recorded["phase"], "refused");
+        assert!(recorded["target"].is_null());
+        assert!(snap["views"].as_array().unwrap().iter().all(|view| view["asset"] != job));
+    }
+
+    #[test]
+    fn t17_mcp_viewport_get_reports_navigate_focus_seek_flip_rename() {
+        ui_navigate(&json!({"slide": "spatial"})).unwrap();
+        let snap = viewport_get();
+        assert_eq!(snap["ui"]["slide"], "slide:spatial");
+        assert_eq!(snap["synthesizedSpeech"], false);
+        let renamed = library_rename(&json!({"clipId": "lib-misaki-kokoro", "semanticName": "Narrator A"})).unwrap();
+        assert_eq!(renamed["op"], "rename");
+        let card = card_export(&json!({"uid": "lib-misaki-kokoro", "format": "adaptivecard"})).unwrap();
+        assert_eq!(card["version"], "1.5");
+        assert_eq!(card["card"]["version"], "1.5");
+        assert!(card["card"]["fallbackText"].as_str().unwrap().contains("Narrator A") || card["card"]["fallbackText"].as_str().unwrap().contains("misaki"));
+    }
+
+    #[test]
+    fn t18_compare_of_three_is_rejected() {
+        let err = ui_compare(&json!({"uids": ["lib-kokoro-onnx", "lib-misaki-kokoro", "lib-kokoro"]})).unwrap_err();
+        assert_eq!(err.0, -32602);
     }
 }

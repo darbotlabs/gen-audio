@@ -15,6 +15,7 @@ pub mod paths;
 pub mod redact;
 pub mod script;
 pub mod serve;
+pub mod viewport;
 
 pub use engines::{engine, engines, EngineSpec};
 pub use serve::{health_payload, health_url, node_base_url, shared_gateway_row, SHARED_GATEWAY_HOST};

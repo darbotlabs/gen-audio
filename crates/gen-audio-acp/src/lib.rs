@@ -272,12 +272,66 @@ fn session_prompt(agent: &Agent, params: &Value) -> Result<(Value, Vec<Value>), 
     Ok((json!({"stopReason": "end_turn"}), notes))
 }
 
+fn control_tool(name: &str) -> bool {
+    matches!(
+        name,
+        "ui_navigate"
+            | "ui_select_tile"
+            | "ui_flip"
+            | "ui_playback"
+            | "ui_set_sidepane"
+            | "ui_generate"
+            | "ui_compare"
+            | "library_rename"
+            | "viewport_get"
+            | "card_export"
+    )
+}
+
+fn desktop_addr() -> Option<String> {
+    #[cfg(test)]
+    {
+        let overridden = DESKTOP_ADDR.with(|slot| slot.borrow().clone());
+        if overridden.is_some() {
+            return overridden;
+        }
+    }
+    if let Ok(addr) = std::env::var("GEN_AUDIO_MCP_ADDR") {
+        let addr = addr.trim();
+        if !addr.is_empty() {
+            return Some(addr.to_string());
+        }
+    }
+    gen_audio_core::paths::read_mcp_addr()
+}
+
+/// UI actions go to the desktop's bound MCP listener.
+/// An in-process server has a different control bus, so it is not a fallback.
 fn mcp_tool(name: &str, args: Value) -> Result<Value, String> {
+    if let Some(addr) = desktop_addr() {
+        return gen_audio_mcp::http::tools_call(&addr, name, &args);
+    }
+    if control_tool(name) {
+        return Err(
+            "desktop control endpoint is not bound; refusing to apply this action on an isolated bus"
+                .into(),
+        );
+    }
     let server = gen_audio_mcp::Server::boot();
     let result = gen_audio_mcp::call_tool(&server, &json!({"name": name, "arguments": args}))
         .map_err(|(_, message)| message);
     let _ = std::fs::remove_dir_all(&server.scratch.dir);
     result
+}
+
+#[cfg(test)]
+thread_local! {
+    static DESKTOP_ADDR: std::cell::RefCell<Option<String>> = const { std::cell::RefCell::new(None) };
+}
+
+#[cfg(test)]
+fn bind_desktop_for_test(addr: Option<String>) {
+    DESKTOP_ADDR.with(|slot| *slot.borrow_mut() = addr);
 }
 
 fn is_verb(token: &str) -> bool {
@@ -749,5 +803,59 @@ mod tests {
             let err = handle(&agent, json!({"jsonrpc":"2.0","id":2,"method":"session/new","params":{"cwd":".","assets":bad}}));
             assert!(err.is_err(), "{bad} should be rejected");
         }
+    }
+
+    #[test]
+    fn t14_navigate_reaches_the_bound_desktop_bus() {
+        let addr = gen_audio_mcp::http::spawn_loopback("127.0.0.1:0").unwrap();
+        let addr = addr.to_string();
+        bind_desktop_for_test(Some(addr.clone()));
+        let before = gen_audio_mcp::http::get_control(&addr, 0).unwrap();
+        let cursor = before["cursor"].as_u64().unwrap_or(0);
+        let agent = Agent::new();
+        let created = handle(
+            &agent,
+            json!({"jsonrpc":"2.0","id":1,"method":"session/new","params":{"cwd":"."}}),
+        )
+        .unwrap();
+        let session_id = created.response.unwrap()["result"]["sessionId"].as_str().unwrap().to_string();
+        let prompted = handle(
+            &agent,
+            json!({
+                "jsonrpc": "2.0",
+                "id": 2,
+                "method": "session/prompt",
+                "params": {
+                    "sessionId": session_id,
+                    "prompt": [{"type": "text", "text": "navigate spatial"}]
+                }
+            }),
+        )
+        .unwrap();
+        bind_desktop_for_test(None);
+        let blob = serde_json::to_string(&prompted.notifications).unwrap();
+        assert!(blob.contains("ui_navigate"), "{blob}");
+        assert!(!blob.contains("isolated bus"), "{blob}");
+        let after = gen_audio_mcp::http::get_control(&addr, cursor).unwrap();
+        let events = after["events"].as_array().cloned().unwrap_or_default();
+        assert!(
+            events.iter().any(|event| event["op"] == "navigate" && event["args"]["slide"] == "spatial"),
+            "{after}"
+        );
+        let view = gen_audio_mcp::http::tools_call(&addr, "viewport_get", &json!({})).unwrap();
+        assert_eq!(view["ui"]["slide"], "slide:spatial");
+    }
+
+    #[test]
+    fn ui_navigate_without_a_desktop_does_not_touch_an_isolated_bus() {
+        bind_desktop_for_test(None);
+        let marker = format!("isolated-{}", std::process::id());
+        let err = mcp_tool("ui_navigate", json!({"slide": "spatial", "tileId": marker})).unwrap_err();
+        assert!(err.contains("not bound"), "{err}");
+        let delta = gen_audio_mcp::control::since(0);
+        assert!(
+            delta.events.iter().all(|event| event["args"]["tileId"] != marker),
+            "isolated ACP published onto the local bus"
+        );
     }
 }

@@ -1,3 +1,4 @@
+import { clipDrivesCube } from "./clock-bind";
 import { getCubeMeta, setCubeScrub, startLiveCubeClock, stopLiveCubeClock } from "./cubeview";
 import type { PlayOrigin } from "./play-control";
 import { Seeker, type MediaLike, type SeekResult } from "./seek";
@@ -114,7 +115,7 @@ function syncCubeToClip(clipId: string): void {
 }
 
 function drivesCube(clipId: string | null): boolean {
-  return Boolean(clipId) && (!cubeClockClip || clipId === cubeClockClip);
+  return clipDrivesCube(clipId, cubeClockClip);
 }
 
 function cubeFraction(): number | null {

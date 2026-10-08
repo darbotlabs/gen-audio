@@ -141,6 +141,32 @@ pub fn make_work_dir() -> std::io::Result<PathBuf> {
     Ok(dir.canonicalize()?)
 }
 
+/// Loopback address the desktop MCP listener bound, one line, no secrets.
+pub fn mcp_addr_path() -> PathBuf {
+    if let Some(path) = std::env::var_os("GEN_AUDIO_MCP_ADDR_FILE") {
+        return PathBuf::from(path);
+    }
+    let base = std::env::var_os("XDG_STATE_HOME")
+        .map(PathBuf::from)
+        .or_else(|| std::env::var_os("HOME").map(|home| PathBuf::from(home).join(".local").join("state")))
+        .unwrap_or_else(std::env::temp_dir);
+    base.join("gen-audio").join("mcp.addr")
+}
+
+pub fn write_mcp_addr(addr: &str) -> Result<(), String> {
+    let path = mcp_addr_path();
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent).map_err(|err| err.to_string())?;
+    }
+    fs::write(&path, format!("{addr}\n")).map_err(|err| err.to_string())
+}
+
+pub fn read_mcp_addr() -> Option<String> {
+    let text = fs::read_to_string(mcp_addr_path()).ok()?;
+    let addr = text.trim();
+    if addr.is_empty() { None } else { Some(addr.to_string()) }
+}
+
 pub fn find_repo_root() -> Option<PathBuf> {
     if let Ok(raw) = std::env::var("GEN_AUDIO_REPO") {
         let path = PathBuf::from(raw);

@@ -1,3 +1,4 @@
+import { backKindLabel, hiddenFace } from "./face-a11y";
 import { glyphBadge } from "./glyph";
 import type { LibraryCatalog, ModelCubes } from "./library-assets";
 import { emptyStrip } from "./livestrip";
@@ -194,6 +195,14 @@ export function renderBoard(board: HTMLElement, empty: HTMLElement, document: Vi
       globalIndex += 1;
     });
 
+    if (slide.schema.id === "pipeline" && !slide.cards.some((card) => card.kind === "Cube3D")) {
+      const note = window.document.createElement("p");
+      note.className = "pipeline-empty";
+      note.dataset.honesty = "empty";
+      note.textContent = "no pipeline output yet";
+      section.append(note);
+    }
+
     board.append(section);
   });
 
@@ -232,6 +241,7 @@ function frontFace(card: ViewportCard): HTMLElement {
     if (article instanceof HTMLElement) toggleFlip(article);
   });
   face.append(row, title, bodyFor(card, card.kind, card.body), flip);
+  markFace(face, false);
   return face;
 }
 
@@ -269,13 +279,15 @@ function backFace(card: ViewportCard): HTMLElement {
   face.className = "face back";
   const kind = window.document.createElement("div");
   kind.className = "kind";
-  kind.textContent = "Adaptive card";
+  kind.textContent = backKindLabel(card.kind);
   const title = window.document.createElement("h2");
   title.textContent = card.title;
+  face.append(kind, title);
   if (card.kind === "VoiceProfile") face.append(voiceProfileBack(card));
   else if (card.kind === "EngineStatus") face.append(engineBack(card));
   else face.append(adaptiveFace(card));
   if (card.kind === "LibraryClip") face.append(renameBlock(card));
+  markFace(face, true);
   const flip = button("Show front");
   flip.className = "flip-toggle";
   flip.addEventListener("click", (event) => {
@@ -298,11 +310,26 @@ export function setCardFlip(board: HTMLElement, tileId: string, flipped: boolean
   return true;
 }
 
+function markFace(face: HTMLElement, hidden: boolean): void {
+  if (hidden) {
+    face.setAttribute("aria-hidden", "true");
+    face.setAttribute("inert", "");
+  } else {
+    face.setAttribute("aria-hidden", "false");
+    face.removeAttribute("inert");
+  }
+}
+
 function setCardFlipState(article: HTMLElement, flipped: boolean): void {
   article.classList.toggle("is-flipped", flipped);
   article.querySelectorAll<HTMLButtonElement>(".flip-toggle").forEach((node) => {
     node.setAttribute("aria-pressed", flipped ? "true" : "false");
   });
+  const hidden = hiddenFace(flipped);
+  const front = article.querySelector<HTMLElement>(".face.front");
+  const back = article.querySelector<HTMLElement>(".face.back");
+  if (front) markFace(front, hidden.front);
+  if (back) markFace(back, hidden.back);
 }
 
 function syncLayerTabs(slideId: string | undefined): void {

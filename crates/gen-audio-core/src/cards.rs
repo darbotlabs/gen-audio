@@ -404,4 +404,14 @@ mod tests {
         doc["cards"][0]["uid"] = Value::String("ga:card:not-base32".into());
         assert!(validate_viewport(&doc).is_err());
     }
+
+    #[test]
+    fn t6_release_card_doc_has_no_fixture_visuals() {
+        let document: Value =
+            serde_json::from_str(include_str!("../../../schemas/examples/viewport.release.json")).unwrap();
+        validate_viewport(&document).expect("release viewport");
+        let cards = document["cards"].as_array().unwrap();
+        assert!(cards.iter().all(|card| card["id"] != "cube-fixture" && card["id"] != "spec-fixture"));
+        assert!(cards.iter().all(|card| card["body"]["source"] != "fixture-tone"));
+    }
 }
