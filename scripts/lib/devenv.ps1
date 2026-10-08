@@ -87,6 +87,43 @@ function Get-LibraryWavProblem {
     }
 }
 
+function Select-CargoBinArtifact {
+    # From `cargo build --message-format=json*` stdout lines, the
+    # compiler-artifact cargo reported for binary $Bin: its executable path and
+    # whether cargo's fingerprint said it was already up to date (fresh). That
+    # is cargo's own verdict on staleness; file mtimes are not (a no-op
+    # rebuild leaves the old mtime in place).
+    [CmdletBinding()]
+    [OutputType([pscustomobject])]
+    param([Parameter(Mandatory = $true)][AllowEmptyCollection()][AllowEmptyString()][string[]]$Line, [Parameter(Mandatory = $true)][string]$Bin)
+    $found = $null
+    foreach ($text in $Line) {
+        if (-not $text -or -not $text.StartsWith('{')) { continue }
+        $message = $text | ConvertFrom-Json
+        if (-not $message.PSObject.Properties['reason'] -or $message.reason -ne 'compiler-artifact') { continue }
+        if ($message.target.name -ne $Bin -or @($message.target.kind) -notcontains 'bin') { continue }
+        if (-not $message.PSObject.Properties['executable'] -or -not $message.executable) { continue }
+        $found = [pscustomobject]@{ Executable = [string]$message.executable; Fresh = [bool]$message.fresh }
+    }
+    if (-not $found) { throw "cargo reported no compiler-artifact for bin $Bin, so there is no way to tell which binary it built" }
+    return $found
+}
+
+function Invoke-CargoBinBuild {
+    # cargo build one binary and return Select-CargoBinArtifact's answer
+    # (Executable, Fresh). Throws on a non-zero exit. Diagnostics still go to
+    # the console (json-render-diagnostics); stdout carries the JSON messages.
+    [CmdletBinding()]
+    [OutputType([pscustomobject])]
+    param([Parameter(Mandatory = $true)][string]$Package, [Parameter(Mandatory = $true)][string]$Bin, [string[]]$ExtraArgs = @())
+    $cargoArgs = @('build', '-p', $Package, '--bin', $Bin, '--message-format=json-render-diagnostics') + $ExtraArgs
+    $ErrorActionPreference = 'Continue'
+    $lines = @(& cargo @cargoArgs)
+    $code = $LASTEXITCODE
+    if ($code -ne 0) { throw "cargo $($cargoArgs -join ' ') failed with exit $code" }
+    return Select-CargoBinArtifact -Line $lines -Bin $Bin
+}
+
 function Test-IsWindowsHost {
     [CmdletBinding()]
     [OutputType([bool])]
