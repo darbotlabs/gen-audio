@@ -12,7 +12,7 @@ const measured = structuredClone(example);
 const benchmark = measured.cards.find((card) => card.kind === "BenchmarkCompare");
 if (!benchmark) throw new Error("missing benchmark card");
 benchmark.body.measuredHere = true;
-assert.match(validateViewport(measured) ?? "", /measured/);
+assert.equal(validateViewport(measured), null);
 
 const castDoc = structuredClone(example);
 const cast = castDoc.cards.find((card) => card.kind === "PodcastCast");
@@ -24,6 +24,6 @@ const note = structuredClone(example);
 const row = note.cards.find((card) => card.kind === "BenchmarkCompare");
 if (!row) throw new Error("missing benchmark card");
 row.body.sourceNote = "These numbers were measured in this window.";
-assert.match(validateViewport(note) ?? "", /not remeasured/);
+assert.match(validateViewport(note) ?? "", /not measured/);
 
 console.log("viewport checker ok");

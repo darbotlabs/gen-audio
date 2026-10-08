@@ -18,6 +18,7 @@ const TRUSTED_SCRIPTS: &[&str] = &[
     "scripts/cube_revision.py",
     "scripts/compare_wavs.py",
     "scripts/synth_kokoro_onnx.py",
+    "scripts/generate.py",
 ];
 
 /// Process-local scratch. The issued set is how later tool calls name files
@@ -159,6 +160,10 @@ pub fn write_mcp_addr(addr: &str) -> Result<(), String> {
         fs::create_dir_all(parent).map_err(|err| err.to_string())?;
     }
     fs::write(&path, format!("{addr}\n")).map_err(|err| err.to_string())
+}
+
+pub fn delete_mcp_addr() {
+    let _ = fs::remove_file(mcp_addr_path());
 }
 
 pub fn read_mcp_addr() -> Option<String> {

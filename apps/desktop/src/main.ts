@@ -35,11 +35,9 @@ import {
   slides,
 } from "./render";
 import { slideKey } from "./snap";
-import { applySidepane, bindStudio, promptNote, readSelection, type StudioSelection } from "./studio";
+import { applySidepane, bindStudio, promptNote, promptText, readSelection, type StudioSelection } from "./studio";
 import { drawCube, drawSpectrogram, makeFixture, play } from "./signal";
-import { voiceById } from "./catalog";
 import { CONNECTOR_MODES, validateViewport, type ViewportDocument } from "./validate";
-import { fixturesRequested, selectViewport } from "./viewport-source";
 
 function required(id: string): HTMLElement {
   const node = document.querySelector<HTMLElement>(id);
@@ -124,7 +122,7 @@ function show(documentIn: unknown): void {
     syncCubeChrome();
   });
   const n = slides(board).length;
-  status.textContent = `${doc.cards.length} cards · ${n} snap slides · spectrogram follows side pane (preview, not speech)`;
+  status.textContent = `${doc.cards.length} cards · ${n} snap slides · spectrogram follows side pane`;
   requestAnimationFrame(() => goToSlide(board, 0));
 }
 
@@ -149,9 +147,9 @@ function paintProfile(): boolean {
     node.textContent = activePreview.caption;
   });
   if (panel) panel.dataset.profileKey = activePreview.key;
-  if (cube && cube.dataset.painted !== "fixture") {
+  if (cube && cube.dataset.painted !== "tone") {
     drawCube(cube, fixture);
-    cube.dataset.painted = "fixture";
+    cube.dataset.painted = "tone";
   }
   board.querySelectorAll<HTMLButtonElement>("[data-action='play-profile']").forEach((node) => {
     node.onclick = () => play(activePreview.before);
@@ -407,7 +405,7 @@ async function openCube(url: string, source: string): Promise<void> {
   if (!url) {
     cubeClipId = "";
     setCubeClockClip(null);
-    clearCube("This tile has no cube JSON. Magpie, VibeVoice, and Pocket do not get a stand-in cloud.");
+    clearCube("This tile has no cube JSON. Magpie, VibeVoice, and Pocket do not get a substitute cloud.");
     return;
   }
   const owner = board.querySelector<HTMLElement>(`.library-tile[data-cube-json="${CSS.escape(url)}"]`);
@@ -417,12 +415,7 @@ async function openCube(url: string, source: string): Promise<void> {
   const message = await loadCube(url);
   if (caption) caption.textContent = `${source}: ${message}`;
   syncCubeChrome();
-  // The Pipeline cube-fixture card keeps its FIXTURE mark: its canvas still paints the
-  // fixture tone. Only the Cube tab stage (badge "Library ...") draws the library cube.
-  const pipelineCube = board.querySelector(".card[data-id='cube-fixture']");
-  status.textContent = pipelineCube
-    ? `Cube tab bound (${source}). The Pipeline cube card stays FIXTURE.`
-    : `Cube tab bound (${source}). No pipeline output yet.`;
+  status.textContent = `Cube tab bound (${source}).`;
 }
 
 function selectTile(id: string): void {
@@ -544,33 +537,22 @@ document.addEventListener("keydown", (event) => {
 
 async function submitGenerate(): Promise<void> {
   const selectionNow = readSelection();
-  const voice = voiceById(selectionNow.voice);
-  showRun(selectionNow.voice, voice?.synthAdapter ? "running" : "unavailable", "waiting for MCP", false);
   const recorded = await mcpCall("ui_generate", {
     agents: selectionNow.agents,
     voice: selectionNow.voice,
     durationMin: selectionNow.durationMin,
+    duration_s: selectionNow.durationMin * 60,
+    prompt: promptText(),
     promptNote: promptNote(),
   });
   if (!recorded) {
     showRun(selectionNow.voice, "unavailable", `MCP is not listening on ${mcpOrigin}`, false);
     return;
   }
-  if (voice?.synthAdapter) {
-    const synth = await mcpCall("synth", {
-      output: "request.wav",
-      script: "examples/podcast_script_sample.txt",
-    });
-    const speech = toolClaimsSpeech(synth);
-    showRun(
-      selectionNow.voice,
-      speech ? "ok" : "refused",
-      "sample script, not the pasted prompt",
-      speech,
-    );
-    return;
-  }
-  showRun(selectionNow.voice, "unavailable", `No synth adapter for ${voice?.label ?? selectionNow.voice}`, false);
+  const body = toolBody(recorded);
+  const phase = String(body?.phase ?? "refused");
+  const detail = String(body?.note ?? "");
+  showRun(selectionNow.voice, phase, detail, body?.synthesizedSpeech === true);
 }
 
 function toolBody(payload: unknown): Record<string, unknown> | null {
@@ -583,11 +565,6 @@ function toolBody(payload: unknown): Record<string, unknown> | null {
   } catch {
     return null;
   }
-}
-
-function toolClaimsSpeech(payload: unknown): boolean {
-  const body = toolBody(payload);
-  return body?.synthesizedSpeech === true;
 }
 
 function showRun(voice: string, phase: string, detail: string, speech: boolean): void {
@@ -649,9 +626,9 @@ function noteControlSeq(payload: unknown): void {
 
 function applyControl(event: { seq?: number; op?: string; args?: Record<string, unknown> }): void {
   if (typeof event.seq === "number") {
+    controlCursor = Math.max(controlCursor, event.seq);
     if (seenControl.has(event.seq)) return;
     seenControl.add(event.seq);
-    controlCursor = Math.max(controlCursor, event.seq);
   }
   const args = event.args ?? {};
   if (event.op === "navigate" && typeof args.slide === "string") {
@@ -672,6 +649,15 @@ function applyControl(event: { seq?: number; op?: string; args?: Record<string, 
     applyFlipcard(args.profile as Record<string, unknown>);
   } else if (event.op === "progress" && typeof args.voice === "string") {
     showRun(args.voice, String(args.phase ?? "unavailable"), String(args.detail ?? ""), args.synthesizedSpeech === true);
+  } else if (event.op === "focus" && typeof args.uid === "string") {
+    focusClipTile(args.uid);
+    bindCubeToPlayingClip(args.uid);
+  } else if (event.op === "play" && typeof args.playing === "string") {
+    const origin = args.origin === "user" ? "user" : "auto";
+    void playClip(args.playing, origin).then((result) => {
+      status.textContent = result === "playing" ? `Playing ${args.playing}` : result;
+      syncCubeChrome();
+    });
   } else if (event.op === "playback" && typeof args.tileId === "string") {
     const action = String(args.action ?? "");
     if (action === "play") void playClip(args.tileId, controlPlayOrigin(args)).then((result) => {
@@ -701,7 +687,6 @@ function applyControl(event: { seq?: number; op?: string; args?: Record<string, 
       voice: typeof args.voice === "string" ? args.voice : undefined,
       durationMin: typeof args.durationMin === "number" ? args.durationMin : undefined,
     });
-    status.textContent = "Remote generate request recorded. synthesizedSpeech is false.";
   } else if (event.op === "rename" && typeof args.clipId === "string") {
     const tile = board.querySelector<HTMLElement>(`.card[data-id="${CSS.escape(args.clipId)}"]`);
     if (!tile) return;
@@ -724,10 +709,37 @@ async function resyncViewport(): Promise<void> {
   if (typeof body.cursor === "number") controlCursor = body.cursor;
   const ui = body.ui;
   if (ui && typeof ui === "object") {
-    const slide = (ui as { slide?: unknown }).slide;
-    if (typeof slide === "string") goToSlideId(board, slide);
-    const focus = (ui as { focus?: unknown }).focus;
-    if (typeof focus === "string" || focus === null) setCubeClockClip(typeof focus === "string" ? focus : null);
+    const record = ui as { slide?: unknown; focus?: unknown; flipped?: unknown; compare?: unknown };
+    if (typeof record.slide === "string") goToSlideId(board, record.slide);
+    if (typeof record.focus === "string") {
+      focusClipTile(record.focus);
+      bindCubeToPlayingClip(record.focus);
+      setCubeClockClip(record.focus, clipUid(record.focus));
+    } else if (record.focus === null) {
+      setCubeClockClip(null);
+    }
+    if (record.flipped && typeof record.flipped === "object") {
+      for (const [view, state] of Object.entries(record.flipped as Record<string, { face?: string }>)) {
+        const tileId = view.startsWith("view:") ? view.slice("view:".length) : view;
+        setCardFlip(board, tileId, state?.face === "back");
+      }
+    }
+    board.querySelectorAll<HTMLElement>(".card.is-compare").forEach((node) => node.classList.remove("is-compare"));
+    if (Array.isArray(record.compare)) {
+      for (const uid of record.compare) {
+        if (typeof uid !== "string") continue;
+        board.querySelector<HTMLElement>(`.card[data-id="${CSS.escape(uid)}"]`)?.classList.add("is-compare");
+      }
+    }
+  }
+  if (Array.isArray(body.jobs)) {
+    for (const job of body.jobs) {
+      if (!job || typeof job !== "object") continue;
+      const record = job as { voice?: unknown; phase?: unknown; reason?: unknown; synthesized?: unknown };
+      if (typeof record.voice === "string" && record.voice) {
+        showRun(record.voice, String(record.phase ?? "unavailable"), String(record.reason ?? ""), record.synthesized === true);
+      }
+    }
   }
 }
 

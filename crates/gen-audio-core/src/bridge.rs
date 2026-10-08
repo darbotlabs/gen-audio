@@ -164,7 +164,55 @@ pub fn plan(
     })
 }
 
-pub fn run_plan(plan: &PythonPlan) -> Result<Value, String> {
+/// Argv for `gen_audio.cli.generate` via the trusted shim. The prompt stays in the work file.
+pub fn plan_generate(
+    repo: &Path,
+    work: &Path,
+    personas: &[String],
+    engine: &str,
+    duration_s: f64,
+) -> Result<PythonPlan, String> {
+    let script = read_trusted_script(repo, "scripts/generate.py")?;
+    if personas.is_empty() || personas.len() > 8 {
+        return Err("personas must be 1 to 8 ids".into());
+    }
+    for id in personas {
+        if id.len() > 32 || !id.chars().all(|ch| ch.is_ascii_lowercase() || ch.is_ascii_digit() || ch == '_') {
+            return Err("persona id is invalid".into());
+        }
+    }
+    if engine.len() > 32 || !engine.chars().all(|ch| ch.is_ascii_lowercase() || ch.is_ascii_digit() || ch == '_') {
+        return Err("engine id must be a short lowercase slug".into());
+    }
+    if !(0.5..=1800.0).contains(&duration_s) {
+        return Err("duration must be from 0.5 to 1800 seconds".into());
+    }
+    let prompt = work.join("scripts").join("prompt.txt");
+    let prompt = prompt.canonicalize().map_err(|err| format!("prompt file: {err}"))?;
+    let work_canon = work.canonicalize().map_err(|err| format!("work directory: {err}"))?;
+    if !prompt.starts_with(&work_canon) {
+        return Err("prompt file is outside the work directory".into());
+    }
+    Ok(PythonPlan {
+        program: python_program()?,
+        args: vec![
+            script.to_string_lossy().to_string(),
+            "--prompt-file".into(),
+            prompt.to_string_lossy().to_string(),
+            "--personas".into(),
+            personas.join(","),
+            "--engine".into(),
+            engine.to_string(),
+            "--duration-s".into(),
+            format!("{duration_s}"),
+            "--out-dir".into(),
+            work_canon.to_string_lossy().to_string(),
+        ],
+        cwd: repo.to_path_buf(),
+    })
+}
+
+fn command(plan: &PythonPlan) -> Command {
     let mut command = Command::new(&plan.program);
     command.args(&plan.args).current_dir(&plan.cwd);
     for key in [
@@ -178,7 +226,20 @@ pub fn run_plan(plan: &PythonPlan) -> Result<Value, String> {
     ] {
         command.env_remove(key);
     }
-    let output = command
+    command
+}
+
+pub fn start_plan(plan: &PythonPlan) -> Result<std::process::Child, String> {
+    command(plan)
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+        .map_err(|err| format!("failed to start python: {err}"))
+}
+
+pub fn run_plan(plan: &PythonPlan) -> Result<Value, String> {
+    let output = command(plan)
         .output()
         .map_err(|err| format!("failed to start python: {err}"))?;
     let stdout = redact_secrets(&String::from_utf8_lossy(&output.stdout));

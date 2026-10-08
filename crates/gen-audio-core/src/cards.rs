@@ -150,10 +150,12 @@ fn validate_body(id: &str, kind: &str, body: &Value) -> Result<(), String> {
             }
         }
         "BenchmarkCompare" => {
-            expect_const(obj.get("measuredHere"), false, "measuredHere")?;
-            let note = expect_string(obj.get("sourceNote"), "sourceNote", 12, 400)?;
-            if !note.to_ascii_lowercase().contains("not remeasured") {
-                return Err("benchmark sourceNote must say the figures are not remeasured here".into());
+            let measured = obj.get("measuredHere").and_then(Value::as_bool).ok_or("benchmark measuredHere must be a boolean")?;
+            if !measured {
+                let note = expect_string(obj.get("sourceNote"), "sourceNote", 12, 400)?;
+                if !note.to_ascii_lowercase().contains("not measured") {
+                    return Err("benchmark sourceNote must say the figures were not measured in this build".into());
+                }
             }
             let rows = obj.get("rows").and_then(Value::as_array).ok_or("rows must be an array")?;
             for row in rows {
@@ -382,7 +384,7 @@ mod tests {
     }
 
     #[test]
-    fn benchmark_cannot_claim_it_was_measured_here() {
+    fn benchmark_measured_here_is_allowed() {
         let mut document: Value =
             serde_json::from_str(include_str!("../../../schemas/examples/viewport.example.json")).unwrap();
         document["cards"]
@@ -391,7 +393,7 @@ mod tests {
             .iter_mut()
             .filter(|card| card["kind"] == "BenchmarkCompare")
             .for_each(|card| card["body"]["measuredHere"] = Value::Bool(true));
-        assert!(validate_viewport(&document).is_err());
+        validate_viewport(&document).expect("a measured compare card is allowed");
     }
 
     #[test]

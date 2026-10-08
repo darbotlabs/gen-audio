@@ -1,8 +1,10 @@
-"""Scan a release viewport for stub labels."""
+"""Scan a release viewport and a built bundle for stub labels."""
 
 from __future__ import annotations
 
+import json
 import re
+from pathlib import Path
 
 _FORBIDDEN = re.compile(
     r"\b(?:fixture|placeholder|reserved|preview)\b|\bref[- ]only\b|\bsample\b",
@@ -95,3 +97,141 @@ def _walk(value, parts: list[str]) -> None:
     elif isinstance(value, list):
         for item in value:
             _walk(item, parts)
+
+
+_PHRASES = re.compile(r"not remeasured|stand-in|\bstand in\b", re.IGNORECASE)
+_HOST = re.compile(r"<[^>]+>")
+_DIST_NEEDLES = (
+    "cube-fixture",
+    "spec-fixture",
+    "cast-sample",
+    "Ref only",
+    "This layer is reserved",
+    "Sample cast",
+    "sample script",
+    "preview, not speech",
+    "not remeasured",
+    "stand-in",
+    "Load labeled example",
+    '"state":"fixture"',
+    '"honesty":"fixture"',
+    "honesty=fixture",
+)
+
+
+def structural_hits(document: dict) -> list[str]:
+    """Structural release rules: measured compare, probed serve, no stub phrases."""
+    hits: list[str] = []
+    cards = document.get("cards")
+    if not isinstance(cards, list):
+        return ["document has no cards array"]
+    for card in cards:
+        if not isinstance(card, dict):
+            hits.append("card is not an object")
+            continue
+        card_id = str(card.get("id", "?"))
+        kind = str(card.get("kind", ""))
+        body = card.get("body") if isinstance(card.get("body"), dict) else {}
+        blob = json.dumps(card)
+        if _PHRASES.search(blob):
+            hits.append(f"{card_id}: stub phrase")
+        honesty = body.get("honesty")
+        state = _honesty_state(honesty) if honesty is not None else ""
+        if state == "fixture" or body.get("honesty") == "fixture":
+            hits.append(f"{card_id}: honesty=fixture")
+        if kind == "BenchmarkCompare" and body.get("measuredHere") is not True:
+            hits.append(f"{card_id}: BenchmarkCompare.measuredHere is not true")
+        if kind == "ServeHealth":
+            host = str(body.get("host", ""))
+            if _HOST.search(host) or not host or host.startswith("<"):
+                hits.append(f"{card_id}: ServeHealth host is a placeholder")
+            if body.get("probed") is not True:
+                hits.append(f"{card_id}: ServeHealth has no probe result")
+    hits.extend(fixture_honesty_hits(document))
+    return hits
+
+
+_STUB_CARD_IDS = {
+    "serve-node",
+    "serve-gateway",
+    "cube-fixture",
+    "bench-ref",
+    "spec-fixture",
+    "cast-sample",
+}
+_DIST_SUFFIXES = {".js", ".html", ".css", ".mjs", ".json"}
+
+
+def _asset_stub_hits(asset: object, label: str) -> list[str]:
+    """A catalog envelope fails when it is a fixture, an unprobed serve card, or a stub label."""
+    if not isinstance(asset, dict):
+        return [f"{label}: asset is not an object"]
+    hits: list[str] = []
+    legacy = str(asset.get("legacy_id") or "")
+    body = asset.get("body") if isinstance(asset.get("body"), dict) else {}
+    card_id = str(body.get("id") or legacy or "?")
+    kind = str(body.get("kind") or "")
+    honesty = asset.get("honesty") if isinstance(asset.get("honesty"), dict) else {}
+    if honesty.get("fixture") is True or _honesty_state(body.get("honesty")) == "fixture":
+        hits.append(f"{label}: {card_id}: honesty=fixture")
+    if card_id in _STUB_CARD_IDS or legacy in _STUB_CARD_IDS:
+        hits.append(f"{label}: {card_id}: stub card")
+    inner = body.get("body") if isinstance(body.get("body"), dict) else body
+    if not isinstance(inner, dict):
+        inner = {}
+    if kind == "ServeHealth":
+        host = str(inner.get("host", ""))
+        if _HOST.search(host) or not host or host.startswith("<"):
+            hits.append(f"{label}: {card_id}: ServeHealth host is a placeholder")
+        if inner.get("probed") is not True:
+            hits.append(f"{label}: {card_id}: ServeHealth has no probe result")
+    if kind == "BenchmarkCompare" and inner.get("measuredHere") is not True:
+        hits.append(f"{label}: {card_id}: BenchmarkCompare.measuredHere is not true")
+    if _PHRASES.search(json.dumps(asset)):
+        hits.append(f"{label}: {card_id}: stub phrase")
+    return hits
+
+
+def json_document_hits(document: object, label: str) -> list[str]:
+    """Structural stub rules for a JSON document that ships inside dist."""
+    if not isinstance(document, dict):
+        return []
+    hits: list[str] = []
+    assets = document.get("assets")
+    if isinstance(assets, list):
+        for asset in assets:
+            hits.extend(_asset_stub_hits(asset, label))
+        index = document.get("legacy_index")
+        if isinstance(index, dict):
+            for key in index:
+                tail = str(key).split(":", 1)[-1]
+                if tail in _STUB_CARD_IDS:
+                    hits.append(f"{label}: legacy_index {key}")
+        return hits
+    if isinstance(document.get("cards"), list):
+        hits.extend(structural_hits(document))
+    return hits
+
+
+def dist_hits(dist: Path) -> list[str]:
+    """Scan a built desktop bundle, including copied JSON. A missing dist fails the release gate."""
+    if not dist.is_dir():
+        return [f"dist bundle is missing: {dist}"]
+    hits: list[str] = []
+    files = [path for path in dist.rglob("*") if path.suffix in _DIST_SUFFIXES]
+    if not files:
+        return [f"dist bundle has no js/html/css/json: {dist}"]
+    for path in files:
+        text = path.read_text(encoding="utf-8", errors="replace")
+        for needle in _DIST_NEEDLES:
+            if needle in text:
+                hits.append(f"{path.name}: {needle}")
+        if path.suffix != ".json":
+            continue
+        try:
+            document = json.loads(text)
+        except json.JSONDecodeError:
+            hits.append(f"{path.name}: invalid json")
+            continue
+        hits.extend(json_document_hits(document, path.name))
+    return hits

@@ -6,8 +6,7 @@ import { renderTransport } from "./playback";
 import { SnapAnimator, WheelGesture, stepIndex, type SlideKey } from "./snap";
 import type { ViewportCard, ViewportDocument } from "./validate";
 
-const EMPTY_COPY =
-  "No cards in this viewport. Load the example for labeled fixture tiles and live connector probes — not a finished podcast product.";
+const EMPTY_COPY = "No cards in this viewport.";
 
 export type SlideSchema = {
   id: string;
@@ -42,7 +41,7 @@ export const SLIDE_SCHEMAS: SlideSchema[] = [
     blurb: "Browser spectrogram of the side-pane personas and voice model — not product speech",
     columns: 3,
     layer: "models",
-    cardIds: ["spec-fixture"],
+    cardIds: [],
   },
   {
     id: "library",
@@ -82,7 +81,7 @@ export const SLIDE_SCHEMAS: SlideSchema[] = [
     blurb: "MCP + serve health + compare notes — readiness, not a completed render",
     columns: 3,
     layer: "pipeline",
-    cardIds: ["conn-mcp", "serve-node", "serve-gateway", "bench-ref", "cube-fixture", "cast-sample"],
+    cardIds: ["conn-mcp"],
   },
 ];
 
@@ -245,15 +244,14 @@ function frontFace(card: ViewportCard): HTMLElement {
   return face;
 }
 
-/** Honest badge: fixture tiles are Fixture, not "Live product speech". */
 function liveLabel(card: ViewportCard): string {
   if (card.kind === "Cube3D") {
     if (card.body.datasetBound === "library" || card.body.source === "library-clip") return "Library";
-    return "Fixture";
+    return "Unbound";
   }
-  if (card.kind === "SpectrogramPanel") return "Fixture";
-  if (card.kind === "PodcastCast") return "Sample";
-  if (card.kind === "BenchmarkCompare") return "Ref only";
+  if (card.kind === "SpectrogramPanel") return "Panel";
+  if (card.kind === "PodcastCast") return "Cast";
+  if (card.kind === "BenchmarkCompare") return card.body.measuredHere === true ? "Measured" : "Unmeasured";
   if (card.kind === "EngineStatus") {
     const status = String(card.body.status ?? "");
     if (status === "implemented") return "Engine";
@@ -393,7 +391,7 @@ function bodyFor(card: ViewportCard, kind: string, body: Record<string, unknown>
     wrap.append(before, after, play);
   } else if (kind === "Cube3D") {
     const bound = body.datasetBound === "library" || body.source === "library-clip";
-    wrap.append(pill(bound ? "library-bound" : "fixture theater", !bound));
+    wrap.append(pill(bound ? "library-bound" : "unbound", !bound));
     wrap.append(paragraph(String(body.disclaimer ?? "")));
     wrap.append(paragraph(bound
       ? "Interactive cube bound to library clip JSON - layers signal/tonality/confidence/quality."
@@ -402,8 +400,8 @@ function bodyFor(card: ViewportCard, kind: string, body: Record<string, unknown>
     if (body.cubeJsonUrl) cube.dataset.cubeJsonUrl = String(body.cubeJsonUrl);
     wrap.append(cube);
   } else if (kind === "PodcastCast") {
-    wrap.append(pill("sample script", true));
-    wrap.append(paragraph("Sample script only. Speaker names are personas. af_heart and am_michael are Kokoro pack ids, not the Voice selector. synthesizedSpeech is false here."));
+    wrap.append(pill("script", true));
+    wrap.append(paragraph("Speaker names are personas. af_heart and am_michael are Kokoro pack ids, not the Voice selector. synthesizedSpeech is false here."));
     const list = window.document.createElement("ul");
     const speakers = Array.isArray(body.speakers) ? body.speakers : [];
     for (const speaker of speakers) {
@@ -422,7 +420,7 @@ function bodyFor(card: ViewportCard, kind: string, body: Record<string, unknown>
     wrap.append(paragraph(String(body.healthUrl ?? "")));
     wrap.append(paragraph(`Role: ${String(body.role ?? "")}`));
   } else if (kind === "BenchmarkCompare") {
-    wrap.append(pill("not remeasured", true));
+    wrap.append(pill(body.measuredHere === true ? "Measured here" : "Outside this build", body.measuredHere !== true));
     wrap.append(paragraph(String(body.sourceNote ?? "")));
     const table = window.document.createElement("table");
     const head = window.document.createElement("tr");
@@ -696,15 +694,15 @@ function fallbackBack(kind: string, body: Record<string, unknown>): string {
   if (kind === "EngineStatus") return `${String(body.engineId ?? "engine")} is ${String(body.status ?? "unknown")}. No speech claim.`;
   if (kind === "ConnectorStatus") return `${String(body.connectorId ?? "connector")} mode ${String(body.mode ?? "unknown")}.`;
   if (kind === "ServeHealth") return String(body.healthUrl ?? "Health URL is not set.");
-  if (kind === "PodcastCast") return "Sample cast only. synthesizedSpeech is false.";
-  if (kind === "BenchmarkCompare") return String(body.sourceNote ?? "Scores are not remeasured in this window.");
+  if (kind === "PodcastCast") return "Cast list. synthesizedSpeech is false.";
+  if (kind === "BenchmarkCompare") return String(body.sourceNote ?? "Scores were measured outside this window.");
   if (kind === "LibraryClip") {
     if (body.synthesizedSpeech === true) {
       return "Real clip " + String(body.duration_s ?? "?") + "s — " + String(body.wavUrl ?? "");
     }
     return String(body.engineId ?? "engine") + ": " + String(body.status ?? "unavailable") + " — no fake audio.";
   }
-  return String(body.disclaimer ?? "Fixture face. Not a podcast render.");
+  return String(body.disclaimer ?? "Back face. Not a podcast render.");
 }
 
 function voiceProfileBack(card: ViewportCard): HTMLElement {
@@ -784,7 +782,7 @@ function appendUtilitySlides(board: HTMLElement, startIndex: number): number {
   const videoTitle = window.document.createElement("h3");
   videoTitle.textContent = "Video";
   const videoCopy = window.document.createElement("p");
-  videoCopy.textContent = "No video clips in this library. This layer is reserved. Nothing here is a podcast.";
+  videoCopy.textContent = "No video clips in this library. Nothing here is a podcast.";
   videoBanner.append(videoTitle, videoCopy);
   video.append(videoBanner);
   board.append(video);

@@ -288,7 +288,16 @@ fn control_tool(name: &str) -> bool {
     )
 }
 
-fn desktop_addr() -> Option<String> {
+fn desktop_addr() -> Result<Option<String>, String> {
+    let raw = raw_desktop_addr();
+    let Some(addr) = raw else {
+        return Ok(None);
+    };
+    ensure_loopback_target(&addr)?;
+    Ok(Some(addr))
+}
+
+fn raw_desktop_addr() -> Option<String> {
     #[cfg(test)]
     {
         let overridden = DESKTOP_ADDR.with(|slot| slot.borrow().clone());
@@ -305,10 +314,21 @@ fn desktop_addr() -> Option<String> {
     gen_audio_core::paths::read_mcp_addr()
 }
 
+fn ensure_loopback_target(addr: &str) -> Result<(), String> {
+    gen_audio_mcp::http::ensure_bind_allowed(addr).map_err(|err| err.to_string())?;
+    let socket: std::net::SocketAddr = addr
+        .parse()
+        .map_err(|err| format!("desktop address is not a socket address: {err}"))?;
+    if !socket.ip().is_loopback() {
+        return Err("ACP refuses a non-loopback desktop address".into());
+    }
+    Ok(())
+}
+
 /// UI actions go to the desktop's bound MCP listener.
 /// An in-process server has a different control bus, so it is not a fallback.
 fn mcp_tool(name: &str, args: Value) -> Result<Value, String> {
-    if let Some(addr) = desktop_addr() {
+    if let Some(addr) = desktop_addr()? {
         return gen_audio_mcp::http::tools_call(&addr, name, &args);
     }
     if control_tool(name) {
@@ -778,6 +798,19 @@ mod tests {
         )
         .unwrap_err();
         assert!(rejected.contains("connector") || rejected.contains("af_heart"), "{rejected}");
+    }
+
+    #[test]
+    fn desktop_target_must_be_loopback() {
+        bind_desktop_for_test(None);
+        let saved = std::env::var("GEN_AUDIO_MCP_ADDR").ok();
+        std::env::set_var("GEN_AUDIO_MCP_ADDR", "10.1.8.70:8765");
+        let err = desktop_addr().unwrap_err();
+        assert!(err.contains("loopback") || err.contains("non-loopback"), "{err}");
+        match saved {
+            Some(value) => std::env::set_var("GEN_AUDIO_MCP_ADDR", value),
+            None => std::env::remove_var("GEN_AUDIO_MCP_ADDR"),
+        }
     }
 
     #[test]

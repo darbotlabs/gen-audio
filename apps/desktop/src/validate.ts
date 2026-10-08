@@ -125,9 +125,11 @@ function validateBody(id: string, kind: string, body: Record<string, unknown>): 
     if (body.role !== "node" && body.role !== "shared-gateway") return "serve role must be node or shared-gateway";
   }
   if (kind === "BenchmarkCompare") {
-    if (body.measuredHere !== false) return "benchmark cards cannot claim they were measured in this app";
-    if (!boundedString(body.sourceNote, 12, 400) || !String(body.sourceNote).toLowerCase().includes("not remeasured")) {
-      return "benchmark sourceNote must say the figures are not remeasured here";
+    if (typeof body.measuredHere !== "boolean") return "benchmark measuredHere must be a boolean";
+    if (body.measuredHere === false) {
+      if (!boundedString(body.sourceNote, 12, 400) || !String(body.sourceNote).toLowerCase().includes("not measured")) {
+        return "benchmark sourceNote must say the figures were not measured in this build";
+      }
     }
     if (!Array.isArray(body.rows)) return "rows must be an array";
     for (const row of body.rows) {

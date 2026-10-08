@@ -18,19 +18,35 @@ _CHARS_PER_SEC = 13.0
 _SPEED_MIN = 0.5
 _SPEED_MAX = 2.0
 
-# Display names and per-engine speaker ids. Kokoro ids that also appear as
-# persona refs (af_heart, am_michael) are the same strings the catalog uses.
-PERSONAS: dict[str, dict[str, str]] = {
-    "anton": {"name": "Anton", "kokoro_onnx": "am_adam", "pocket_tts": "marius", "vibevoice": "Anton", "magpie": "jason"},
-    "alice": {"name": "Alice", "kokoro_onnx": "af_heart", "pocket_tts": "alba", "vibevoice": "Alice", "magpie": "sofia"},
-    "khortana": {"name": "Khortana", "kokoro_onnx": "af_bella", "pocket_tts": "fantine", "vibevoice": "Khortana", "magpie": "sofia"},
-    "rocky": {"name": "Rocky", "kokoro_onnx": "am_fenrir", "pocket_tts": "javert", "vibevoice": "Rocky", "magpie": "jason"},
-    "optimus": {"name": "Optimus", "kokoro_onnx": "am_echo", "pocket_tts": "jean", "vibevoice": "Optimus", "magpie": "jason"},
-    "frank": {"name": "Frank", "kokoro_onnx": "am_michael", "pocket_tts": "eponine", "vibevoice": "Frank", "magpie": "jason"},
-    "nova": {"name": "Nova", "kokoro_onnx": "af_nova", "pocket_tts": "cosette", "vibevoice": "Nova", "magpie": "sofia"},
-    "ivo": {"name": "Ivo", "kokoro_onnx": "am_onyx", "pocket_tts": "azelma", "vibevoice": "Ivo", "magpie": "jason"},
-    "sable": {"name": "Sable", "kokoro_onnx": "af_sarah", "pocket_tts": "alba", "vibevoice": "Sable", "magpie": "sofia"},
-}
+def _catalog_path() -> Path:
+    import os
+
+    root = Path(os.environ["GEN_AUDIO_REPO"]) if os.environ.get("GEN_AUDIO_REPO") else Path(__file__).resolve().parents[2]
+    return root / "crates" / "gen-audio-core" / "src" / "catalog.rs"
+
+
+def _personas_from_catalog(text: str) -> dict[str, dict[str, str]]:
+    """Display names and kokoro pack ids from the Rust persona catalog."""
+    found: dict[str, dict[str, str]] = {}
+    for block in re.findall(r"Persona\s*\{(.*?)\n\s*\}", text, re.S):
+        id_match = re.search(r'id:\s*"([^"]+)"', block)
+        name_match = re.search(r'name:\s*"([^"]+)"', block)
+        refs_match = re.search(r"refs:\s*&\[(.*?)\]", block, re.S)
+        if id_match is None or name_match is None:
+            continue
+        refs = re.findall(r'"([^"]+)"', refs_match.group(1) if refs_match else "")
+        kokoro = ""
+        for ref in refs:
+            if ref.startswith("kokoro-pack:"):
+                kokoro = ref.split(":", 1)[1]
+        found[id_match.group(1)] = {"name": name_match.group(1), "kokoro_onnx": kokoro}
+    if len(found) < 9:
+        raise RuntimeError(f"Rust catalog parser found {len(found)} personas")
+    return found
+
+
+# Kokoro pack ids come only from catalog.rs refs. Other engines have no pack ref.
+PERSONAS: dict[str, dict[str, str]] = _personas_from_catalog(_catalog_path().read_text(encoding="utf-8"))
 
 ENGINE_LANG = {
     "kokoro_onnx": "en-us",
@@ -65,9 +81,9 @@ def voice_for(engine: str, persona_id: str) -> str:
         raise PromptError(
             f"unknown voice engine {engine!r}; known: {', '.join(sorted(ENGINE_LANG))}"
         )
-    voice = persona.get(engine)
+    voice = persona.get(engine) or ""
     if not voice:
-        raise PromptError(f"{engine} has no speaker id for persona {persona_id}")
+        raise PromptError(f"{engine} has no speaker id for persona {persona_id} in the Rust catalog")
     return voice
 
 

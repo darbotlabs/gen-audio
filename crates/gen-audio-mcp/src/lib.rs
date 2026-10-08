@@ -226,7 +226,7 @@ fn tool(name: &str, description: &str) -> Value {
             json!(["agents", "voice"]),
         ),
         "ui_generate" => (
-            json!({"agents": {"type": "array"}, "voice": {"type": "string"}, "durationMin": {"type": "integer"}, "duration_s": {"type": "number"}, "promptNote": {"type": "string"}, "prompt_ref": {"type": "string"}, "focus": {"type": "boolean"}}),
+            json!({"agents": {"type": "array"}, "voice": {"type": "string"}, "durationMin": {"type": "integer"}, "duration_s": {"type": "number"}, "prompt": {"type": "string"}, "promptNote": {"type": "string"}, "prompt_ref": {"type": "string"}, "focus": {"type": "boolean"}}),
             json!(["agents", "voice"]),
         ),
         "ui_compare" => (json!({"uids": {"type": "array"}, "select": {"type": "string"}}), json!(["uids"])),
@@ -314,7 +314,7 @@ fn allowed_arguments(name: &str) -> &'static [&'static str] {
         "asset_resolve" | "asset_glyph" => &["uid"],
         "asset_list" => &["kind", "cursor", "limit"],
         "ui_set_sidepane" => &["agents", "voice", "durationMin", "promptNote"],
-        "ui_generate" => &["agents", "voice", "durationMin", "duration_s", "promptNote", "prompt_ref", "focus"],
+        "ui_generate" => &["agents", "voice", "durationMin", "duration_s", "prompt", "promptNote", "prompt_ref", "focus"],
         "ui_compare" => &["uids", "select"],
         "viewport_get" => &[],
         "card_export" => &["uid", "format"],

@@ -7,7 +7,7 @@
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview",
-    "test": "node --import tsx --test tests/*.test.ts"
+    "test": "node --import tsx --test tests/*.test.ts src/clock-bind.test.ts"
   },
   "dependencies": {
     "@tauri-apps/api": "^2.1.1"

@@ -35,7 +35,12 @@ def test_two_personas_split_user_words_and_do_not_open_the_example_cast():
 def test_voice_ids_come_from_the_persona_map():
     assert voice_for("kokoro_onnx", "alice") == "af_heart"
     assert voice_for("kokoro_onnx", "frank") == "am_michael"
-    assert voice_for("pocket_tts", "alice") == "alba"
+    try:
+        voice_for("pocket_tts", "alice")
+    except PromptError as exc:
+        assert "Rust catalog" in str(exc)
+    else:
+        raise AssertionError("pocket_tts was given a voice the catalog does not list")
 
 
 def test_authored_speaker_script_keeps_the_user_text():

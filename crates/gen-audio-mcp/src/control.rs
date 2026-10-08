@@ -5,13 +5,16 @@
 //! window reads the ring over `GET /control` or the short SSE stream.
 
 use std::collections::{BTreeMap, VecDeque};
+use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::sync::{Condvar, Mutex};
 use std::time::{Duration, Instant};
 
 use gen_audio_core::asset_catalog;
+use gen_audio_core::bridge;
 use gen_audio_core::catalog::{self, MAX_AGENTS_PER_TRACK};
-use gen_audio_core::viewport::{self, Action, Origin};
+use gen_audio_core::paths;
+use gen_audio_core::viewport::{self, Action, CoverageInput, Origin};
 use serde_json::{json, Value};
 
 struct Event {
@@ -546,7 +549,7 @@ pub fn ui_generate(args: &Value) -> Result<Value, (i32, String)> {
         .and_then(Value::as_f64)
         .or_else(|| args.get("durationMin").and_then(Value::as_u64).map(|minutes| minutes as f64 * 60.0))
         .unwrap_or(180.0);
-    let personas = args
+    let personas: Vec<String> = args
         .get("agents")
         .and_then(Value::as_array)
         .map(|items| items.iter().filter_map(|item| item.as_str().map(str::to_string)).collect())
@@ -555,32 +558,68 @@ pub fn ui_generate(args: &Value) -> Result<Value, (i32, String)> {
     let job = format!("job-{seq}");
     viewport::apply_global(Action::Generate {
         prompt_ref: prompt_note.to_string(),
-        personas,
+        personas: personas.clone(),
         voice: voice.clone(),
         duration_s,
         focus,
         job: job.clone(),
     })
     .map_err(|err| (err.code, err.message))?;
-    let (phase, detail) = if !adapter {
-        (
-            "unavailable",
-            format!("{voice} has no synth adapter. No audio was written."),
-        )
-    } else if voice == "kokoro_onnx" && !kokoro_weights_ready() {
-        (
+    let prompt = args.get("prompt").and_then(Value::as_str).unwrap_or("").to_string();
+    if !adapter {
+        return finish_generate(seq, job, voice.clone(), normalized, side, "unavailable", format!("{voice} has no synth adapter. No audio was written."), false, None);
+    }
+    if voice == "kokoro_onnx" && !kokoro_weights_ready() {
+        return finish_generate(
+            seq,
+            job,
+            voice,
+            normalized,
+            side,
             "refused",
             "GEN_AUDIO_KOKORO_MODEL and GEN_AUDIO_KOKORO_VOICES are unset. No speech was invented.".into(),
-        )
-    } else if adapter {
-        (
-            "running",
-            "Weights are configured. synthesizedSpeech stays false until a job done lands a measured clip.".into(),
-        )
-    } else {
-        ("refused", "No speech was invented.".into())
-    };
-    if phase != "running" {
+            false,
+            None,
+        );
+    }
+    if prompt.trim().is_empty() {
+        return finish_generate(seq, job, voice, normalized, side, "refused", "empty prompt; no sample script is used".into(), false, None);
+    }
+    if prompt.len() > 200_000 {
+        return finish_generate(seq, job, voice, normalized, side, "refused", "prompt is too long".into(), false, None);
+    }
+    match spawn_generate(&job, &voice, &personas, duration_s, &prompt) {
+        Ok(landed) => {
+            let detail = landed.detail.clone();
+            finish_generate(seq, job, voice, normalized, side, "done", detail, true, Some(landed))
+        }
+        Err(reason) => {
+            let invoked = !reason.starts_with("failed to start");
+            finish_generate(seq, job, voice, normalized, side, "refused", reason, invoked, None)
+        }
+    }
+}
+
+struct LandedClip {
+    uid: String,
+    detail: String,
+    speech: bool,
+}
+
+fn finish_generate(
+    seq: u64,
+    job: String,
+    voice: String,
+    normalized: Value,
+    side: Value,
+    phase: &str,
+    detail: String,
+    synth_invoked: bool,
+    landed: Option<LandedClip>,
+) -> Result<Value, (i32, String)> {
+    let speech = landed.as_ref().map(|item| item.speech).unwrap_or(false);
+    let uid = landed.as_ref().map(|item| json!(item.uid)).unwrap_or(Value::Null);
+    if phase != "done" {
         viewport::apply_global(Action::Job {
             job: job.clone(),
             target: None,
@@ -588,6 +627,7 @@ pub fn ui_generate(args: &Value) -> Result<Value, (i32, String)> {
             reason: Some(detail.clone()),
             kind: Some("audio_clip".into()),
             synthesized: false,
+            coverage: None,
         })
         .map_err(|err| (err.code, err.message))?;
     }
@@ -596,31 +636,123 @@ pub fn ui_generate(args: &Value) -> Result<Value, (i32, String)> {
         &json!({
             "job": job,
             "phase": phase,
-            "reason": detail,
-            "target": Value::Null,
+            "reason": detail.clone(),
+            "target": uid,
             "voice": voice,
-            "synthesizedSpeech": false
+            "synthesizedSpeech": speech
         }),
     );
-    let progress = note_progress(&voice, phase, &detail, false);
+    let progress = note_progress(&voice, phase, &detail, speech);
     Ok(json!({
-        "ok": phase != "refused" && phase != "unavailable",
-        "synthesizedSpeech": false,
-        "synthesized": false,
+        "ok": phase == "done",
+        "synthesizedSpeech": speech,
+        "synthesized": speech,
         "op": "generate",
         "seq": seq,
         "jobSeq": job_seq,
         "job": job,
         "args": normalized,
         "sidepane": side,
-        "synthInvoked": false,
-        "landed": false,
-        "createdUid": Value::Null,
+        "synthInvoked": synth_invoked,
+        "landed": speech,
+        "createdUid": uid,
         "phase": phase,
         "progress": progress,
         "note": detail,
         "stream": {"path": "/control/stream", "transport": "sse", "stateless": true}
     }))
+}
+
+fn spawn_generate(job: &str, voice: &str, personas: &[String], duration_s: f64, prompt: &str) -> Result<LandedClip, String> {
+    let repo = paths::find_repo_root().ok_or_else(|| "failed to start: repository root was not found".to_string())?;
+    let work = paths::make_work_dir().map_err(|err| format!("failed to start: {err}"))?;
+    let scripts = work.join("scripts");
+    std::fs::create_dir_all(&scripts).map_err(|err| format!("failed to start: {err}"))?;
+    std::fs::write(scripts.join("prompt.txt"), prompt).map_err(|err| format!("failed to start: {err}"))?;
+    let plan = bridge::plan_generate(&repo, &work, personas, voice, duration_s).map_err(|err| format!("failed to start: {err}"))?;
+    let mut child = bridge::start_plan(&plan)?;
+    publish(
+        "job",
+        &json!({
+            "job": job,
+            "phase": "running",
+            "voice": voice,
+            "synthesizedSpeech": false
+        }),
+    );
+    let mut stdout = String::new();
+    let mut stderr = String::new();
+    if let Some(mut pipe) = child.stdout.take() {
+        let _ = pipe.read_to_string(&mut stdout);
+    }
+    if let Some(mut pipe) = child.stderr.take() {
+        let _ = pipe.read_to_string(&mut stderr);
+    }
+    let status = child.wait().map_err(|err| format!("generate wait: {err}"))?;
+    let manifest_path = work.join("manifest.json");
+    let manifest: Value = std::fs::read_to_string(&manifest_path)
+        .ok()
+        .and_then(|text| serde_json::from_str(&text).ok())
+        .unwrap_or_else(|| json!({"ok": false, "synthesizedSpeech": false, "reason": stderr.chars().take(400).collect::<String>()}));
+    if manifest["synthesizedSpeech"] != true {
+        let reason = manifest["reason"].as_str().unwrap_or("generate refused").to_string();
+        let _ = status;
+        return Err(if reason.is_empty() { "generate refused. No speech was invented.".into() } else { reason });
+    }
+    let uid = manifest["assets"]["wav"]["uid"].as_str().unwrap_or("").to_string();
+    if !uid.starts_with("ga:audio_clip:") {
+        return Err("generate did not mint an audio_clip uid".into());
+    }
+    viewport::apply_global(Action::Job {
+        job: job.to_string(),
+        target: Some(uid.clone()),
+        phase: "done".into(),
+        reason: None,
+        kind: Some("audio_clip".into()),
+        synthesized: true,
+        coverage: None,
+    })
+    .map_err(|err| err.message)?;
+    let _ = viewport::apply_global(Action::Job {
+        job: format!("{job}-spec"),
+        target: Some(format!("{uid}:spectrogram")),
+        phase: "done".into(),
+        reason: None,
+        kind: Some("spectrogram".into()),
+        synthesized: true,
+        coverage: None,
+    });
+    let cube_path = work.join("cube.json");
+    let cube: Value = std::fs::read_to_string(&cube_path)
+        .ok()
+        .and_then(|text| serde_json::from_str(&text).ok())
+        .unwrap_or(Value::Null);
+    let duration = manifest["duration_s"].as_f64().unwrap_or(0.0);
+    let covers = cube["cube_covers_s"].as_f64().unwrap_or(0.0);
+    let bin = cube["bin_seconds"].as_f64().unwrap_or(0.0);
+    let _ = viewport::apply_global(Action::Job {
+        job: format!("{job}-cube"),
+        target: Some(format!("{uid}:cube")),
+        phase: "done".into(),
+        reason: None,
+        kind: Some("cube".into()),
+        synthesized: true,
+        coverage: Some(CoverageInput {
+            selector_start: 0.0,
+            selector_end: covers,
+            clip_duration_s: duration,
+            recorded_source_duration_s: duration,
+            sec_per_bin: bin,
+            clip_in_src: true,
+        }),
+    });
+    let honoured = manifest["durationHonoured"].as_bool().unwrap_or(false);
+    let speech_s = manifest["speech_s"].as_f64().unwrap_or(duration);
+    Ok(LandedClip {
+        uid,
+        detail: format!("clip landed. speech_s {speech_s:.3}. durationHonoured {honoured}."),
+        speech: true,
+    })
 }
 
 pub fn ui_compare(args: &Value) -> Result<Value, (i32, String)> {

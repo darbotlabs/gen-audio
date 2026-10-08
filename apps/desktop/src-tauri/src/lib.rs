@@ -151,7 +151,7 @@ fn boot_mcp() -> (McpRuntime, Option<Child>) {
             Err(_) => {}
         }
     }
-    match http::spawn_loopback(&addr).or_else(|_| http::spawn_loopback("127.0.0.1:0")) {
+    match bind_loopback_range(&addr) {
         Ok(bound) => {
             let text = bound.to_string();
             let _ = gen_audio_core::paths::write_mcp_addr(&text);
@@ -205,7 +205,29 @@ fn stop_sidecar(child: &mut Child) {
 }
 
 
+fn bind_loopback_range(preferred: &str) -> std::io::Result<std::net::SocketAddr> {
+    let mut candidates = Vec::new();
+    if !preferred.is_empty() {
+        candidates.push(preferred.to_string());
+    }
+    for port in 8765u16..=8770 {
+        let addr = format!("127.0.0.1:{port}");
+        if !candidates.iter().any(|item| item == &addr) {
+            candidates.push(addr);
+        }
+    }
+    let mut last = std::io::Error::other("no loopback port in 8765-8770 was free");
+    for addr in candidates {
+        match http::spawn_loopback(&addr) {
+            Ok(bound) => return Ok(bound),
+            Err(err) => last = err,
+        }
+    }
+    Err(last)
+}
+
 fn request_quit(app: &tauri::AppHandle) {
+    gen_audio_core::paths::delete_mcp_addr();
     if let Some(state) = app.try_state::<SidecarChild>() {
         if let Ok(mut guard) = state.0.lock() {
             if let Some(child) = guard.as_mut() {
@@ -314,6 +336,7 @@ pub fn run() {
 
     app.run(|app, event| {
         if let tauri::RunEvent::Exit = event {
+            gen_audio_core::paths::delete_mcp_addr();
             if let Some(state) = app.try_state::<SidecarChild>() {
                 if let Ok(mut guard) = state.0.lock() {
                     if let Some(child) = guard.as_mut() {

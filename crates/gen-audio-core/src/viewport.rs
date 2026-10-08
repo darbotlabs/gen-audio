@@ -6,7 +6,7 @@
 //! hover do not. Playback frames never enter the reducer.
 //!
 //! Coverage uses the cube's own `sec_per_bin`. Reject reasons stay in one order:
-//! start < 0, clip missing from `src`, recorded source duration lie, selector end.
+//! start < 0, selector end, clip missing from `src`, recorded source duration lie.
 
 use std::collections::BTreeMap;
 use std::sync::{Mutex, OnceLock};
@@ -80,6 +80,7 @@ pub enum Action {
         reason: Option<String>,
         kind: Option<String>,
         synthesized: bool,
+        coverage: Option<CoverageInput>,
     },
     Superseded { old: String, next: String },
     Rebind { view: String, next: String },
@@ -349,8 +350,8 @@ impl Viewport {
                 });
                 Ok(json!({"op": "generate", "job": job, "phase": "queued", "landed": false}))
             }
-            Action::Job { job, target, phase, reason, kind, synthesized } => {
-                self.apply_job(job, target, phase, reason, kind, synthesized)
+            Action::Job { job, target, phase, reason, kind, synthesized, coverage } => {
+                self.apply_job(job, target, phase, reason, kind, synthesized, coverage)
             }
             Action::Superseded { old, next } => {
                 self.require_asset(&old)?;
@@ -376,6 +377,7 @@ impl Viewport {
         reason: Option<String>,
         kind: Option<String>,
         synthesized: bool,
+        coverage: Option<CoverageInput>,
     ) -> Result<Value, ReduceError> {
         let kind = kind.unwrap_or_else(|| "audio_clip".into());
         if let Some(existing) = self.jobs.iter_mut().find(|item| item.id == job) {
@@ -442,7 +444,7 @@ impl Viewport {
                 "focus": self.focus,
                 "clock": {"source": self.clock_source}
             }))
-        } else if kind == "spectrogram" || kind == "cube" {
+        } else if kind == "spectrogram" {
             self.promote_derived(&uid, &kind)?;
             Ok(json!({
                 "op": "job",
@@ -452,8 +454,54 @@ impl Viewport {
                 "honesty": "real",
                 "landed": true
             }))
+        } else if kind == "cube" {
+            let Some(coverage) = coverage else {
+                self.refuse_job(&job, "cube job has no coverage");
+                return Ok(json!({
+                    "op": "job",
+                    "job": job,
+                    "phase": "refused",
+                    "reason": "cube job has no coverage",
+                    "target": uid,
+                    "landed": false
+                }));
+            };
+            if let Err(reason) = validate_coverage(&coverage) {
+                self.refuse_job(&job, &reason);
+                return Ok(json!({
+                    "op": "job",
+                    "job": job,
+                    "phase": "refused",
+                    "reason": reason,
+                    "target": uid,
+                    "landed": false
+                }));
+            }
+            if let Some(annotation) = self.annotations.iter_mut().find(|item| item.body == uid) {
+                annotation.start_s = coverage.selector_start;
+                annotation.end_s = coverage.selector_end;
+                annotation.sec_per_bin = coverage.sec_per_bin;
+            }
+            self.promote_derived(&uid, &kind)?;
+            Ok(json!({
+                "op": "job",
+                "job": job,
+                "phase": "done",
+                "target": uid,
+                "honesty": "real",
+                "landed": true,
+                "sec_per_bin": coverage.sec_per_bin
+            }))
         } else {
             Err(ReduceError::invalid(format!("unknown job kind {kind}")))
+        }
+    }
+
+    fn refuse_job(&mut self, job: &str, reason: &str) {
+        if let Some(existing) = self.jobs.iter_mut().find(|item| item.id == job) {
+            existing.phase = "refused".into();
+            existing.reason = Some(reason.to_string());
+            existing.synthesized = false;
         }
     }
 
@@ -772,9 +820,9 @@ pub fn adaptive_card(title: &str, kind: &str, honesty: &str, media: &str, displa
 
 /// Coverage check. Reasons are returned in this fixed order, first match wins:
 /// 1. start < 0
-/// 2. clip is not in the cube src
-/// 3. recorded source duration differs from the clip by more than one bin
-/// 4. selector end > clip duration + one bin
+/// 2. selector end > clip duration + one bin
+/// 3. clip is not in the cube src
+/// 4. recorded source duration differs from the clip by more than one bin
 pub fn validate_coverage(input: &CoverageInput) -> Result<CoverageOk, String> {
     if input.sec_per_bin <= 0.0 || !input.sec_per_bin.is_finite() {
         return Err("cube sec_per_bin must be positive".into());
@@ -782,16 +830,16 @@ pub fn validate_coverage(input: &CoverageInput) -> Result<CoverageOk, String> {
     if input.selector_start < 0.0 {
         return Err("start < 0".into());
     }
+    let limit = input.clip_duration_s + input.sec_per_bin;
+    if input.selector_end > limit + 1e-9 {
+        return Err("selector end > clip duration + one bin".into());
+    }
     if !input.clip_in_src {
         return Err("clip is not in the cube src".into());
     }
     let duration_delta = (input.recorded_source_duration_s - input.clip_duration_s).abs();
     if duration_delta > input.sec_per_bin + 1e-9 {
         return Err("recorded source duration differs from clip duration by more than one bin".into());
-    }
-    let limit = input.clip_duration_s + input.sec_per_bin;
-    if input.selector_end > limit + 1e-9 {
-        return Err("selector end > clip duration + one bin".into());
     }
     if input.selector_end < input.selector_start {
         return Err("selector end is before the start".into());
@@ -807,6 +855,7 @@ pub fn validate_coverage(input: &CoverageInput) -> Result<CoverageOk, String> {
     Ok(CoverageOk { covered_s: covered, of_s, ratio, partial })
 }
 
+#[derive(Clone, Debug)]
 pub struct CoverageInput {
     pub selector_start: f64,
     pub selector_end: f64,
@@ -918,6 +967,7 @@ mod tests {
                 reason: None,
                 kind: Some("audio_clip".into()),
                 synthesized: true,
+                coverage: None,
             })
             .unwrap();
         assert_eq!(done["landed"], true);
@@ -939,6 +989,7 @@ mod tests {
                 reason: None,
                 kind: Some("audio_clip".into()),
                 synthesized: true,
+                coverage: None,
             })
             .unwrap();
         assert_eq!(again["created"], false);
@@ -951,6 +1002,7 @@ mod tests {
             reason: None,
             kind: Some("spectrogram".into()),
             synthesized: true,
+            coverage: None,
         })
         .unwrap();
         vp.apply(Action::Job {
@@ -960,6 +1012,14 @@ mod tests {
             reason: None,
             kind: Some("cube".into()),
             synthesized: true,
+            coverage: Some(CoverageInput {
+                selector_start: 0.0,
+                selector_end: 139.04,
+                clip_duration_s: 139.375,
+                recorded_source_duration_s: 139.375,
+                sec_per_bin: 0.352,
+                clip_in_src: true,
+            }),
         })
         .unwrap();
         let after = vp.snapshot();
@@ -967,6 +1027,14 @@ mod tests {
         let cube = after["views"].as_array().unwrap().iter().find(|view| view["asset"] == "clip-brief:cube").unwrap();
         assert_eq!(spec["snapshot"]["honesty"]["state"], "real");
         assert_eq!(cube["snapshot"]["honesty"]["state"], "real");
+        let annotation = after["annotations"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|item| item["body"] == "clip-brief:cube")
+            .unwrap();
+        assert_eq!(annotation["sec_per_bin"], 0.352);
+        assert_eq!(annotation["target"]["selector"]["value"], "t=0,139.04");
     }
 
     #[test]
@@ -981,6 +1049,7 @@ mod tests {
                 reason: Some("GEN_AUDIO_KOKORO_MODEL is unset. No speech was invented.".into()),
                 kind: Some("audio_clip".into()),
                 synthesized: false,
+                coverage: None,
             })
             .unwrap();
         assert_eq!(refused["landed"], false);
@@ -1107,12 +1176,23 @@ mod tests {
         all.selector_end = 139.375 + 2.0 * 0.352;
         assert_eq!(validate_coverage(&all).unwrap_err(), "start < 0");
         all.selector_start = 0.0;
+        assert_eq!(validate_coverage(&all).unwrap_err(), "selector end > clip duration + one bin");
+        all.selector_end = 139.04;
         assert_eq!(validate_coverage(&all).unwrap_err(), "clip is not in the cube src");
         all.clip_in_src = true;
         assert_eq!(
             validate_coverage(&all).unwrap_err(),
             "recorded source duration differs from clip duration by more than one bin"
         );
+
+        let mut other = misaki();
+        other.sec_per_bin = 0.5;
+        other.clip_duration_s = 10.0;
+        other.recorded_source_duration_s = 10.0;
+        other.selector_end = 10.4;
+        assert!(validate_coverage(&other).is_ok());
+        other.selector_end = 10.0 + 0.5 + 0.01;
+        assert_eq!(validate_coverage(&other).unwrap_err(), "selector end > clip duration + one bin");
     }
 
     #[test]

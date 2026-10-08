@@ -60,12 +60,11 @@ def synthesize(engine: str, turns: list[Turn], cast: CastMap, output: Path) -> d
         raise EngineRefusal(engine, [f"cast map engine is {cast.engine}, not {engine}"])
     if engine == "kokoro_onnx":
         return _synth_kokoro(turns, cast, output)
-    if engine == "pocket_tts":
-        return _synth_pocket(turns, cast, output)
-    if engine == "vibevoice":
-        return _synth_vibevoice(turns, cast, output)
-    if engine == "magpie":
-        return _synth_magpie(turns, cast, output)
+    if engine in {"pocket_tts", "vibevoice", "magpie"}:
+        raise EngineRefusal(
+            engine,
+            [f"{engine} is experimental and is not enabled until a measured run proves it"],
+        )
     raise EngineRefusal(engine, [f"no adapter is registered for {engine}"])
 
 
@@ -86,7 +85,10 @@ def _missing(engine: str) -> list[str]:
 
 
 def _module_present(name: str) -> bool:
-    return importlib.util.find_spec(name) is not None
+    try:
+        return importlib.util.find_spec(name) is not None
+    except (ModuleNotFoundError, ValueError):
+        return False
 
 
 def _missing_kokoro() -> list[str]:

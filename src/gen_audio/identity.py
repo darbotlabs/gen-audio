@@ -1,19 +1,22 @@
-"""Asset object model v1 identity helpers: identity-integer rounding, the
-Python leg of ASSET_OBJECT_MODEL.md "rounding (B1)".
+"""Asset object model v1 identity: rounding (B1) and uid minting.
 
-Module path and names match PR #4's ``gen_audio/identity.py``
-(``ms_from_frames``, ``round_half_up``) so the two collapse to one
-implementation when PR #4 rebases.
+Rounding matches Rust ``asset::{ms_from_frames, round_half_up, bin_frames_inferred}``
+and ``schemas/asset-object/vectors/v1.json``. Uids use the same preimage as the
+Rust minter:
 
-Same results as Rust ``asset::{ms_from_frames, round_half_up,
-bin_frames_inferred}`` and TS ``msFromFrames`` / ``roundHalfUp`` /
-``binFramesInferred``; ``schemas/asset-object/vectors/v1.json`` (rounding) is
-the shared table.
+preimage = UTF-8("ga-asset-v1") || 0x00 || JCS(identity)
+uid = "ga:{kind}:" + base32(SHA-256(preimage)[:16])   RFC 4648, lowercase, no padding
 """
 
 from __future__ import annotations
 
+import hashlib
 import math
+from typing import Any
+
+DOMAIN_TAG = b"ga-asset-v1"
+SCHEMA_MAJOR = 1
+_ALPHABET = "abcdefghijklmnopqrstuvwxyz234567"
 
 
 def ms_from_frames(frames: int, rate: int) -> int:
@@ -45,3 +48,66 @@ def bin_frames_inferred(duration_s: float, sample_rate_hz: int, time_bins: int) 
     """
     product = float(duration_s) * float(sample_rate_hz)
     return round_half_up(product / float(max(1, time_bins)))
+
+
+def canonicalize(value: Any) -> str:
+    """RFC 8785 for the identity subset: sorted keys, no whitespace, raw UTF-8."""
+    return _write(value)
+
+
+def _write(value: Any) -> str:
+    if value is None:
+        raise ValueError("null is not allowed in an identity")
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    if isinstance(value, int) and not isinstance(value, bool):
+        return str(value)
+    if isinstance(value, float):
+        raise ValueError("identity fields are integers")
+    if isinstance(value, str):
+        return '"' + value.replace("\\", "\\\\").replace('"', '\\"') + '"'
+    if isinstance(value, list):
+        return "[" + ",".join(_write(item) for item in value) + "]"
+    if isinstance(value, dict):
+        parts = []
+        for key in sorted(value):
+            if not isinstance(key, str):
+                raise ValueError("identity keys are strings")
+            parts.append(_write(key) + ":" + _write(value[key]))
+        return "{" + ",".join(parts) + "}"
+    raise ValueError(f"unsupported identity value {type(value).__name__}")
+
+
+def base32_lower(data: bytes) -> str:
+    """RFC 4648 base32, lowercase, no padding. Leftover bits are zero-filled."""
+    out: list[str] = []
+    buffer = 0
+    bits = 0
+    for byte in data:
+        buffer = (buffer << 8) | byte
+        bits += 8
+        while bits >= 5:
+            bits -= 5
+            out.append(_ALPHABET[(buffer >> bits) & 31])
+    if bits:
+        out.append(_ALPHABET[(buffer << (5 - bits)) & 31])
+    return "".join(out)
+
+
+def mint(kind: str, fields: dict, media: list[dict], src: list[str]) -> str:
+    """Return the ``ga:`` uid for one identity."""
+    media_sorted = sorted(
+        ({"role": item["role"], "sha256": item["sha256"]} for item in media),
+        key=lambda item: (item["role"], item["sha256"]),
+    )
+    identity = {
+        "kind": kind,
+        "schema_major": SCHEMA_MAJOR,
+        "fields": fields,
+        "media": media_sorted,
+        "src": sorted(src),
+    }
+    canonical = canonicalize(identity)
+    preimage = DOMAIN_TAG + b"\x00" + canonical.encode("utf-8")
+    digest = hashlib.sha256(preimage).digest()
+    return f"ga:{kind}:{base32_lower(digest[:16])}"

@@ -18,7 +18,7 @@ def test_e2e_kokoro_prompt_pipeline(tmp_path):
         pytest.skip("kokoro-onnx weights are not configured")
     pytest.importorskip("kokoro_onnx")
     pytest.importorskip("faster_whisper")
-    from scripts.generate import main
+    from gen_audio.cli.generate import main
 
     prompt = tmp_path / "scripts" / "prompt.txt"
     prompt.parent.mkdir()
