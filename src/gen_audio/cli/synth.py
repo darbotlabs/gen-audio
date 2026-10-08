@@ -10,6 +10,7 @@ from pathlib import Path
 from gen_audio.artifacts import publish_copy
 from gen_audio.audio_io import write_wav
 from gen_audio.cast import load_cast_map, read_script
+from gen_audio.library_manifest import repo_relative
 from gen_audio.synth_kokoro_onnx import KokoroOnnxSynthesizer, resolve_model_paths
 
 
@@ -35,6 +36,20 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
+# Default repo root for the sidecar's input paths: the checkout this module runs from.
+REPO_ROOT = Path(__file__).resolve().parents[3]
+
+
+def sidecar_payload(manifest: dict, subtype: str, inputs: dict[str, Path], repo_root: Path) -> dict:
+    """The JSON written next to the WAV: the synth result, the WAV subtype, and
+    the input files as provenance, each repo-relative (``../`` for a sibling
+    checkout), never absolute: the sidecar can ship in dist."""
+    payload = dict(manifest)
+    payload["wav_subtype"] = subtype
+    payload["inputs"] = {name: repo_relative(path, repo_root) for name, path in inputs.items()}
+    return payload
+
+
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     try:
@@ -49,8 +64,8 @@ def main(argv: list[str] | None = None) -> int:
         subtype = "PCM_16" if result.improved else "FLOAT"
         write_wav(args.output, result.audio, result.sample_rate, subtype=subtype)
         manifest_path = args.output.with_suffix(".json")
-        payload = result.manifest()
-        payload["wav_subtype"] = subtype
+        inputs = {"script": args.script, "cast_map": args.cast_map, "model": model_path, "voices": voices_path, "output": args.output}
+        payload = sidecar_payload(result.manifest(), subtype, inputs, REPO_ROOT)
         manifest_path.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
         durable_wav = publish_copy(args.output, args.artifact_dir)
         durable_manifest = publish_copy(manifest_path, args.artifact_dir)

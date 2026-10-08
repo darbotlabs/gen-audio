@@ -20,14 +20,104 @@ uid never sees it). :func:`sync_manifest` keeps it as it is;
 committed. Standard library only, so it runs where numpy is
 not installed (CI's Windows scripts job). Cubes without ``cube_revision`` come
 from the retired generator and are left exactly as shipped.
+
+Synth sidecars (``*.synth.json`` next to the WAVs) ship in dist too. Their
+absolute paths are provenance (which model, script and cast map made the
+audio), so :func:`sync_manifest` keeps them but rewrites each one relative to
+the repo (:func:`relativize_paths`). The audio bytes and every uid stay as
+they are: no asset hashes a sidecar.
 """
 
 from __future__ import annotations
 
 import hashlib
 import json
+import os
+import re
 import subprocess
 from pathlib import Path
+
+# An absolute filesystem path inside a string: a drive letter (C:\ or C:/), a
+# UNC share (\\host\share), or a "/" that starts a path rather than
+# continuing a URL ("https://"), a relative path ("../x", "a/b") or a word.
+_DRIVE = re.compile(r"(?<![A-Za-z0-9])[A-Za-z]:[\\/][^\s\"'<>|]*")
+_UNC = re.compile(r"(?<!\\)\\\\[\w.$-][^\s\"'<>|]*")
+_POSIX = re.compile(r"(?<![\w.:/~\\-])/[\w.~-][^\s\"'<>]*")
+
+
+def _relative(parts: list[str]) -> str:
+    parts = [part for part in parts if part]
+    return "/".join([".."] + parts)
+
+
+def relativize_paths(text: str, web_root: frozenset[str] = frozenset()) -> str:
+    """Rewrite every absolute path in ``text`` relative to the repo root.
+
+    The repo's parent directory holds the sibling checkouts and work dirs
+    (``/workspace`` on the box, ``D:\\`` on SMAX, a home directory
+    elsewhere), so a path ``<that parent>/<rest>`` becomes ``../<rest>``:
+    ``/workspace/genaid-podcast-compare/models/x`` -> ``../genaid-podcast-compare/models/x``,
+    ``D:\\gen-audio\\artifacts\\x.wav`` -> ``../gen-audio/artifacts/x.wav``,
+    ``/home/<user>/<rest>`` and ``/Users/<user>/<rest>`` -> ``../<rest>``,
+    ``\\\\host\\share\\<rest>`` -> ``../share/<rest>``. Separators become "/".
+    A "/" path whose first segment is in ``web_root`` (the app's public dir:
+    ``/library/x.wav``) is a URL the app serves, not a machine path, and stays.
+    Deterministic and idempotent: the output has no absolute path left.
+    """
+
+    def drive(match: re.Match[str]) -> str:
+        return _relative(re.split(r"[\\/]", match.group(0)[3:]))
+
+    def unc(match: re.Match[str]) -> str:
+        return _relative(re.split(r"[\\/]", match.group(0)[2:])[1:])
+
+    def posix(match: re.Match[str]) -> str:
+        parts = match.group(0)[1:].split("/")
+        if parts[0] in web_root:
+            return match.group(0)
+        skip = 2 if parts[0] in ("home", "Users") and len(parts) > 1 else 1
+        return _relative(parts[skip:])
+
+    text = _UNC.sub(unc, text)
+    text = _DRIVE.sub(drive, text)
+    return _POSIX.sub(posix, text)
+
+
+def _relativize_value(value, web_root: frozenset[str]):
+    if isinstance(value, str):
+        return relativize_paths(value, web_root)
+    if isinstance(value, list):
+        return [_relativize_value(item, web_root) for item in value]
+    if isinstance(value, dict):
+        return {key: _relativize_value(item, web_root) for key, item in value.items()}
+    return value
+
+
+def sync_synth_sidecars(library: Path) -> list[str]:
+    """Rewrite absolute paths in every ``*.synth.json`` under ``library``
+    repo-relative (:func:`relativize_paths`). Returns the file names it
+    rewrote; a sidecar with no absolute path is left byte for byte."""
+    web_root = frozenset(entry.name for entry in library.parent.iterdir())
+    changed: list[str] = []
+    for path in sorted(library.glob("*.synth.json")):
+        doc = json.loads(path.read_text(encoding="utf-8"))
+        relative = _relativize_value(doc, web_root)
+        if relative != doc:
+            path.write_text(render(relative), encoding="utf-8")
+            changed.append(path.name)
+    return changed
+
+
+def repo_relative(path: Path | str, repo_root: Path | str) -> str:
+    """``path`` relative to ``repo_root`` with "/" separators (``../`` for a
+    sibling checkout). Across drives, where no relative path exists, the
+    :func:`relativize_paths` rule applies. Never returns an absolute path."""
+    absolute = os.path.abspath(os.fspath(path))
+    try:
+        relative = os.path.relpath(absolute, os.path.abspath(os.fspath(repo_root)))
+    except ValueError:
+        return relativize_paths(absolute)
+    return relative.replace(os.sep, "/")
 
 # Mirror keys, in the order they appear in a manifest cube block.
 MIRRORED = (
@@ -68,9 +158,12 @@ def render(manifest: dict) -> str:
 
 def sync_manifest(manifest_path: Path | str, library_dir: Path | str | None = None) -> list[str]:
     """Rewrite the cube mirror of every clip whose cube JSON has cube_revision,
-    and drop machine-specific ``absWav`` paths (``wav`` is the repo-relative one).
+    drop machine-specific ``absWav`` paths (``wav`` is the repo-relative one),
+    and rewrite the synth sidecars' absolute paths repo-relative
+    (:func:`sync_synth_sidecars`).
 
-    Returns the clip ids whose entry changed. Writes only when something did.
+    Returns the clip ids whose entry changed, then the sidecar file names that
+    were rewritten. Writes only when something did.
     """
     manifest_path = Path(manifest_path)
     library = Path(library_dir) if library_dir is not None else manifest_path.parent
@@ -106,7 +199,7 @@ def sync_manifest(manifest_path: Path | str, library_dir: Path | str | None = No
     text = render(manifest)
     if text != manifest_path.read_text(encoding="utf-8"):
         manifest_path.write_text(text, encoding="utf-8")
-    return changed
+    return changed + sync_synth_sidecars(library)
 
 
 def normalized_sha256(data: bytes) -> str:
