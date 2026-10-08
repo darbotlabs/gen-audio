@@ -1,4 +1,4 @@
-"""scripts/test.ps1 -WithWav mode (and the conftest WAV hook), run against a temp repo.
+"""scripts/test.ps1 EOL preflight and -WithWav mode (and the conftest WAV hook), run against a temp repo.
 
 Needs PowerShell (pwsh or Windows PowerShell) and git; skips without them.
 """
@@ -41,6 +41,22 @@ def _temp_repo(tmp_path: Path) -> Path:
 def _run(repo: Path, *extra: str) -> subprocess.CompletedProcess[str]:
     return subprocess.run([SHELL, "-NoProfile", "-File", str(repo / "scripts" / "test.ps1"), "-Tag", "t", "-Skip", OTHER_STEPS, *extra],
                           cwd=repo, capture_output=True, text=True, timeout=300)
+
+
+@pytest.mark.skipif(SHELL is None or shutil.which("git") is None, reason="needs PowerShell and git")
+def test_preflight_fails_and_names_a_crlf_file_under_an_eol_lf_rule(tmp_path):
+    repo = _temp_repo(tmp_path)
+    clean = _run(repo)
+    assert clean.returncode == 0, clean.stdout + clean.stderr
+    # What a core.autocrlf=true checkout leaves behind: LF in the index, CRLF on disk.
+    (repo / "data.json").write_bytes(b'{\r\n  "a": 1\r\n}\r\n')
+    dirty = _run(repo)
+    out = dirty.stdout + dirty.stderr
+    assert dirty.returncode != 0, out
+    assert "EOL_CRLF data.json (index lf)" in out
+    assert "git rm --cached -r . ; git reset --hard" in out and "WARNING" in out
+    assert "Eol preflight failed" in out  # later steps are skipped, not run
+    assert (repo / "data.json").read_bytes() == b'{\r\n  "a": 1\r\n}\r\n', "the preflight must not rewrite files"
 
 
 @pytest.mark.skipif(SHELL is None or shutil.which("git") is None, reason="needs PowerShell and git")
