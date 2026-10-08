@@ -177,3 +177,55 @@ def test_build_ok_names_the_log_and_the_transcript_stops_in_finally():
     body = text[start:]
     assert re.search(r"\}\s*finally\s*\{\s*Stop-Transcript", body), "the transcript stops in a finally block"
     assert text.index("Write-Step \"build-tauri-windows.ps1 -Mode") > start, "the whole run is inside the transcript"
+
+
+# --- Low: dist, exe and installers are judged by content, never mtime ---------
+
+@needs_shell
+def test_a_noop_rebuild_output_is_unchanged_not_stale_and_a_missing_one_fails(tmp_path):
+    import os
+
+    out = tmp_path / "gen-audio.exe"
+    out.write_bytes(b"MZ v1")
+    snap = "$b = Get-OutputFingerprint -LiteralPath '{p}'"
+    noop = _ps(f"{snap.format(p=out)}; [IO.File]::SetLastWriteTime('{out}', [datetime]'2001-01-01'); "
+               f"Assert-BuildOutput -LiteralPath '{out}' -What exe -Before $b | ConvertTo-Json -Compress", tmp_path)
+    assert noop.returncode == 0 and "stale" not in noop.stdout + noop.stderr, noop.stdout + noop.stderr
+    result = json.loads(noop.stdout.strip().splitlines()[-1])
+    assert result["State"] == "unchanged" and result["Sha256"] == hashlib.sha256(b"MZ v1").hexdigest()
+    assert os.path.getmtime(out) < 1e9, "the output really is older than any run start"
+    changed = _ps(f"{snap.format(p=out)}; [IO.File]::WriteAllText('{out}', 'MZ v2'); "
+                  f"(Assert-BuildOutput -LiteralPath '{out}' -What exe -Before $b).State", tmp_path)
+    assert changed.stdout.strip() == "rebuilt", changed.stdout + changed.stderr
+    new = tmp_path / "new.msi"
+    created = _ps(f"{snap.format(p=new)}; [IO.File]::WriteAllText('{new}', 'msi'); "
+                  f"(Assert-BuildOutput -LiteralPath '{new}' -What installer -Before $b).State", tmp_path)
+    assert created.stdout.strip() == "rebuilt", created.stdout + created.stderr
+    missing = _ps(f"Assert-BuildOutput -LiteralPath '{tmp_path / 'gone.exe'}' -What exe -Before $null", tmp_path)
+    assert missing.returncode != 0 and "exe is missing after the build" in missing.stdout + missing.stderr
+
+
+@needs_shell
+def test_dist_copy_drift_names_missing_and_changed_files_and_is_silent_when_equal(tmp_path):
+    public, dist = tmp_path / "public", tmp_path / "dist"
+    for root in (public, dist):
+        (root / "library").mkdir(parents=True)
+        (root / "library" / "assets.json").write_text("{}", encoding="utf-8")
+    clean = _ps(f"Get-DistCopyDrift -Source '{public}' -Dist '{dist}'", tmp_path)
+    assert clean.returncode == 0 and clean.stdout.strip() == "", clean.stdout + clean.stderr
+    (public / "library" / "assets.json").write_text('{"new": 1}', encoding="utf-8")
+    (public / "library" / "a.wav").write_bytes(b"RIFF")
+    drift = _ps(f"Get-DistCopyDrift -Source '{public}' -Dist '{dist}'", tmp_path)
+    lines = sorted(drift.stdout.strip().splitlines())
+    assert lines == ["DIST_CHANGED library/assets.json", "DIST_MISSING library/a.wav"], drift.stdout + drift.stderr
+
+
+def test_build_script_has_no_mtime_freshness_left():
+    text = BUILD.read_text(encoding="utf-8")
+    for old in ("Assert-Fresh", "LastWriteTime", "$runStart"):
+        assert old not in text, f"{old} is an mtime check"
+    assert "$indexPath = Join-Path $desktop 'dist\\index.html'" in text and "$exePath = Join-Path $releaseDir 'gen-audio.exe'" in text
+    for var in ("$indexPath", "$exePath", "$installer"):
+        assert f"Assert-BuildOutput -LiteralPath {var} " in text, var
+    assert "Get-DistCopyDrift -Source" in text
+    assert "$conf.version" in text, "installers are picked by this build's version, not by newest mtime"

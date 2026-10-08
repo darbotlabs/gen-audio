@@ -132,6 +132,50 @@ function Invoke-CargoBinBuild {
     return Select-CargoBinArtifact -Line $lines.ToArray() -Bin $Bin
 }
 
+function Get-OutputFingerprint {
+    # Length and sha256 of a build output, or $null when it is missing.
+    [CmdletBinding()]
+    [OutputType([pscustomobject])]
+    param([Parameter(Mandatory = $true)][string]$LiteralPath)
+    if (-not (Test-Path -LiteralPath $LiteralPath -PathType Leaf)) { return $null }
+    $item = Get-Item -LiteralPath $LiteralPath
+    return [pscustomobject]@{ Path = $item.FullName; Length = $item.Length; Sha256 = (Get-Sha256 -LiteralPath $item.FullName) }
+}
+
+function Assert-BuildOutput {
+    # A build output judged by content, never by mtime (a no-op rebuild does
+    # not rewrite an up-to-date output, so its old mtime says nothing). It must
+    # exist after the build step, which is exit-code checked. Its sha256 is
+    # compared with the Get-OutputFingerprint taken before that step: State is
+    # 'rebuilt' (new or changed bytes) or 'unchanged' (same bytes, up to date).
+    [CmdletBinding()]
+    [OutputType([pscustomobject])]
+    param([Parameter(Mandatory = $true)][string]$LiteralPath, [Parameter(Mandatory = $true)][string]$What, [AllowNull()]$Before)
+    $after = Get-OutputFingerprint -LiteralPath $LiteralPath
+    if (-not $after) { throw "$What is missing after the build: $LiteralPath" }
+    $state = if ($Before -and $Before.Sha256 -eq $after.Sha256) { 'unchanged' } else { 'rebuilt' }
+    return ($after | Add-Member -NotePropertyName State -NotePropertyValue $state -PassThru)
+}
+
+function Get-DistCopyDrift {
+    # Files under $Source (apps/desktop/public) that the build should have
+    # copied into $Dist byte for byte: one DIST_MISSING or DIST_CHANGED line
+    # (path relative to $Source, forward slashes) per file that it did not.
+    # No output means dist holds this tree's public files.
+    [CmdletBinding()]
+    [OutputType([string])]
+    param([Parameter(Mandatory = $true)][string]$Source, [Parameter(Mandatory = $true)][string]$Dist)
+    $base = (Resolve-Path -LiteralPath $Source).ProviderPath.TrimEnd('\', '/')
+    foreach ($file in @(Get-ChildItem -LiteralPath $base -Recurse -File)) {
+        $rel = $file.FullName.Substring($base.Length).TrimStart('\', '/') -replace '\\', '/'
+        $copy = Join-Path $Dist $rel
+        if (-not (Test-Path -LiteralPath $copy -PathType Leaf)) { "DIST_MISSING $rel"; continue }
+        if ((Get-Item -LiteralPath $copy).Length -ne $file.Length -or (Get-Sha256 -LiteralPath $copy) -ne (Get-Sha256 -LiteralPath $file.FullName)) {
+            "DIST_CHANGED $rel"
+        }
+    }
+}
+
 function Get-BuildLogPath {
     # Where a build-tauri-windows.ps1 run saves its transcript:
     # <Root>/target/logs/build-<12-char HEAD sha>-<yyyyMMdd-HHmmss>.log
