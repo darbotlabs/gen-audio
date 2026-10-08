@@ -164,7 +164,7 @@ function syncCubeChrome(): void {
   const meta = getCubeMeta();
   const title = document.querySelector<HTMLElement>("#cube-title");
   if (title) {
-    title.textContent = meta ? meta.title : "Inverse-HDR bitdot cube \u2014 nothing bound";
+    title.textContent = meta ? meta.title : "Inverse-HDR cube \u2014 nothing bound";
   }
   const glyphSlot = document.querySelector<HTMLElement>("#cube-glyph");
   if (glyphSlot) {

@@ -66,11 +66,11 @@ def test_layers_cli_writes_json_and_png(tmp_path):
 
 # (wav stem, cube JSON, engine, cube_revision) for cubes this generator owns.
 GENERATED = [
-    ("bitdot_braille_vibevoice", "library_bitdot_braille_vibevoice_cube3d.json", "vibevoice", 2),
-    ("genaid_full_misaki_kokoro", "library_genaid_full_misaki_kokoro_cube3d.json", "misaki_kokoro", 3),
+    ("bitdot_braille_vibevoice", "library_bitdot_braille_vibevoice_cube3d.json", "vibevoice", 2, "Bitdot braille (VibeVoice-1.5B)"),
+    ("genaid_full_misaki_kokoro", "library_genaid_full_misaki_kokoro_cube3d.json", "misaki_kokoro", 3, "misaki\u2192kokoro"),
 ]
 # Every Library cube JSON and its WAV (the two legacy cubes came from the retired generator).
-LIBRARY_CUBES = [(stem, cube) for stem, cube, _engine, _rev in GENERATED] + [
+LIBRARY_CUBES = [(stem, cube) for stem, cube, _engine, _rev, _label in GENERATED] + [
     ("library_kokoro_onnx", "library_kokoro_onnx_cube3d.json"),
     ("library_cube_explainer_kokoro_onnx", "library_cube_explainer_kokoro_onnx_cube3d.json"),
 ]
@@ -83,10 +83,10 @@ def _need_wav(stem: str) -> Path:
     return wav
 
 
-@pytest.mark.parametrize(("stem", "cube", "engine", "revision"), GENERATED)
-def test_reproduces_shipped_cube_byte_for_byte(stem, cube, engine, revision):
+@pytest.mark.parametrize(("stem", "cube", "engine", "revision", "label"), GENERATED)
+def test_reproduces_shipped_cube_byte_for_byte(stem, cube, engine, revision, label):
     audio, sr = read_wav(_need_wav(stem))
-    doc, _ = library_cube(audio, sr, stem=stem, engine=engine, revision=revision)
+    doc, _ = library_cube(audio, sr, stem=stem, engine=engine, revision=revision, label=label)
     assert json.dumps(doc, ensure_ascii=False) == (LIBRARY / cube).read_text(encoding="utf-8")
 
 
@@ -97,3 +97,41 @@ def test_library_cube_inv_hdr_is_rms_over_peak_of_its_wav(stem, cube):
     doc = json.loads((LIBRARY / cube).read_text(encoding="utf-8"))
     assert doc["inv_hdr"] == pytest.approx(measure(audio, sr).inv_hdr, abs=1e-6), cube
     assert doc["duration_s"] == pytest.approx(len(audio) / sr, abs=1e-9)
+
+
+# --- manifest cube mirror (gen_audio.library_manifest) ---------------------
+# Needs no WAV: it reads only the committed cube JSON and manifest.
+
+def test_committed_manifest_mirrors_every_generated_cube(tmp_path):
+    from gen_audio.library_manifest import sync_manifest
+
+    copy = tmp_path / "manifest.json"
+    copy.write_text((LIBRARY / "manifest.json").read_text(encoding="utf-8"), encoding="utf-8")
+    assert sync_manifest(copy, LIBRARY) == [], "run: python scripts/cube_revision.py manifest"
+    assert copy.read_bytes() == (LIBRARY / "manifest.json").read_bytes()
+
+
+def test_manifest_sync_repairs_drift_and_leaves_legacy_cubes_alone(tmp_path):
+    from gen_audio.library_manifest import render, sync_manifest
+
+    manifest = json.loads((LIBRARY / "manifest.json").read_text(encoding="utf-8"))
+    by_id = {clip["id"]: clip for clip in manifest["clips"]}
+    by_id["lib-misaki-kokoro"]["cube"]["cube_revision"] = 2
+    by_id["lib-misaki-kokoro"]["cube"]["note"] = "Inverse-HDR bitdot cube rev 2"
+    legacy_before = json.dumps(by_id["lib-kokoro-onnx"]["cube"])
+    path = tmp_path / "manifest.json"
+    path.write_text(render(manifest), encoding="utf-8")
+    assert sync_manifest(path, LIBRARY) == ["lib-misaki-kokoro"]
+    repaired = {clip["id"]: clip for clip in json.loads(path.read_text(encoding="utf-8"))["clips"]}
+    misaki = repaired["lib-misaki-kokoro"]["cube"]
+    doc = json.loads((LIBRARY / "library_genaid_full_misaki_kokoro_cube3d.json").read_text(encoding="utf-8"))
+    assert misaki["cube_revision"] == doc["cube_revision"] == 3
+    assert misaki["note"].startswith("Inverse-HDR cube rev 3 over the full 139.375 s WAV")
+    assert "bitdot" not in misaki["note"]
+    assert json.dumps(repaired["lib-kokoro-onnx"]["cube"]) == legacy_before
+
+
+def test_generated_cube_titles_name_the_clip_not_the_point_style():
+    for _stem, cube, _engine, _rev, label in GENERATED:
+        doc = json.loads((LIBRARY / cube).read_text(encoding="utf-8"))
+        assert doc["title"] == f"Inverse-HDR cube \u2014 {label}"

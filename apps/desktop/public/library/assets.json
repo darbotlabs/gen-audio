@@ -1664,150 +1664,6 @@
     },
     {
       "body": {
-        "bin_seconds": 0.6186666666666667,
-        "cube_covers_s": 246.848,
-        "cube_shape_f_t": [
-          102,
-          399
-        ],
-        "duration_s": 247.06666666666663,
-        "inv_hdr": 0.0667773777452339,
-        "json_url": "/library/library_bitdot_braille_vibevoice_cube3d.json",
-        "png_url": "/library/bitdot_braille_vibevoice_cube3d.png"
-      },
-      "display": {
-        "glyph": "⣧⠠",
-        "summary": "Inverse-HDR bitdot cube rev 1 over the full 247.067 s WAV (stft 1024/256 @ 24 kHz, downsample 5x58; signal/tonality/confidence/quality). Scrub maps by seconds: bin = floor(t / 0.618667 s).",
-        "title": "Inverse-HDR bitdot cube — bitdot_braille_vibevoice"
-      },
-      "fields": {
-        "bin_frames": 14848,
-        "covers_ms": 246848,
-        "cube_revision": 2,
-        "duration_ms": 247067,
-        "freq_bins": 102,
-        "hop_frames": 256,
-        "inv_hdr_ppm": 66777,
-        "n_fft": 1024,
-        "n_points": 3600,
-        "sample_rate_hz": 24000,
-        "source_sha256": "63490e16e5841d4e7db6db5a5800f64c0fabdc76a2544997694708c03726439f",
-        "time_bins": 399
-      },
-      "honesty": {
-        "claims": [
-          "library_cube"
-        ],
-        "fixture": false,
-        "synthesized_speech": false
-      },
-      "kind": "cube_ihdr",
-      "legacy_id": "lib-bitdot-braille-vibevoice.cube",
-      "media": [
-        {
-          "bytes": 294253,
-          "mime": "application/json",
-          "path": "library_bitdot_braille_vibevoice_cube3d.json",
-          "role": "cube_json",
-          "sha256": "40d7896aa6023f6c408103ca67fb1f75e84234a6edbe790d702d7e433efb39af"
-        },
-        {
-          "bytes": 1120824,
-          "mime": "image/png",
-          "path": "bitdot_braille_vibevoice_cube3d.png",
-          "role": "cube_png",
-          "sha256": "ee40fcb593691fd42b3a805a0b8463469bfcd446b4eb6399ca9068ddc586499e"
-        }
-      ],
-      "provenance": {
-        "generator": "scripts/cube_spectrogram_3d.py (inverse-HDR bitdot cube)",
-        "params": {
-          "bins_inferred_from_shape": false
-        }
-      },
-      "relations": {},
-      "schema_version": "1.0.0",
-      "src": [
-        "ga:audio_clip:gq2l5uxxj44uwnok6io3kduf5a"
-      ],
-      "status": "ok",
-      "uid": "ga:cube_ihdr:44qgvbyekm3t2af4nufcdrgqei",
-      "uid_scheme": "ga1"
-    },
-    {
-      "body": {
-        "bin_seconds": 0.352,
-        "cube_covers_s": 139.04,
-        "cube_shape_f_t": [
-          102,
-          395
-        ],
-        "duration_s": 139.375,
-        "inv_hdr": 0.07021075781225594,
-        "json_url": "/library/library_genaid_full_misaki_kokoro_cube3d.json",
-        "png_url": "/library/genaid_full_misaki_kokoro_cube3d.png"
-      },
-      "display": {
-        "glyph": "⣰⠡",
-        "summary": "Inverse-HDR bitdot cube rev 2 over the full 139.375 s WAV (stft 1024/256 @ 24 kHz; signal/tonality/confidence/quality). Scrub maps by seconds: bin = floor(t / 0.352 s).",
-        "title": "Inverse-HDR bitdot cube — genaid_full_misaki_kokoro"
-      },
-      "fields": {
-        "bin_frames": 8448,
-        "covers_ms": 139040,
-        "cube_revision": 3,
-        "duration_ms": 139375,
-        "freq_bins": 102,
-        "hop_frames": 256,
-        "inv_hdr_ppm": 70211,
-        "n_fft": 1024,
-        "n_points": 3600,
-        "sample_rate_hz": 24000,
-        "source_sha256": "61b8ca26b3f4759ce643738e2afbc80f7bf2a5eb554c5fedbfbdc2d9bfad3d38",
-        "time_bins": 395
-      },
-      "honesty": {
-        "claims": [
-          "library_cube"
-        ],
-        "fixture": false,
-        "synthesized_speech": false
-      },
-      "kind": "cube_ihdr",
-      "legacy_id": "lib-misaki-kokoro.cube",
-      "media": [
-        {
-          "bytes": 295037,
-          "mime": "application/json",
-          "path": "library_genaid_full_misaki_kokoro_cube3d.json",
-          "role": "cube_json",
-          "sha256": "ea62b25b6040e9fe4e280ac88e6da27ffb0312b2931ab702b9843af1c894e9cb"
-        },
-        {
-          "bytes": 1207680,
-          "mime": "image/png",
-          "path": "genaid_full_misaki_kokoro_cube3d.png",
-          "role": "cube_png",
-          "sha256": "ee6e59312f7b92ee9ffaafe1f7260f811e7b08409139b625fe4fc4526be41760"
-        }
-      ],
-      "provenance": {
-        "generator": "scripts/cube_spectrogram_3d.py (inverse-HDR bitdot cube)",
-        "params": {
-          "bins_inferred_from_shape": false
-        }
-      },
-      "relations": {},
-      "schema_version": "1.0.0",
-      "src": [
-        "ga:audio_clip:vtwxksrsuci7zygslimzfy7kdy"
-      ],
-      "status": "ok",
-      "uid": "ga:cube_ihdr:6aq6vmw7tnmvlfddf53q27ttc4",
-      "uid_scheme": "ga1"
-    },
-    {
-      "body": {
         "bin_seconds": 1.6367916666666666,
         "cube_covers_s": 157.132,
         "cube_shape_f_t": [
@@ -1862,7 +1718,7 @@
         }
       ],
       "provenance": {
-        "generator": "scripts/cube_spectrogram_3d.py (inverse-HDR bitdot cube)",
+        "generator": "retired library cube generator (before gen_audio.cube_layers)",
         "params": {
           "bins_inferred_from_shape": true
         }
@@ -1874,6 +1730,150 @@
       ],
       "status": "ok",
       "uid": "ga:cube_ihdr:bcuw4m76pyqanslfiugnvlxnda",
+      "uid_scheme": "ga1"
+    },
+    {
+      "body": {
+        "bin_seconds": 0.6186666666666667,
+        "cube_covers_s": 246.848,
+        "cube_shape_f_t": [
+          102,
+          399
+        ],
+        "duration_s": 247.06666666666663,
+        "inv_hdr": 0.0667773777452339,
+        "json_url": "/library/library_bitdot_braille_vibevoice_cube3d.json",
+        "png_url": "/library/bitdot_braille_vibevoice_cube3d.png"
+      },
+      "display": {
+        "glyph": "⡛⠑",
+        "summary": "Inverse-HDR cube rev 2 over the full 247.067 s WAV (stft 1024/256 @ 24 kHz, downsample 5x58; signal/tonality/confidence/quality). Scrub maps by seconds: bin = floor(t / 0.618667 s).",
+        "title": "Inverse-HDR cube — Bitdot braille (VibeVoice-1.5B)"
+      },
+      "fields": {
+        "bin_frames": 14848,
+        "covers_ms": 246848,
+        "cube_revision": 2,
+        "duration_ms": 247067,
+        "freq_bins": 102,
+        "hop_frames": 256,
+        "inv_hdr_ppm": 66777,
+        "n_fft": 1024,
+        "n_points": 3600,
+        "sample_rate_hz": 24000,
+        "source_sha256": "63490e16e5841d4e7db6db5a5800f64c0fabdc76a2544997694708c03726439f",
+        "time_bins": 399
+      },
+      "honesty": {
+        "claims": [
+          "library_cube"
+        ],
+        "fixture": false,
+        "synthesized_speech": false
+      },
+      "kind": "cube_ihdr",
+      "legacy_id": "lib-bitdot-braille-vibevoice.cube",
+      "media": [
+        {
+          "bytes": 294253,
+          "mime": "application/json",
+          "path": "library_bitdot_braille_vibevoice_cube3d.json",
+          "role": "cube_json",
+          "sha256": "06d10c534df5fcabef288e3538c5c553db1dc179cb4e1b1e976af09fb0f5c657"
+        },
+        {
+          "bytes": 1124509,
+          "mime": "image/png",
+          "path": "bitdot_braille_vibevoice_cube3d.png",
+          "role": "cube_png",
+          "sha256": "1ea85c43b0d04aa43bab466be3c5adb7e5fc8579da78cd7fd52f1dc2e01ec57c"
+        }
+      ],
+      "provenance": {
+        "generator": "gen_audio.cube_layers (scripts/cube_revision.py layers)",
+        "params": {
+          "bins_inferred_from_shape": false
+        }
+      },
+      "relations": {},
+      "schema_version": "1.0.0",
+      "src": [
+        "ga:audio_clip:gq2l5uxxj44uwnok6io3kduf5a"
+      ],
+      "status": "ok",
+      "uid": "ga:cube_ihdr:lmisx3j3fhlwxd5isq5tdhgtqa",
+      "uid_scheme": "ga1"
+    },
+    {
+      "body": {
+        "bin_seconds": 0.352,
+        "cube_covers_s": 139.04,
+        "cube_shape_f_t": [
+          102,
+          395
+        ],
+        "duration_s": 139.375,
+        "inv_hdr": 0.07021075781225594,
+        "json_url": "/library/library_genaid_full_misaki_kokoro_cube3d.json",
+        "png_url": "/library/genaid_full_misaki_kokoro_cube3d.png"
+      },
+      "display": {
+        "glyph": "⢊⡚",
+        "summary": "Inverse-HDR cube rev 3 over the full 139.375 s WAV (stft 1024/256 @ 24 kHz, downsample 5x33; signal/tonality/confidence/quality). Scrub maps by seconds: bin = floor(t / 0.352 s).",
+        "title": "Inverse-HDR cube — misaki→kokoro"
+      },
+      "fields": {
+        "bin_frames": 8448,
+        "covers_ms": 139040,
+        "cube_revision": 3,
+        "duration_ms": 139375,
+        "freq_bins": 102,
+        "hop_frames": 256,
+        "inv_hdr_ppm": 70211,
+        "n_fft": 1024,
+        "n_points": 3600,
+        "sample_rate_hz": 24000,
+        "source_sha256": "61b8ca26b3f4759ce643738e2afbc80f7bf2a5eb554c5fedbfbdc2d9bfad3d38",
+        "time_bins": 395
+      },
+      "honesty": {
+        "claims": [
+          "library_cube"
+        ],
+        "fixture": false,
+        "synthesized_speech": false
+      },
+      "kind": "cube_ihdr",
+      "legacy_id": "lib-misaki-kokoro.cube",
+      "media": [
+        {
+          "bytes": 295020,
+          "mime": "application/json",
+          "path": "library_genaid_full_misaki_kokoro_cube3d.json",
+          "role": "cube_json",
+          "sha256": "ca200a503309c31d54e6c885b1c215c97a1921a76261d7d203325a9e9eb33f62"
+        },
+        {
+          "bytes": 1206082,
+          "mime": "image/png",
+          "path": "genaid_full_misaki_kokoro_cube3d.png",
+          "role": "cube_png",
+          "sha256": "d21e741825dff7f955b49617246d6331ba0c4161af1e8b1b52fd94c459805533"
+        }
+      ],
+      "provenance": {
+        "generator": "gen_audio.cube_layers (scripts/cube_revision.py layers)",
+        "params": {
+          "bins_inferred_from_shape": false
+        }
+      },
+      "relations": {},
+      "schema_version": "1.0.0",
+      "src": [
+        "ga:audio_clip:vtwxksrsuci7zygslimzfy7kdy"
+      ],
+      "status": "ok",
+      "uid": "ga:cube_ihdr:rjngyfqbn6q4vs6vxmuriua2xa",
       "uid_scheme": "ga1"
     },
     {
@@ -1933,7 +1933,7 @@
         }
       ],
       "provenance": {
-        "generator": "scripts/cube_spectrogram_3d.py (inverse-HDR bitdot cube)",
+        "generator": "retired library cube generator (before gen_audio.cube_layers)",
         "params": {
           "bins_inferred_from_shape": true
         }
@@ -1993,50 +1993,6 @@
     },
     {
       "body": {
-        "active_frac": 0.5016531234807085,
-        "mean": 0.4542897045612335,
-        "p50": 0.2546636760234833,
-        "p90": 1.0,
-        "shape": [
-          102,
-          395
-        ],
-        "std": 0.46652406454086304
-      },
-      "display": {
-        "glyph": "⠃⢂",
-        "title": "confidence layer"
-      },
-      "fields": {
-        "index": 2,
-        "name": "confidence"
-      },
-      "honesty": {
-        "claims": [
-          "library_cube"
-        ],
-        "fixture": false,
-        "synthesized_speech": false
-      },
-      "kind": "layer",
-      "legacy_id": "lib-misaki-kokoro.cube.confidence",
-      "media": [],
-      "provenance": {
-        "generator": "cube JSON layers block (v0)"
-      },
-      "relations": {
-        "layer_of": "ga:cube_ihdr:6aq6vmw7tnmvlfddf53q27ttc4"
-      },
-      "schema_version": "1.0.0",
-      "src": [
-        "ga:cube_ihdr:6aq6vmw7tnmvlfddf53q27ttc4"
-      ],
-      "status": "ok",
-      "uid": "ga:layer:aobb4s2tvify576dz4z53jgx3a",
-      "uid_scheme": "ga1"
-    },
-    {
-      "body": {
         "active_frac": 0.3956163194444444,
         "mean": 0.17801120593324393,
         "p50": 0.11958901388017384,
@@ -2077,6 +2033,94 @@
       ],
       "status": "ok",
       "uid": "ga:layer:awg7akzww3ulq7pbfc7zqmbvfe",
+      "uid_scheme": "ga1"
+    },
+    {
+      "body": {
+        "active_frac": 0.38760050726716455,
+        "mean": 0.2116197943687439,
+        "p50": 0.0,
+        "p90": 0.5767661333084106,
+        "shape": [
+          102,
+          395
+        ],
+        "std": 0.2690403163433075
+      },
+      "display": {
+        "glyph": "⠗⢪",
+        "title": "tonality layer"
+      },
+      "fields": {
+        "index": 1,
+        "name": "tonality"
+      },
+      "honesty": {
+        "claims": [
+          "library_cube"
+        ],
+        "fixture": false,
+        "synthesized_speech": false
+      },
+      "kind": "layer",
+      "legacy_id": "lib-misaki-kokoro.cube.tonality",
+      "media": [],
+      "provenance": {
+        "generator": "cube JSON layers block (v0)"
+      },
+      "relations": {
+        "layer_of": "ga:cube_ihdr:rjngyfqbn6q4vs6vxmuriua2xa"
+      },
+      "schema_version": "1.0.0",
+      "src": [
+        "ga:cube_ihdr:rjngyfqbn6q4vs6vxmuriua2xa"
+      ],
+      "status": "ok",
+      "uid": "ga:layer:c6vgc6i4wysjbtvlm5mkcp56km",
+      "uid_scheme": "ga1"
+    },
+    {
+      "body": {
+        "active_frac": 0.13922881815869045,
+        "mean": 0.08884477615356445,
+        "p50": 0.017054392024874687,
+        "p90": 0.2711089551448822,
+        "shape": [
+          102,
+          399
+        ],
+        "std": 0.16468018293380737
+      },
+      "display": {
+        "glyph": "⠓⢘",
+        "title": "signal layer"
+      },
+      "fields": {
+        "index": 0,
+        "name": "signal"
+      },
+      "honesty": {
+        "claims": [
+          "library_cube"
+        ],
+        "fixture": false,
+        "synthesized_speech": false
+      },
+      "kind": "layer",
+      "legacy_id": "lib-bitdot-braille-vibevoice.cube.signal",
+      "media": [],
+      "provenance": {
+        "generator": "cube JSON layers block (v0)"
+      },
+      "relations": {
+        "layer_of": "ga:cube_ihdr:lmisx3j3fhlwxd5isq5tdhgtqa"
+      },
+      "schema_version": "1.0.0",
+      "src": [
+        "ga:cube_ihdr:lmisx3j3fhlwxd5isq5tdhgtqa"
+      ],
+      "status": "ok",
+      "uid": "ga:layer:comhnd2eplvk2s75t2lm4ucf4y",
       "uid_scheme": "ga1"
     },
     {
@@ -2213,94 +2257,6 @@
     },
     {
       "body": {
-        "active_frac": 0.16614118478598305,
-        "mean": 0.1109532043337822,
-        "p50": 0.05062229558825493,
-        "p90": 0.29338619112968445,
-        "shape": [
-          102,
-          395
-        ],
-        "std": 0.1606433093547821
-      },
-      "display": {
-        "glyph": "⠴⡿",
-        "title": "signal layer"
-      },
-      "fields": {
-        "index": 0,
-        "name": "signal"
-      },
-      "honesty": {
-        "claims": [
-          "library_cube"
-        ],
-        "fixture": false,
-        "synthesized_speech": false
-      },
-      "kind": "layer",
-      "legacy_id": "lib-misaki-kokoro.cube.signal",
-      "media": [],
-      "provenance": {
-        "generator": "cube JSON layers block (v0)"
-      },
-      "relations": {
-        "layer_of": "ga:cube_ihdr:6aq6vmw7tnmvlfddf53q27ttc4"
-      },
-      "schema_version": "1.0.0",
-      "src": [
-        "ga:cube_ihdr:6aq6vmw7tnmvlfddf53q27ttc4"
-      ],
-      "status": "ok",
-      "uid": "ga:layer:gr7sygj5tzxi7xo64eafgbllqa",
-      "uid_scheme": "ga1"
-    },
-    {
-      "body": {
-        "active_frac": 0.9321140398425634,
-        "mean": 0.3006399869918823,
-        "p50": 0.2951991558074951,
-        "p90": 0.3960772454738617,
-        "shape": [
-          102,
-          399
-        ],
-        "std": 0.07366328686475754
-      },
-      "display": {
-        "glyph": "⡋⡥",
-        "title": "quality layer"
-      },
-      "fields": {
-        "index": 3,
-        "name": "quality"
-      },
-      "honesty": {
-        "claims": [
-          "library_cube"
-        ],
-        "fixture": false,
-        "synthesized_speech": false
-      },
-      "kind": "layer",
-      "legacy_id": "lib-bitdot-braille-vibevoice.cube.quality",
-      "media": [],
-      "provenance": {
-        "generator": "cube JSON layers block (v0)"
-      },
-      "relations": {
-        "layer_of": "ga:cube_ihdr:44qgvbyekm3t2af4nufcdrgqei"
-      },
-      "schema_version": "1.0.0",
-      "src": [
-        "ga:cube_ihdr:44qgvbyekm3t2af4nufcdrgqei"
-      ],
-      "status": "ok",
-      "uid": "ga:layer:jns2pfr6mpfqaebw6neeyetsui",
-      "uid_scheme": "ga1"
-    },
-    {
-      "body": {
         "active_frac": 1.0,
         "mean": 0.533763335002476,
         "p50": 0.5496301440673312,
@@ -2341,6 +2297,50 @@
       ],
       "status": "ok",
       "uid": "ga:layer:oabq7lvy43kkborvekyzx2npnu",
+      "uid_scheme": "ga1"
+    },
+    {
+      "body": {
+        "active_frac": 0.3497712920022093,
+        "mean": 0.27757853269577026,
+        "p50": 0.0,
+        "p90": 1.0,
+        "shape": [
+          102,
+          399
+        ],
+        "std": 0.4001723229885102
+      },
+      "display": {
+        "glyph": "⡿⠘",
+        "title": "confidence layer"
+      },
+      "fields": {
+        "index": 2,
+        "name": "confidence"
+      },
+      "honesty": {
+        "claims": [
+          "library_cube"
+        ],
+        "fixture": false,
+        "synthesized_speech": false
+      },
+      "kind": "layer",
+      "legacy_id": "lib-bitdot-braille-vibevoice.cube.confidence",
+      "media": [],
+      "provenance": {
+        "generator": "cube JSON layers block (v0)"
+      },
+      "relations": {
+        "layer_of": "ga:cube_ihdr:lmisx3j3fhlwxd5isq5tdhgtqa"
+      },
+      "schema_version": "1.0.0",
+      "src": [
+        "ga:cube_ihdr:lmisx3j3fhlwxd5isq5tdhgtqa"
+      ],
+      "status": "ok",
+      "uid": "ga:layer:p4mpua4yycp23kkbcw4a4x5gzm",
       "uid_scheme": "ga1"
     },
     {
@@ -2389,94 +2389,6 @@
     },
     {
       "body": {
-        "active_frac": 0.3497712920022093,
-        "mean": 0.27757853269577026,
-        "p50": 0.0,
-        "p90": 1.0,
-        "shape": [
-          102,
-          399
-        ],
-        "std": 0.4001723229885102
-      },
-      "display": {
-        "glyph": "⢍⡍",
-        "title": "confidence layer"
-      },
-      "fields": {
-        "index": 2,
-        "name": "confidence"
-      },
-      "honesty": {
-        "claims": [
-          "library_cube"
-        ],
-        "fixture": false,
-        "synthesized_speech": false
-      },
-      "kind": "layer",
-      "legacy_id": "lib-bitdot-braille-vibevoice.cube.confidence",
-      "media": [],
-      "provenance": {
-        "generator": "cube JSON layers block (v0)"
-      },
-      "relations": {
-        "layer_of": "ga:cube_ihdr:44qgvbyekm3t2af4nufcdrgqei"
-      },
-      "schema_version": "1.0.0",
-      "src": [
-        "ga:cube_ihdr:44qgvbyekm3t2af4nufcdrgqei"
-      ],
-      "status": "ok",
-      "uid": "ga:layer:rvgu5iftanyybkanvb2575bqzi",
-      "uid_scheme": "ga1"
-    },
-    {
-      "body": {
-        "active_frac": 0.872433287669741,
-        "mean": 0.2844323217868805,
-        "p50": 0.2750851511955261,
-        "p90": 0.4068130850791931,
-        "shape": [
-          102,
-          395
-        ],
-        "std": 0.08593077957630157
-      },
-      "display": {
-        "glyph": "⢔⢉",
-        "title": "quality layer"
-      },
-      "fields": {
-        "index": 3,
-        "name": "quality"
-      },
-      "honesty": {
-        "claims": [
-          "library_cube"
-        ],
-        "fixture": false,
-        "synthesized_speech": false
-      },
-      "kind": "layer",
-      "legacy_id": "lib-misaki-kokoro.cube.quality",
-      "media": [],
-      "provenance": {
-        "generator": "cube JSON layers block (v0)"
-      },
-      "relations": {
-        "layer_of": "ga:cube_ihdr:6aq6vmw7tnmvlfddf53q27ttc4"
-      },
-      "schema_version": "1.0.0",
-      "src": [
-        "ga:cube_ihdr:6aq6vmw7tnmvlfddf53q27ttc4"
-      ],
-      "status": "ok",
-      "uid": "ga:layer:sse64uylldqmhnmmhllte4eaiq",
-      "uid_scheme": "ga1"
-    },
-    {
-      "body": {
         "active_frac": 0.5225694444444444,
         "mean": 0.21739617390291063,
         "p50": 0.16493246780355056,
@@ -2521,23 +2433,23 @@
     },
     {
       "body": {
-        "active_frac": 0.38760050726716455,
-        "mean": 0.2116197943687439,
-        "p50": 0.0,
-        "p90": 0.5767661333084106,
+        "active_frac": 0.872433287669741,
+        "mean": 0.2844323217868805,
+        "p50": 0.2750851511955261,
+        "p90": 0.4068130850791931,
         "shape": [
           102,
           395
         ],
-        "std": 0.2690403163433075
+        "std": 0.08593077957630157
       },
       "display": {
-        "glyph": "⢧⢉",
-        "title": "tonality layer"
+        "glyph": "⢩⢌",
+        "title": "quality layer"
       },
       "fields": {
-        "index": 1,
-        "name": "tonality"
+        "index": 3,
+        "name": "quality"
       },
       "honesty": {
         "claims": [
@@ -2547,36 +2459,80 @@
         "synthesized_speech": false
       },
       "kind": "layer",
-      "legacy_id": "lib-misaki-kokoro.cube.tonality",
+      "legacy_id": "lib-misaki-kokoro.cube.quality",
       "media": [],
       "provenance": {
         "generator": "cube JSON layers block (v0)"
       },
       "relations": {
-        "layer_of": "ga:cube_ihdr:6aq6vmw7tnmvlfddf53q27ttc4"
+        "layer_of": "ga:cube_ihdr:rjngyfqbn6q4vs6vxmuriua2xa"
       },
       "schema_version": "1.0.0",
       "src": [
-        "ga:cube_ihdr:6aq6vmw7tnmvlfddf53q27ttc4"
+        "ga:cube_ihdr:rjngyfqbn6q4vs6vxmuriua2xa"
       ],
       "status": "ok",
-      "uid": "ga:layer:u6ezlcbicz3g44mkztsmxcenty",
+      "uid": "ga:layer:vgghbq57jenz3ghnmdu3yvjrne",
       "uid_scheme": "ga1"
     },
     {
       "body": {
-        "active_frac": 0.13922881815869045,
-        "mean": 0.08884477615356445,
-        "p50": 0.017054392024874687,
-        "p90": 0.2711089551448822,
+        "active_frac": 0.5016531234807085,
+        "mean": 0.4542897045612335,
+        "p50": 0.2546636760234833,
+        "p90": 1.0,
         "shape": [
           102,
-          399
+          395
         ],
-        "std": 0.16468018293380737
+        "std": 0.46652406454086304
       },
       "display": {
-        "glyph": "⢥⡍",
+        "glyph": "⢾⣱",
+        "title": "confidence layer"
+      },
+      "fields": {
+        "index": 2,
+        "name": "confidence"
+      },
+      "honesty": {
+        "claims": [
+          "library_cube"
+        ],
+        "fixture": false,
+        "synthesized_speech": false
+      },
+      "kind": "layer",
+      "legacy_id": "lib-misaki-kokoro.cube.confidence",
+      "media": [],
+      "provenance": {
+        "generator": "cube JSON layers block (v0)"
+      },
+      "relations": {
+        "layer_of": "ga:cube_ihdr:rjngyfqbn6q4vs6vxmuriua2xa"
+      },
+      "schema_version": "1.0.0",
+      "src": [
+        "ga:cube_ihdr:rjngyfqbn6q4vs6vxmuriua2xa"
+      ],
+      "status": "ok",
+      "uid": "ga:layer:x3ytwvmh4gevrsd66vwyoaghdu",
+      "uid_scheme": "ga1"
+    },
+    {
+      "body": {
+        "active_frac": 0.16614118478598305,
+        "mean": 0.1109532043337822,
+        "p50": 0.05062229558825493,
+        "p90": 0.29338619112968445,
+        "shape": [
+          102,
+          395
+        ],
+        "std": 0.1606433093547821
+      },
+      "display": {
+        "glyph": "⢾⡬",
         "title": "signal layer"
       },
       "fields": {
@@ -2591,20 +2547,20 @@
         "synthesized_speech": false
       },
       "kind": "layer",
-      "legacy_id": "lib-bitdot-braille-vibevoice.cube.signal",
+      "legacy_id": "lib-misaki-kokoro.cube.signal",
       "media": [],
       "provenance": {
         "generator": "cube JSON layers block (v0)"
       },
       "relations": {
-        "layer_of": "ga:cube_ihdr:44qgvbyekm3t2af4nufcdrgqei"
+        "layer_of": "ga:cube_ihdr:rjngyfqbn6q4vs6vxmuriua2xa"
       },
       "schema_version": "1.0.0",
       "src": [
-        "ga:cube_ihdr:44qgvbyekm3t2af4nufcdrgqei"
+        "ga:cube_ihdr:rjngyfqbn6q4vs6vxmuriua2xa"
       ],
       "status": "ok",
-      "uid": "ga:layer:uvgvv6utvhb4ewj5ia6vb7da6y",
+      "uid": "ga:layer:xzwoflt2y3dqsfm52g2no2a6fm",
       "uid_scheme": "ga1"
     },
     {
@@ -2620,7 +2576,7 @@
         "std": 0.260272741317749
       },
       "display": {
-        "glyph": "⣎⠡",
+        "glyph": "⣊⡷",
         "title": "tonality layer"
       },
       "fields": {
@@ -2641,14 +2597,58 @@
         "generator": "cube JSON layers block (v0)"
       },
       "relations": {
-        "layer_of": "ga:cube_ihdr:44qgvbyekm3t2af4nufcdrgqei"
+        "layer_of": "ga:cube_ihdr:lmisx3j3fhlwxd5isq5tdhgtqa"
       },
       "schema_version": "1.0.0",
       "src": [
-        "ga:cube_ihdr:44qgvbyekm3t2af4nufcdrgqei"
+        "ga:cube_ihdr:lmisx3j3fhlwxd5isq5tdhgtqa"
       ],
       "status": "ok",
-      "uid": "ga:layer:zyqvuxwwvs5st3dptnhawgd3b4",
+      "uid": "ga:layer:zj3wdqnoa4rzmxw2nhiluek7vy",
+      "uid_scheme": "ga1"
+    },
+    {
+      "body": {
+        "active_frac": 0.9321140398425634,
+        "mean": 0.3006399869918823,
+        "p50": 0.2951991558074951,
+        "p90": 0.3960772454738617,
+        "shape": [
+          102,
+          399
+        ],
+        "std": 0.07366328686475754
+      },
+      "display": {
+        "glyph": "⣋⠘",
+        "title": "quality layer"
+      },
+      "fields": {
+        "index": 3,
+        "name": "quality"
+      },
+      "honesty": {
+        "claims": [
+          "library_cube"
+        ],
+        "fixture": false,
+        "synthesized_speech": false
+      },
+      "kind": "layer",
+      "legacy_id": "lib-bitdot-braille-vibevoice.cube.quality",
+      "media": [],
+      "provenance": {
+        "generator": "cube JSON layers block (v0)"
+      },
+      "relations": {
+        "layer_of": "ga:cube_ihdr:lmisx3j3fhlwxd5isq5tdhgtqa"
+      },
+      "schema_version": "1.0.0",
+      "src": [
+        "ga:cube_ihdr:lmisx3j3fhlwxd5isq5tdhgtqa"
+      ],
+      "status": "ok",
+      "uid": "ga:layer:zmmnkemqcdhhzw7vfgimdrgnfa",
       "uid_scheme": "ga1"
     },
     {
@@ -3515,14 +3515,14 @@
     "card:profile-rocky": "ga:card:pj4ogcnj42gzli7ql2daqz53em",
     "card:serve-gateway": "ga:card:ayvizyvubrzigxewm2bjzjmvam",
     "card:serve-node": "ga:card:3kc35sblccksmpuwia6s5xobae",
-    "cube_ihdr:lib-bitdot-braille-vibevoice.cube": "ga:cube_ihdr:44qgvbyekm3t2af4nufcdrgqei",
+    "cube_ihdr:lib-bitdot-braille-vibevoice.cube": "ga:cube_ihdr:lmisx3j3fhlwxd5isq5tdhgtqa",
     "cube_ihdr:lib-cube-explainer.cube": "ga:cube_ihdr:bcuw4m76pyqanslfiugnvlxnda",
     "cube_ihdr:lib-kokoro-onnx.cube": "ga:cube_ihdr:uzkw5dq5jjubbqdlaz2pzm4rv4",
-    "cube_ihdr:lib-misaki-kokoro.cube": "ga:cube_ihdr:6aq6vmw7tnmvlfddf53q27ttc4",
-    "layer:lib-bitdot-braille-vibevoice.cube.confidence": "ga:layer:rvgu5iftanyybkanvb2575bqzi",
-    "layer:lib-bitdot-braille-vibevoice.cube.quality": "ga:layer:jns2pfr6mpfqaebw6neeyetsui",
-    "layer:lib-bitdot-braille-vibevoice.cube.signal": "ga:layer:uvgvv6utvhb4ewj5ia6vb7da6y",
-    "layer:lib-bitdot-braille-vibevoice.cube.tonality": "ga:layer:zyqvuxwwvs5st3dptnhawgd3b4",
+    "cube_ihdr:lib-misaki-kokoro.cube": "ga:cube_ihdr:rjngyfqbn6q4vs6vxmuriua2xa",
+    "layer:lib-bitdot-braille-vibevoice.cube.confidence": "ga:layer:p4mpua4yycp23kkbcw4a4x5gzm",
+    "layer:lib-bitdot-braille-vibevoice.cube.quality": "ga:layer:zmmnkemqcdhhzw7vfgimdrgnfa",
+    "layer:lib-bitdot-braille-vibevoice.cube.signal": "ga:layer:comhnd2eplvk2s75t2lm4ucf4y",
+    "layer:lib-bitdot-braille-vibevoice.cube.tonality": "ga:layer:zj3wdqnoa4rzmxw2nhiluek7vy",
     "layer:lib-cube-explainer.cube.confidence": "ga:layer:6unkosdmp7rrikjtor5s2s4qui",
     "layer:lib-cube-explainer.cube.quality": "ga:layer:u2liakmfthyzbhyv7bn37s2uq4",
     "layer:lib-cube-explainer.cube.signal": "ga:layer:gpznanzjovaxtuttuv5uf2ohia",
@@ -3531,10 +3531,10 @@
     "layer:lib-kokoro-onnx.cube.quality": "ga:layer:awg7akzww3ulq7pbfc7zqmbvfe",
     "layer:lib-kokoro-onnx.cube.signal": "ga:layer:dq224j2rnmte4azqe7seix7g4u",
     "layer:lib-kokoro-onnx.cube.tonality": "ga:layer:oabq7lvy43kkborvekyzx2npnu",
-    "layer:lib-misaki-kokoro.cube.confidence": "ga:layer:aobb4s2tvify576dz4z53jgx3a",
-    "layer:lib-misaki-kokoro.cube.quality": "ga:layer:sse64uylldqmhnmmhllte4eaiq",
-    "layer:lib-misaki-kokoro.cube.signal": "ga:layer:gr7sygj5tzxi7xo64eafgbllqa",
-    "layer:lib-misaki-kokoro.cube.tonality": "ga:layer:u6ezlcbicz3g44mkztsmxcenty",
+    "layer:lib-misaki-kokoro.cube.confidence": "ga:layer:x3ytwvmh4gevrsd66vwyoaghdu",
+    "layer:lib-misaki-kokoro.cube.quality": "ga:layer:vgghbq57jenz3ghnmdu3yvjrne",
+    "layer:lib-misaki-kokoro.cube.signal": "ga:layer:xzwoflt2y3dqsfm52g2no2a6fm",
+    "layer:lib-misaki-kokoro.cube.tonality": "ga:layer:c6vgc6i4wysjbtvlm5mkcp56km",
     "spectrogram_2d:lib-bitdot-braille-vibevoice.spec2d": "ga:spectrogram_2d:hf7clfpowg7zajxke6rqhorcve",
     "spectrogram_2d:lib-cube-explainer.spec2d": "ga:spectrogram_2d:udrjd5wyfbgssasvbvkgc2tpxy",
     "spectrogram_2d:lib-kokoro-onnx.spec2d": "ga:spectrogram_2d:54kcseq3lsdqetwmds45vbhhya",

@@ -267,7 +267,7 @@ pub fn migrate_v0_to_v1(bundle: &Value) -> Result<Value, AssetError> {
             relations: Map::new(),
             honesty: honesty(false, false, &["library_cube"]),
             provenance: obj(vec![
-                ("generator", json!("scripts/cube_spectrogram_3d.py (inverse-HDR bitdot cube)")),
+                ("generator", json!(if cube_doc.get("cube_revision").is_some() { "gen_audio.cube_layers (scripts/cube_revision.py layers)" } else { "retired library cube generator (before gen_audio.cube_layers)" })),
                 ("params", json!({"bins_inferred_from_shape": inferred})),
             ]),
             body: json!({

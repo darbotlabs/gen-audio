@@ -184,9 +184,11 @@ def library_cube(
     engine: str,
     revision: int = 1,
     params: CubeParams = CubeParams(),
+    label: str | None = None,
 ) -> tuple[dict, tuple]:
     """Build the Library cube document. Returns (doc, point_cloud) where
-    point_cloud feeds :func:`write_cube_png`."""
+    point_cloud feeds :func:`write_cube_png`. ``label`` names the clip in the
+    title (default: the stem)."""
     y = np.asarray(audio, dtype=np.float64)
     if y.ndim != 1 or len(y) == 0:
         raise ValueError("library_cube expects non-empty mono audio")
@@ -231,7 +233,7 @@ def library_cube(
     doc = {
         "source_wav": f"artifacts/library/{stem}.wav",
         "engine": engine,
-        "title": f"Inverse-HDR bitdot cube \u2014 {stem}",
+        "title": f"Inverse-HDR cube \u2014 {label or stem}",
         "cube_revision": int(revision),
         "sample_rate": int(sample_rate),
         "duration_s": float(len(y) / sample_rate),

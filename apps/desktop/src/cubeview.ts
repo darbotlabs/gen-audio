@@ -427,7 +427,7 @@ export async function loadCube(url: string): Promise<string> {
   state.meta = {
     url,
     name,
-    title: typeof data.title === "string" && data.title ? data.title : `Inverse-HDR bitdot cube \u2014 ${name}`,
+    title: typeof data.title === "string" && data.title ? data.title : `Inverse-HDR cube \u2014 ${name}`,
     invHdr: typeof data.inv_hdr === "number" ? data.inv_hdr : null,
     points: state.points.length,
     freqBins: shape[0],

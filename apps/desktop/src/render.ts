@@ -646,7 +646,7 @@ function appendUtilitySlides(board: HTMLElement, startIndex: number): number {
   spatial.dataset.slide = "spatial";
   spatial.dataset.layer = "cube";
   spatial.dataset.slideIndex = String(startIndex + 1);
-  spatial.setAttribute("aria-label", "Spatial cube: Inverse-HDR bitdot cube from library cube JSON");
+  spatial.setAttribute("aria-label", "Spatial cube: Inverse-HDR cube from library cube JSON");
 
   // The WebGL cube is the whole card. Everything else is a translucent overlay.
   const stage = window.document.createElement("div");
@@ -654,7 +654,7 @@ function appendUtilitySlides(board: HTMLElement, startIndex: number): number {
   const canvas = window.document.createElement("canvas");
   canvas.id = "cube-viewport";
   canvas.dataset.canvas = "cube-viewport";
-  canvas.setAttribute("aria-label", "Inverse-HDR bitdot cube. Drag to rotate, wheel to zoom.");
+  canvas.setAttribute("aria-label", "Inverse-HDR cube. Drag to rotate, wheel to zoom.");
   const labels = window.document.createElement("canvas");
   labels.id = "cube-labels";
   labels.className = "cube-labels";
@@ -663,7 +663,7 @@ function appendUtilitySlides(board: HTMLElement, startIndex: number): number {
   const title = window.document.createElement("p");
   title.id = "cube-title";
   title.className = "cube-overlay cube-title";
-  title.textContent = "Inverse-HDR bitdot cube";
+  title.textContent = "Inverse-HDR cube";
 
   const legend = window.document.createElement("ul");
   legend.className = "cube-overlay cube-legend";
