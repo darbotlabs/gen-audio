@@ -353,3 +353,24 @@ test("second ruling 6: an explicit ui_flip (the flip op) still flips the profile
   assert.equal(render.applyCardOp(board, "flip", { tileId: "profile-anton" }), true);
   assert.equal(face(tile), "back", "flipped defaults to true, as ui_flip documents");
 });
+
+test("Low (b): ui_flip on tile X with persona P does not flip P's profile tile", () => {
+  const board = mount();
+  const profile = profileTile(board);
+  const clip = tiles(board).find((t) => t.dataset.id === "lib-misaki-kokoro");
+  assert.ok(clip, "release deck has lib-misaki-kokoro");
+  assert.equal(face(profile), "front");
+  assert.equal(face(clip!), "front");
+  // Mutant C4: a flip op that carries a profile payload also flipped the profile tile.
+  assert.equal(
+    render.applyCardOp(board, "flip", {
+      tileId: "lib-misaki-kokoro",
+      flipped: true,
+      profile: attachedProfile,
+    }),
+    true,
+  );
+  assert.equal(face(clip!), "back", "tile X flipped");
+  assert.equal(face(profile), "front", "persona P's profile tile did not flip");
+  assert.equal(profile.querySelector('[data-field="refs"]')?.textContent, "persona:anton, clip:lib-misaki-kokoro", "profile still received the refs update");
+});
