@@ -1,4 +1,4 @@
-import { flipGlyph, flipGlyphLabel } from "./glyph";
+import { copyUidButton, flipGlyph, flipGlyphLabel, glyphMark } from "./glyph";
 import type { LibraryCatalog, ModelCubes } from "./library-assets";
 import { emptyStrip } from "./livestrip";
 import { renderTransport } from "./playback";
@@ -424,6 +424,23 @@ function bodyFor(card: ViewportCard, kind: string, body: Record<string, unknown>
     else wrap.append(paragraph("Authenticated: no"));
   }
   return wrap;
+}
+
+/**
+ * The spatial slide's cube identity (second ruling 5): a passive glyph mark
+ * plus its own labelled "Copy uid" button. The glyph has one meaning
+ * everywhere; it never copies. With no bound cube the slot is emptied, never
+ * filled with a stand-in uid.
+ */
+export function fillCubeGlyph(
+  slot: HTMLElement,
+  uid: string | null | undefined,
+  onCopy?: (uid: string, copied: boolean) => void,
+): void {
+  const mark = uid ? glyphMark(uid, { role: "cube" }) : null;
+  const copy = mark ? copyUidButton(uid, { label: "Copy uid", onCopy }) : null;
+  if (mark && copy) slot.replaceChildren(mark, copy);
+  else slot.replaceChildren();
 }
 
 export function announceCopy(uid: string, copied: boolean): void {

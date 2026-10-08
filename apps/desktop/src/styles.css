@@ -968,6 +968,7 @@ th, td { text-align: left; padding: 0.12rem 0.25rem; border-bottom: 1px solid va
 .ga-kind-mcp_tool { color: #9be37a; }
 .ga-kind-unknown { color: #e2b15a; }
 .library-tile[data-has-wav="1"] .ga-glyph { background: #0f1420; }
+.cube-glyph { display: inline-flex; align-items: center; gap: 0.35rem; }
 .cube-glyph:empty { display: none; }
 .cube-glyph .ga-glyph { font-size: 0.62rem; padding: 0.15rem 0.35rem; }
 .cube-glyph .ga-glyph-svg { width: 1.3rem; height: 1.15rem; }

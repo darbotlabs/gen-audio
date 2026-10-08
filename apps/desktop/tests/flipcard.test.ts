@@ -262,3 +262,31 @@ test("reduced motion: the flip turns with no transition, and still turns", () =>
   assert.match(happy.getComputedStyle(motion).transition, /transform/, "motion allowed: the flip animates");
   void reduced.happyDOM.close();
 });
+
+test("second ruling 5: the spatial cube's glyph never copies; its labelled 'Copy uid' button does", async () => {
+  const board = mount();
+  const catalog = await loadLibraryCatalog();
+  const cube = catalog!.assets.find((asset) => asset.kind === "cube_ihdr" && asset.legacy_id === "lib-misaki-kokoro.cube");
+  assert.ok(cube, "the misaki library cube is in assets.json");
+  const slot = board.querySelector<HTMLElement>("#cube-glyph");
+  assert.ok(slot, "the spatial slide has its glyph slot");
+  const announced: Array<[string, boolean]> = [];
+  render.fillCubeGlyph(slot!, cube!.uid, (uid, ok) => announced.push([uid, ok]));
+  copied.length = 0;
+  const glyph = slot!.querySelector<HTMLElement>(".ga-glyph");
+  assert.ok(glyph, "the cube glyph is shown");
+  assert.notEqual(glyph!.tagName, "BUTTON", "the glyph is a passive mark, not a control");
+  click(glyph!);
+  key(glyph!, "Enter");
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.deepEqual(copied, [], "clicking the glyph copied nothing");
+  const buttons = Array.from(slot!.querySelectorAll<HTMLButtonElement>("button"));
+  assert.equal(buttons.length, 1, "one control in the slot");
+  assert.equal(buttons[0].textContent, "Copy uid");
+  click(buttons[0]);
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.deepEqual(copied, [cube!.uid], "the labelled button copied the cube uid");
+  assert.deepEqual(announced, [[cube!.uid, true]]);
+  render.fillCubeGlyph(slot!, null, () => {});
+  assert.equal(slot!.childElementCount, 0, "nothing bound: the slot is empty, no stand-in uid");
+});
