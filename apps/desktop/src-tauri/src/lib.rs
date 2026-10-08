@@ -367,6 +367,90 @@ pub fn run() {
     });
 }
 
+#[cfg(test)]
+mod sidecar_boot {
+    use super::boot_mcp;
+    use std::fs;
+    use std::path::PathBuf;
+    use std::process::Command;
+
+    const TEST_NAME: &str = "sidecar_boot::sidecar_spawn_failure_is_logged_and_boot_continues";
+
+    fn fake_sidecar_path() -> PathBuf {
+        std::env::current_exe()
+            .expect("current_exe")
+            .parent()
+            .expect("exe dir")
+            .join("gen-audio-mcp")
+    }
+
+    #[test]
+    fn sidecar_spawn_failure_is_logged_and_boot_continues() {
+        if std::env::var("GEN_AUDIO_DESKTOP_BOOT_MCP").ok().as_deref() == Some("1") {
+            let fake = fake_sidecar_path();
+            if fake.is_file() {
+                #[cfg(unix)]
+                {
+                    use std::os::unix::fs::PermissionsExt;
+                    let mode = fs::metadata(&fake).expect("fake meta").permissions().mode();
+                    if mode & 0o111 != 0 {
+                        eprintln!("gen-audio: refusing to replace executable {}", fake.display());
+                        std::process::exit(2);
+                    }
+                }
+                let _ = fs::remove_file(&fake);
+            }
+            fs::write(&fake, b"not an executable sidecar").expect("write fake sidecar");
+            let (runtime, child) = boot_mcp(None);
+            let _ = fs::remove_file(&fake);
+            println!("mode={}", runtime.mode);
+            println!("handshake={}", runtime.handshake_ok);
+            println!("child={}", child.is_some());
+            let _ = std::io::Write::flush(&mut std::io::stdout());
+            let ok = runtime.mode == "in-process" && child.is_none();
+            std::process::exit(if ok { 0 } else { 3 });
+        }
+
+        let work = std::env::temp_dir().join(format!("gen-audio-desktop-boot-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&work);
+        fs::create_dir_all(&work).expect("work dir");
+        let addr_file = work.join("mcp.addr");
+        let output = Command::new(std::env::current_exe().expect("current_exe"))
+            .args(["--exact", TEST_NAME, "--nocapture"])
+            .env("GEN_AUDIO_DESKTOP_BOOT_MCP", "1")
+            .env("GEN_AUDIO_MCP_ADDR", "127.0.0.1:0")
+            .env("GEN_AUDIO_WORK_DIR", &work)
+            .env("GEN_AUDIO_MCP_ADDR_FILE", &addr_file)
+            .output()
+            .expect("re-exec the desktop test harness");
+        let _ = fs::remove_file(fake_sidecar_path());
+        let _ = fs::remove_dir_all(&work);
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        assert!(
+            output.status.success(),
+            "child status {:?}\nstdout:\n{stdout}\nstderr:\n{stderr}",
+            output.status
+        );
+        assert!(
+            stderr.contains("gen-audio: MCP sidecar failed to start:"),
+            "spawn failure was not logged\nstderr:\n{stderr}"
+        );
+        assert!(
+            stdout.contains("mode=in-process"),
+            "boot did not continue in-process\nstdout:\n{stdout}\nstderr:\n{stderr}"
+        );
+        assert!(
+            stdout.contains("handshake=true"),
+            "in-process listener did not handshake\nstdout:\n{stdout}\nstderr:\n{stderr}"
+        );
+        assert!(
+            stdout.contains("child=false"),
+            "a failed spawn still returned a child\nstdout:\n{stdout}"
+        );
+    }
+}
+
 fn tray_rgba() -> tauri::image::Image<'static> {
     let mut rgba = vec![0u8; 32 * 32 * 4];
     for pixel in rgba.chunks_mut(4) {
