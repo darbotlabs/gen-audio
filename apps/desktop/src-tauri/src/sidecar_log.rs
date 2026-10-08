@@ -679,7 +679,11 @@ mod tests {
         assert_eq!(said.matches("sidecar log write failed").count(), 1, "one notice for 5 lost lines: {said:?}");
         fs::remove_dir_all(log_path(&dir, 2)).unwrap();
         log.write_line("after recovery").unwrap();
-        // All files: a long reason can rotate the marker into `.log.1`.
+        // Force a rotation (200 more bytes on a 256-byte cap), so the marker is
+        // read from a rotated file: reading only the current file misses it.
+        log.write_line(&format!("after rotation {}", "w".repeat(185))).unwrap();
+        let newest = fs::read_to_string(log_path(&dir, 0)).unwrap();
+        assert!(!newest.contains("sidecar log dropped"), "the marker rotated out of the current file: {newest:?}");
         let current = log_text(&dir);
         let marker = current.lines().find(|line| line.contains("sidecar log dropped 5 line(s)")).unwrap_or_else(|| panic!("no drop marker in {current:?}"));
         for (what, text) in [("marker", marker), ("notice", said.as_str())] {
