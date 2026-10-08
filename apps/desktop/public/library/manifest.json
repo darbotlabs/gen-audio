@@ -54,12 +54,33 @@
       "bytes": 18030044
     },
     {
-      "synthesizedSpeech": false,
-      "wav": null,
       "id": "lib-misaki-kokoro",
       "engineId": "misaki_kokoro",
       "title": "misaki\u2192kokoro",
-      "status": "running"
+      "status": "ok",
+      "synthesizedSpeech": true,
+      "sample_rate": 24000,
+      "duration_s": 139.375,
+      "bytes": 6690044,
+      "wavUrl": "/library/genaid_full_misaki_kokoro.wav",
+      "wav": "artifacts/library/genaid_full_misaki_kokoro.wav",
+      "cube": {
+        "pngUrl": "/library/genaid_full_misaki_kokoro_cube3d.png",
+        "jsonUrl": "/library/library_genaid_full_misaki_kokoro_cube3d.json",
+        "inv_hdr": 0.23948296904563904,
+        "cube_revision": 2,
+        "duration_s": 139.375,
+        "cube_shape_f_t": [
+          102,
+          395
+        ],
+        "bin_seconds": 0.352,
+        "cube_covers_s": 139.04,
+        "n_points": 3600,
+        "n_points_source": 115689,
+        "note": "Inverse-HDR bitdot cube rev 2 over the full 139.375 s WAV (stft 1024/256 @ 24 kHz; signal/tonality/confidence/quality). Scrub maps by seconds: bin = floor(t / 0.352 s)."
+      },
+      "summary": "Real misaki\u2192kokoro WAV (genaid_full_misaki_kokoro). synthesizedSpeech true."
     },
     {
       "synthesizedSpeech": false,

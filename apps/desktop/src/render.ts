@@ -629,36 +629,90 @@ function appendUtilitySlides(board: HTMLElement, startIndex: number): number {
   spatial.dataset.slide = "spatial";
   spatial.dataset.layer = "cube";
   spatial.dataset.slideIndex = String(startIndex + 1);
-  spatial.setAttribute("aria-label", "Interactive cube");
-  const banner = window.document.createElement("div");
-  banner.className = "slide-banner";
-  const heading = window.document.createElement("h3");
-  heading.textContent = "Spatial cube";
-  const blurb = window.document.createElement("p");
-  blurb.textContent = "Inverse-HDR bitdot studio canvas. Layers from library cube JSON only. Shared clock scrub syncs audio + time-slice.";
-  banner.append(heading, blurb);
-  const caption = window.document.createElement("p");
-  caption.id = "cube-caption";
-  caption.className = "summary";
-  caption.textContent = "Select a library clip that has cube JSON. kokoro-onnx has one. Magpie, VibeVoice, and Pocket do not.";
+  spatial.setAttribute("aria-label", "Spatial cube: Inverse-HDR bitdot cube from library cube JSON");
+
+  // The WebGL cube is the whole card. Everything else is a translucent overlay.
+  const stage = window.document.createElement("div");
+  stage.className = "cube-stage";
   const canvas = window.document.createElement("canvas");
   canvas.id = "cube-viewport";
   canvas.dataset.canvas = "cube-viewport";
-  const matrixLabel = window.document.createElement("p");
-  matrixLabel.className = "summary";
-  matrixLabel.textContent = "Layer matrix (from cube JSON only): opacity · gain · blend · reorder. Shared clock with library playback.";
+  canvas.setAttribute("aria-label", "Inverse-HDR bitdot cube. Drag to rotate, wheel to zoom.");
+  const labels = window.document.createElement("canvas");
+  labels.id = "cube-labels";
+  labels.className = "cube-labels";
+  labels.setAttribute("aria-hidden", "true");
+
+  const title = window.document.createElement("p");
+  title.id = "cube-title";
+  title.className = "cube-overlay cube-title";
+  title.textContent = "Inverse-HDR bitdot cube";
+
+  const legend = window.document.createElement("ul");
+  legend.className = "cube-overlay cube-legend";
+  legend.setAttribute("aria-label", "Cube layer legend");
+  for (const id of ["signal", "tonality", "confidence", "quality"]) {
+    const item = window.document.createElement("li");
+    item.dataset.layer = id;
+    item.textContent = id;
+    legend.append(item);
+  }
+
+  const picker = window.document.createElement("div");
+  picker.className = "cube-overlay cube-picker";
+  const select = window.document.createElement("select");
+  select.id = "cube-source";
+  select.setAttribute("aria-label", "Library cube source");
+  const play = window.document.createElement("button");
+  play.type = "button";
+  play.id = "cube-play";
+  play.textContent = "Play";
+  play.setAttribute("aria-label", "Play the clip bound to this cube");
+  const layersToggle = window.document.createElement("button");
+  layersToggle.type = "button";
+  layersToggle.id = "cube-matrix-toggle";
+  layersToggle.className = "cube-matrix-toggle";
+  layersToggle.textContent = "Layers \u25be";
+  layersToggle.setAttribute("aria-expanded", "true");
+  layersToggle.setAttribute("aria-controls", "cube-layer-matrix");
+  picker.append(select, play, layersToggle);
+
+  const badge = window.document.createElement("p");
+  badge.id = "cube-badge";
+  badge.className = "cube-overlay cube-badge";
+
+  const clock = window.document.createElement("p");
+  clock.id = "cube-clock";
+  clock.className = "cube-overlay cube-clock";
+  clock.setAttribute("aria-live", "off");
+
+  const fallback = window.document.createElement("img");
+  fallback.id = "cube-fallback";
+  fallback.className = "cube-fallback";
+  fallback.hidden = true;
+  fallback.alt = "Static cube image";
+
+  const caption = window.document.createElement("p");
+  caption.id = "cube-caption";
+  caption.className = "cube-overlay cube-caption";
+  caption.textContent = "Loading the library cube JSON.";
+
   const matrix = window.document.createElement("div");
   matrix.id = "cube-layer-matrix";
-  matrix.className = "cube-layer-matrix";
-  matrix.setAttribute("aria-label", "Cube layer matrix");
+  matrix.className = "cube-overlay cube-layer-matrix";
+  matrix.setAttribute("aria-label", "Cube layer matrix: opacity, gain, blend, order");
+
   const scrub = window.document.createElement("input");
   scrub.type = "range";
   scrub.id = "cube-scrub";
+  scrub.className = "cube-overlay";
   scrub.min = "0";
   scrub.max = "1000";
-  scrub.value = "1000";
+  scrub.value = "0";
   scrub.setAttribute("aria-label", "Shared cube and audio clock");
-  spatial.append(banner, caption, canvas, matrixLabel, matrix, scrub);
+
+  stage.append(canvas, labels, fallback, title, badge, legend, picker, caption, clock, matrix, scrub);
+  spatial.append(stage);
   board.append(spatial);
   return 2;
 }
@@ -777,6 +831,7 @@ export function syncSlideChrome(index: number, total: number): void {
   });
   const board = window.document.querySelector<HTMLElement>("#board");
   const layer = board ? slides(board)[index]?.dataset.layer : undefined;
+  window.document.body.classList.toggle("cube-active", layer === "cube");
   window.document.querySelectorAll<HTMLButtonElement>("#layer-switch [data-layer]").forEach((button) => {
     button.setAttribute("aria-selected", button.dataset.layer === layer ? "true" : "false");
   });

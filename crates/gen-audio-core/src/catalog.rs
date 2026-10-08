@@ -233,12 +233,12 @@ const LIBRARY: &[LibraryClipMeta] = &[
         id: "lib-misaki-kokoro",
         title: "misaki→kokoro",
         engine_id: "misaki_kokoro",
-        status: "running",
-        synthesized_speech: false,
-        wav_url: None,
-        cube_json_url: None,
+        status: "ok",
+        synthesized_speech: true,
+        wav_url: Some("/library/genaid_full_misaki_kokoro.wav"),
+        cube_json_url: Some("/library/library_genaid_full_misaki_kokoro_cube3d.json"),
         sidecar_url: None,
-        summary: "Misaki→Kokoro is not finished. No WAV until a real file exists.",
+        summary: "Catalog says this clip is a real misaki→kokoro WAV with an Inverse-HDR cube. This process does not open the WAV.",
     },
     LibraryClipMeta {
         id: "lib-magpie",
@@ -350,6 +350,18 @@ mod tests {
         assert_eq!(
             profile["cubeJsonUrl"],
             "/library/library_cube_explainer_kokoro_onnx_cube3d.json"
+        );
+    }
+
+    #[test]
+    fn misaki_kokoro_clip_is_real_with_cube() {
+        let clip = library_clip("lib-misaki-kokoro").expect("misaki clip");
+        assert_eq!(clip.status, "ok");
+        assert!(clip.synthesized_speech);
+        assert_eq!(clip.wav_url, Some("/library/genaid_full_misaki_kokoro.wav"));
+        assert_eq!(
+            clip.cube_json_url,
+            Some("/library/library_genaid_full_misaki_kokoro_cube3d.json")
         );
     }
 }
