@@ -23,6 +23,26 @@ const meta = (import.meta as ImportMeta & { env?: GenAudioEnv }).env;
 /** Vite-replaced flag (used by fixturesFlag when no bindEnv override). */
 export const VITE_GEN_AUDIO_FIXTURES: string | undefined = meta?.VITE_GEN_AUDIO_FIXTURES;
 
+/**
+ * N-M2: compile-time fixture switches. Vite rewrites `import.meta.env` to an
+ * object literal at build time, so both are literal-valued constants Rollup
+ * can fold: in a release build FIXTURES_BUILD is `false` and UNDER_VITE is
+ * `true`. A guarded dynamic import must test these constants at its call
+ * site (`FIXTURES_BUILD || (!UNDER_VITE && ...)`) so the whole branch, and the
+ * lazy chunk behind it, is dropped. A function call (fixturesFlag()) or a
+ * re-exported `let` is opaque to Rollup and keeps the chunk. So is
+ * `typeof import.meta.env` on its own (Rollup does not fold typeof of the
+ * replaced object), and `import.meta.env?.VITE_GEN_AUDIO_FIXTURES` when the
+ * variable is unset (Vite only substitutes keys it knows). What folds:
+ * `import.meta.env?.MODE` (always substituted with a string literal) and
+ * `<anything> && import.meta.env.VITE_GEN_AUDIO_FIXTURES === "1"` (the
+ * right-hand side reads a missing key of the replaced literal: false). Under tsx `import.meta.env` is undefined: UNDER_VITE is false and
+ * the bindEnv seam decides.
+ */
+export const UNDER_VITE: boolean = import.meta.env?.MODE !== undefined;
+export const FIXTURES_BUILD: boolean =
+  typeof import.meta.env !== "undefined" && import.meta.env.VITE_GEN_AUDIO_FIXTURES === "1";
+
 let bound: GenAudioEnv | null = null;
 
 /** Test seam: replace the env binding before main.ts evaluates. */

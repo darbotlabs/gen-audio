@@ -71,3 +71,24 @@ test("option (c): bindEnv fixtures=1 turns on Load labeled example (kills import
   }
   assert.fail("bindEnv seam must reach main.ts; bypassing env.ts leaves fixture UI off under tsx");
 });
+
+// N-M2: the deck and dev-asset imports test FIXTURES_BUILD || (!UNDER_VITE &&
+// seam) inline so release folds them away. Under tsx UNDER_VITE is false, so
+// the seam must still pick the fixture deck; a call site that drops the seam
+// operand (or tests FIXTURES_BUILD alone) boots the release deck here.
+test("N-M2: bindEnv fixtures=1 boots the fixture deck through the inline call-site guard", async () => {
+  const env = await import("../src/env");
+  assert.equal(env.UNDER_VITE, false, "tsx has no import.meta.env");
+  assert.equal(env.FIXTURES_BUILD, false, "tsx has no build-time fixtures flag");
+  const deadline = Date.now() + 5000;
+  while (Date.now() < deadline) {
+    await new Promise((r) => setTimeout(r, 25));
+    const board = happy.document.querySelector("#board");
+    if (board?.querySelector('.card[data-id="spec-fixture"]')) {
+      assert.ok(board.querySelector('.card[data-id="cube-fixture"]'), "fixture deck has cube-fixture");
+      return;
+    }
+  }
+  const ids = Array.from(happy.document.querySelectorAll("#board .card")).map((n) => (n as HTMLElement).dataset.id);
+  assert.fail(`bindEnv fixtures=1 must boot the fixture deck (spec-fixture); board has ${JSON.stringify(ids)}`);
+});

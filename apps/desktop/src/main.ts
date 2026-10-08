@@ -19,7 +19,7 @@ import { isClipPlaying, seekActiveFraction, seekClipFraction, setCubeClockClip }
 import { applyClipNames, harvestNames } from "./library-meta";
 import { bindFloatingPlayback, pauseClip, playClip, releaseAllSeekBlobs, releaseDetachedTransports, seekClipOutcome, setUserPlayReporter } from "./playback";
 import { controlPlayOrigin, McpFailureCounter, postMcp, seekReportControl, userPlayControl } from "./play-control";
-import { fixturesRequested, selectViewport } from "./viewport-source";
+import { fixturesRequested } from "./viewport-source";
 import { loadLibraryCatalog, mediaUrl, sourceSha256, type LibraryCatalog } from "./library-assets";
 import { decorateLibraryTiles } from "./livestrip";
 import { profilePreview, type ProfilePreview, type VoiceSelection } from "./profiles";
@@ -45,7 +45,7 @@ import { drawCube, drawSpectrogram, makeFixture, play } from "./signal";
 import { voiceById } from "./catalog";
 import { CUBE_CONTROL_OP, createCubeModeController, type CubeCompareState, type ToolReply } from "./cube-mode";
 import { CONNECTOR_MODES, validateViewport, type ViewportDocument } from "./validate";
-import { fixturesFlag, installFixtureHooks } from "./env";
+import { FIXTURES_BUILD, UNDER_VITE, fixturesFlag, installFixtureHooks } from "./env";
 
 function required(id: string): HTMLElement {
   const node = document.querySelector<HTMLElement>(id);
@@ -57,17 +57,21 @@ function required(id: string): HTMLElement {
  * Release builds boot the real Library deck (viewport.release.json) and serve
  * an assets.json without the dev fixtures (spec-fixture, cube-fixture,
  * bench-ref). VITE_GEN_AUDIO_FIXTURES=1 (dev/test only) loads the example
- * deck and the dev assets instead; both stay out of the release bundle's
- * main chunk (dynamic import).
+ * deck and the dev assets instead. Both are dynamic imports behind a
+ * compile-time guard, so a release build emits neither chunk (N-M2).
  */
-const fixtureFlag: string | undefined = fixturesFlag();
-const loadShippedDocument: () => Promise<ViewportDocument> = selectViewport(
-  fixtureFlag,
-  async () => releaseDoc as ViewportDocument,
-  async () => (await import("../../../schemas/examples/viewport.example.json")).default as ViewportDocument,
-);
+// N-M2: each guarded dynamic import tests the compile-time constants inline
+// (see env.ts), so release folds the branch to false and emits neither the
+// fixture deck chunk nor the dev asset chunk. The bindEnv seam is reached only
+// when !UNDER_VITE (tsx); in a Vite build that operand is the literal false.
+const loadShippedDocument = async (): Promise<ViewportDocument> =>
+  FIXTURES_BUILD || (!UNDER_VITE && fixturesRequested(fixturesFlag()))
+    ? ((await import("../../../schemas/examples/viewport.example.json")).default as ViewportDocument)
+    : (releaseDoc as ViewportDocument);
 const loadDevAssets = async (): Promise<unknown[]> =>
-  fixturesRequested(fixtureFlag) ? (await import("../../../schemas/asset-object/fixtures/assets.dev.json")).default.assets : [];
+  FIXTURES_BUILD || (!UNDER_VITE && fixturesRequested(fixturesFlag()))
+    ? (await import("../../../schemas/asset-object/fixtures/assets.dev.json")).default.assets
+    : [];
 
 const board = required("#board");
 const empty = required("#empty");

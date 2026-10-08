@@ -4,7 +4,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { mkdtempSync, readFileSync, readdirSync, rmSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 import { DEV_FIXTURE_CLAIMS, fixturesRequested, isDevFixture, selectViewport } from "../src/viewport-source.ts";
 import { comparisonMethod, modelCubes, type AssetEnvelope } from "../src/library-assets.ts";
@@ -57,20 +57,22 @@ test("E1: no stub ids and no stand-in / not-remeasured text in the release catal
 // not registered in a release exe.
 const RELEASE_FORBIDDEN = ["Load labeled example", "Run Python improve", "fixture canvases", "__genAudioScrub", "run_fixture_improve"];
 
-function distText(dir: string): string {
-  const parts: string[] = [];
+function distFiles(dir: string): Map<string, string> {
+  const files = new Map<string, string>();
   const walk = (at: string) => {
     for (const name of readdirSync(at)) {
       const path = join(at, name);
       if (statSync(path).isDirectory()) walk(path);
-      else if (/\.(html|js|css|json)$/.test(name)) parts.push(readFileSync(path, "utf8"));
+      else if (/\.(html|js|css|json)$/.test(name)) files.set(relative(dir, path).replace(/\\/g, "/"), readFileSync(path, "utf8"));
     }
   };
   walk(dir);
-  return parts.join("\n");
+  return files;
 }
 
-async function viteBuild(flag: string | undefined): Promise<string> {
+type Dist = { files: Map<string, string>; text: string };
+
+async function viteBuild(flag: string | undefined): Promise<Dist> {
   const { build } = await import("vite");
   const outDir = mkdtempSync(join(tmpdir(), "ga-dist-"));
   const saved = process.env.VITE_GEN_AUDIO_FIXTURES;
@@ -78,12 +80,44 @@ async function viteBuild(flag: string | undefined): Promise<string> {
   else process.env.VITE_GEN_AUDIO_FIXTURES = flag;
   try {
     await build({ root: repo("apps/desktop"), logLevel: "silent", build: { outDir, emptyOutDir: true } });
-    return distText(outDir);
+    const files = distFiles(outDir);
+    return { files, text: [...files.values()].join("\n") };
   } finally {
     if (saved === undefined) delete process.env.VITE_GEN_AUDIO_FIXTURES;
     else process.env.VITE_GEN_AUDIO_FIXTURES = saved;
     rmSync(outDir, { recursive: true, force: true });
   }
+}
+
+// N-M2: the denylist names the dev chunks themselves, not only symptom
+// strings. Vite names a lazy chunk after its source module plus a content
+// hash (viewport.example-<hash>.js, assets.dev-<hash>.js,
+// fixture-controls-<hash>.js), and the importer refers to it as
+// "./<name>-<hash>.js". A grep for the bare module name "fixture-controls"
+// only finds that chunk when the controls are actually emitted, and says
+// nothing about the deck and dev-asset chunks.
+const DEV_CHUNKS = ["viewport.example", "assets.dev", "fixture-controls"] as const;
+const devChunkFile = (name: string) => new RegExp(`(^|/)${name.replace(/\./g, "\\.")}-[\\w-]+\\.js$`);
+const devChunkRef = (name: string) => new RegExp(`["'\`]\\./${name.replace(/\./g, "\\.")}-[\\w-]+\\.js["'\`]`);
+// Card bodies that exist only in the fixture deck (spec-fixture, cube-fixture,
+// fixture-tone) and the dev asset fixtures. Keys are unquoted first, so the
+// JSON.parse('…') form and the object-literal form both match. The release
+// layout may still name these ids in cardIds; it never defines them.
+const DEV_BODY_MARKERS = ['id:"spec-fixture"', 'id:"cube-fixture"', 'source:"fixture-tone"', '"fixture_tone"', "<node>"];
+const unquoteKeys = (text: string) => text.replace(/"([A-Za-z_$][\w$]*)":/g, "$1:");
+
+function devChunkHits(dist: Dist): string[] {
+  const hits: string[] = [];
+  for (const [path, text] of dist.files) {
+    for (const name of DEV_CHUNKS) {
+      if (devChunkFile(name).test(path)) hits.push(`${path}: ${name} chunk`);
+      if (devChunkRef(name).test(text)) hits.push(`${path}: imports ${name} chunk`);
+    }
+    if (path.startsWith("library/")) continue;
+    const flat = unquoteKeys(text);
+    for (const marker of DEV_BODY_MARKERS) if (flat.includes(marker)) hits.push(`${path}: ${marker}`);
+  }
+  return hits;
 }
 
 test("E1 addendum: index.html has no fixture controls or fixture header text", () => {
@@ -92,14 +126,21 @@ test("E1 addendum: index.html has no fixture controls or fixture header text", (
   assert.ok(!html.includes('id="show-example"') && !html.includes('id="run-improve"'));
 });
 
-test("E1 addendum: a release vite build contains none of the fixture strings; a dev build does", async () => {
+test("E1 addendum + N-M2: a release vite build has none of the fixture strings or dev chunks; a dev build has them", async () => {
   const release = await viteBuild(undefined);
-  for (const text of RELEASE_FORBIDDEN) assert.equal(release.split(text).length - 1, 0, `${text} in release dist`);
-  // Not vacuous: the same build with the dev flag carries the controls and the hook.
+  for (const text of RELEASE_FORBIDDEN) assert.equal(release.text.split(text).length - 1, 0, `${text} in release dist`);
+  assert.deepEqual(devChunkHits(release), [], "release dist ships a fixture deck / dev asset / fixture-controls chunk");
+  // Not vacuous: the same build with the dev flag carries the controls, the hook and every named chunk.
   const dev = await viteBuild("1");
   for (const text of ["Load labeled example", "Run Python improve", "__genAudioScrub", "run_fixture_improve"]) {
-    assert.ok(dev.includes(text), `${text} missing from the dev build`);
+    assert.ok(dev.text.includes(text), `${text} missing from the dev build`);
   }
+  const devHits = devChunkHits(dev);
+  for (const name of DEV_CHUNKS) {
+    assert.ok(devHits.some((hit) => hit.endsWith(`: ${name} chunk`)), `dev build emits no ${name} chunk (denylist would be vacuous)`);
+    assert.ok(devHits.some((hit) => hit.endsWith(`: imports ${name} chunk`)), `dev build has no import of ${name} (denylist would be vacuous)`);
+  }
+  for (const marker of DEV_BODY_MARKERS) assert.ok(devHits.some((hit) => hit.endsWith(`: ${marker}`)), `dev build lacks ${marker}`);
 });
 
 test("E1 addendum: release Tauri builds do not register the fixture commands", () => {
