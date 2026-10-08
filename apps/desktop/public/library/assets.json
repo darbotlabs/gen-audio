@@ -1707,6 +1707,7 @@
       ],
       "provenance": {
         "generator": "src/gen_audio/cube_layers.py",
+        "generator_commit": "3162d0d2bc7fddf32b8562851f58dc26aa386882",
         "generator_sha256": "68d0f9ffe3acca47d984aefba9296fc838e3527fd3b3816dbb9a59e1d4771af9",
         "layer_method": "library_r3",
         "params": {
@@ -1790,6 +1791,7 @@
       ],
       "provenance": {
         "generator": "src/gen_audio/cube_layers.py",
+        "generator_commit": "3162d0d2bc7fddf32b8562851f58dc26aa386882",
         "generator_sha256": "68d0f9ffe3acca47d984aefba9296fc838e3527fd3b3816dbb9a59e1d4771af9",
         "layer_method": "library_r3",
         "params": {
@@ -1873,6 +1875,7 @@
       ],
       "provenance": {
         "generator": "src/gen_audio/cube_layers.py",
+        "generator_commit": "3162d0d2bc7fddf32b8562851f58dc26aa386882",
         "generator_sha256": "68d0f9ffe3acca47d984aefba9296fc838e3527fd3b3816dbb9a59e1d4771af9",
         "layer_method": "library_r3",
         "params": {
@@ -1956,6 +1959,7 @@
       ],
       "provenance": {
         "generator": "src/gen_audio/cube_layers.py",
+        "generator_commit": "3162d0d2bc7fddf32b8562851f58dc26aa386882",
         "generator_sha256": "68d0f9ffe3acca47d984aefba9296fc838e3527fd3b3816dbb9a59e1d4771af9",
         "layer_method": "library_r3",
         "params": {
@@ -2039,6 +2043,7 @@
       ],
       "provenance": {
         "generator": "src/gen_audio/cube_layers.py",
+        "generator_commit": "3162d0d2bc7fddf32b8562851f58dc26aa386882",
         "generator_sha256": "68d0f9ffe3acca47d984aefba9296fc838e3527fd3b3816dbb9a59e1d4771af9",
         "layer_method": "library_r3",
         "params": {

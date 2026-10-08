@@ -268,9 +268,14 @@ def test_manifest_sync_repairs_drift_wires_new_cubes_and_leaves_legacy_cubes_alo
     path.write_text(render(manifest), encoding="utf-8")
     assert sync_manifest(path) == ["lib-kokoro", "lib-misaki-kokoro"]
     rewired = {clip["id"]: clip for clip in json.loads(path.read_text(encoding="utf-8"))["clips"]}["lib-kokoro"]["cube"]
-    assert rewired == {clip["id"]: clip for clip in json.loads((LIBRARY / "manifest.json").read_text(encoding="utf-8"))["clips"]}["lib-kokoro"]["cube"]
+    shipped = {clip["id"]: clip for clip in json.loads((LIBRARY / "manifest.json").read_text(encoding="utf-8"))["clips"]}
+    # A freshly wired block has no generator_commit (information only, recorded
+    # from history by --record-generator-commit); everything else matches.
+    assert "generator_commit" not in rewired
+    assert rewired == {k: v for k, v in shipped["lib-kokoro"]["cube"].items() if k != "generator_commit"}
     repaired = {clip["id"]: clip for clip in json.loads(path.read_text(encoding="utf-8"))["clips"]}
     misaki = repaired["lib-misaki-kokoro"]["cube"]
+    assert misaki.get("generator_commit") == shipped["lib-misaki-kokoro"]["cube"].get("generator_commit"), "sync keeps it"
     doc = json.loads((LIBRARY / "library_genaid_full_misaki_kokoro_cube3d.json").read_text(encoding="utf-8"))
     assert misaki["cube_revision"] == doc["cube_revision"] == 3
     assert misaki["note"].startswith("Inverse-HDR cube rev 3 over the full 139.375 s WAV")
