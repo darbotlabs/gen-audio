@@ -206,3 +206,77 @@ def test_dist_scan_fails_on_a_planted_catalog_title(tmp_path):
         encoding="utf-8",
     )
     assert dist_hits(bundle) == []
+
+
+def test_dist_scan_catches_stub_strings_in_any_case(tmp_path):
+    """AP-OPT-1: the gate is case-insensitive and covers more than PLACEHOLDER.
+
+    A quoted "placeholder", "FIXTURE", "TODO stub" or "Sample clip (preview)"
+    fails. The HTML attribute name placeholder= and a `.placeholder` property
+    are not stub copy, so a release bundle that uses them stays clean.
+    """
+    bundle = tmp_path / "dist"
+    assets = bundle / "assets"
+    library = bundle / "library"
+    assets.mkdir(parents=True)
+    library.mkdir()
+    (library / "assets.json").write_text(
+        json.dumps(
+            {
+                "assets": [
+                    {
+                        "legacy_id": "engine-pocket",
+                        "honesty": {"fixture": False},
+                        "display": {"title": "Pocket TTS", "label": "Pocket"},
+                        "body": {
+                            "id": "engine-pocket",
+                            "kind": "EngineStatus",
+                            "body": {"summary": "No adapter in this app."},
+                        },
+                    }
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+    (bundle / "index.html").write_text(
+        '<textarea placeholder="Paste a document"></textarea>',
+        encoding="utf-8",
+    )
+    (assets / "app.js").write_text(
+        'semantic.placeholder = "Semantic name"; const note = "Not a fixture."; const id = "fixture-tone";',
+        encoding="utf-8",
+    )
+    assert dist_hits(bundle) == [], dist_hits(bundle)
+    for source in (
+        'const title = "placeholder clip";',
+        'const title = "FIXTURE";',
+        'const title = "TODO stub";',
+        'const title = "Sample clip (preview)";',
+    ):
+        (assets / "app.js").write_text(source, encoding="utf-8")
+        hits = dist_hits(bundle)
+        assert hits, source
+        assert "app.js" in " ".join(hits), hits
+    (assets / "app.js").write_text('semantic.placeholder = "Semantic name";', encoding="utf-8")
+    (library / "assets.json").write_text(
+        json.dumps(
+            {
+                "assets": [
+                    {
+                        "legacy_id": "engine-pocket",
+                        "honesty": {"fixture": False},
+                        "display": {"title": "TODO stub", "label": "Pocket"},
+                        "body": {
+                            "id": "engine-pocket",
+                            "kind": "EngineStatus",
+                            "body": {"summary": "No adapter in this app."},
+                        },
+                    }
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+    title_hits = dist_hits(bundle)
+    assert any("todo stub" in hit.lower() for hit in title_hits), title_hits

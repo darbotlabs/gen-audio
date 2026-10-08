@@ -173,11 +173,27 @@ def test_cube_provenance_is_rev3_from_this_generators_bytes(stem, cube, engine, 
     check_generator(doc)
 
 
-def test_shipped_cubes_omit_generator_commit_and_carry_generator_sha256():
-    """The shipped contract: generator_commit is absent, generator_sha256 is present.
+def _generator_blob_sha(commit: str) -> str | None:
+    """sha256 of GENERATOR_PATH at ``commit``, CRLF normalized. None if absent."""
+    blob = subprocess.run(
+        ["git", "-C", str(REPO_ROOT), "show", f"{commit}:{GENERATOR_PATH}"],
+        capture_output=True,
+        check=False,
+    )
+    if blob.returncode != 0:
+        return None
+    return normalized_sha256(blob.stdout)
 
-    A skip when this clone has no resolvable commit never checks anything.
-    Identity is the generator bytes, not a commit SHA.
+
+def test_shipped_cubes_record_generator_commit_outside_the_uid(tmp_path):
+    """The flag writes generator_commit on the manifest block, never into the cube JSON.
+
+    Identity is generator_sha256. Each shipped block names a commit whose
+    generator file hashes to that value. Stripping the key and running
+    record_generator_commits puts back a commit that still hashes, and does
+    not touch the cube JSON. Forbidding the key made the documented
+    --record-generator-commit step illegal, and that assertion already held
+    before the test existed.
     """
     manifest = json.loads((LIBRARY / "manifest.json").read_text(encoding="utf-8"))
     seen = 0
@@ -185,16 +201,40 @@ def test_shipped_cubes_omit_generator_commit_and_carry_generator_sha256():
         block = clip.get("cube") or {}
         if not block:
             continue
-        assert "generator_commit" not in block, clip["id"]
-        doc = json.loads((LIBRARY / block["jsonUrl"].rsplit("/", 1)[-1]).read_text(encoding="utf-8"))
-        provenance = doc["provenance"]
-        assert "generator_commit" not in provenance, clip["id"]
+        name = block["jsonUrl"].rsplit("/", 1)[-1]
+        doc = json.loads((LIBRARY / name).read_text(encoding="utf-8"))
         assert "generator_commit" not in doc, clip["id"]
-        sha = provenance["generator_sha256"]
-        assert isinstance(sha, str) and len(sha) == 64, clip["id"]
+        assert "generator_commit" not in doc.get("provenance", {}), clip["id"]
+        sha = doc["provenance"]["generator_sha256"]
         assert sha == generator_sha256(), clip["id"]
+        commit = block.get("generator_commit")
+        assert isinstance(commit, str) and _generator_blob_sha(commit) == sha, clip["id"]
         seen += 1
     assert seen == 5, seen
+
+    library = tmp_path / "library"
+    library.mkdir()
+    for path in LIBRARY.glob("*_cube3d.json"):
+        (library / path.name).write_bytes(path.read_bytes())
+    stripped = json.loads((LIBRARY / "manifest.json").read_text(encoding="utf-8"))
+    for clip in stripped["clips"]:
+        block = clip.get("cube")
+        if isinstance(block, dict):
+            block.pop("generator_commit", None)
+    manifest_path = library / "manifest.json"
+    manifest_path.write_text(json.dumps(stripped), encoding="utf-8")
+    changed = record_generator_commits(manifest_path, REPO_ROOT, library)
+    assert len(changed) == 5, changed
+    restored = json.loads(manifest_path.read_text(encoding="utf-8"))
+    for clip in restored["clips"]:
+        block = clip.get("cube") or {}
+        if not block:
+            continue
+        name = block["jsonUrl"].rsplit("/", 1)[-1]
+        doc = json.loads((library / name).read_text(encoding="utf-8"))
+        assert _generator_blob_sha(block["generator_commit"]) == doc["provenance"]["generator_sha256"], clip["id"]
+    for path in LIBRARY.glob("*_cube3d.json"):
+        assert (library / path.name).read_bytes() == path.read_bytes(), path.name
 
 
 @pytest.mark.skipif(shutil.which("git") is None, reason="needs git")

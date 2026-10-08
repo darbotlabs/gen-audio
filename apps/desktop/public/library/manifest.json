@@ -24,7 +24,8 @@
         "bin_seconds": 0.39466666666666667,
         "cube_covers_s": 157.07733333333334,
         "n_points": 3600,
-        "n_points_source": 125565
+        "n_points_source": 125565,
+        "generator_commit": "f6900cc6d77bbbee1f34259b87e7eaa17ce83b21"
       },
       "summary": "Real kokoro-onnx WAV explaining spectrogram cubes. synthesizedSpeech true."
     },
@@ -52,7 +53,8 @@
         "cube_covers_s": 374.528,
         "n_points": 3600,
         "n_points_source": 115974,
-        "note": "Inverse-HDR cube rev 3 over the full 374.766 s WAV (stft 1024/256 @ 24 kHz, downsample 5x88; signal/tonality/confidence/quality). Scrub maps by seconds: bin = floor(t / 0.938667 s)."
+        "note": "Inverse-HDR cube rev 3 over the full 374.766 s WAV (stft 1024/256 @ 24 kHz, downsample 5x88; signal/tonality/confidence/quality). Scrub maps by seconds: bin = floor(t / 0.938667 s).",
+        "generator_commit": "f6900cc6d77bbbee1f34259b87e7eaa17ce83b21"
       },
       "wav": "artifacts/library/library_kokoro_onnx.wav",
       "n_turns": 18,
@@ -84,7 +86,8 @@
         "cube_covers_s": 374.9866666666667,
         "n_points": 3600,
         "n_points_source": 121627,
-        "note": "Inverse-HDR cube rev 3 over the full 375.625 s WAV (stft 1024/256 @ 24 kHz, downsample 5x89; signal/tonality/confidence/quality). Scrub maps by seconds: bin = floor(t / 0.949333 s)."
+        "note": "Inverse-HDR cube rev 3 over the full 375.625 s WAV (stft 1024/256 @ 24 kHz, downsample 5x89; signal/tonality/confidence/quality). Scrub maps by seconds: bin = floor(t / 0.949333 s).",
+        "generator_commit": "f6900cc6d77bbbee1f34259b87e7eaa17ce83b21"
       },
       "provenance": {
         "engine": "dayour/kokoro",
@@ -121,7 +124,8 @@
         "cube_covers_s": 139.04,
         "n_points": 3600,
         "n_points_source": 115689,
-        "note": "Inverse-HDR cube rev 3 over the full 139.375 s WAV (stft 1024/256 @ 24 kHz, downsample 5x33; signal/tonality/confidence/quality). Scrub maps by seconds: bin = floor(t / 0.352 s)."
+        "note": "Inverse-HDR cube rev 3 over the full 139.375 s WAV (stft 1024/256 @ 24 kHz, downsample 5x33; signal/tonality/confidence/quality). Scrub maps by seconds: bin = floor(t / 0.352 s).",
+        "generator_commit": "f6900cc6d77bbbee1f34259b87e7eaa17ce83b21"
       },
       "summary": "Real misaki\u2192kokoro WAV (genaid_full_misaki_kokoro). Offline run: dayour/misaki G2P + dayour/kokoro torch outside this app; no in-app adapter. synthesizedSpeech true.",
       "provenance": {
@@ -172,7 +176,8 @@
         "cube_covers_s": 246.848,
         "n_points": 3600,
         "n_points_source": 94667,
-        "note": "Inverse-HDR cube rev 3 over the full 247.067 s WAV (stft 1024/256 @ 24 kHz, downsample 5x58; signal/tonality/confidence/quality). Scrub maps by seconds: bin = floor(t / 0.618667 s)."
+        "note": "Inverse-HDR cube rev 3 over the full 247.067 s WAV (stft 1024/256 @ 24 kHz, downsample 5x58; signal/tonality/confidence/quality). Scrub maps by seconds: bin = floor(t / 0.618667 s).",
+        "generator_commit": "f6900cc6d77bbbee1f34259b87e7eaa17ce83b21"
       },
       "provenance": {
         "engine": "vibevoice-1.5B",

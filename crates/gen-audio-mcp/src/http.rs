@@ -623,6 +623,62 @@ mod tests {
     }
 
     #[test]
+    fn serve_logs_mcp_addr_write_failure() {
+        if std::env::var("GEN_AUDIO_MCP_ADDR_SERVE_FAIL").ok().as_deref() == Some("1") {
+            let _ = serve("127.0.0.1:0");
+            return;
+        }
+        let blocker = std::env::temp_dir().join(format!(
+            "gen-audio-mcp-addr-serve-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|elapsed| elapsed.as_nanos())
+                .unwrap_or(0)
+        ));
+        std::fs::write(&blocker, b"not-a-directory").unwrap();
+        let target = blocker.join("mcp.addr");
+        let mut child = std::process::Command::new(std::env::current_exe().expect("test exe"))
+            .arg("serve_logs_mcp_addr_write_failure")
+            .arg("--test-threads=1")
+            .env("GEN_AUDIO_MCP_ADDR_SERVE_FAIL", "1")
+            .env("GEN_AUDIO_MCP_ADDR_FILE", &target)
+            .stdin(std::process::Stdio::null())
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::piped())
+            .spawn()
+            .expect("spawn serve");
+        let mut stderr = child.stderr.take().expect("stderr");
+        let (tx, rx) = std::sync::mpsc::channel();
+        std::thread::spawn(move || {
+            let mut acc = Vec::new();
+            let mut tmp = [0u8; 512];
+            let needle = b"gen-audio-mcp: mcp.addr write failed:";
+            loop {
+                match std::io::Read::read(&mut stderr, &mut tmp) {
+                    Ok(0) | Err(_) => break,
+                    Ok(n) => {
+                        acc.extend_from_slice(&tmp[..n]);
+                        if acc.windows(needle.len()).any(|window| window == needle) {
+                            let _ = tx.send(String::from_utf8_lossy(&acc).into_owned());
+                            break;
+                        }
+                    }
+                }
+            }
+        });
+        let logged = rx.recv_timeout(std::time::Duration::from_secs(10));
+        let _ = child.kill();
+        let _ = child.wait();
+        let _ = std::fs::remove_file(&blocker);
+        let text = logged.expect("serve did not log the mcp.addr write failure");
+        assert!(
+            text.contains("gen-audio-mcp: mcp.addr write failed:"),
+            "{text}"
+        );
+    }
+
+    #[test]
     fn spawned_listener_completes_initialize() {
         let addr = spawn_loopback("127.0.0.1:0").unwrap();
         let value = initialize_handshake(&addr.to_string()).unwrap();

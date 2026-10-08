@@ -199,8 +199,11 @@ commit:
   --record-generator-commit`, run after the regen is committed, writes the
   newest commit whose generator file has those bytes to the manifest cube block
   (`generator_commit`). `build_assets` copies it into the cube envelope's
-  `provenance`, which is unhashed. A test checks that a recorded commit holds
-  those bytes, and skips when the commit is not in the clone.
+  `provenance`, which is unhashed. The five shipped blocks carry that commit.
+  A test hashes the generator file at that commit and checks it equals
+  `generator_sha256`; it also strips the key and checks that
+  `--record-generator-commit` writes a commit that still hashes. The cube
+  JSON never contains the commit, so a rebase does not move the uid.
 
 **Media roles (B2).** Each role appears **at most once** per envelope
 (`duplicate_media_role`; schema `contains` + `maxContains: 1` per role; also

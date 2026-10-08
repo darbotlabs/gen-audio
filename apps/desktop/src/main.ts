@@ -103,7 +103,7 @@ let controlCursor = 0;
 const seenControl = new Set<number>();
 let mcpOrigin = "http://127.0.0.1:8765";
 
-async function discoverMcp(): Promise<string> {
+export async function discoverMcp(): Promise<string> {
   try {
     const { invoke } = await import("@tauri-apps/api/core");
     const reported = await invoke<{ addr?: string; handshake_ok?: boolean }>("mcp_status");
@@ -758,7 +758,7 @@ function setDerived(parentUid: string, role: string, honesty: string): void {
   if (node) node.textContent = `${role}: ${honesty}`;
 }
 
-async function mediaBlob(urlPath: string): Promise<string | null> {
+export async function mediaBlob(urlPath: string): Promise<string | null> {
   const blob = await fetchLibraryBlob(fetch, await mcpReady, urlPath, mcpFailures);
   return blob ? URL.createObjectURL(blob) : null;
 }
@@ -781,7 +781,7 @@ async function mountGeneratedVideo(urlPath: string): Promise<void> {
   video.src = blob;
 }
 
-async function insertGeneratedTile(uid: string, args: Record<string, unknown>): Promise<void> {
+export async function insertGeneratedTile(uid: string, args: Record<string, unknown>): Promise<void> {
   const slide = board.querySelector<HTMLElement>('[data-slide="library"]');
   if (!slide) return;
   const resolved = toolBody(await mcpCall("asset_resolve", { uid }));

@@ -11,6 +11,22 @@ _FORBIDDEN = re.compile(
     re.IGNORECASE,
 )
 _SKIP_KEYS = {"sample_rate", "samples", "n_samples"}
+# Stub words in shipped strings. Case-insensitive, so "FIXTURE", "placeholder",
+# "TODO stub" and "Sample clip (preview)" all fail the gate (AP-OPT-1).
+# Scanned inside quoted strings, not as a raw file substring: `placeholder=`
+# and `.placeholder` are attribute and property names, not stub copy.
+_STUB_TEXT = re.compile(
+    r"placeholder|\bfixture\b|todo stub|sample clip \(preview\)",
+    re.IGNORECASE,
+)
+# Honest copy and ids. "Not a fixture." is the opposite of a stub label.
+_FIXTURE_OK = re.compile(r"not a fixture|labeled fixture|fixture-tone|fixture-cube", re.IGNORECASE)
+_QUOTED = re.compile(r'"(?:\\.|[^"\\])*"|\'(?:\\.|[^\'\\])*\'|`(?:\\.|[^`\\])*`', re.DOTALL)
+
+
+def _stub_matches(text: str) -> list[str]:
+    """Stub words in ``text`` after honest fixture phrases are set aside."""
+    return [match.group(0) for match in _STUB_TEXT.finditer(_FIXTURE_OK.sub(" ", text))]
 
 
 def label_hits(document: dict) -> list[str]:
@@ -175,8 +191,10 @@ def catalog_title_hits(document: object, label: str) -> list[str]:
             for item in value:
                 walk(item, key)
         elif isinstance(value, str) and key in _TITLE_KEYS:
-            for match in _FORBIDDEN.finditer(value):
-                hits.append(f"{label}: {key} {match.group(0).lower()}")
+            found = {match.group(0).lower() for match in _FORBIDDEN.finditer(value)}
+            found.update(match.lower() for match in _stub_matches(value))
+            for match in sorted(found):
+                hits.append(f"{label}: {key} {match}")
 
     walk(document)
     return hits
@@ -247,8 +265,10 @@ def dist_hits(dist: Path) -> list[str]:
         for needle in _DIST_NEEDLES:
             if needle in text:
                 hits.append(f"{path.name}: {needle}")
-        if "PLACEHOLDER" in text and path.suffix != ".json":
-            hits.append(f"{path.name}: PLACEHOLDER")
+        if path.suffix != ".json":
+            for literal in _QUOTED.findall(text):
+                for match in _stub_matches(literal):
+                    hits.append(f"{path.name}: {match}")
         if path.suffix != ".json":
             continue
         try:

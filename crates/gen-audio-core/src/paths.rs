@@ -283,10 +283,29 @@ pub fn publish_mcp_addr(addr: &str) -> Result<(), String> {
     match write_mcp_addr(addr) {
         Ok(()) => Ok(()),
         Err(err) => {
-            eprintln!("{}", mcp_addr_write_failure_line(&err));
+            // fd 2, not `eprintln`: libtest captures the macro, so a parent
+            // waiting on this process would not see the failure.
+            log_stderr(&mcp_addr_write_failure_line(&err));
             Err(err)
         }
     }
+}
+
+fn log_stderr(line: &str) {
+    let text = format!("{line}\n");
+    #[cfg(unix)]
+    {
+        let _ = unsafe { write(2, text.as_ptr() as *const std::ffi::c_void, text.len()) };
+    }
+    #[cfg(not(unix))]
+    {
+        eprintln!("{line}");
+    }
+}
+
+#[cfg(unix)]
+extern "C" {
+    fn write(fd: i32, buf: *const std::ffi::c_void, count: usize) -> isize;
 }
 
 /// Remove `mcp.addr` when this process receives SIGINT or SIGTERM.
@@ -745,6 +764,10 @@ mod tests {
 
     #[test]
     fn mcp_addr_write_error_is_logged() {
+        if std::env::var("GEN_AUDIO_MCP_ADDR_LOG").ok().as_deref() == Some("1") {
+            let _ = publish_mcp_addr("127.0.0.1:9");
+            return;
+        }
         let blocker = std::env::temp_dir().join(format!(
             "gen-audio-mcp-addr-blocker-{}-{}",
             std::process::id(),
@@ -755,12 +778,18 @@ mod tests {
         ));
         fs::write(&blocker, b"not-a-directory").unwrap();
         let target = blocker.join("mcp.addr");
-        let _addr = bind_mcp_addr_file(target);
-        let err = publish_mcp_addr("127.0.0.1:9").expect_err("parent is a file, not a directory");
-        let line = mcp_addr_write_failure_line(&err);
-        assert!(line.starts_with("gen-audio-mcp: mcp.addr write failed:"), "{line}");
-        assert!(line.contains(&err), "{line}");
-        drop(_addr);
+        let output = std::process::Command::new(std::env::current_exe().expect("test exe"))
+            .arg("mcp_addr_write_error_is_logged")
+            .arg("--test-threads=1")
+            .env("GEN_AUDIO_MCP_ADDR_LOG", "1")
+            .env("GEN_AUDIO_MCP_ADDR_FILE", &target)
+            .output()
+            .expect("spawn addr writer");
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        assert!(
+            stderr.contains("gen-audio-mcp: mcp.addr write failed:"),
+            "stderr did not report the write failure:\n{stderr}"
+        );
         let _ = fs::remove_file(&blocker);
     }
 }
