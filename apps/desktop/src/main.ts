@@ -45,6 +45,7 @@ import { drawCube, drawSpectrogram, makeFixture, play } from "./signal";
 import { voiceById } from "./catalog";
 import { CUBE_CONTROL_OP, createCubeModeController, type CubeCompareState, type ToolReply } from "./cube-mode";
 import { CONNECTOR_MODES, validateViewport, type ViewportDocument } from "./validate";
+import { fixturesFlag, installFixtureHooks } from "./env";
 
 function required(id: string): HTMLElement {
   const node = document.querySelector<HTMLElement>(id);
@@ -59,7 +60,7 @@ function required(id: string): HTMLElement {
  * deck and the dev assets instead; both stay out of the release bundle's
  * main chunk (dynamic import).
  */
-const fixtureFlag: string | undefined = import.meta.env.VITE_GEN_AUDIO_FIXTURES;
+const fixtureFlag: string | undefined = fixturesFlag();
 const loadShippedDocument: () => Promise<ViewportDocument> = selectViewport(
   fixtureFlag,
   async () => releaseDoc as ViewportDocument,
@@ -563,37 +564,7 @@ async function refreshConnectors(doc: ViewportDocument): Promise<ViewportDocumen
 document.querySelector("#show-empty")?.addEventListener("click", () => {
   show({ version: "1.0", title: "Darbot Gen-Audio", columns: 3, cards: [] });
 });
-// E1 addendum: the fixture controls exist only in dev/test builds. The check is
-// a literal import.meta.env comparison so Vite replaces it at build time and
-// the release bundle drops this block, labels and command name included
-// (apps/desktop/tests/viewport-source.test.ts greps dist for them).
-if (import.meta.env.VITE_GEN_AUDIO_FIXTURES === "1") {
-  const toolbar = document.querySelector(".ga-header-toolbar .toolbar");
-  const showExample = document.createElement("button");
-  showExample.type = "button";
-  showExample.id = "show-example";
-  showExample.textContent = "Load labeled example";
-  showExample.addEventListener("click", () => {
-    void loadShippedDocument().then(refreshConnectors).then(show);
-  });
-  const runImprove = document.createElement("button");
-  runImprove.type = "button";
-  runImprove.id = "run-improve";
-  runImprove.textContent = "Run Python improve on fixture";
-  runImprove.addEventListener("click", async () => {
-    try {
-      const { invoke } = await import("@tauri-apps/api/core");
-      const result = await invoke<Record<string, unknown>>("run_fixture_improve");
-      status.textContent = result.ok
-        ? "Python improve finished on the fixture tone (fixture only — not podcast speech)."
-        : `Python improve did not finish: ${JSON.stringify(result)}`;
-    } catch (error) {
-      status.textContent = `Python improve needs a debug desktop shell. ${String(error)}`;
-    }
-  });
-  toolbar?.prepend(showExample);
-  toolbar?.append(runImprove);
-}
+
 document.querySelector("#generate-podcast")?.addEventListener("click", () => {
   void submitGenerate();
 });
@@ -824,12 +795,15 @@ function connectControl(): void {
 void loadShippedDocument().then(refreshConnectors).then(show);
 // The bus ring holds 128 events; viewport_get is the Cube mode's resync.
 void boardReady.then(() => cubeMode.sync()).then(reportCubeMode);
-// Test hook (dev/test builds only, E1 addendum): scrubs the cube and ONLY the
-// clip the cube is bound to (never whatever played last).
-if (import.meta.env.VITE_GEN_AUDIO_FIXTURES === "1") {
-  (window as unknown as { __genAudioScrub?: (f: number) => Promise<string> }).__genAudioScrub = (fraction: number) => {
-    setCubeScrub(fraction, { silent: true });
-    return cubeClipId ? seekClipFraction(cubeClipId, fraction) : Promise.resolve("no cube clip");
-  };
-}
+
+// E1 addendum: fixture controls live behind env.installFixtureHooks so Vite DCE
+// drops them from release dist (viewport-source.test.ts greps for the strings).
+void installFixtureHooks({
+  loadShippedDocument: () => loadShippedDocument() as Promise<unknown>,
+  refreshConnectors: (doc) => refreshConnectors(doc as ViewportDocument) as Promise<unknown>,
+  show: (doc) => show(doc as ViewportDocument),
+  status,
+  setCubeScrub,
+  seekBoundClip: (fraction) => (cubeClipId ? seekClipFraction(cubeClipId, fraction) : Promise.resolve("no cube clip")),
+});
 connectControl();
