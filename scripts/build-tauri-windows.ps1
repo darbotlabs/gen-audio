@@ -193,7 +193,7 @@ if ($Mode -eq 'Full') {
     if ($msi.Count -lt 1) { throw "no MSI under $bundleDir\msi" }
     foreach ($installer in @($nsis[0], $msi[0])) {
         $fresh = Assert-Fresh -Path $installer.FullName -What 'installer'
-        $hash = (Get-FileHash -LiteralPath $fresh.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+        $hash = Get-Sha256 -LiteralPath $fresh.FullName
         Write-Output "INSTALLER path=$($fresh.FullName) size=$($fresh.Length) sha256=$hash mtime=$($fresh.LastWriteTime.ToString('yyyy-MM-ddTHH:mm:sszzz'))"
     }
 }
