@@ -202,11 +202,13 @@ pub fn ensure_bind_allowed(addr: &str) -> std::io::Result<()> {
     Ok(())
 }
 
-/// Ports whose `handle_connection` should record the `Server` it was given.
-/// Keyed by the listener port so parallel tests do not share a list. Absent
-/// from the release binary: this is `cfg(test)` only.
+/// Ports whose `handle_connection` should record the `Server` instance id it
+/// was given. Keyed by the listener port so parallel tests do not share a
+/// list. The id is monotonic, not a pointer: the allocator can reuse an
+/// address after the previous Server is dropped. Absent from the release
+/// binary: this is `cfg(test)` only.
 #[cfg(test)]
-static HANDLED_SERVERS: std::sync::LazyLock<std::sync::Mutex<std::collections::HashMap<u16, Vec<usize>>>> =
+static HANDLED_SERVERS: std::sync::LazyLock<std::sync::Mutex<std::collections::HashMap<u16, Vec<u64>>>> =
     std::sync::LazyLock::new(|| std::sync::Mutex::new(std::collections::HashMap::new()));
 
 #[cfg(test)]
@@ -214,7 +216,7 @@ fn note_handled_server(server: &Server, stream: &TcpStream) {
     let Ok(addr) = stream.local_addr() else { return };
     let Ok(mut watched) = HANDLED_SERVERS.lock() else { return };
     if let Some(ids) = watched.get_mut(&addr.port()) {
-        ids.push(server as *const Server as usize);
+        ids.push(server.instance_id);
     }
 }
 
@@ -737,6 +739,9 @@ mod tests {
 
     #[test]
     fn local_accept_loop_hands_each_connection_the_same_server() {
+        // Instance ids, not addresses. A fresh Server::boot() per connection
+        // frees the previous one, and the allocator can hand that address out
+        // again, so a pointer compare stays green.
         let listener = TcpListener::bind("127.0.0.1:0").unwrap();
         let port = listener.local_addr().unwrap().port();
         super::HANDLED_SERVERS.lock().unwrap().insert(port, Vec::new());

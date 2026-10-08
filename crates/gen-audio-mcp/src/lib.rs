@@ -21,6 +21,19 @@ pub struct Server {
     pub repo: Option<PathBuf>,
     /// HTTP rejections seen by this server's listener (served on /health).
     pub rejections: std::sync::Arc<http::RejectionStats>,
+    /// Monotonic identity. A raw address can be recycled after the previous
+    /// Server is dropped, so the local accept_loop pin compares this. Test
+    /// builds only; the release binary does not carry the counter.
+    #[cfg(test)]
+    pub(crate) instance_id: u64,
+}
+
+#[cfg(test)]
+static NEXT_SERVER_ID: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
+
+#[cfg(test)]
+fn next_server_id() -> u64 {
+    NEXT_SERVER_ID.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
 }
 
 impl Server {
@@ -35,6 +48,8 @@ impl Server {
             scratch,
             repo: find_repo_root(),
             rejections: Default::default(),
+            #[cfg(test)]
+            instance_id: next_server_id(),
         }
     }
 
@@ -44,6 +59,8 @@ impl Server {
             scratch: Scratch::create().expect("isolated work directory"),
             repo: find_repo_root(),
             rejections: Default::default(),
+            #[cfg(test)]
+            instance_id: next_server_id(),
         }
     }
 }
