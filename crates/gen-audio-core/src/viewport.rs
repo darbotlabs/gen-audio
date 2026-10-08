@@ -1262,9 +1262,10 @@ pub fn facts_snapshot(
 }
 
 pub fn facts(uid: &str, kind: &str, title: &str, honesty: &str, media: &str) -> Vec<Value> {
-    vec![
+    let mut sections = vec![
         json!({
             "id": "identity",
+            "status": "real",
             "facts": [
                 {"label": "Title", "value": title, "field": "title"},
                 {"label": "Kind", "value": kind, "field": "kind"},
@@ -1273,12 +1274,849 @@ pub fn facts(uid: &str, kind: &str, title: &str, honesty: &str, media: &str) -> 
         }),
         json!({
             "id": "honesty",
+            "status": "real",
             "facts": [
                 {"label": "Status", "value": honesty, "field": "honesty"},
                 {"label": "Media", "value": media, "field": "media"}
             ]
         }),
-    ]
+    ];
+    let rows = catalog_rows();
+    append_fact_sections(&mut sections, uid, kind, &rows);
+    sections
+}
+
+const LAYER_ORDER: [&str; 4] = ["signal", "tonality", "confidence", "quality"];
+
+fn append_fact_sections(sections: &mut Vec<Value>, uid: &str, kind: &str, rows: &[Value]) {
+    match kind {
+        "audio_clip" => append_clip_sections(sections, uid, rows),
+        "voice_model" => append_model_sections(sections, uid, rows),
+        "connector" => append_connector_section(sections, uid, rows),
+        "voice_profile" => append_profile_sections(sections, uid, rows),
+        "cube" => append_derived_cube(sections, uid, rows),
+        "spectrogram" => append_derived_spectrogram(sections, uid, rows),
+        "video" => sections.push(video_section()),
+        _ => {}
+    }
+}
+
+fn append_clip_sections(sections: &mut Vec<Value>, tile: &str, rows: &[Value]) {
+    let Some(clip) = find_clip(rows, tile) else {
+        if catalog::library_clip(tile).is_some() {
+            sections.push(pending_clip_section());
+            if let Some(relations) = catalog_clip_relations(tile, rows) {
+                sections.push(relations);
+            }
+        }
+        return;
+    };
+    sections.push(clip_section(clip));
+    if let Some(cube) = own_cube(rows, uid_of(clip)) {
+        sections.push(cube_section(clip, cube));
+        sections.push(layers_section(cube, rows));
+    }
+    if let Some(spec) = own_spectrogram(rows, uid_of(clip)) {
+        sections.push(spectrogram_section(clip, spec));
+    }
+    sections.push(clip_relations(clip, rows));
+}
+
+fn append_model_sections(sections: &mut Vec<Value>, tile: &str, rows: &[Value]) {
+    let Some(engine_id) = RELEASE_ENGINES
+        .iter()
+        .find(|(id, _)| *id == tile)
+        .map(|(_, engine_id)| *engine_id)
+    else {
+        return;
+    };
+    let Some(model) = catalog::voice_model(engine_id) else {
+        return;
+    };
+    sections.push(model_section(engine_id, model));
+    if engine_is_g2p(engine_id) {
+        // g2p emits phonemes, not a cube row and not a wav_missing stand-in.
+    } else {
+        let cube_rows = model_cube_rows(engine_id, rows);
+        if cube_rows.is_empty() {
+            let tiles = wav_missing_tiles(engine_id);
+            if !tiles.is_empty() {
+                sections.push(json!({
+                    "id": "cube",
+                    "status": "pending",
+                    "reason": "wav_missing",
+                    "tile_ids": tiles,
+                    "facts": []
+                }));
+            }
+        } else {
+            sections.push(json!({
+                "id": "model_cubes",
+                "status": "real",
+                "rows": cube_rows,
+                "facts": []
+            }));
+        }
+    }
+    if let Some(relations) = model_relations(engine_id, rows) {
+        sections.push(relations);
+    }
+}
+
+fn append_connector_section(sections: &mut Vec<Value>, tile: &str, rows: &[Value]) {
+    if let Some(section) = connector_section(tile, rows) {
+        sections.push(section);
+    }
+}
+
+fn append_profile_sections(sections: &mut Vec<Value>, tile: &str, rows: &[Value]) {
+    let Some(persona_id) = tile.strip_prefix("profile-") else {
+        return;
+    };
+    let Some(person) = catalog::persona(persona_id) else {
+        return;
+    };
+    let Some(value) = catalog::voice_profile_value(persona_id) else {
+        return;
+    };
+    sections.push(profile_section(person, &value));
+    sections.push(persona_section(person));
+    if let Some(relations) = profile_relations(person, rows) {
+        sections.push(relations);
+    }
+}
+
+fn append_derived_cube(sections: &mut Vec<Value>, uid: &str, rows: &[Value]) {
+    let Some(source) = uid.strip_suffix(":cube") else {
+        return;
+    };
+    let Some(clip) = find_clip(rows, source) else {
+        return;
+    };
+    if let Some(cube) = own_cube(rows, uid_of(clip)) {
+        sections.push(cube_section(clip, cube));
+    }
+}
+
+fn append_derived_spectrogram(sections: &mut Vec<Value>, uid: &str, rows: &[Value]) {
+    let Some(source) = uid.strip_suffix(":spectrogram") else {
+        return;
+    };
+    let Some(clip) = find_clip(rows, source) else {
+        return;
+    };
+    if let Some(spec) = own_spectrogram(rows, uid_of(clip)) {
+        sections.push(spectrogram_section(clip, spec));
+    }
+}
+
+fn video_section() -> Value {
+    json!({
+        "id": "video",
+        "status": "pending",
+        "reason": "no_video_asset_kind",
+        "facts": []
+    })
+}
+
+fn pending_clip_section() -> Value {
+    let pending = json!("pending");
+    json!({
+        "id": "clip",
+        "status": "pending",
+        "uid": pending,
+        "duration_s": pending,
+        "sample_rate_hz": pending,
+        "engine": pending,
+        "source": pending,
+        "wav_sha256": pending,
+        "facts": [
+            fact("Clip", "uid", pending.clone()),
+            fact("Duration", "duration_s", pending.clone()),
+            fact("Sample rate", "sample_rate_hz", pending.clone()),
+            fact("Engine", "engine", pending.clone()),
+            fact("Source", "source", pending.clone()),
+            fact("WAV sha256", "wav_sha256", pending)
+        ]
+    })
+}
+
+fn clip_section(clip: &Value) -> Value {
+    let uid = json!(uid_of(clip));
+    let duration_s = json!(number_at(clip, "/fields/duration_ms").unwrap_or(0.0) / 1000.0);
+    let sample_rate = json!(integer_at(clip, "/fields/sample_rate_hz").unwrap_or(0));
+    let engine = json!(text_at(clip, "/fields/engine").unwrap_or("pending"));
+    let source = json!(text_at(clip, "/provenance/generator").unwrap_or("pending"));
+    let wav = json!(media_sha(clip, "wav").unwrap_or("pending"));
+    let status = if wav == "pending" || engine == "pending" || source == "pending" {
+        "pending"
+    } else {
+        "real"
+    };
+    json!({
+        "id": "clip",
+        "status": status,
+        "uid": uid,
+        "duration_s": duration_s,
+        "sample_rate_hz": sample_rate,
+        "engine": engine,
+        "source": source,
+        "wav_sha256": wav,
+        "facts": [
+            fact("Clip", "uid", uid.clone()),
+            fact("Duration", "duration_s", duration_s.clone()),
+            fact("Sample rate", "sample_rate_hz", sample_rate.clone()),
+            fact("Engine", "engine", engine.clone()),
+            fact("Source", "source", source.clone()),
+            fact("WAV sha256", "wav_sha256", wav)
+        ]
+    })
+}
+
+fn cube_section(clip: &Value, cube: &Value) -> Value {
+    let read = read_cube(clip, cube);
+    if read.status == "pending" {
+        let pending = json!("pending");
+        let reason = read.reason.unwrap_or_else(|| "pending".into());
+        return json!({
+            "id": "cube",
+            "status": "pending",
+            "reason": reason,
+            "cube_uid": pending,
+            "inv_hdr": pending,
+            "coverage": pending,
+            "sec_per_bin": pending,
+            "shape_f_t": pending,
+            "cube_revision": pending,
+            "layer_method": pending,
+            "cube_json": pending,
+            "facts": [fact("Cube", "cube_uid", pending.clone())]
+        });
+    }
+    let cube_uid = json!(uid_of(cube));
+    let inv = json!(number_at(cube, "/fields/inv_hdr_ppm").unwrap_or(0.0) / 1e6);
+    let shape = json!([
+        integer_at(cube, "/fields/freq_bins").unwrap_or(0),
+        integer_at(cube, "/fields/time_bins").unwrap_or(0)
+    ]);
+    let revision = json!(integer_at(cube, "/fields/cube_revision").unwrap_or(0));
+    let method = json!(layer_method_of(cube).unwrap_or("pending"));
+    let bin = json!(number_at(cube, "/body/bin_seconds").unwrap_or(0.0));
+    let cube_json = media_ref(cube, "cube_json");
+    let coverage = read.coverage.clone().unwrap_or(Value::Null);
+    let mut section = json!({
+        "id": "cube",
+        "status": read.status,
+        "cube_uid": cube_uid,
+        "inv_hdr": inv,
+        "coverage": coverage,
+        "sec_per_bin": bin,
+        "shape_f_t": shape,
+        "cube_revision": revision,
+        "layer_method": method,
+        "cube_json": cube_json,
+        "facts": [
+            fact("Cube", "cube_uid", cube_uid.clone()),
+            fact("inverse-HDR ratio", "inv_hdr", inv.clone()),
+            fact("Coverage", "coverage", coverage.clone()),
+            fact("Seconds per bin", "sec_per_bin", bin.clone()),
+            fact("Shape", "shape_f_t", shape.clone()),
+            fact("Revision", "cube_revision", revision.clone()),
+            fact("Layer method", "layer_method", method.clone())
+        ]
+    });
+    if let Some(partial) = read.partial {
+        section["partial"] = partial;
+    }
+    section
+}
+
+struct CubeRead {
+    status: &'static str,
+    reason: Option<String>,
+    coverage: Option<Value>,
+    partial: Option<Value>,
+}
+
+fn read_cube(clip: &Value, cube: &Value) -> CubeRead {
+    let clip_uid = uid_of(clip);
+    let input = CoverageInput {
+        selector_start: 0.0,
+        selector_end: number_at(cube, "/fields/covers_ms").unwrap_or(0.0) / 1000.0,
+        clip_duration_s: number_at(clip, "/fields/duration_ms").unwrap_or(0.0) / 1000.0,
+        recorded_source_duration_s: number_at(cube, "/fields/duration_ms").unwrap_or(0.0) / 1000.0,
+        sec_per_bin: number_at(cube, "/body/bin_seconds").unwrap_or(0.0),
+        clip_in_src: src_exact(cube, clip_uid),
+    };
+    match validate_coverage(&input) {
+        Err(reason) => CubeRead {
+            status: "pending",
+            reason: Some(reason),
+            coverage: None,
+            partial: None,
+        },
+        Ok(ok) => {
+            if !sha_matches(clip, cube) {
+                return CubeRead {
+                    status: "pending",
+                    reason: Some("source_sha256".into()),
+                    coverage: None,
+                    partial: None,
+                };
+            }
+            let coverage = json!({
+                "covered_s": ok.covered_s,
+                "of_s": ok.of_s,
+                "ratio": ok.ratio
+            });
+            let status = if ok.partial.is_some() { "partial" } else { "real" };
+            CubeRead {
+                status,
+                reason: None,
+                coverage: Some(coverage),
+                partial: ok.partial,
+            }
+        }
+    }
+}
+
+fn layers_section(cube: &Value, rows: &[Value]) -> Value {
+    let cube_uid = uid_of(cube);
+    let generator = text_at(cube, "/provenance/generator").unwrap_or("pending");
+    let generator_sha = text_at(cube, "/provenance/generator_sha256").unwrap_or("pending");
+    let method = layer_method_of(cube).unwrap_or("pending");
+    let layers: Vec<Value> = LAYER_ORDER
+        .iter()
+        .map(|name| {
+            let found = rows.iter().find(|asset| {
+                asset.get("kind").and_then(Value::as_str) == Some("layer")
+                    && text_at(asset, "/relations/layer_of") == Some(cube_uid)
+                    && text_at(asset, "/fields/name") == Some(*name)
+            });
+            match found {
+                Some(layer) => {
+                    let value = number_at(layer, "/body/mean").unwrap_or(0.0);
+                    json!({
+                        "name": name,
+                        "value": value,
+                        "stats": {
+                            "std": number_at(layer, "/body/std").unwrap_or(0.0),
+                            "p50": number_at(layer, "/body/p50").unwrap_or(0.0),
+                            "p90": number_at(layer, "/body/p90").unwrap_or(0.0),
+                            "active_frac": number_at(layer, "/body/active_frac").unwrap_or(0.0)
+                        },
+                        "formula": {
+                            "ref": {
+                                "generator": generator,
+                                "generator_sha256": generator_sha,
+                                "symbol": "compute_layers",
+                                "layer_method": method
+                            },
+                            "text": "pending"
+                        }
+                    })
+                }
+                None => json!({
+                    "name": name,
+                    "value": "pending",
+                    "stats": "pending",
+                    "formula": {"ref": "pending", "text": "pending"}
+                }),
+            }
+        })
+        .collect();
+    json!({
+        "id": "layers",
+        "status": "pending",
+        "layers": layers,
+        "facts": [fact("Formula", "formula.text", json!("pending"))]
+    })
+}
+
+fn spectrogram_section(clip: &Value, spec: &Value) -> Value {
+    let wav = media_sha(clip, "wav").unwrap_or("");
+    let source = text_at(spec, "/fields/source_sha256").unwrap_or("");
+    if source.is_empty() || source != wav {
+        let pending = json!("pending");
+        return json!({
+            "id": "spectrogram",
+            "status": "pending",
+            "reason": "source_sha256",
+            "spectrogram_uid": pending,
+            "png": pending,
+            "seconds_per_px": pending,
+            "covers_s": pending,
+            "duration_s": pending,
+            "source_sha256": pending,
+            "facts": [fact("Spectrogram", "spectrogram_uid", pending.clone())]
+        });
+    }
+    let spec_uid = json!(uid_of(spec));
+    let png = media_ref_bytes(spec, "spectrogram_png");
+    let seconds = json!(number_at(spec, "/body/seconds_per_px").unwrap_or(0.0));
+    let covers = json!(number_at(spec, "/fields/covers_ms").unwrap_or(0.0) / 1000.0);
+    let duration = json!(number_at(spec, "/fields/duration_ms").unwrap_or(0.0) / 1000.0);
+    let source_sha = json!(source);
+    json!({
+        "id": "spectrogram",
+        "status": "real",
+        "spectrogram_uid": spec_uid,
+        "png": png,
+        "seconds_per_px": seconds,
+        "covers_s": covers,
+        "duration_s": duration,
+        "source_sha256": source_sha,
+        "facts": [
+            fact("Spectrogram", "spectrogram_uid", spec_uid.clone()),
+            fact("Seconds per pixel", "seconds_per_px", seconds.clone()),
+            fact("Source sha256", "source_sha256", source_sha.clone())
+        ]
+    })
+}
+
+fn model_section(engine_id: &str, model: &catalog::VoiceModel) -> Value {
+    let mut section = json!({
+        "id": "model",
+        "status": "real",
+        "engine_id": engine_id,
+        "label": model.label,
+        "waveform": model.waveform,
+        "synth_adapter": model.synth_adapter,
+        "unavailable": model.unavailable,
+        "facts": [
+            fact("Engine", "engine_id", json!(engine_id)),
+            fact("Label", "label", json!(model.label)),
+            fact("Waveform", "waveform", json!(model.waveform)),
+            fact("Synth adapter", "synth_adapter", json!(model.synth_adapter)),
+            fact("Unavailable", "unavailable", json!(model.unavailable))
+        ]
+    });
+    if let Some(reason) = model.offline_reason {
+        section["offline_reason"] = json!(reason);
+    }
+    section
+}
+
+fn model_cube_rows(engine_id: &str, rows: &[Value]) -> Vec<Value> {
+    let mut out = Vec::new();
+    for clip in clips_for(rows, engine_id, "voice_model") {
+        if !has_wav(clip) {
+            continue;
+        }
+        let Some(cube) = own_cube(rows, uid_of(clip)) else {
+            continue;
+        };
+        let cube_uid = uid_of(cube);
+        if !cube_uid.starts_with("ga:cube_ihdr:") {
+            continue;
+        }
+        out.push(json!({
+            "clip_uid": uid_of(clip),
+            "clip_title": text_at(clip, "/display/title").unwrap_or(""),
+            "cube_uid": cube_uid,
+            "revision": integer_at(cube, "/fields/cube_revision").unwrap_or(0),
+            "shape_f_t": [
+                integer_at(cube, "/fields/freq_bins").unwrap_or(0),
+                integer_at(cube, "/fields/time_bins").unwrap_or(0)
+            ],
+            "inv_hdr": number_at(cube, "/body/inv_hdr").unwrap_or_else(|| number_at(cube, "/fields/inv_hdr_ppm").unwrap_or(0.0) / 1e6),
+            "layer_score": number_at(cube, "/body/layer_score").unwrap_or(0.0),
+            "cube_json": media_ref(cube, "cube_json")
+        }));
+    }
+    out
+}
+
+fn wav_missing_tiles(engine_id: &str) -> Vec<String> {
+    catalog::library_clips()
+        .iter()
+        .filter(|clip| clip.engine_id == engine_id && clip.wav_url.is_none())
+        .map(|clip| clip.id.to_string())
+        .collect()
+}
+
+fn connector_section(tile: &str, rows: &[Value]) -> Option<Value> {
+    let card = find_kind(rows, "card", tile)?;
+    let body = card.pointer("/body/body")?;
+    let connector_id = body.get("connectorId").and_then(Value::as_str)?;
+    let mode = body.get("mode").and_then(Value::as_str)?;
+    let authenticated = body.get("authenticated").and_then(Value::as_bool)?;
+    let detail = body.get("detail").and_then(Value::as_str)?;
+    if !connector_mode_is_known(mode) {
+        return Some(json!({
+            "id": "connector",
+            "status": "pending",
+            "reason": "unknown_mode",
+            "facts": []
+        }));
+    }
+    Some(json!({
+        "id": "connector",
+        "status": "real",
+        "connector_id": connector_id,
+        "mode": mode,
+        "authenticated": authenticated,
+        "detail": detail,
+        "facts": [
+            fact("Connector", "connector_id", json!(connector_id)),
+            fact("Mode", "mode", json!(mode)),
+            fact("Authenticated", "authenticated", json!(authenticated)),
+            fact("Detail", "detail", json!(detail))
+        ]
+    }))
+}
+
+fn connector_mode_is_known(mode: &str) -> bool {
+    matches!(mode, "live" | "local" | "mock" | "token_present" | "misconfigured")
+}
+
+fn profile_section(person: &catalog::Persona, value: &Value) -> Value {
+    let voice = value.get("voiceModel").and_then(Value::as_str).unwrap_or("pending");
+    json!({
+        "id": "profile",
+        "status": "real",
+        "persona_id": person.id,
+        "name": person.name,
+        "voice_model": voice,
+        "tone": person.tone,
+        "purpose": person.purpose,
+        "facts": [
+            fact("Persona", "persona_id", json!(person.id)),
+            fact("Name", "name", json!(person.name)),
+            fact("Voice model", "voice_model", json!(voice)),
+            fact("Tone", "tone", json!(person.tone)),
+            fact("Purpose", "purpose", json!(person.purpose))
+        ]
+    })
+}
+
+fn persona_section(person: &catalog::Persona) -> Value {
+    json!({
+        "id": "persona",
+        "status": "real",
+        "domain": person.domain,
+        "accent": person.accent,
+        "traits": person.traits,
+        "refs": person.refs,
+        "facts": [
+            fact("Domain", "domain", json!(person.domain)),
+            fact("Accent", "accent", json!(person.accent)),
+            fact("Traits", "traits", json!(person.traits)),
+            fact("Refs", "refs", json!(person.refs))
+        ]
+    })
+}
+
+fn clip_relations(clip: &Value, rows: &[Value]) -> Value {
+    let clip_uid = uid_of(clip);
+    let mut links = Vec::new();
+    if let Some(target) = text_at(clip, "/provenance/voice_model") {
+        push_ga_link(&mut links, "voice_model", &target, rows);
+    }
+    if let Some(target) = text_at(clip, "/provenance/g2p_model") {
+        push_ga_link(&mut links, "g2p_model", &target, rows);
+    }
+    if let Some(cube) = own_cube(rows, clip_uid) {
+        links.push(derived_link("cube_ihdr", cube, clip));
+    }
+    for cube in rows.iter().filter(|asset| {
+        asset.get("kind").and_then(Value::as_str) == Some("cube_ihdr")
+            && src_contains(asset, clip_uid)
+            && layer_method_of(asset) != Some("library_r3")
+    }) {
+        links.push(derived_link("comparison", cube, clip));
+    }
+    if let Some(spec) = own_spectrogram(rows, clip_uid) {
+        links.push(derived_link("spectrogram_2d", spec, clip));
+    }
+    for card in rows.iter().filter(|asset| {
+        asset.get("kind").and_then(Value::as_str) == Some("card")
+            && bound_to(asset).iter().any(|target| *target == clip_uid)
+    }) {
+        push_ga_link(&mut links, "card", uid_of(card), rows);
+    }
+    relations_section(links)
+}
+
+fn catalog_clip_relations(tile: &str, rows: &[Value]) -> Option<Value> {
+    let clip = catalog::library_clip(tile)?;
+    let model = find_kind(rows, "voice_model", clip.engine_id)?;
+    let mut links = Vec::new();
+    push_ga_link(&mut links, "voice_model", uid_of(model), rows);
+    if links.is_empty() {
+        None
+    } else {
+        Some(relations_section(links))
+    }
+}
+
+fn model_relations(engine_id: &str, rows: &[Value]) -> Option<Value> {
+    let mut links = Vec::new();
+    for clip in clips_for(rows, engine_id, "voice_model") {
+        push_ga_link(&mut links, "rendered_clip", uid_of(clip), rows);
+    }
+    for clip in clips_for(rows, engine_id, "g2p_model") {
+        push_ga_link(&mut links, "g2p_clip", uid_of(clip), rows);
+    }
+    for profile in rows.iter().filter(|asset| {
+        asset.get("kind").and_then(Value::as_str) == Some("voice_profile")
+            && text_at(asset, "/body/voiceModel") == Some(engine_id)
+    }) {
+        push_ga_link(&mut links, "profile", uid_of(profile), rows);
+    }
+    if !links.is_empty() {
+        return Some(relations_section(links));
+    }
+    let tiles = wav_missing_tiles(engine_id);
+    if tiles.is_empty() {
+        None
+    } else {
+        Some(json!({
+            "id": "relations",
+            "status": "pending",
+            "reason": "no_envelope",
+            "tile_ids": tiles,
+            "facts": []
+        }))
+    }
+}
+
+fn profile_relations(person: &catalog::Persona, rows: &[Value]) -> Option<Value> {
+    let mut links = Vec::new();
+    if let Some(envelope) = find_kind(rows, "voice_profile", person.id) {
+        if let Some(target) = text_at(envelope, "/fields/voice_model") {
+            push_ga_link(&mut links, "voice_model", &target, rows);
+        }
+    }
+    if links.iter().all(|link| link["rel"] != "voice_model") {
+        if let Some(engine_id) = catalog::voice_profile_value(person.id)
+            .and_then(|value| value.get("voiceModel").and_then(Value::as_str).map(str::to_string))
+        {
+            if let Some(model) = find_kind(rows, "voice_model", &engine_id) {
+                push_ga_link(&mut links, "voice_model", uid_of(model), rows);
+            }
+        }
+    }
+    for reference in person.refs {
+        if let Some(legacy) = reference.strip_prefix("clip:") {
+            if let Some(target) = crate::asset_catalog::uid_for_legacy("audio_clip", legacy) {
+                push_ga_link(&mut links, "clip", &target, rows);
+            }
+        }
+    }
+    if links.is_empty() {
+        None
+    } else {
+        Some(relations_section(links))
+    }
+}
+
+fn relations_section(links: Vec<Value>) -> Value {
+    let status = worst_status(links.iter().filter_map(|link| link["status"].as_str()));
+    json!({
+        "id": "relations",
+        "status": status,
+        "links": links,
+        "facts": []
+    })
+}
+
+fn derived_link(rel: &str, asset: &Value, clip: &Value) -> Value {
+    let read_status = if asset.get("kind").and_then(Value::as_str) == Some("cube_ihdr") {
+        read_cube(clip, asset).status
+    } else if sha_matches(clip, asset) {
+        "real"
+    } else {
+        "pending"
+    };
+    let mut link = json!({
+        "rel": rel,
+        "target_uid": uid_of(asset),
+        "target_kind": asset.get("kind").and_then(Value::as_str).unwrap_or(""),
+        "status": read_status
+    });
+    if read_status == "pending" {
+        link["reason"] = json!("source_sha256");
+    }
+    link
+}
+
+fn push_ga_link(links: &mut Vec<Value>, rel: &str, target: &str, rows: &[Value]) {
+    if !target.starts_with("ga:") {
+        return;
+    }
+    let kind = target.split(':').nth(1).unwrap_or("");
+    let known = rows.iter().any(|asset| uid_of(asset) == target);
+    let mut link = json!({
+        "rel": rel,
+        "target_uid": target,
+        "target_kind": kind,
+        "status": if known { "real" } else { "pending" }
+    });
+    if !known {
+        link["reason"] = json!("asset_not_found");
+    }
+    links.push(link);
+}
+
+fn worst_status<'a>(statuses: impl Iterator<Item = &'a str>) -> &'static str {
+    let mut pending = false;
+    let mut partial = false;
+    for status in statuses {
+        match status {
+            "partial" => partial = true,
+            "pending" => pending = true,
+            _ => {}
+        }
+    }
+    if partial {
+        "partial"
+    } else if pending {
+        "pending"
+    } else {
+        "real"
+    }
+}
+
+fn fact(label: &str, field: &str, value: Value) -> Value {
+    json!({"label": label, "field": field, "value": value})
+}
+
+fn find_clip<'a>(rows: &'a [Value], key: &str) -> Option<&'a Value> {
+    rows.iter().find(|asset| {
+        asset.get("kind").and_then(Value::as_str) == Some("audio_clip")
+            && (asset.get("legacy_id").and_then(Value::as_str) == Some(key) || uid_of(asset) == key)
+    })
+}
+
+fn find_kind<'a>(rows: &'a [Value], kind: &str, legacy: &str) -> Option<&'a Value> {
+    rows.iter().find(|asset| {
+        asset.get("kind").and_then(Value::as_str) == Some(kind)
+            && asset.get("legacy_id").and_then(Value::as_str) == Some(legacy)
+    })
+}
+
+fn clips_for<'a>(rows: &'a [Value], engine_id: &str, key: &str) -> Vec<&'a Value> {
+    let Some(model) = find_kind(rows, "voice_model", engine_id) else {
+        return Vec::new();
+    };
+    let uid = uid_of(model).to_string();
+    rows.iter()
+        .filter(|asset| {
+            asset.get("kind").and_then(Value::as_str) == Some("audio_clip")
+                && text_at(asset, &format!("/provenance/{key}")) == Some(uid.as_str())
+        })
+        .collect()
+}
+
+fn own_cube<'a>(rows: &'a [Value], clip_uid: &str) -> Option<&'a Value> {
+    rows.iter().find(|asset| {
+        asset.get("kind").and_then(Value::as_str) == Some("cube_ihdr")
+            && src_exact(asset, clip_uid)
+            && layer_method_of(asset) == Some("library_r3")
+    })
+}
+
+fn own_spectrogram<'a>(rows: &'a [Value], clip_uid: &str) -> Option<&'a Value> {
+    rows.iter().find(|asset| {
+        asset.get("kind").and_then(Value::as_str) == Some("spectrogram_2d") && src_exact(asset, clip_uid)
+    })
+}
+
+fn uid_of(asset: &Value) -> &str {
+    asset.get("uid").and_then(Value::as_str).unwrap_or("")
+}
+
+fn text_at<'a>(asset: &'a Value, pointer: &str) -> Option<&'a str> {
+    asset.pointer(pointer).and_then(Value::as_str)
+}
+
+fn number_at(asset: &Value, pointer: &str) -> Option<f64> {
+    let value = asset.pointer(pointer)?;
+    value
+        .as_f64()
+        .or_else(|| value.as_i64().map(|n| n as f64))
+        .or_else(|| value.as_u64().map(|n| n as f64))
+}
+
+fn integer_at(asset: &Value, pointer: &str) -> Option<i64> {
+    let value = asset.pointer(pointer)?;
+    value
+        .as_i64()
+        .or_else(|| value.as_u64().and_then(|n| i64::try_from(n).ok()))
+        .or_else(|| value.as_f64().map(|n| n as i64))
+}
+
+fn layer_method_of(asset: &Value) -> Option<&str> {
+    asset
+        .pointer("/provenance/layer_method")
+        .and_then(Value::as_str)
+        .or_else(|| asset.pointer("/fields/layer_method").and_then(Value::as_str))
+}
+
+fn src_exact(asset: &Value, uid: &str) -> bool {
+    asset.get("src").and_then(Value::as_array).is_some_and(|src| {
+        src.len() == 1 && src.first().and_then(Value::as_str) == Some(uid)
+    })
+}
+
+fn src_contains(asset: &Value, uid: &str) -> bool {
+    asset
+        .get("src")
+        .and_then(Value::as_array)
+        .is_some_and(|src| src.iter().any(|item| item.as_str() == Some(uid)))
+}
+
+fn bound_to(asset: &Value) -> Vec<&str> {
+    asset
+        .pointer("/relations/bound_to")
+        .and_then(Value::as_array)
+        .map(|items| items.iter().filter_map(Value::as_str).collect())
+        .unwrap_or_default()
+}
+
+fn has_wav(asset: &Value) -> bool {
+    asset.get("media").and_then(Value::as_array).is_some_and(|items| {
+        items.iter().any(|item| item.get("role").and_then(Value::as_str) == Some("wav"))
+    })
+}
+
+fn media_item<'a>(asset: &'a Value, role: &str) -> Option<&'a Value> {
+    asset.get("media").and_then(Value::as_array).and_then(|items| {
+        items.iter().find(|item| item.get("role").and_then(Value::as_str) == Some(role))
+    })
+}
+
+fn media_sha<'a>(asset: &'a Value, role: &str) -> Option<&'a str> {
+    media_item(asset, role).and_then(|item| item.get("sha256").and_then(Value::as_str))
+}
+
+fn sha_matches(clip: &Value, derived: &Value) -> bool {
+    match (media_sha(clip, "wav"), text_at(derived, "/fields/source_sha256")) {
+        (Some(wav), Some(source)) => wav == source,
+        _ => false,
+    }
+}
+
+fn media_ref(asset: &Value, role: &str) -> Value {
+    match media_item(asset, role) {
+        Some(item) => json!({
+            "path": item.get("path").and_then(Value::as_str).unwrap_or(""),
+            "sha256": item.get("sha256").and_then(Value::as_str).unwrap_or("")
+        }),
+        None => json!("pending"),
+    }
+}
+
+fn media_ref_bytes(asset: &Value, role: &str) -> Value {
+    match media_item(asset, role) {
+        Some(item) => json!({
+            "path": item.get("path").and_then(Value::as_str).unwrap_or(""),
+            "sha256": item.get("sha256").and_then(Value::as_str).unwrap_or(""),
+            "bytes": item.get("bytes").cloned().unwrap_or(Value::Null)
+        }),
+        None => json!("pending"),
+    }
 }
 
 pub fn adaptive_card(
@@ -2319,5 +3157,223 @@ mod tests {
         let snap = vp.snapshot();
         assert_eq!(snap["ui"]["clock"]["t"], 4.0);
         assert_eq!(snap["ui"]["playing"], "lib-misaki-kokoro");
+    }
+
+    fn view_sections(snap: &Value, asset: &str) -> Vec<Value> {
+        snap["views"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|view| view["asset"] == asset)
+            .unwrap_or_else(|| panic!("missing view {asset}"))["snapshot"]["sections"]
+            .as_array()
+            .cloned()
+            .unwrap_or_default()
+    }
+
+    fn section<'a>(sections: &'a [Value], id: &str) -> Option<&'a Value> {
+        sections.iter().find(|item| item["id"] == id)
+    }
+
+    /// §5 and §8.1. Identity and honesty stay first and gain `status`. Missing
+    /// cubes are pending with a reason; they are not a row.
+    #[test]
+    fn facts_sections_read_the_envelope_and_omit_missing_cubes() {
+        const MISAKI_CLIP: &str = "ga:audio_clip:vtwxksrsuci7zygslimzfy7kdy";
+        const MISAKI_CUBE: &str = "ga:cube_ihdr:biaxxmnibxtcur7nxdu3ffvna4";
+        const BITDOT_CLIP: &str = "ga:audio_clip:gq2l5uxxj44uwnok6io3kduf5a";
+        const BITDOT_CUBE: &str = "ga:cube_ihdr:dqufjgk2q4nj575exlfy7ecxqe";
+        const MAGPIE_MODEL: &str = "ga:voice_model:o53lz7hkeahddsosxzoua4raim";
+        const KOKORO_MODEL: &str = "ga:voice_model:i4uzucqkja4nawtxlnu2m3vcta";
+        const GENERATOR_SHA: &str = "410fa703e71f9e52bc0b8774f5f850f5ee1daa562c22c22641b89e247d62db35";
+        const EXPLAINER_CLIP: &str = "ga:audio_clip:33g2yv7vmahe5hzxn2e6p57fuy";
+
+        let snap = Viewport::release().snapshot();
+        let magpie = view_sections(&snap, "engine-magpie");
+        let magpie_cube = section(&magpie, "cube").cloned().unwrap_or(Value::Null);
+        assert_eq!(
+            magpie_cube["status"],
+            json!("pending"),
+            "engine-magpie cube: {magpie_cube}"
+        );
+        assert_eq!(magpie_cube["reason"], "wav_missing");
+        assert_eq!(magpie_cube["tile_ids"], json!(["lib-magpie"]));
+        assert!(magpie_cube.get("cube_uid").is_none(), "{magpie_cube}");
+        assert!(section(&magpie, "model_cubes").is_none(), "{magpie:?}");
+        let magpie_rel = section(&magpie, "relations").cloned().unwrap_or(Value::Null);
+        assert_eq!(magpie_rel["status"], "pending");
+        assert_eq!(magpie_rel["reason"], "no_envelope");
+        assert_eq!(magpie_rel["tile_ids"], json!(["lib-magpie"]));
+        assert!(magpie_rel.get("links").is_none(), "{magpie_rel}");
+
+        let pocket = view_sections(&snap, "engine-pocket");
+        let pocket_cube = section(&pocket, "cube").cloned().unwrap_or(Value::Null);
+        assert_eq!(pocket_cube["reason"], "wav_missing");
+        assert_eq!(pocket_cube["tile_ids"], json!(["lib-pocket"]));
+        assert!(section(&pocket, "model_cubes").is_none());
+        assert_eq!(
+            section(&pocket, "relations").unwrap()["tile_ids"],
+            json!(["lib-pocket"])
+        );
+
+        let vibe = view_sections(&snap, "engine-vibevoice");
+        assert!(
+            vibe.iter().all(|item| item["reason"] != "wav_missing"),
+            "vibevoice must keep the bitdot cube, not a wav_missing section: {vibe:?}"
+        );
+        let rows = section(&vibe, "model_cubes").unwrap()["rows"]
+            .as_array()
+            .unwrap();
+        assert_eq!(rows.len(), 1, "{rows:?}");
+        assert_eq!(rows[0]["clip_uid"], BITDOT_CLIP);
+        assert_eq!(rows[0]["cube_uid"], BITDOT_CUBE);
+        assert!(rows[0]["cube_uid"].as_str().unwrap().starts_with("ga:cube_ihdr:"));
+
+        let misaki = view_sections(&snap, "lib-misaki-kokoro");
+        assert_eq!(misaki[0]["id"], "identity");
+        assert_eq!(misaki[0]["status"], "real");
+        assert_eq!(misaki[0]["facts"][0]["field"], "title");
+        assert_eq!(misaki[1]["id"], "honesty");
+        assert_eq!(misaki[1]["status"], "real");
+        let clip = section(&misaki, "clip").unwrap();
+        assert_eq!(clip["status"], "real");
+        assert_eq!(clip["uid"], MISAKI_CLIP);
+        assert_eq!(clip["engine"], "misaki_kokoro");
+        assert!((clip["duration_s"].as_f64().unwrap() - 139.375).abs() < 1e-9);
+        let cube = section(&misaki, "cube").unwrap();
+        assert_eq!(cube["status"], "real");
+        assert_eq!(cube["cube_uid"], MISAKI_CUBE);
+        assert!(cube.get("partial").is_none(), "{cube}");
+        assert!(cube["coverage"]["ratio"].as_f64().unwrap() > 0.95);
+        assert_eq!(cube["layer_method"], "library_r3");
+        assert!((cube["inv_hdr"].as_f64().unwrap() - 70211.0 / 1e6).abs() < 1e-12);
+        let labels: Vec<&str> = cube["facts"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|fact| fact["label"].as_str().unwrap())
+            .collect();
+        assert!(labels.iter().any(|label| label.contains("inverse-HDR")));
+        assert!(labels.iter().all(|label| !label.to_ascii_lowercase().contains("loudness")));
+        let layers = section(&misaki, "layers").unwrap();
+        assert_eq!(layers["status"], "pending");
+        let names: Vec<&str> = layers["layers"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|layer| layer["name"].as_str().unwrap())
+            .collect();
+        assert_eq!(names, ["signal", "tonality", "confidence", "quality"]);
+        assert_eq!(layers["layers"][0]["formula"]["text"], "pending");
+        assert_eq!(layers["layers"][0]["formula"]["ref"]["symbol"], "compute_layers");
+        assert_eq!(
+            layers["layers"][0]["formula"]["ref"]["generator_sha256"],
+            GENERATOR_SHA
+        );
+        assert!(layers["layers"][0]["value"].as_f64().is_some());
+        let spec = section(&misaki, "spectrogram").unwrap();
+        assert_eq!(spec["status"], "real");
+        let stored = crate::asset_catalog::require(MISAKI_CLIP).unwrap();
+        let wav = stored["media"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|item| item["role"] == "wav")
+            .unwrap()["sha256"]
+            .as_str()
+            .unwrap();
+        assert_eq!(spec["source_sha256"], wav);
+        assert!(spec["png"]["path"].as_str().unwrap().ends_with(".png"));
+        assert!(spec["png"].get("pixels").is_none());
+        let rel = section(&misaki, "relations").unwrap();
+        let targets: Vec<&str> = rel["links"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|link| link["target_uid"].as_str().unwrap())
+            .collect();
+        assert!(targets.contains(&"ga:voice_model:25q3qpvjdhltosj3w5sgtxdatm"));
+        assert!(targets.contains(&"ga:voice_model:og5tdvy6ofx7hm37rwq6dtab3e"));
+        assert!(targets.contains(&MISAKI_CUBE));
+        assert!(targets.iter().all(|uid| uid.starts_with("ga:")));
+
+        let misaki_model = view_sections(&snap, "engine-misaki");
+        assert!(section(&misaki_model, "model_cubes").is_none());
+        assert!(misaki_model.iter().all(|item| item["reason"] != "wav_missing"));
+        assert_eq!(section(&misaki_model, "model").unwrap()["waveform"], false);
+        let g2p_targets: Vec<&str> = section(&misaki_model, "relations").unwrap()["links"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|link| link["target_uid"].as_str().unwrap())
+            .collect();
+        assert!(g2p_targets.contains(&MISAKI_CLIP));
+        assert!(g2p_targets.iter().all(|uid| uid.starts_with("ga:")));
+
+        let dayour = section(&view_sections(&snap, "engine-kokoro-dayour"), "model_cubes").unwrap()["rows"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|row| row["cube_uid"].as_str().unwrap().to_string())
+            .collect::<Vec<_>>();
+        assert!(dayour.contains(&"ga:cube_ihdr:eijw35etu6fq4ajayl4fz33kry".to_string()));
+        assert!(dayour.contains(&"ga:cube_ihdr:biaxxmnibxtcur7nxdu3ffvna4".to_string()));
+        assert_eq!(dayour.len(), 2);
+
+        let lib_magpie = view_sections(&snap, "lib-magpie");
+        assert_eq!(section(&lib_magpie, "clip").unwrap()["status"], "pending");
+        assert_eq!(section(&lib_magpie, "clip").unwrap()["uid"], "pending");
+        assert!(section(&lib_magpie, "cube").is_none());
+        let lib_link = &section(&lib_magpie, "relations").unwrap()["links"][0];
+        assert_eq!(lib_link["target_uid"], MAGPIE_MODEL);
+        assert_eq!(lib_link["target_kind"], "voice_model");
+
+        let conn = view_sections(&snap, "conn-mcp");
+        let connector = section(&conn, "connector").unwrap();
+        assert_eq!(connector["status"], "real");
+        assert_eq!(connector["connector_id"], "mcp");
+        assert_eq!(connector["mode"], "local");
+        assert_eq!(connector["authenticated"], false);
+        assert!(section(&conn, "relations").is_none());
+
+        let anton = view_sections(&snap, "profile-anton");
+        assert_eq!(section(&anton, "profile").unwrap()["name"], "Anton");
+        assert_eq!(section(&anton, "profile").unwrap()["voice_model"], "kokoro_onnx");
+        assert_eq!(section(&anton, "persona").unwrap()["refs"][0], "persona:anton");
+        let anton_links = section(&anton, "relations").unwrap()["links"].as_array().unwrap();
+        assert!(anton_links.iter().any(|link| link["target_uid"] == KOKORO_MODEL));
+        let optimus = view_sections(&snap, "profile-optimus");
+        let optimus_links = section(&optimus, "relations").unwrap()["links"].as_array().unwrap();
+        assert!(optimus_links.iter().any(|link| link["target_uid"] == EXPLAINER_CLIP));
+        assert!(optimus_links.iter().all(|link| link["target_uid"].as_str().unwrap().starts_with("ga:")));
+
+        let video = facts("clip:video", "video", "Video", "pending", "pending");
+        let video_section = section(&video, "video").cloned().unwrap_or(Value::Null);
+        assert_eq!(video_section["status"], "pending");
+        assert_eq!(video_section["reason"], "no_video_asset_kind");
+        assert!(video_section.get("path").is_none());
+        assert!(video_section.get("sha256").is_none());
+
+        for view in snap["views"].as_array().unwrap() {
+            let faces = view["faces"].as_array().unwrap();
+            assert!(faces.iter().all(|face| face["id"] != "summary" && face["id"] != "details"));
+            if let Some(relations) = section(view["snapshot"]["sections"].as_array().unwrap(), "relations") {
+                if let Some(links) = relations["links"].as_array() {
+                    for link in links {
+                        let target = link["target_uid"].as_str().unwrap();
+                        assert!(target.starts_with("ga:"), "{target}");
+                        assert!(crate::asset_catalog::require(target).is_ok(), "{target}");
+                    }
+                }
+            }
+            if let Some(cubes) = section(view["snapshot"]["sections"].as_array().unwrap(), "model_cubes") {
+                for row in cubes["rows"].as_array().unwrap() {
+                    let cube_uid = row["cube_uid"].as_str().unwrap();
+                    assert!(cube_uid.starts_with("ga:cube_ihdr:"), "{cube_uid}");
+                    assert!(crate::asset_catalog::require(cube_uid).is_ok(), "{cube_uid}");
+                    assert!(row["clip_uid"].as_str().unwrap().starts_with("ga:audio_clip:"));
+                }
+            }
+        }
     }
 }
