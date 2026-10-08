@@ -1,10 +1,10 @@
-# Livetile faces contract (v0, for review)
+# Livetile faces contract (v1)
 
-Status: **draft for Optimus review.** This file only describes behavior; it adds no code. After Optimus
-signs off, the cloud agent implements the reducer and `facts()` parts in core on PR #4. Once #4 reaches
-GO, it merges forward into this line with `--no-ff`, and the desktop work (faces from ruling 3, T17)
-builds on top of that. One module, one owner: the reducer and `facts()` belong to core (PR #4). The
-desktop only renders what they return.
+Status: **v1 — Optimus decisions folded in (2026-10-08).** This file only describes behavior; it adds
+no code on this line. The cloud agent implements the reducer and `facts()` parts in core on PR #4.
+Once #4 reaches GO, it merges forward into this line with `--no-ff`, and the desktop work (faces from
+ruling 3, T17, C-M4) builds on top of that. One module, one owner: the reducer and `facts()` belong to
+core (PR #4). The desktop only renders what they return. A spec is only true for the tip it cites.
 
 Inputs:
 - Optimus rulings, 2026-10-08:
@@ -12,7 +12,7 @@ Inputs:
   - second set: 2 (faces are an ordered list in the reducer), 3 (`facts()` is extended in core)
 - `/workspace/gen-audio-tauri-brief/LIVETILE_OBJECT_MODEL_CONVERGED.md`. This contract follows
   rebuttals 1, 3 and 4, v1 FINAL amendments 1 and 3, and T17.
-- PR #4 at `f750681`, which is what this contract extends. Every symbol below is cited by file and name:
+- PR #4 at `c2782db` (read-only tip this contract cites; do not chase later moves). Every symbol below is cited by file and name:
   - `crates/gen-audio-core/src/viewport.rs`:
     - types and constants: `Action::Flip { view, face, section }`, `FlipState { face, section }`,
       `Viewport.flipped`, `ReduceError::invalid` (code -32602), `PARTIAL_BELOW` (0.95)
@@ -60,8 +60,23 @@ Which `facts()` sections each face renders (§5):
 - Voice profile: `profile` → `identity`, `honesty`, `profile`; `persona` → `persona`;
   `relations` → `relations`.
 
-Kinds that appear only in dev docs (`SpectrogramPanel`, `Cube3D`, `PodcastCast`, `BenchmarkCompare`,
-`ServeHealth`) are not typed by this contract (open question Q6).
+Kinds that appear only in **dev builds** (`SpectrogramPanel`, `Cube3D`, `PodcastCast`,
+`BenchmarkCompare`, `ServeHealth`) get two untyped faces `summary` / `details` in the fixture deck only
+(Decision Q6). They are compiled out of release; a desktop test greps the release bundle for their
+absence.
+
+### 1.1 Generate-created views (C-M3)
+
+Every view kind gets a defined ordered face list, even when M = 1:
+
+| View kind (Generate / derived) | Faces in order |
+|---|---|
+| Cube stage (`view:cube:*` / spatial bind) | `cube`: Cube |
+| Spectrogram panel (`view:spec:*`) | `spectrogram`: Spectrogram |
+| Video slide (`view:video:*`) | `video`: Video |
+
+These are not Library tiles. The omission rule (§2) still applies; a pending bind keeps the face with
+`status: pending` rather than inventing pixels.
 
 ## 2. Omission rule (M stays truthful)
 
@@ -86,7 +101,7 @@ presence changes. That matches converged rebuttal 4: `snapshot = facts(asset, me
 Worked examples on the release deck:
 - `lib-misaki-kokoro`: M = 5.
 - `lib-magpie`: M = 2 (`clip`, `relations`; the relations face has the voice model link).
-- `conn-mcp`: M = 1 if it has no link. That case is open question Q2.
+- `conn-mcp`: M = 1 if it has no link. That case is Decision Q2.
 
 ## 3. Reducer state and actions (core, `viewport.rs`)
 
@@ -98,9 +113,15 @@ Worked examples on the release deck:
   - A view that was never flipped has no entry and reads as index 0.
 - `face_index` is per-view UI state, like `focus`, `clock` and `playing`. It is volatile, and it is
   never part of `facts()`.
-- Views: PR #4's `Viewport::release()` builds views only for Library clips (`view:lib-*`) and profiles
-  (`view:profile-*`). This contract also needs `view:engine-*` (home `slide:models`) and `view:conn-*`
-  (home `slide:connectors`), so engine and connector tiles get typed faces (open question Q3).
+- Views (C-M1): `Viewport::release()` must build a view for **every library tile that has a clip uid**,
+  derived from the clip records in `apps/desktop/public/library/assets.json` (via `asset_catalog`), **not**
+  from the hand-kept `catalog::library_clips()` list. Today at `c2782db` `Viewport::release()`
+  (`viewport.rs` ~L231) iterates `catalog::library_clips()`, so `lib-cube-explainer` (a real tile and a
+  real `audio_clip` in assets.json) gets no view. **Core test (required):** every LibraryClip card in
+  `viewport.release.json` whose body names a clip that resolves to a `ga:audio_clip:*` uid has a
+  `view:lib-*` entry after `Viewport::release()`.
+- Also (Decision Q3): `view:engine-*` (home `slide:models`) and `view:conn-*` (home `slide:connectors`).
+  Profiles stay `view:profile-*`.
 
 ### Actions
 `Action::Flip` becomes `Flip { view: String, to: FlipTo }`, where `FlipTo` is one of:
@@ -118,7 +139,7 @@ MCP `ui_flip` arguments (`control.rs` `ui_flip`), on top of today's `tileId | ui
 - `flipped: true|false`: kept as an alias, `true` meaning `face: "back"` and `false` meaning `face: "front"`.
   This is today's default path. A bare `ui_flip {tileId}` still means `flipped: true`, which is `back`.
 - At most one of `next`, `face` and `flipped` may be given. Two or more is -32602.
-- `section` is what PR #4 uses today to pick a facts section on the back. How it maps is open question Q1.
+- `section` is what PR #4 uses today to pick a facts section on the back. How it maps is Decision Q1.
   Until that is ruled, `section` is accepted only together with the `back` alias and is echoed back
   without being applied, so existing callers keep working.
 
@@ -138,6 +159,14 @@ Every error is `ReduceError::invalid`, so the code is **-32602**, and state is u
 - `back` when `M < 2`: `face "back" needs 2 faces; view:<tile> has 1 (clip)`.
 - More than one selector: `ui_flip takes one of next, face, flipped`.
 
+### 3.1 Desktop must not keep a local face reducer (C-M4)
+
+Retire the desktop's local face state (`stepFace` / `setFace` as the source of truth). The glyph posts
+`Flip { next }` to `/control` and renders **only** the echoed `flip` event (converged 3b: TS applies
+events, never actions). When MCP is down, the glyph is `aria-disabled` with a status message; there is
+**no** local fallback flip. Until #4 merges forward, this line's `setFace`/`stepFace` remain the interim
+renderer used by tests; C-M4 is the merge acceptance criterion.
+
 ## 4. What `viewport_get` returns
 
 `viewport_get` stays `snapshot_global()` plus `cursor`, `gap` and `resync` (`control.rs` `viewport_get`).
@@ -148,9 +177,9 @@ Every error is `ReduceError::invalid`, so the code is **-32602**, and state is u
   "ui": {"faces": {"view:lib-misaki-kokoro": {"tileId": "lib-misaki-kokoro", "face_id": "clip", "face_index": 0, "face_count": 5}}}
   ```
 - `ui.flipped` (PR #4) stays for one release as a derived read: `{"face": "front"}` at index 0 and
-  `{"face": "back"}` otherwise, so readers of the old shape keep working (open question Q4).
+  `{"face": "back"}` otherwise, so readers of the old shape keep working (Decision Q4).
 - When #4 merges forward, `viewport_get` on this line must keep `cube_mode`, `cube_compare`, `cube_seq`
-  and `cube_modes` from PR #7. `ui.faces` must not collide with them (open question Q5).
+  and `cube_modes` from PR #7. `ui.faces` must not collide with them (Decision Q5).
 
 ## 5. `facts()` sections (core, non-volatile)
 
@@ -161,6 +190,11 @@ derives a fact.
 carries `uid`, `kind`, `title`, `honesty`, `media` and the asset envelope from `asset_catalog::require`.
 `identity` and `honesty` keep their current shape, so `adaptive_card()` and `card_export` keep working;
 they gain only the new `status`.
+
+**`uid_for_legacy` step:** when a tool or view is addressed by a legacy tile/clip/persona id, resolve with
+`asset_catalog::uid_for_legacy(kind, legacy_id)` (`c2782db` `asset_catalog.rs` ~L305) **before**
+`require`/`facts`. UI tools that accept `tileId|uid` try the uid path first, then this legacy map. A miss
+is -32602, not a guessed uid.
 
 Every section is:
 ```
@@ -198,8 +232,8 @@ comparison cubes never count.
 | field | type | unit | source |
 |---|---|---|---|
 | `cube_uid` | string | — | envelope `uid` |
-| `inv_hdr` | number | ratio, unitless | `fields.inv_hdr_ppm / 1e6`. This is the "loudness ratio" in ruling 3 (open question Q7). |
-| `coverage` | `{covered_s, of_s, ratio}` | s, s, 0..1 | `validate_coverage` with `selector_start = 0`, `selector_end = fields.covers_ms/1000`, `clip_duration_s` = clip `fields.duration_ms/1000`, `recorded_source_duration_s = fields.duration_ms/1000`, `sec_per_bin = body.bin_seconds`, `clip_in_src` = `src` contains the clip uid. The function is **imported, never re-implemented**. |
+| `inv_hdr` | number | ratio, unitless | `fields.inv_hdr_ppm / 1e6`. Labelled **inverse-HDR ratio** (Decision Q7); never "loudness". Source: `fields.inv_hdr_ppm / 1e6`. |
+| `coverage` | `{covered_s, of_s, ratio}` | s, s, 0..1 | `validate_coverage` (`Result`, first check `sec_per_bin > 0` at `c2782db` `viewport.rs` ~L974) with `selector_start = 0`, `selector_end = fields.covers_ms/1000`, `clip_duration_s` = clip `fields.duration_ms/1000`, `recorded_source_duration_s = fields.duration_ms/1000`, `sec_per_bin = body.bin_seconds`, `clip_in_src` = `src` contains the clip uid. The function is **imported, never re-implemented**. |
 | `partial` | `{covered_s, of_s}` or absent | s | `CoverageOk.partial` |
 | `sec_per_bin` | number | s | `body.bin_seconds` |
 | `shape_f_t` | `[int, int]` | bins | `fields.freq_bins`, `fields.time_bins` |
@@ -210,7 +244,8 @@ The desktop draws the `Copy cube uid` button next to `cube_uid` on the spatial s
 the cube glyph itself never copies.
 
 - **The partial rule.** If `coverage.ratio < PARTIAL_BELOW` (0.95), then `status = "partial"`, `partial`
-  is set, and the face is **led** by the qualifier `partial (<covered_s> s of <of_s> s)`.
+  is set, and the face is **led** by the qualifier `partial (<covered_s> s of <of_s> s)`. The on-tile
+  status badge (when present) carries the same `partial` qualifier text.
   - Example: misaki at 139.04 / 139.375 = 99.8% is `real` with no qualifier (converged T19).
 - **Rejection.** If `validate_coverage` rejects (its fixed reason order), the section is `pending`, every
   value is `pending`, and `reason` holds the first failing reason. A cube that lies is never shown as real.
@@ -224,7 +259,7 @@ That is the order of `cube_layers.py` `LAYER_NAMES`.
 | `name` | string | — | `layer` envelope `fields.name` (with `relations.layer_of` = the cube in §5.2) |
 | `value` | number | unitless 0..1 | `body.mean`, the layer mean over the cube |
 | `stats` | `{std, p50, p90, active_frac}` | unitless | `layer` envelope `body` |
-| `formula` | `{ref: {generator, generator_sha256, symbol, layer_method}, text}` | — | `ref` is `provenance.generator` and `generator_sha256` of the cube plus `symbol` `compute_layers`. `text` is `pending` until Q8 is ruled. |
+| `formula` | `{ref: {generator, generator_sha256, symbol, layer_method}, text}` | — | `ref` is `provenance.generator` and `generator_sha256` of the cube plus `symbol` `compute_layers`. `text` is `pending` per Decision Q8. |
 
 The section is `real` only when all four entries resolve and every `formula.text` resolves. Until then it
 is `pending`, while the values and refs that did resolve are still shown.
@@ -249,9 +284,9 @@ out of the reducer (converged v1 FINAL 3a: no per-frame events over SSE).
 - **`model_cubes`**: a list of `{clip_uid, clip_title, cube_uid, revision, shape_f_t, inv_hdr, layer_score, cube_json}`.
   The rows are the ones `library-assets.ts` `modelCubes` builds today; that logic moves into core.
 - **`connector`**: `connector_id`, `mode` (`live | local | mock | token_present`), `authenticated` (bool),
-  `detail`. The source is open question Q3.
-- **`profile`**: `persona_id`, `agent_name`, `voice_model`, `tone`, `purpose`. Source:
-  `catalog::voice_profile_value`.
+  `detail`. The source is Decision Q3.
+- **`profile`**: `persona_id`, `name` (from `Persona.name`, not a separate `agent_name` field), `voice_model`, `tone`, `purpose`. Source:
+  `catalog::voice_profile_value` (emits `agentName` as the persona's name today).
 - **`persona`**: `domain`, `accent`, `traits`, `refs` (strings, shown as given). Refs that are not catalog
   uids are shown as text, never as links.
 
@@ -267,8 +302,10 @@ out of the reducer (converged v1 FINAL 3a: no per-frame events over SSE).
 - **Audio Clips links:**
   - `voice_model` and `g2p_model` (`provenance.*`)
   - `spectrogram_2d` and the clip's own `cube_ihdr` (via `src`)
-  - comparison cubes (`compare_to`, `layer_method != library_r3`)
-  - the bound `card` (`relations.bound_to`)
+  - comparison cubes (`layer_method != library_r3` on cubes whose `src` includes the clip; there is **no**
+    `compare_to` field)
+  - the bound `card`: reverse lookup via `relations.bound_to` on the card envelope (clip→card is not a
+    forward field on the clip)
 - **Voice model links:** clips it rendered and profiles that name it.
 - **Profile links:** its voice model, plus attached clip refs that resolve to a clip uid.
 - **Section status:** the worst of its links, ordered `partial` > `pending` > `real`.
@@ -289,8 +326,9 @@ out of the reducer (converged v1 FINAL 3a: no per-frame events over SSE).
 |---|---|
 | `identity`, `honesty`, `clip`, `cube` (with `partial`), `layers`, `spectrogram`, `model`, `model_cubes`, `connector`, `profile`, `persona`, `relations`; `views[].faces` and so `face_count` | `ui.faces[view].face_index` and `face_id`, `focus`, `compare`, `clock` (source + committed Seek), `playing`, `slide`, job `phase` |
 
-The snapshot changes only when the asset, its `display_rev` or its media presence changes (converged
-rebuttal 4). A flip or a play never rewrites a snapshot.
+The snapshot changes when the asset, its `display_rev`, its media presence, **or a linked asset**
+changes (converged rebuttal 4, extended). A flip or a play never rewrites a snapshot. Example: a clip's
+snapshot refreshes when its cube_ihdr or spectrogram_2d lands or moves.
 
 ### 7.1 `face_index` mutations (Optimus Q10)
 
@@ -316,14 +354,18 @@ Each step reads back through `viewport_get`.
 2. `ui_flip {"tileId": "lib-misaki-kokoro", "next": true}` → the result and `viewport_get` both give `cube`, 1, 5.
 3. `ui_flip {"tileId": "lib-misaki-kokoro", "face": "spectrogram"}` → `spectrogram`, 3, 5.
 4. `ui_flip {"tileId": "lib-misaki-kokoro", "next": true}` twice → `relations`, 4, then wraps to `clip`, 0.
-5. Aliases:
+5. Aliases (always include `tileId`):
    - `ui_flip {"tileId": "lib-misaki-kokoro", "face": "back"}` gives `cube`, 1
-   - `{"flipped": false}` gives `clip`, 0
+   - `ui_flip {"tileId": "lib-misaki-kokoro", "flipped": false}` gives `clip`, 0
    - `ui_flip {"tileId": "lib-misaki-kokoro"}` with no selector gives `cube`, 1, the legacy default
 6. `ui_flip {"tileId": "lib-misaki-kokoro", "face": "waveform"}` → JSON-RPC error **-32602**. The message
    names `clip, cube, layers, spectrogram, relations`, and a following `viewport_get` shows the state unchanged.
-7. Omitted face: `ui_flip {"tileId": "lib-magpie", "face": "cube"}` → **-32602**, naming `clip, relations`.
-   `viewport_get` shows `face_count: 2` for `view:lib-magpie`.
+7. Omitted face / face_count from data (C-M2): `lib-magpie`, `lib-vibevoice`, and `lib-pocket` have
+   **no** `audio_clip` envelope in assets.json (tile-only / weights_absent). Their relations face is
+   omitted when no link resolves. Link source for a voice-model relation is `VoiceModel.id` /
+   `fields.model_id` (there is no `engine_id` field on the clip envelope). Expected: `face_count: 1`
+   (`clip` only) for those three; `ui_flip {"tileId": "lib-magpie", "face": "cube"}` → **-32602**,
+   naming `clip` only.
 8. Engine and connector: `ui_flip {"tileId": "engine-kokoro", "next": true}` → `cubes`, 1, 3.
    `conn-claude` reads back with its own `face_count`.
 9. Two selectors: `ui_flip {"tileId": "lib-misaki-kokoro", "next": true, "face": "cube"}` → -32602.
@@ -344,36 +386,41 @@ misleading: the op never flips.
 `control.rs` on this line; PR #4 owns the rename. Desktop `applyCardOp` will accept both
 names during the alias window.
 
-## 10. Open questions
+## 10. Decisions (Q1–Q9) — closed
 
-- **Q1. `section` (PR #4 `Action::Flip.section`).** The faces in §1 make "back + section" redundant.
-  Should `section: "<id>"` with the `back` alias select the face that renders that section (for example
-  `honesty` selects `clip`), or should it be deprecated with a logged warning, like the bare slide alias
-  (ruling C5)?
-- **Q2. One face (M = 1).** For example a connector with no relation link. What does the glyph do?
-  - Proposal: it stays in the corner with the label `Flip card, face 1 of 1: <name>`, and activating it
-    is a no-op. The `back` alias is -32602 and `next` stays at index 0.
-  - Alternative: give every connector a second face.
-- **Q3. Engine and connector views, and the connector facts owner.**
-  - PR #4's `Viewport::release()` has no `view:engine-*` or `view:conn-*`.
-  - Connector status lives in `crates/gen-audio-connectors`, not in core. Which module owns the
-    `connector` section?
-- **Q4. `ui.flipped`.** Keep it as a derived read for one release, as §4 says, or drop it when `ui.faces`
-  lands?
-- **Q5. `viewport_get` merge.** This line (PR #7) returns the cube mode at the top level, and #4 returns the
-  reducer snapshot. On the forward merge, does the cube mode move into `ui` (`ui.cube_mode`) or stay top level?
-- **Q6. Dev-only kinds** (`SpectrogramPanel`, `Cube3D`, `PodcastCast`, `BenchmarkCompare`, `ServeHealth`).
-  Type them, or keep two faces `summary` / `details` until they leave the dev doc?
-- **Q7. "Loudness ratio."** No field has that name. §5.2 maps it to `inv_hdr` (from `fields.inv_hdr_ppm`).
-  Confirm, or name the field that is meant.
-- **Q8. Layer formula text.** The formulas are written only in `src/gen_audio/cube_layers.py` (its
-  docstring and `compute_layers`), and cube uid identity is that file's `generator_sha256`. Emitting the
-  text from the generator changes the sha, which moves the five library cube uids, and no uid may move.
-  Copying the text into core breaks "shared math is imported, never copied." The proposal is that
-  `formula.ref` (generator, sha, symbol) is real now and `formula.text` stays `pending` until Optimus
-  picks a source. Options:
-  - (a) a formulas sidecar emitted by a *separate* generator, verified against `cube_layers.py` by a test;
-  - (b) the next intentional cube revision, with an announced uid move;
-  - (c) ref only.
-- **Q9. Error data.** `ReduceError` carries only `{code, message}`. Should the valid face ids also be a
-  JSON-RPC `error.data.valid_faces` array, so agents don't parse the message?
+- **Q1. `section`:** `back` + `section: "<id>"` maps to the face that renders that section (for example
+  `honesty` → `clip`). Log a deprecation for one release; then the pair is **-32602**.
+- **Q2. M = 1:** the glyph stays in the same corner, `aria-disabled`, labelled
+  `Card has 1 face: <name>`. Activating it is a no-op. `back` is -32602; `next` stays at index 0.
+- **Q3. Engine/connector views:** core adds `view:engine-*` and `view:conn-*`. The connectors crate owns
+  connector status; MCP passes the probed status into `facts()`. Until probed the `connector` section
+  reads `pending`. Core takes **no** dependency on the connectors crate.
+- **Q4. `ui.flipped`:** stays as a derived read for one release, then is removed.
+- **Q5. Cube mode:** moves under `ui` (`ui.cube_mode`, `ui.cube_compare`, …). Top-level keys remain as
+  aliases for one release. Owned by the reducer.
+- **Q6. Dev-only kinds:** two untyped faces (`summary` / `details`) in **dev builds only**, compiled out
+  of release, with a test proving absence from the release bundle.
+- **Q7. Ratio label:** source is `fields.inv_hdr_ppm / 1e6`, labelled **inverse-HDR ratio**, never
+  "loudness".
+- **Q8. Layer formula text:** (c) now — `formula.ref` is real; `formula.text` stays `pending`. (a) later
+  (formulas sidecar). Never (b) (no announced uid move, no copied math).
+- **Q9. Error data:** yes — JSON-RPC `error.data.valid_faces` (applicable ids in order) plus the
+  `front`/`back` aliases listed alongside.
+
+## 11. A-M1 — forward-merge note for PR #4
+
+At `c2782db`, `apps/desktop/src/main.ts` still flips on attach:
+
+- `applyFlipcard` ~L669 calls `setCardFlip(board, profile-…, true)` after writing refs.
+- `applyControl` ~L711–715: `op === "flip"` calls `setCardFlip` then `applyFlipcard`; `op === "flipcard"`
+  calls `applyFlipcard` (which flips).
+
+**Resolution on the `--no-ff` merge into this line:** keep **a8cbc08's side** —
+`applyProfileUpdate` / `applyCardOp` update the profile and never flip; only an explicit `flip` op flips
+`args.tileId`. The main.ts happy-dom boot test (`apps/desktop/tests/main-wiring.test.ts`) is the guard:
+body clicks, timers, and attach/flipcard paths must not change `face` / `face_index`.
+
+## 12. Connector mode low
+
+`misconfigured` is a valid connector mode (`c2782db` `validate.ts` `CONNECTOR_MODES` and
+`cards.rs`). Facts and validators must accept it.
