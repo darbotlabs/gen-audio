@@ -142,8 +142,41 @@ pub fn make_work_dir() -> std::io::Result<PathBuf> {
     Ok(dir.canonicalize()?)
 }
 
+// Tests point `mcp.addr` at their own file without mutating the process
+// environment. The signal handler and every other thread keep the real path:
+// there is one addr file per process, and a signal can arrive on any thread.
+#[cfg(test)]
+thread_local! {
+    static MCP_ADDR_OVERRIDE: std::cell::RefCell<Option<PathBuf>> = const { std::cell::RefCell::new(None) };
+}
+
+#[cfg(test)]
+struct McpAddrFileGuard {
+    previous: Option<PathBuf>,
+}
+
+#[cfg(test)]
+impl Drop for McpAddrFileGuard {
+    fn drop(&mut self) {
+        let previous = self.previous.take();
+        MCP_ADDR_OVERRIDE.with(|slot| *slot.borrow_mut() = previous);
+    }
+}
+
+#[cfg(test)]
+fn bind_mcp_addr_file(path: PathBuf) -> McpAddrFileGuard {
+    MCP_ADDR_OVERRIDE.with(|slot| {
+        let previous = slot.borrow_mut().replace(path);
+        McpAddrFileGuard { previous }
+    })
+}
+
 /// Loopback address the desktop MCP listener bound, one line, no secrets.
 pub fn mcp_addr_path() -> PathBuf {
+    #[cfg(test)]
+    if let Some(path) = MCP_ADDR_OVERRIDE.with(|slot| slot.borrow().clone()) {
+        return path;
+    }
     if let Some(path) = std::env::var_os("GEN_AUDIO_MCP_ADDR_FILE") {
         return PathBuf::from(path);
     }
@@ -450,8 +483,7 @@ mod tests {
                 .map(|d| d.as_nanos())
                 .unwrap_or(0)
         ));
-        let saved = std::env::var("GEN_AUDIO_MCP_ADDR_FILE").ok();
-        std::env::set_var("GEN_AUDIO_MCP_ADDR_FILE", &addr_file);
+        let _addr = bind_mcp_addr_file(addr_file.clone());
         fs::write(&addr_file, "127.0.0.1:9\n4294967294\n").unwrap();
         reap_stale_mcp_addr();
         assert!(!addr_file.exists(), "a dead pid must remove mcp.addr");
@@ -466,10 +498,7 @@ mod tests {
             !addr_file.exists(),
             "a legacy file with a dead port is removed"
         );
-        match saved {
-            Some(value) => std::env::set_var("GEN_AUDIO_MCP_ADDR_FILE", value),
-            None => std::env::remove_var("GEN_AUDIO_MCP_ADDR_FILE"),
-        }
+        drop(_addr);
         let scratch = Scratch::new(work.clone()).unwrap();
         fs::write(work.join("secret.json"), b"{\"token\":\"sekret\"}").unwrap();
         assert!(scratch.open_input("secret.json").is_err());
@@ -558,16 +587,12 @@ mod tests {
         ));
         fs::write(&blocker, b"not-a-directory").unwrap();
         let target = blocker.join("mcp.addr");
-        let saved = std::env::var("GEN_AUDIO_MCP_ADDR_FILE").ok();
-        std::env::set_var("GEN_AUDIO_MCP_ADDR_FILE", &target);
+        let _addr = bind_mcp_addr_file(target);
         let err = publish_mcp_addr("127.0.0.1:9").expect_err("parent is a file, not a directory");
         let line = mcp_addr_write_failure_line(&err);
         assert!(line.starts_with("gen-audio-mcp: mcp.addr write failed:"), "{line}");
         assert!(line.contains(&err), "{line}");
-        match saved {
-            Some(value) => std::env::set_var("GEN_AUDIO_MCP_ADDR_FILE", value),
-            None => std::env::remove_var("GEN_AUDIO_MCP_ADDR_FILE"),
-        }
+        drop(_addr);
         let _ = fs::remove_file(&blocker);
     }
 }

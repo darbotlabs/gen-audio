@@ -595,33 +595,28 @@ mod tests {
         assert!(text.contains("\"speech\":false"), "{text}");
         assert!(!text.to_ascii_lowercase().contains("mcp-session-id"));
 
-        // The control ring is process-global. A neighbour test can drop this
-        // marker before the stream is read; a gap is the honest signal, so retry.
+        let bus = crate::control::TestBus::fresh();
+        let _bus = bus.bind();
+        let seq = crate::control::publish(
+            "navigate",
+            &serde_json::json!({"slide": "library", "marker": "ready-stream"}),
+        );
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let addr = listener.local_addr().unwrap();
+        let handler_bus = bus.clone();
+        std::thread::spawn(move || {
+            let _bus = handler_bus.bind();
+            let (stream, _) = listener.accept().unwrap();
+            handle_connection(&Server::boot(), stream).unwrap();
+        });
+        let mut stream = TcpStream::connect(addr).unwrap();
+        let req = format!(
+            "GET /control/stream?after={}&wait=0 HTTP/1.1\r\nHost: {addr}\r\nConnection: close\r\n\r\n",
+            seq.saturating_sub(1)
+        );
+        stream.write_all(req.as_bytes()).unwrap();
         let mut text = String::new();
-        for _ in 0..8 {
-            let seq = crate::control::publish(
-                "navigate",
-                &serde_json::json!({"slide": "library", "marker": "ready-stream"}),
-            );
-            let listener = TcpListener::bind("127.0.0.1:0").unwrap();
-            let addr = listener.local_addr().unwrap();
-            std::thread::spawn(move || {
-                let (stream, _) = listener.accept().unwrap();
-                handle_connection(&Server::boot(), stream).unwrap();
-            });
-            let mut stream = TcpStream::connect(addr).unwrap();
-            let req = format!(
-                "GET /control/stream?after={}&wait=0 HTTP/1.1\r\nHost: {addr}\r\nConnection: close\r\n\r\n",
-                seq.saturating_sub(1)
-            );
-            stream.write_all(req.as_bytes()).unwrap();
-            text.clear();
-            stream.read_to_string(&mut text).unwrap();
-            if text.contains("event: gap") {
-                continue;
-            }
-            break;
-        }
+        stream.read_to_string(&mut text).unwrap();
         assert!(text.contains("text/event-stream"), "{text}");
         assert!(text.contains("ready-stream"), "{text}");
         assert!(!text.to_ascii_lowercase().contains("mcp-session-id"));
@@ -647,9 +642,19 @@ mod tests {
 
     /// Like `roundtrip`, plus the client's own address (the server logs it as peer=).
     fn roundtrip_peer(build: impl FnOnce(u16) -> String) -> (u16, String, String) {
+        roundtrip_on_worker(build, || {})
+    }
+
+    /// `prepare` runs on the worker thread before the request is read, so a
+    /// thread-local such as the library root is visible to the handler.
+    fn roundtrip_on_worker(
+        build: impl FnOnce(u16) -> String,
+        prepare: impl FnOnce() + Send + 'static,
+    ) -> (u16, String, String) {
         let listener = TcpListener::bind("127.0.0.1:0").unwrap();
         let port = listener.local_addr().unwrap().port();
         let worker = std::thread::spawn(move || {
+            prepare();
             let (stream, _) = listener.accept().unwrap();
             let _ = handle_connection(&Server::boot(), stream);
         });
@@ -762,8 +767,19 @@ mod tests {
         assert_eq!(status, 411, "{text}");
     }
 
-    fn logged(peer: &str) -> Vec<String> {
-        recent_rejections().into_iter().filter(|line| line.ends_with(&format!("peer={peer}"))).collect()
+    /// Lines for `peer` that were not already in `before`. Ephemeral ports are
+    /// reused, so a process-global ring still holds the previous owner's line.
+    fn logged_after(peer: &str, before: &[String]) -> Vec<String> {
+        let after = recent_rejections();
+        let fresh: Vec<String> = if after.starts_with(before) {
+            after[before.len()..].to_vec()
+        } else {
+            after.into_iter().filter(|line| !before.contains(line)).collect()
+        };
+        fresh
+            .into_iter()
+            .filter(|line| line.ends_with(&format!("peer={peer}")))
+            .collect()
     }
 
     #[test]
@@ -780,24 +796,27 @@ mod tests {
              "rejected POST tools/call ui_navigate -32602 rpc"),
         ];
         for (build, want) in cases {
+            let before = recent_rejections();
             let (status, text, peer) = roundtrip_peer(build);
-            let lines = logged(&peer);
+            let lines = logged_after(&peer, &before);
             assert_eq!(lines.len(), 1, "one line per rejection ({want}), status {status}: {lines:?} {text}");
             assert!(lines[0].starts_with(&format!("gen-audio-mcp http: {want} ")), "{lines:?}");
         }
         // Accepted requests log nothing.
+        let before = recent_rejections();
         let (status, _text, peer) = roundtrip_peer(|port| post(port, "Content-Type: application/json\r\n", NAVIGATE));
         assert_eq!(status, 200);
-        assert!(logged(&peer).is_empty());
+        assert!(logged_after(&peer, &before).is_empty());
     }
 
     #[test]
     fn library_404_and_413_are_one_rejection_line() {
+        let before = recent_rejections();
         let (status, text, peer) = roundtrip_peer(|port| {
             format!("GET /library/missing.wav HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\nConnection: close\r\n\r\n")
         });
         assert_eq!(status, 404, "{text}");
-        let lines = logged(&peer);
+        let lines = logged_after(&peer, &before);
         assert_eq!(lines.len(), 1, "{lines:?} {text}");
         assert!(
             lines[0].starts_with("gen-audio-mcp http: rejected GET /library/missing.wav 404 "),
@@ -815,18 +834,19 @@ mod tests {
         std::fs::create_dir_all(&dir).unwrap();
         let wav = dir.join("big.wav");
         std::fs::File::create(&wav).unwrap().set_len(64 * 1024 * 1024 + 1).unwrap();
-        let saved = std::env::var("GEN_AUDIO_LIBRARY").ok();
-        std::env::set_var("GEN_AUDIO_LIBRARY", &dir);
-        let (status, text, peer) = roundtrip_peer(|port| {
-            format!("GET /library/big.wav HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\nConnection: close\r\n\r\n")
-        });
-        match saved {
-            Some(value) => std::env::set_var("GEN_AUDIO_LIBRARY", value),
-            None => std::env::remove_var("GEN_AUDIO_LIBRARY"),
-        }
+        let library = dir.clone();
+        let before = recent_rejections();
+        let (status, text, peer) = roundtrip_on_worker(
+            |port| {
+                format!("GET /library/big.wav HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\nConnection: close\r\n\r\n")
+            },
+            move || {
+                gen_audio_core::library_store::set_root_override_for_test(Some(library));
+            },
+        );
         let _ = std::fs::remove_dir_all(&dir);
         assert_eq!(status, 413, "{text}");
-        let lines = logged(&peer);
+        let lines = logged_after(&peer, &before);
         assert_eq!(lines.len(), 1, "{lines:?} {text}");
         assert!(
             lines[0].starts_with("gen-audio-mcp http: rejected GET /library/big.wav 413 "),
@@ -836,6 +856,8 @@ mod tests {
 
     #[test]
     fn t15_sse_gap_is_signalled_when_the_ring_drops_events() {
+        let bus = crate::control::TestBus::fresh();
+        let _bus = bus.bind();
         let anchor = crate::control::publish("gap-anchor", &serde_json::json!({"marker": "t15"}));
         for index in 0..(crate::control::CAP + 1) {
             crate::control::publish("gap-fill", &serde_json::json!({"index": index}));
@@ -845,7 +867,9 @@ mod tests {
         assert!(delta.oldest.unwrap_or(0) > anchor + 1);
         let listener = TcpListener::bind("127.0.0.1:0").unwrap();
         let addr = listener.local_addr().unwrap();
+        let handler_bus = bus.clone();
         std::thread::spawn(move || {
+            let _bus = handler_bus.bind();
             let (stream, _) = listener.accept().unwrap();
             handle_connection(&Server::boot(), stream).unwrap();
         });

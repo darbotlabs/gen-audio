@@ -4,11 +4,13 @@
 //! omits `Mcp-Session-Id`, and a command does not write speech. The desktop
 //! window reads the ring over `GET /control` or the short SSE stream.
 
+#[cfg(test)]
+use std::cell::RefCell;
 use std::collections::{BTreeMap, VecDeque};
 use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Condvar, Mutex};
+use std::sync::{Arc, Condvar, Mutex, OnceLock};
 use std::time::{Duration, Instant};
 
 use gen_audio_core::asset_catalog;
@@ -24,23 +26,105 @@ struct Event {
     body: Value,
 }
 
-struct Bus {
+struct BusInner {
     next: u64,
     events: VecDeque<Event>,
+    /// Seek landings the desktop window reported (`ui_seek_report`), by seq on
+    /// this bus. They travel with the ring so two buses can both use seq 1.
+    seek_reports: BTreeMap<u64, Value>,
+}
+
+struct Bus {
+    inner: Mutex<BusInner>,
+    reported: Condvar,
+}
+
+impl Bus {
+    fn fresh() -> Self {
+        Self {
+            inner: Mutex::new(BusInner {
+                next: 1,
+                events: VecDeque::new(),
+                seek_reports: BTreeMap::new(),
+            }),
+            reported: Condvar::new(),
+        }
+    }
 }
 
 pub const CAP: usize = 128;
 
-static BUS: Mutex<Bus> = Mutex::new(Bus {
-    next: 1,
-    events: VecDeque::new(),
-});
+fn process_bus() -> Arc<Bus> {
+    static BUS: OnceLock<Arc<Bus>> = OnceLock::new();
+    BUS.get_or_init(|| Arc::new(Bus::fresh())).clone()
+}
+
+// The desktop window and its HTTP workers share `process_bus`. A test that
+// publishes and then reads the ring binds its own bus (and the same bus on a
+// worker thread, when the read is over HTTP). Seek reports live on that bus.
+#[cfg(test)]
+thread_local! {
+    static BUS_OVERRIDE: RefCell<Option<Arc<Bus>>> = const { RefCell::new(None) };
+}
+
+#[cfg(test)]
+pub(crate) struct BusGuard {
+    previous: Option<Arc<Bus>>,
+}
+
+#[cfg(test)]
+impl Drop for BusGuard {
+    fn drop(&mut self) {
+        let previous = self.previous.take();
+        BUS_OVERRIDE.with(|slot| *slot.borrow_mut() = previous);
+    }
+}
+
+#[cfg(test)]
+fn bind_bus(bus: Arc<Bus>) -> BusGuard {
+    BUS_OVERRIDE.with(|slot| {
+        let previous = slot.borrow_mut().replace(bus);
+        BusGuard { previous }
+    })
+}
+
+#[cfg(test)]
+fn bind_fresh_bus() -> BusGuard {
+    bind_bus(Arc::new(Bus::fresh()))
+}
+
+/// A bus a test can share across the threads that publish and read it.
+#[cfg(test)]
+#[derive(Clone)]
+pub(crate) struct TestBus(Arc<Bus>);
+
+#[cfg(test)]
+impl TestBus {
+    pub(crate) fn fresh() -> Self {
+        Self(Arc::new(Bus::fresh()))
+    }
+
+    pub(crate) fn bind(&self) -> BusGuard {
+        bind_bus(self.0.clone())
+    }
+}
+
+fn current_bus() -> Arc<Bus> {
+    #[cfg(test)]
+    if let Some(bus) = BUS_OVERRIDE.with(|slot| slot.borrow().clone()) {
+        return bus;
+    }
+    process_bus()
+}
+
+fn with_bus<R>(f: impl FnOnce(&mut BusInner) -> R) -> R {
+    let bus = current_bus();
+    let mut inner = bus.inner.lock().expect("control bus");
+    f(&mut inner)
+}
 
 static ATTACHED_REFS: Mutex<BTreeMap<String, Vec<String>>> = Mutex::new(BTreeMap::new());
 
-/// Seek landings the desktop window reported (`ui_seek_report`), by bus seq.
-static SEEK_REPORTS: Mutex<BTreeMap<u64, Value>> = Mutex::new(BTreeMap::new());
-static SEEK_REPORTED: Condvar = Condvar::new();
 /// How long `ui_playback` seek waits for the window's landing by default.
 pub const SEEK_WAIT_DEFAULT_MS: u64 = 2000;
 const SEEK_WAIT_MAX_MS: u64 = 10_000;
@@ -48,29 +132,32 @@ const SEEK_REASON_MAX: usize = 240;
 
 /// The seconds a queued `playback` seek event asked for, if `seq` is one.
 fn queued_seek_seconds(seq: u64) -> Option<f64> {
-    let bus = BUS.lock().expect("control bus");
-    let event = bus.events.iter().find(|event| event.seq == seq)?;
-    let body = &event.body;
-    if body["op"] != "playback" || body["args"]["action"] != "seek" {
-        return None;
-    }
-    body["args"]["seconds"].as_f64()
+    with_bus(|bus| {
+        let event = bus.events.iter().find(|event| event.seq == seq)?;
+        let body = &event.body;
+        if body["op"] != "playback" || body["args"]["action"] != "seek" {
+            return None;
+        }
+        body["args"]["seconds"].as_f64()
+    })
 }
 
 /// Wait up to `wait_ms` for the window to report where seek `seq` landed.
 fn await_seek_landing(seq: u64, requested: f64, wait_ms: u64) -> Value {
+    let bus = current_bus();
     let deadline = Instant::now() + Duration::from_millis(wait_ms);
-    let mut reports = SEEK_REPORTS.lock().expect("seek reports");
+    let mut inner = bus.inner.lock().expect("control bus");
     loop {
-        if let Some(report) = reports.get(&seq) {
+        if let Some(report) = inner.seek_reports.get(&seq) {
             return report.clone();
         }
         let now = Instant::now();
         if now >= deadline {
             break;
         }
-        reports = SEEK_REPORTED
-            .wait_timeout(reports, deadline - now)
+        inner = bus
+            .reported
+            .wait_timeout(inner, deadline - now)
             .expect("seek reports")
             .0;
     }
@@ -85,22 +172,23 @@ fn await_seek_landing(seq: u64, requested: f64, wait_ms: u64) -> Value {
 static CANCEL: Mutex<BTreeMap<String, Arc<AtomicBool>>> = Mutex::new(BTreeMap::new());
 
 pub fn publish(op: &str, args: &Value) -> u64 {
-    let mut bus = BUS.lock().expect("control bus");
-    let seq = bus.next;
-    bus.next = bus.next.saturating_add(1);
-    bus.events.push_back(Event {
-        seq,
-        body: json!({
-            "seq": seq,
-            "op": op,
-            "args": args,
-            "synthesizedSpeech": false
-        }),
-    });
-    while bus.events.len() > CAP {
-        bus.events.pop_front();
-    }
-    seq
+    with_bus(|bus| {
+        let seq = bus.next;
+        bus.next = bus.next.saturating_add(1);
+        bus.events.push_back(Event {
+            seq,
+            body: json!({
+                "seq": seq,
+                "op": op,
+                "args": args,
+                "synthesizedSpeech": false
+            }),
+        });
+        while bus.events.len() > CAP {
+            bus.events.pop_front();
+        }
+        seq
+    })
 }
 
 pub struct ControlDelta {
@@ -113,25 +201,26 @@ pub struct ControlDelta {
 /// Events with `seq > after`. `gap` is true when the ring dropped `after + 1`.
 /// Clients must call `viewport_get` and discard the partial delta.
 pub fn since(after: u64) -> ControlDelta {
-    let bus = BUS.lock().expect("control bus");
-    let oldest = bus.events.front().map(|event| event.seq);
-    let gap = match oldest {
-        Some(first) => first > after.saturating_add(1),
-        None => bus.next > after.saturating_add(1),
-    };
-    let events = bus
-        .events
-        .iter()
-        .filter(|event| event.seq > after)
-        .map(|event| event.body.clone())
-        .collect();
-    let cursor = bus.next.saturating_sub(1);
-    ControlDelta {
-        cursor,
-        gap,
-        oldest,
-        events,
-    }
+    with_bus(|bus| {
+        let oldest = bus.events.front().map(|event| event.seq);
+        let gap = match oldest {
+            Some(first) => first > after.saturating_add(1),
+            None => bus.next > after.saturating_add(1),
+        };
+        let events = bus
+            .events
+            .iter()
+            .filter(|event| event.seq > after)
+            .map(|event| event.body.clone())
+            .collect();
+        let cursor = bus.next.saturating_sub(1);
+        ControlDelta {
+            cursor,
+            gap,
+            oldest,
+            events,
+        }
+    })
 }
 
 fn queued(op: &str, args: Value, note: &str) -> Value {
@@ -448,16 +537,18 @@ pub fn ui_seek_report(args: &Value) -> Result<Value, (i32, String)> {
         return Err((-32602, format!("reason is over {SEEK_REASON_MAX} characters")));
     }
     let report = json!({"requested_t": requested, "landed_t": landed, "ok": ok, "reason": reason});
-    let mut reports = SEEK_REPORTS.lock().expect("seek reports");
-    if reports.contains_key(&seq) {
-        return Err((-32602, format!("seek {seq} already reported")));
+    let bus = current_bus();
+    {
+        let mut inner = bus.inner.lock().expect("control bus");
+        if inner.seek_reports.contains_key(&seq) {
+            return Err((-32602, format!("seek {seq} already reported")));
+        }
+        inner.seek_reports.insert(seq, report.clone());
+        while inner.seek_reports.len() > CAP {
+            inner.seek_reports.pop_first();
+        }
     }
-    reports.insert(seq, report.clone());
-    while reports.len() > CAP {
-        reports.pop_first();
-    }
-    drop(reports);
-    SEEK_REPORTED.notify_all();
+    bus.reported.notify_all();
     Ok(json!({"recorded": true, "seekSeq": seq, "report": report, "synthesizedSpeech": false}))
 }
 
@@ -1552,10 +1643,10 @@ pub fn voice_profile_list() -> Value {
 mod tests {
     use super::*;
     use serde_json::json;
-    use std::sync::Mutex;
 
-    /// Serializes tests that read the process-global viewport after a mutation.
-    static VIEWPORT: Mutex<()> = Mutex::new(());
+    fn fresh_viewport() -> gen_audio_core::viewport::ViewportGuard {
+        gen_audio_core::viewport::bind_viewport(gen_audio_core::viewport::ViewportHandle::release())
+    }
 
     #[test]
     fn validate_track_and_voice_profile_get_accept_optimus() {
@@ -1619,8 +1710,8 @@ mod tests {
 
     #[test]
     fn t8_generate_refuses_when_kokoro_env_is_unset() {
-        std::env::remove_var("GEN_AUDIO_KOKORO_MODEL");
-        std::env::remove_var("GEN_AUDIO_KOKORO_VOICES");
+        let _viewport = fresh_viewport();
+        let _kokoro = gen_audio_core::bridge::NoKokoroEnv::new();
         let body = ui_generate(&json!({
             "agents": ["alice", "frank"],
             "voice": "kokoro-onnx",
@@ -1654,7 +1745,7 @@ mod tests {
 
     #[test]
     fn t17_mcp_viewport_get_reports_navigate_focus_seek_flip_rename() {
-        let _viewport = VIEWPORT.lock().expect("viewport test");
+        let _viewport = fresh_viewport();
         ui_navigate(&json!({"slide": "spatial"})).unwrap();
         let snap = viewport_get();
         assert_eq!(snap["ui"]["slide"], "slide:spatial");
@@ -1686,7 +1777,7 @@ mod tests {
 
     #[test]
     fn ui_flip_rejects_a_pathological_view_and_applies_a_real_one() {
-        let _viewport = VIEWPORT.lock().expect("viewport test");
+        let _viewport = fresh_viewport();
         let bad = ui_flip(&json!({"view": "view:../../etc"})).unwrap_err();
         assert_eq!(bad.0, -32602);
         let unknown = ui_flip(&json!({"view": "view:not-a-card"})).unwrap_err();
@@ -1708,7 +1799,7 @@ mod tests {
 
     #[test]
     fn t18_compare_of_three_is_rejected_and_select_follows_focus() {
-        let _viewport = VIEWPORT.lock().expect("viewport test");
+        let _viewport = fresh_viewport();
         ui_playback(&json!({"tileId": "lib-kokoro", "action": "play", "origin": "user"})).unwrap();
         let err =
             ui_compare(&json!({"uids": ["lib-kokoro-onnx", "lib-misaki-kokoro", "lib-kokoro"]}))
@@ -1724,7 +1815,7 @@ mod tests {
 
     #[test]
     fn c5_bare_slide_is_a_logged_alias_and_canonical_is_not() {
-        let _viewport = VIEWPORT.lock().expect("viewport test");
+        let _viewport = fresh_viewport();
         let bare = ui_navigate(&json!({"slide": "library"})).unwrap();
         assert_eq!(bare["args"]["slide"], "slide:library");
         assert!(bare["deprecation"]
@@ -1739,63 +1830,62 @@ mod tests {
 
     #[test]
     fn user_play_publishes_focus_before_play() {
-        let _viewport = VIEWPORT.lock().expect("viewport test");
-        // Other tests share the process-global ring. A three-seq lookback
-        // drops focus/play whenever a neighbour publishes between them.
-        let mut last = String::new();
-        for _ in 0..8 {
-            let before = since(u64::MAX).cursor;
-            let played = ui_playback(
-                &json!({"tileId": "lib-kokoro-onnx", "action": "play", "origin": "user"}),
-            )
-            .unwrap();
-            assert_eq!(played["args"]["origin"], "user");
-            let seq = played["seq"].as_u64().unwrap();
-            let delta = since(before);
-            if delta.gap {
-                last = format!("gap oldest={:?} cursor={}", delta.oldest, delta.cursor);
-                continue;
-            }
-            let ops: Vec<_> = delta
-                .events
-                .iter()
-                .filter(|event| {
-                    let event_seq = event["seq"].as_u64().unwrap_or(0);
-                    event_seq > before
-                        && event_seq <= seq
-                        && (event["args"]["uid"] == "lib-kokoro-onnx"
-                            || event["args"]["playing"] == "lib-kokoro-onnx")
-                })
-                .map(|event| event["op"].as_str().unwrap_or(""))
-                .collect();
-            let focus_at = ops.iter().position(|op| *op == "focus");
-            let play_at = ops.iter().position(|op| *op == "play");
-            assert!(
-                focus_at.is_some() && play_at.is_some() && focus_at < play_at,
-                "focus then play, got {ops:?}"
-            );
-            let auto =
-                ui_playback(&json!({"tileId": "lib-kokoro", "action": "play", "origin": "auto"}))
-                    .unwrap();
-            assert_eq!(auto["args"]["origin"], "auto");
-            let after_auto = since(seq);
-            if !after_auto.gap {
-                let auto_ops: Vec<_> = after_auto
-                    .events
-                    .iter()
-                    .filter(|event| {
-                        event["args"]["playing"] == "lib-kokoro"
-                            || event["args"]["uid"] == "lib-kokoro"
-                    })
-                    .map(|event| event["op"].as_str().unwrap_or(""))
-                    .collect();
-                assert!(auto_ops.contains(&"play"), "{auto_ops:?}");
-                assert!(!auto_ops.contains(&"focus"), "{auto_ops:?}");
-            }
-            assert_eq!(viewport_get()["ui"]["focus"], "lib-kokoro-onnx");
-            assert_eq!(viewport_get()["ui"]["clock"]["source"], "lib-kokoro-onnx");
-            return;
-        }
-        panic!("ring dropped the user-play events before they could be read: {last}");
+        let _viewport = fresh_viewport();
+        let _bus = bind_fresh_bus();
+        let before = since(u64::MAX).cursor;
+        let played = ui_playback(
+            &json!({"tileId": "lib-kokoro-onnx", "action": "play", "origin": "user"}),
+        )
+        .unwrap();
+        assert_eq!(played["args"]["origin"], "user");
+        let seq = played["seq"].as_u64().unwrap();
+        let delta = since(before);
+        assert!(
+            !delta.gap,
+            "gap oldest={:?} cursor={}",
+            delta.oldest,
+            delta.cursor
+        );
+        let ops: Vec<_> = delta
+            .events
+            .iter()
+            .filter(|event| {
+                let event_seq = event["seq"].as_u64().unwrap_or(0);
+                event_seq > before
+                    && event_seq <= seq
+                    && (event["args"]["uid"] == "lib-kokoro-onnx"
+                        || event["args"]["playing"] == "lib-kokoro-onnx")
+            })
+            .map(|event| event["op"].as_str().unwrap_or(""))
+            .collect();
+        let focus_at = ops.iter().position(|op| *op == "focus");
+        let play_at = ops.iter().position(|op| *op == "play");
+        assert!(
+            focus_at.is_some() && play_at.is_some() && focus_at < play_at,
+            "focus then play, got {ops:?}"
+        );
+        let auto =
+            ui_playback(&json!({"tileId": "lib-kokoro", "action": "play", "origin": "auto"}))
+                .unwrap();
+        assert_eq!(auto["args"]["origin"], "auto");
+        let after_auto = since(seq);
+        assert!(
+            !after_auto.gap,
+            "gap oldest={:?} cursor={}",
+            after_auto.oldest,
+            after_auto.cursor
+        );
+        let auto_ops: Vec<_> = after_auto
+            .events
+            .iter()
+            .filter(|event| {
+                event["args"]["playing"] == "lib-kokoro" || event["args"]["uid"] == "lib-kokoro"
+            })
+            .map(|event| event["op"].as_str().unwrap_or(""))
+            .collect();
+        assert!(auto_ops.contains(&"play"), "{auto_ops:?}");
+        assert!(!auto_ops.contains(&"focus"), "{auto_ops:?}");
+        assert_eq!(viewport_get()["ui"]["focus"], "lib-kokoro-onnx");
+        assert_eq!(viewport_get()["ui"]["clock"]["source"], "lib-kokoro-onnx");
     }
 }

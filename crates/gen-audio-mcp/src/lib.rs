@@ -897,6 +897,7 @@ mod tests {
 
     #[test]
     fn contract_the_desktop_play_payload_is_accepted_and_carries_origin_user() {
+        let _bus = control::TestBus::fresh().bind();
         let server = Server::boot();
         let request: Value = serde_json::from_str(DESKTOP_USER_PLAY).unwrap();
         let tile = request["params"]["arguments"]["tileId"].as_str().unwrap().to_string();
@@ -911,6 +912,7 @@ mod tests {
 
     #[test]
     fn ui_playback_origin_is_a_validated_enum_and_a_bad_value_changes_nothing() {
+        let _bus = control::TestBus::fresh().bind();
         let server = Server::boot();
         let mut request: Value = serde_json::from_str(DESKTOP_USER_PLAY).unwrap();
         // A tile only this test uses, so the bus check cannot see another test's event.
@@ -944,8 +946,12 @@ mod tests {
         let fixture: Value = serde_json::from_str(SEEK_ROUND_TRIP).unwrap();
         let seek = fixture["agentSeek"].clone();
         let seconds = seek["params"]["arguments"]["seconds"].as_f64().unwrap();
+        let bus = control::TestBus::fresh();
+        let _bus = bus.bind();
         let before = control::since(0).cursor;
+        let child_bus = bus.clone();
         let agent = std::thread::spawn(move || {
+            let _bus = child_bus.bind();
             let server = Server::boot();
             handle(&server, seek).unwrap().unwrap()
         });
@@ -981,6 +987,7 @@ mod tests {
 
     #[test]
     fn a_seek_no_window_answers_says_so_and_bad_reports_record_nothing() {
+        let _bus = control::TestBus::fresh().bind();
         let server = Server::boot();
         let call = |name: &str, args: Value| {
             handle(&server, json!({"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name": name, "arguments": args}})).unwrap().unwrap()

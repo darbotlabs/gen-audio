@@ -8,8 +8,9 @@
 //! Coverage uses the cube's own `sec_per_bin`. Reject reasons stay in one order:
 //! start < 0, selector end, clip missing from `src`, recorded source duration lie.
 
+use std::cell::RefCell;
 use std::collections::BTreeMap;
-use std::sync::{Mutex, OnceLock};
+use std::sync::{Arc, Mutex, OnceLock};
 
 use serde_json::{json, Value};
 
@@ -1024,25 +1025,91 @@ pub struct CoverageOk {
     pub partial: Option<Value>,
 }
 
-fn state() -> &'static Mutex<Viewport> {
-    static STATE: OnceLock<Mutex<Viewport>> = OnceLock::new();
-    STATE.get_or_init(|| Mutex::new(Viewport::release()))
+/// One viewport. The desktop uses the process default (one window). A caller
+/// that must not share that window — a test asserting a sequence of actions —
+/// binds its own handle for the current thread.
+#[derive(Clone)]
+pub struct ViewportHandle {
+    inner: Arc<Mutex<Viewport>>,
+}
+
+impl ViewportHandle {
+    pub fn release() -> Self {
+        Self {
+            inner: Arc::new(Mutex::new(Viewport::release())),
+        }
+    }
+
+    pub fn apply(&self, action: Action) -> Result<Value, ReduceError> {
+        self.inner.lock().expect("viewport").apply(action)
+    }
+
+    pub fn snapshot(&self) -> Value {
+        self.inner.lock().expect("viewport").snapshot()
+    }
+
+    fn contains(&self, uid: &str) -> bool {
+        self.inner
+            .lock()
+            .expect("viewport")
+            .assets
+            .contains_key(uid)
+    }
+
+    fn export(&self, uid: &str) -> Result<Value, ReduceError> {
+        self.inner.lock().expect("viewport").export_card(uid)
+    }
+}
+
+thread_local! {
+    static BOUND_VIEWPORT: RefCell<Option<ViewportHandle>> = const { RefCell::new(None) };
+}
+
+/// Restores the previous binding, including the process default.
+pub struct ViewportGuard {
+    previous: Option<ViewportHandle>,
+}
+
+impl Drop for ViewportGuard {
+    fn drop(&mut self) {
+        let previous = self.previous.take();
+        BOUND_VIEWPORT.with(|slot| *slot.borrow_mut() = previous);
+    }
+}
+
+/// Viewport reads and writes on this thread use `handle` until the guard drops.
+pub fn bind_viewport(handle: ViewportHandle) -> ViewportGuard {
+    BOUND_VIEWPORT.with(|slot| {
+        let previous = slot.borrow_mut().replace(handle);
+        ViewportGuard { previous }
+    })
+}
+
+fn process_viewport() -> ViewportHandle {
+    static STATE: OnceLock<ViewportHandle> = OnceLock::new();
+    STATE.get_or_init(ViewportHandle::release).clone()
+}
+
+fn active_viewport() -> ViewportHandle {
+    BOUND_VIEWPORT
+        .with(|slot| slot.borrow().clone())
+        .unwrap_or_else(process_viewport)
 }
 
 pub fn apply_global(action: Action) -> Result<Value, ReduceError> {
-    state().lock().expect("viewport").apply(action)
+    active_viewport().apply(action)
 }
 
 pub fn snapshot_global() -> Value {
-    state().lock().expect("viewport").snapshot()
+    active_viewport().snapshot()
 }
 
 pub fn contains_global(uid: &str) -> bool {
-    state().lock().expect("viewport").assets.contains_key(uid)
+    active_viewport().contains(uid)
 }
 
 pub fn export_global(uid: &str) -> Result<Value, ReduceError> {
-    state().lock().expect("viewport").export_card(uid)
+    active_viewport().export(uid)
 }
 
 fn trim_seconds(value: f64) -> String {
