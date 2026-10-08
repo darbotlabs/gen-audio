@@ -220,12 +220,14 @@ test("Library cards' hand-written cube facts match the cube JSON", () => {
 
 // AP-OPT-1: schemas allow only what the product renders. Nothing renders a
 // persona cube, so a voice_profile carrying spectrogram3d "library-cube-hook"
-// (with or without its cubeJsonUrl) is refused by validate.ts, by
-// voice_profile.schema.json and by card-viewport.schema.json alike.
-test("AP-OPT-1: spectrogram3d library-cube-hook on a voice_profile is rejected by validate.ts and both schemas", () => {
+// (with or without its cubeJsonUrl) or "fixture-cube" is refused by
+// validate.ts, by voice_profile.schema.json and by card-viewport.schema.json
+// alike; "none" is the only value left.
+test("AP-OPT-1: spectrogram3d library-cube-hook or fixture-cube on a voice_profile is rejected by validate.ts and both schemas", () => {
   const hooked = [
     { spectrogram3d: "library-cube-hook", cubeJsonUrl: "/library/library_kokoro_cube3d.json" },
     { spectrogram3d: "library-cube-hook" },
+    { spectrogram3d: "fixture-cube" },
   ];
   type Card = { kind: string; body: Record<string, unknown> };
   const example = load("schemas/examples/viewport.example.json") as { cards: Card[] };
