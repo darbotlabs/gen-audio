@@ -269,3 +269,177 @@ def test_the_shipped_kokoro_onnx_sidecar_out_is_the_locked_wav():
     lock = json.loads((REPO / "schemas" / "asset-object" / "media.lock.json").read_text(encoding="utf-8"))["media"]
     out = doc["outside_repo"][doc["out"]]
     assert out == {"sha256": lock["library_kokoro_onnx.wav"]["sha256"], "bytes": lock["library_kokoro_onnx.wav"]["bytes"]}
+
+
+# Keys whose string value is a recorded filesystem path (or a path with a
+# trailing note in parentheses, e.g. the bitdot `python` field). Not every
+# slash-containing string: `model: "microsoft/VibeVoice-1.5B"` is a hub id.
+PATH_KEYS = frozenset({
+    "model_path", "inference_code", "voices_bin", "source", "cast_map", "out",
+    "raw_output", "output", "log", "prompt_wav", "script", "python",
+})
+# `model` is a path only when it looks like one (onnx/bin/wav/json/py, or an
+# absolute / ../ / <outside-repo> form). A hub id stays a hub id.
+PATH_EXTENSIONS = (".onnx", ".bin", ".wav", ".json", ".py", ".txt", ".log")
+
+
+def _is_path_valued(key: str, value: str) -> bool:
+    if key in PATH_KEYS:
+        return True
+    if key == "model" and (
+        value.startswith(("/", "<outside-repo>/", "../", "models/", "forks/"))
+        or value.lower().endswith(PATH_EXTENSIONS)
+    ):
+        return True
+    return False
+
+
+def _path_prefix(value: str) -> str:
+    """The filesystem part of `venvs/vibevoice (CPython …)`."""
+    if " (" in value and value.endswith(")"):
+        return value[: value.index(" (")]
+    return value
+
+
+def _path_fields(doc, where="$"):
+    """Every (where, key, value) whose value is a recorded path field."""
+    if isinstance(doc, dict):
+        for key, item in doc.items():
+            if key == "outside_repo":
+                continue
+            if isinstance(item, str) and _is_path_valued(key, item):
+                yield f"{where}.{key}", key, item
+            else:
+                yield from _path_fields(item, f"{where}.{key}")
+    elif isinstance(doc, list):
+        for index, item in enumerate(doc):
+            yield from _path_fields(item, f"{where}[{index}]")
+
+
+def _path_ok(value: str, outside: dict) -> str | None:
+    """None if `value` obeys the C1 rule; otherwise the reason it does not."""
+    path = _path_prefix(value)
+    if path.startswith(OUTSIDE):
+        fact = outside.get(path)
+        if fact is None:
+            return f"label {path!r} has no outside_repo entry"
+        if fact == {"kind": "directory"}:
+            return None
+        if fact.get("transient") is True and "sha256" not in fact:
+            return None  # explicitly unhashed; never invent a sha
+        if re.fullmatch(r"[0-9a-f]{64}", str(fact.get("sha256", ""))) and int(fact.get("bytes", 0)) > 0:
+            return None
+        return f"label {path!r} has unusable facts {fact!r}"
+    if path.startswith(("/", "\\")) or re.match(r"[A-Za-z]:[\\/]", path) or path.startswith("../"):
+        return f"{path!r} is absolute or ../ (must be repo-relative or an <outside-repo>/ label)"
+    # Repo-relative: must resolve from the repo root (no dangling work-dir path).
+    if not (REPO / path).exists():
+        return f"{path!r} does not resolve from the repo root and is not an <outside-repo>/ label"
+    return None
+
+
+@pytest.mark.parametrize("path", SIDECARS, ids=lambda path: path.name)
+def test_every_recorded_path_in_a_synth_sidecar_resolves_or_is_labelled(path):
+    """C1: every path-valued field either resolves from the repo root or is
+    an <outside-repo>/… label with facts in outside_repo. Never relative to a
+    directory that no longer exists (the old genaid-podcast-compare work dir)."""
+    doc = json.loads(path.read_text(encoding="utf-8"))
+    outside = doc.get("outside_repo", {})
+    problems = []
+    for where, key, value in _path_fields(doc):
+        reason = _path_ok(value, outside)
+        if reason:
+            problems.append(f"{where}={value!r}: {reason}")
+    # Paths embedded in `command` are already covered by the B3 label walk;
+    # assert any leftover ../ or absolute form is gone.
+    command = doc.get("command", "")
+    if isinstance(command, str):
+        if "../" in command or machine_paths(command):
+            problems.append(f"$.command still has a ../ or absolute path")
+    assert problems == [], f"{path.name}:\n  " + "\n  ".join(problems)
+
+
+def test_a_transient_outside_path_is_marked_not_invented(tmp_path):
+    """A path that no longer exists cannot be hashed: the sync records an
+    explicit transient marker instead of inventing a sha256."""
+    from gen_audio.library_manifest import render, sync_manifest
+
+    repo, library = _work(tmp_path)
+    # A path-valued field pointing at a sibling file that is gone.
+    side = {
+        "engine": "vibevoice",
+        "log": "../genaid-podcast-compare/logs/gone.log",
+        "output": str((tmp_path / "work" / "genaid-podcast-compare" / "audio" / "x.wav")),
+    }
+    (repo.parent / "genaid-podcast-compare" / "audio").mkdir(parents=True)
+    (repo.parent / "genaid-podcast-compare" / "audio" / "x.wav").write_bytes(b"RIFF x")
+    # logs/gone.log is intentionally missing
+    sidecar = library / "a.synth.json"
+    sidecar.write_text(json.dumps(side, indent=2), encoding="utf-8")
+    changed = sync_manifest(library / "manifest.json")
+    assert "a.synth.json" in changed
+    doc = json.loads(sidecar.read_text(encoding="utf-8"))
+    assert doc["log"] == "<outside-repo>/genaid-podcast-compare/logs/gone.log"
+    assert doc["output"] == "<outside-repo>/genaid-podcast-compare/audio/x.wav"
+    assert doc["outside_repo"]["<outside-repo>/genaid-podcast-compare/audio/x.wav"] == {
+        "sha256": hashlib.sha256(b"RIFF x").hexdigest(), "bytes": 6,
+    }
+    assert doc["outside_repo"]["<outside-repo>/genaid-podcast-compare/logs/gone.log"] == {
+        "transient": True, "unhashed": "not on this machine",
+    }
+    assert "sha256" not in doc["outside_repo"]["<outside-repo>/genaid-podcast-compare/logs/gone.log"]
+
+
+def test_work_dir_relative_paths_are_relabelled_only_from_a_named_work_dir(tmp_path):
+    """C1: a path recorded relative to the run's work dir is never resolved
+    by guessing: without --work-dir the sync fails and names the field; with
+    it, the field becomes an <outside-repo>/ label with facts, any trailing
+    note is kept, and a second sync changes 0 bytes."""
+    from gen_audio.library_manifest import sync_manifest
+
+    repo, library = _work(tmp_path)
+    work = repo.parent / "genaid-podcast-compare"
+    code = _file(work / "models" / "demo" / "run.py", b"print('hi')\n")
+    (work / "venvs" / "vv").mkdir(parents=True)
+    side = {
+        "engine": "vibevoice",
+        "inference_code": "models/demo/run.py",
+        "python": "venvs/vv (CPython 3.14.8)",
+        "voices": {"Speaker 1": {"name": "Alice", "prompt_wav": "models/demo/a.wav"}},
+        "raw_output": "audio/gone.wav",
+        "model": "microsoft/VibeVoice-1.5B",
+    }
+    _file(work / "models" / "demo" / "a.wav", b"RIFF a")
+    sidecar = library / "v.synth.json"
+    sidecar.write_text(json.dumps(side, indent=2), encoding="utf-8")
+    before = sidecar.read_bytes()
+    with pytest.raises(ValueError, match=r"v\.synth\.json: \$\.inference_code 'models/demo/run\.py' does not resolve from the repo root"):
+        sync_manifest(library / "manifest.json")
+    assert sidecar.read_bytes() == before
+    assert "v.synth.json" in sync_manifest(library / "manifest.json", work_dirs={"v.synth.json": work})
+    doc = json.loads(sidecar.read_text(encoding="utf-8"))
+    assert doc["inference_code"] == "<outside-repo>/genaid-podcast-compare/models/demo/run.py"
+    assert doc["python"] == "<outside-repo>/genaid-podcast-compare/venvs/vv (CPython 3.14.8)"
+    assert doc["voices"]["Speaker 1"]["prompt_wav"] == "<outside-repo>/genaid-podcast-compare/models/demo/a.wav"
+    assert doc["raw_output"] == "<outside-repo>/genaid-podcast-compare/audio/gone.wav"
+    assert doc["model"] == "microsoft/VibeVoice-1.5B", "a hub id is not a path"
+    assert doc["outside_repo"] == {
+        "<outside-repo>/genaid-podcast-compare/audio/gone.wav": {"transient": True, "unhashed": "not on this machine"},
+        "<outside-repo>/genaid-podcast-compare/models/demo/a.wav": {"sha256": hashlib.sha256(b"RIFF a").hexdigest(), "bytes": 6},
+        "<outside-repo>/genaid-podcast-compare/models/demo/run.py": code,
+        "<outside-repo>/genaid-podcast-compare/venvs/vv": {"kind": "directory"},
+    }
+    once = sidecar.read_bytes()
+    assert sync_manifest(library / "manifest.json") == [] and sidecar.read_bytes() == once, "a second sync changes 0 bytes"
+
+
+def test_the_shipped_bitdot_labels_agree_with_its_recorded_shas_and_the_lock():
+    """C1 cross-check: the facts recorded for the relabelled fields are the
+    shas the run itself recorded, and the output is the locked library WAV."""
+    doc = json.loads((REPO / "apps" / "desktop" / "public" / "library" / "bitdot_braille_vibevoice.synth.json").read_text(encoding="utf-8"))
+    lock = json.loads((REPO / "schemas" / "asset-object" / "media.lock.json").read_text(encoding="utf-8"))["media"]["bitdot_braille_vibevoice.wav"]
+    facts = doc["outside_repo"]
+    assert facts[doc["script"]]["sha256"] == doc["script_sha256"]
+    assert facts[doc["raw_output"]]["sha256"] == doc["raw_sha256"]
+    assert facts[doc["output"]] == {"sha256": doc["output_sha256"], "bytes": lock["bytes"]}
+    assert doc["output_sha256"] == lock["sha256"]

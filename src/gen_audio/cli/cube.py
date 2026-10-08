@@ -8,9 +8,12 @@ Two commands share this entry point (scripts/cube_revision.py):
   [--label LABEL] [--png PNG]`` builds the rev 3 four-layer Library cube JSON
   (and PNG) that the Library tiles and the Cube tab load, with the WAV sha256
   and the generator's normalized sha256. See gen_audio.cube_layers.
-- ``cube_revision.py manifest [--manifest PATH] [--record-generator-commit]``
-  rewrites the cube mirror in the Library manifest from the cube JSON
-  (gen_audio.library_manifest; standard library only, no WAVs needed). With
+- ``cube_revision.py manifest [--manifest PATH] [--record-generator-commit]
+  [--work-dir SIDECAR=DIR ...]`` rewrites the cube mirror in the Library
+  manifest from the cube JSON and relabels the synth sidecars' outside-repo
+  paths (gen_audio.library_manifest; standard library only, no WAVs needed).
+  ``--work-dir`` names the directory a sidecar's relative paths were
+  recorded in, once, so they become <outside-repo>/ labels with facts. With
   ``--record-generator-commit`` it also writes each cube block's informational
   ``generator_commit`` from git history; run it after the regen is committed.
 """
@@ -68,9 +71,22 @@ def manifest_main(argv: list[str]) -> int:
         action="store_true",
         help="also set each cube block's generator_commit (information only, outside the uid) from git history",
     )
+    parser.add_argument(
+        "--work-dir",
+        action="append",
+        default=[],
+        metavar="SIDECAR=DIR",
+        help="relabel SIDECAR's paths recorded relative to DIR (e.g. bitdot_braille_vibevoice.synth.json=../genaid-podcast-compare)",
+    )
     args = parser.parse_args(argv)
+    work_dirs = {}
+    for item in args.work_dir:
+        name, sep, folder = item.partition("=")
+        if not sep or not name or not folder:
+            parser.error(f"--work-dir takes SIDECAR=DIR, got {item!r}")
+        work_dirs[name] = Path(folder)
     try:
-        changed = sync_manifest(args.manifest)
+        changed = sync_manifest(args.manifest, work_dirs=work_dirs)
         recorded = record_generator_commits(args.manifest, LIBRARY_MANIFEST.parents[4]) if args.record_generator_commit else None
     except (OSError, ValueError, KeyError) as exc:
         print(f"error: {exc}", file=sys.stderr)
