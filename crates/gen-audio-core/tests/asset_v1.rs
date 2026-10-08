@@ -18,6 +18,7 @@ const ASSETS: &str = include_str!("../../../apps/desktop/public/library/assets.j
 const VIEWPORT: &str = include_str!("../../../schemas/examples/viewport.example.json");
 const RELEASE_VIEWPORT: &str = include_str!("../../../schemas/examples/viewport.release.json");
 const DEV_ASSETS: &str = include_str!("../../../schemas/asset-object/fixtures/assets.dev.json");
+const MEDIA_LOCK: &str = include_str!("../../../schemas/asset-object/media.lock.json");
 
 fn json(text: &str) -> Value {
     serde_json::from_str(text).expect("json")
@@ -243,4 +244,24 @@ fn library_media_hashes_verify_where_present() {
         eprintln!("skipped (not staged here): {missing:?}");
     }
     assert!(verified > 0);
+}
+
+/// E2: media.lock.json pins exactly the WAVs the release catalog hashes, so CI
+/// (no WAVs, build_assets --from-lock) mints the same clip uids.
+#[test]
+fn media_lock_pins_every_library_wav() {
+    let lock = json(MEDIA_LOCK)["media"].as_object().unwrap().clone();
+    let catalog = json(ASSETS);
+    let mut wavs = 0;
+    for asset in catalog["assets"].as_array().unwrap() {
+        for media in asset["media"].as_array().unwrap().iter().filter(|media| media["role"] == "wav") {
+            let path = media["path"].as_str().unwrap();
+            let locked = &lock[path];
+            assert_eq!(locked["sha256"], media["sha256"], "{path}");
+            assert_eq!(locked["bytes"], media["bytes"], "{path}");
+            assert!(locked["bytes"].as_u64().unwrap() < 25 * 1024 * 1024, "{path} is over 25 MB");
+            wavs += 1;
+        }
+    }
+    assert_eq!(wavs, lock.len(), "media.lock.json has entries no clip uses");
 }

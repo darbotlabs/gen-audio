@@ -9,6 +9,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          # tests/test_cube_layers.py checks each cube's generator_commit
+          # against git log -1 on src/gen_audio/cube_layers.py.
+          fetch-depth: 0
       - uses: actions/setup-python@v5
         with:
           python-version: "3.14"
@@ -16,6 +20,10 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y libsndfile1
       - run: python -m pip install -e ".[dev]"
       - run: pytest
+      - name: Regen gate (manifest cube mirror)
+        run: |
+          python scripts/cube_revision.py manifest
+          git diff --exit-code -- apps/desktop/public/library/manifest.json
 
   rust:
     runs-on: ubuntu-latest
@@ -27,6 +35,15 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y libwebkit2gtk-4.1-dev libgtk-3-dev libayatana-appindicator3-dev librsvg2-dev patchelf libssl-dev pkg-config
       - run: cargo test --workspace --exclude gen-audio-desktop
+      # PR #5 verification E2. The library WAVs are gitignored, so CI takes
+      # their identity from schemas/asset-object/media.lock.json; build_assets
+      # fails (never skips) when a WAV is neither on disk nor locked, or when a
+      # cube JSON's source_sha256 is not its clip's WAV.
+      - name: Regen gate (asset catalog, vectors)
+        run: |
+          cargo run -p gen-audio-core --example build_assets -- --from-lock
+          cargo run -p gen-audio-core --example asset_vectors
+          git diff --exit-code -- apps/desktop/public/library schemas
       - name: Stage MCP sidecar so desktop config can see externalBin
         run: |
           triple="$(rustc -vV | sed -n 's/^host: //p')"

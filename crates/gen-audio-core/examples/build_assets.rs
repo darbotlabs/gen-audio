@@ -1,17 +1,31 @@
 //! Regenerate the v1 asset catalog from the v0 library data.
 //!
-//! cargo run -p gen-audio-core --example build_assets
+//! cargo run -p gen-audio-core --example build_assets [-- --from-lock]
 //!
 //! Reads manifest.json, the catalog voice models, viewport.example.json,
 //! voice_profile.optimus.json, the cube JSON files and the spectrogram
 //! sidecars, hashes every referenced media file under
-//! apps/desktop/public/library (the gitignored WAVs must be staged there),
-//! and writes:
+//! apps/desktop/public/library, and writes the outputs below.
+//!
+//! The WAVs are gitignored. Their identity facts (sha256, bytes, frames, rate,
+//! channels) are pinned in schemas/asset-object/media.lock.json (PR #5
+//! verification E2):
+//!   default      every WAV must be on disk (SMAX, the box). A missing WAV is
+//!                an error, never a skip. media.lock.json is rewritten.
+//!   --from-lock  CI, which has no WAVs: a missing WAV takes its facts from
+//!                media.lock.json; a WAV that is present must match its lock
+//!                entry; every cube JSON's source_sha256 must be its clip's
+//!                locked sha256. media.lock.json is read, not written.
+//! Any other missing media (cube JSON/PNG, strips, profile) is an error.
+//! Then `git diff --exit-code` over the outputs is the regen gate.
+//!
+//! Writes:
 //!   apps/desktop/public/library/assets.json        (release v1 envelopes: no dev fixtures)
 //!   schemas/asset-object/fixtures/assets.dev.json   (dev/test-only envelopes, never shipped)
 //!   schemas/asset-object/vectors/fixtures_v1.json   (legacy_id -> uid pins, release + dev)
 //!   schemas/examples/viewport.example.json          (card "uid" alongside "id"; dev deck)
 //!   schemas/examples/viewport.release.json          (the shipped deck: example minus dev cards)
+//!   schemas/asset-object/media.lock.json            (WAV identity facts; default mode only)
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -53,27 +67,57 @@ fn wav_facts(bytes: &[u8]) -> Option<(u64, u64, u64)> {
     None
 }
 
+fn fail(message: String) -> ! {
+    eprintln!("build_assets: {message}");
+    std::process::exit(1);
+}
+
 fn main() {
+    let from_lock = match std::env::args().skip(1).collect::<Vec<_>>().as_slice() {
+        [] => false,
+        [flag] if flag == "--from-lock" => true,
+        other => fail(format!("unknown arguments {other:?}; usage: build_assets [--from-lock]")),
+    };
     let root = repo();
     let library = root.join("apps/desktop/public/library");
+    let lock_path = root.join("schemas/asset-object/media.lock.json");
+    let lock: Map<String, Value> = if from_lock {
+        read_json(&lock_path)["media"].as_object().cloned().unwrap_or_default()
+    } else {
+        Map::new()
+    };
     let manifest = read_json(&library.join("manifest.json"));
     let viewport_path = root.join("schemas/examples/viewport.example.json");
     let viewport = read_json(&viewport_path);
     let cards = viewport["cards"].as_array().cloned().unwrap_or_default();
 
     let mut media = Map::new();
+    let mut missing: Vec<String> = Vec::new();
     let mut hash = |path: &str| {
         let full = library.join(path);
+        let wav = path.ends_with(".wav");
         let Ok(bytes) = fs::read(&full) else {
-            eprintln!("missing media (not hashed): {path}");
+            match lock.get(path) {
+                Some(locked) if wav => {
+                    media.insert(path.to_string(), locked.clone());
+                }
+                _ if wav && from_lock => missing.push(format!("{path} (not on disk and not in media.lock.json)")),
+                _ if wav => missing.push(format!("{path} (stage the WAV; CI uses --from-lock)")),
+                _ => missing.push(path.to_string()),
+            }
             return;
         };
         let mut info = json!({"sha256": sha256_hex(&bytes), "bytes": bytes.len()});
-        if path.ends_with(".wav") {
+        if wav {
             if let Some((frames, rate, channels)) = wav_facts(&bytes) {
                 info["frames"] = json!(frames);
                 info["sample_rate"] = json!(rate);
                 info["channels"] = json!(channels);
+            }
+            if let Some(locked) = lock.get(path) {
+                if locked != &info {
+                    missing.push(format!("{path} differs from media.lock.json; rerun build_assets without --from-lock"));
+                }
             }
         }
         media.insert(path.to_string(), info);
@@ -108,6 +152,27 @@ fn main() {
 
     let optimus_path = "voice_profile.optimus.json";
     hash(optimus_path);
+    drop(hash);
+    if !missing.is_empty() {
+        fail(format!("missing or mismatched media:\n  {}", missing.join("\n  ")));
+    }
+    // The cube regen check without WAVs: each cube JSON names the sha256 of
+    // the WAV it was made from; it must be the WAV (or locked WAV) of its clip.
+    for clip in manifest["clips"].as_array().cloned().unwrap_or_default() {
+        let (Some(wav), Some(cube)) = (
+            clip["wavUrl"].as_str().and_then(|url| url.strip_prefix("/library/")),
+            clip["cube"]["jsonUrl"].as_str().and_then(|url| url.strip_prefix("/library/")),
+        ) else {
+            continue;
+        };
+        let want = media.get(wav).and_then(|info| info["sha256"].as_str()).unwrap_or_default();
+        match cube_docs.get(cube).and_then(|doc| doc["source_sha256"].as_str()) {
+            Some(got) if got == want => {}
+            Some(got) => fail(format!("{cube} was made from WAV sha256 {got}, but {wav} is {want}; regenerate the cube")),
+            None if from_lock => fail(format!("{cube} has no source_sha256, so CI cannot tie it to {wav}; regenerate it with cube_revision.py layers")),
+            None => {}
+        }
+    }
     let mut profiles = vec![json!({"path": optimus_path, "profile": read_json(&library.join(optimus_path))})];
     for card in &cards {
         if card["kind"] == "VoiceProfile" && card["body"]["personaId"] != "optimus" {
@@ -197,6 +262,19 @@ fn main() {
         .expect("cards")
         .retain(|card| !dev_card_ids.iter().any(|id| card["id"] == id.as_str()));
     fs::write(root.join("schemas/examples/viewport.release.json"), pretty(&release_viewport)).expect("write viewport.release.json");
-    println!("release: {} assets, {} cards; dev-only: {dev_card_ids:?}", release_assets.len(), release_viewport["cards"].as_array().map_or(0, Vec::len));
+    if !from_lock {
+        let wavs: Map<String, Value> = media.iter().filter(|(path, _)| path.ends_with(".wav")).map(|(k, v)| (k.clone(), v.clone())).collect();
+        let lock_doc = json!({
+            "note": "Identity facts of the gitignored library WAVs, written by build_assets when every WAV is on disk. CI has no WAVs and runs build_assets --from-lock, which takes these facts for a missing WAV and checks each cube JSON's source_sha256 against them.",
+            "media": wavs,
+        });
+        fs::write(&lock_path, pretty(&lock_doc)).expect("write media.lock.json");
+    }
+    println!(
+        "{}: release: {} assets, {} cards; dev-only: {dev_card_ids:?}",
+        if from_lock { "from media.lock.json" } else { "from the WAVs on disk" },
+        release_assets.len(),
+        release_viewport["cards"].as_array().map_or(0, Vec::len)
+    );
     println!("{} assets; legacy_index {} entries", assets.len(), index.len());
 }
