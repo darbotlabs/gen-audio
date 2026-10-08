@@ -28,6 +28,7 @@ def test_cube_duration_matches_the_buffer():
     document = cube_document(audio, rate, duration_s=duration, engine="tone", derived_from=["asset-src"])
     assert document["duration_s"] == duration
     assert document["cube_revision"] == 3
+    assert document["layer_method"] == "library_r3"
     assert document["inv_hdr"] == measure(audio, rate).inv_hdr
     assert 0.0 < document["layer_score"] < 1.0
     assert document["cube_shape_f_t"][0] == (1024 // 2 + 1) // 5

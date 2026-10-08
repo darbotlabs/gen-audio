@@ -17,6 +17,7 @@ from gen_audio.assets import asset_object, sha256_file
 from gen_audio.audio_io import read_wav, write_wav
 from gen_audio.cube_layers import (
     LAYER_NAMES,
+    DEFAULT_LAYER_METHOD,
     CubeParams,
     compute_layers,
     downsample_cube,
@@ -331,7 +332,8 @@ def cube_document(
     """Inverse-HDR bitdot cube on the samples that were passed in.
 
     Signal, tonality, confidence, quality, the downsample, and ``layer_score``
-    come from :mod:`gen_audio.cube_layers` (revision 3). ``inv_hdr`` stays
+    come from :mod:`gen_audio.cube_layers` with the default ``library_r3``.
+    The cube JSON records that choice as ``layer_method``. ``inv_hdr`` stays
     :func:`gen_audio.cube_revision.measure` (rms/peak).
     """
     values = np.asarray(audio, dtype=np.float64).reshape(-1)
@@ -341,7 +343,7 @@ def cube_document(
     params = CubeParams()
     metrics = measure(values, rate)
     magnitude = stft_mag(values, n_fft=params.n_fft, hop=params.hop)
-    full = compute_layers(magnitude, rate, params.n_fft)
+    full = compute_layers(magnitude, rate, params.n_fft, method=DEFAULT_LAYER_METHOD)
     down, sf, st = downsample_cube(full, max_f=params.max_f, max_t=params.max_t)
     cloud = layers_to_points(down, thresh=params.thresh)
     x, yy, _z, _rgba, vals, lids = cloud
@@ -393,6 +395,7 @@ def cube_document(
         "cube_shape_f_t": [int(nf), int(nt)],
         "cube_covers_s": nt * bin_s,
         "cube_revision": GENERATED_CUBE_REVISION,
+        "layer_method": DEFAULT_LAYER_METHOD,
         "n_points": len(points),
         "n_points_source": int(len(x)),
         "n_points_source_per_layer": counts,

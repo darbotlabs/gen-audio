@@ -51,6 +51,8 @@ def test_library_cube_shape_and_scrub_mapping():
     assert doc["cube_covers_s"] == pytest.approx(nt * doc["bin_seconds"])
     assert doc["cube_covers_s"] <= doc["duration_s"] + doc["bin_seconds"]  # STFT padding
     assert doc["cube_revision"] == 3 and doc["wavUrl"] == "/library/tone.wav"
+    # Shipped library_r3 cubes omit layer_method so their bytes stay pinned.
+    assert "layer_method" not in doc
     assert set(doc["layers"]) == set(LAYER_NAMES)
     assert 0 < doc["inv_hdr"] < 1 and 0 < doc["layer_score"] < 1
     assert doc["inv_hdr"] == pytest.approx(measure(audio, sr).inv_hdr)
