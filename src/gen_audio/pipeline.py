@@ -15,16 +15,7 @@ import numpy as np
 from gen_audio.asr_wer import AsrError, transcribe, word_error_rate
 from gen_audio.assets import asset_object, sha256_file
 from gen_audio.audio_io import read_wav, write_wav
-from gen_audio.cube_layers import (
-    LAYER_NAMES,
-    DEFAULT_LAYER_METHOD,
-    CubeParams,
-    compute_layers,
-    downsample_cube,
-    layer_score,
-    layers_to_points,
-    stft_mag,
-)
+from gen_audio.cube_layers import CubeParams, library_cube, write_cube_png
 from gen_audio.cube_revision import bandwidth_95, measure
 from gen_audio.identity import ms_from_frames, round_half_up
 from gen_audio.improve import improve
@@ -154,6 +145,8 @@ def run_pipeline(
         duration_s=duration_s,
     )
 
+    cube_json_path = out_dir / "cube.json"
+    cube_png = out_dir / "cube.png"
     cube_doc = cube_document(
         fitted,
         fitted_sr,
@@ -162,10 +155,8 @@ def run_pipeline(
         derived_from=[wav_asset["uid"]],
         source_sha256=wav_asset["sha256"],
         speech=speech_timeline,
+        png_path=cube_png,
     )
-    cube_json_path = out_dir / "cube.json"
-    cube_png = out_dir / "cube.png"
-    _write_cube_png(cube_png, cube_doc)
     cube_png_sha = sha256_file(cube_png)
     cube_doc["png"] = cube_png.name
     cube_doc["png_sha256"] = cube_png_sha
@@ -288,35 +279,11 @@ def run_pipeline(
     }
 
 
-# Closed form of the long-clip downsample (max 128 x 400 at n_fft 1024 / hop 256).
-# A 3_345_000-sample 24 kHz clip lands on sf=5, st=33. Short clips use a smaller
-# time stride; cube_document asks cube_layers.downsample_cube for the real pair.
 # Generated cubes report revision 3: the cube_layers set the Library misaki cube uses.
 GENERATED_CUBE_REVISION = 3
-CUBE_N_FFT = 1024
-CUBE_HOP = 256
-CUBE_DOWNSAMPLE = (5, 33)
-
-
-def cube_geometry(n_samples: int, sample_rate: int) -> dict:
-    """Fixed (5, 33) binning used by the shipped long Library clips."""
-    hop = CUBE_HOP
-    sf, st = CUBE_DOWNSAMPLE
-    stft_frames = 1 + int(n_samples) // hop
-    freq_bins = (CUBE_N_FFT // 2 + 1) // sf
-    time_bins = stft_frames // st
-    bin_seconds = (st * hop) / float(sample_rate)
-    return {
-        "n_fft": CUBE_N_FFT,
-        "hop": hop,
-        "downsample_sf_st": [sf, st],
-        "stft_frames": stft_frames,
-        "freq_bins": freq_bins,
-        "time_bins": time_bins,
-        "bin_seconds": bin_seconds,
-        "cube_covers_s": time_bins * bin_seconds,
-        "cube_shape_f_t": [freq_bins, time_bins],
-    }
+# Paths library_cube writes for a shipped Library stem. A pipeline cube is not
+# one of those files, so they stay off the generated document.
+_LIBRARY_STEM_KEYS = frozenset({"source_wav", "title", "pngUrl", "wavUrl"})
 
 
 def cube_document(
@@ -328,85 +295,66 @@ def cube_document(
     derived_from: list[str],
     source_sha256: str = "",
     speech: SpeechTimeline | None = None,
+    png_path: Path | None = None,
 ) -> dict:
     """Inverse-HDR bitdot cube on the samples that were passed in.
 
-    Signal, tonality, confidence, quality, the downsample, and ``layer_score``
-    come from :mod:`gen_audio.cube_layers` with the default ``library_r3``.
-    The cube JSON records that choice as ``layer_method``. ``inv_hdr`` stays
-    :func:`gen_audio.cube_revision.measure` (rms/peak).
+    Layers, the downsample, the preview points, ``layer_score``, and the PNG
+    come from :func:`gen_audio.cube_layers.library_cube` and
+    :func:`gen_audio.cube_layers.write_cube_png`. ``inv_hdr`` is that
+    function's rms/peak. ``bw95_hz`` is :func:`gen_audio.cube_revision.measure`.
+
+    ``library_cube`` on this base does not return a provenance block or
+    ``generator_sha256`` (that hash lands with PR #5). The block below records
+    the module, the layer method, and the params actually passed. If the
+    library document already carries provenance, those keys win.
     """
     values = np.asarray(audio, dtype=np.float64).reshape(-1)
     rate = int(sample_rate)
     if values.size == 0 or rate <= 0:
         raise ValueError("audio is too short for a cube")
     params = CubeParams()
-    metrics = measure(values, rate)
-    magnitude = stft_mag(values, n_fft=params.n_fft, hop=params.hop)
-    full = compute_layers(magnitude, rate, params.n_fft, method=DEFAULT_LAYER_METHOD)
-    down, sf, st = downsample_cube(full, max_f=params.max_f, max_t=params.max_t)
-    cloud = layers_to_points(down, thresh=params.thresh)
-    x, yy, _z, _rgba, vals, lids = cloud
-    nf, nt = next(iter(down.values())).shape
-    if nf < 1 or nt < 1:
-        raise ValueError("audio is too short for a cube")
-    bin_s = st * params.hop / rate
-    points, stats, counts = [], {}, {}
-    for li, name in enumerate(LAYER_NAMES):
-        mask = lids == li
-        tx, fy, vv = x[mask], yy[mask], vals[mask]
-        counts[name] = int(mask.sum())
-        order = np.argsort(-vv, kind="stable")[: params.per_layer]
-        if len(order):
-            sel = vv[order]
-            lo, hi = float(sel.min()), float(sel.max())
-        for i in order:
-            v = 1.0 if hi <= lo else (float(vv[i]) - lo) / (hi - lo)
-            points.append(
-                {
-                    "t": round(float(tx[i]) / max(nt - 1, 1), 5),
-                    "f": round(float(fy[i]) / max(nf - 1, 1), 5),
-                    "z": li / 3.0,
-                    "v": round(v, 5),
-                    "layer": name,
-                }
-            )
-        mat = full[name]
-        stats[name] = {
-            "mean": float(mat.mean()),
-            "std": float(mat.std()),
-            "p50": float(np.percentile(mat, 50)),
-            "p90": float(np.percentile(mat, 90)),
-            "active_frac": float((mat > 0.2).mean()),
-            "shape": [int(nf), int(nt)],
-        }
-    document = {
-        "engine": engine,
-        "duration_s": float(duration_s),
-        "sample_rate": rate,
-        "inv_hdr": metrics.inv_hdr,
-        "layer_score": layer_score(full),
-        "bw95_hz": metrics.bw95_hz,
-        "n_fft": params.n_fft,
-        "hop": params.hop,
-        "downsample_sf_st": [int(sf), int(st)],
-        "stft_frames": int(magnitude.shape[1]),
-        "bin_seconds": bin_s,
-        "cube_shape_f_t": [int(nf), int(nt)],
-        "cube_covers_s": nt * bin_s,
-        "cube_revision": GENERATED_CUBE_REVISION,
-        "layer_method": DEFAULT_LAYER_METHOD,
-        "n_points": len(points),
-        "n_points_source": int(len(x)),
-        "n_points_source_per_layer": counts,
-        "source_sha256": source_sha256,
-        "axes": {"x": "time bin", "y": "freq bin", "z": "layer (+value)"},
-        "legend": {"signal": "blue", "tonality": "green", "confidence": "orange", "quality": "pink"},
-        "layers": stats,
-        "points_preview": points,
-        "derived_from": list(derived_from),
+    doc, cloud = library_cube(
+        values,
+        rate,
+        stem="pipeline",
+        engine=engine,
+        revision=GENERATED_CUBE_REVISION,
+        params=params,
+    )
+    library_provenance = doc.get("provenance") if isinstance(doc.get("provenance"), dict) else {}
+    document = {key: value for key, value in doc.items() if key not in _LIBRARY_STEM_KEYS and key != "provenance"}
+    document["duration_s"] = float(duration_s)
+    document["bw95_hz"] = measure(values, rate).bw95_hz
+    document["source_sha256"] = source_sha256
+    document["derived_from"] = list(derived_from)
+    provenance = {
+        "module": "gen_audio.cube_layers",
+        "generator": "gen_audio.cube_layers.library_cube",
+        "layer_method": "library_r3",
+        "params": {
+            "n_fft": params.n_fft,
+            "hop": params.hop,
+            "max_f": params.max_f,
+            "max_t": params.max_t,
+            "thresh": params.thresh,
+            "per_layer": params.per_layer,
+        },
     }
-    document.update(_speech_facts(speech, rate, n_bins=int(nt), bin_seconds=bin_s, n_samples=int(values.size)))
+    provenance.update(library_provenance)
+    document["provenance"] = provenance
+    shape = document["cube_shape_f_t"]
+    document.update(
+        _speech_facts(
+            speech,
+            rate,
+            n_bins=int(shape[1]),
+            bin_seconds=float(document["bin_seconds"]),
+            n_samples=int(values.size),
+        )
+    )
+    if png_path is not None:
+        write_cube_png(png_path, cloud, f"inverse-HDR cube {float(duration_s):.2f}s")
     return document
 
 
@@ -481,21 +429,3 @@ def compare_clip(
         "derived_from": list(derived_from),
     }
 
-
-def _write_cube_png(path: Path, document: dict) -> None:
-    from matplotlib.backends.backend_agg import FigureCanvasAgg
-    from matplotlib.figure import Figure
-
-    figure = Figure(figsize=(4.2, 3.2))
-    FigureCanvasAgg(figure)
-    axes = figure.add_subplot(1, 1, 1, projection="3d")
-    colors = {"signal": "#7eb6ff", "tonality": "#f0c674", "confidence": "#b5e48c", "quality": "#e5989b"}
-    for point in document["points_preview"]:
-        axes.scatter(point["t"], point["f"], point["z"], s=8, c=colors.get(point["layer"], "#cccccc"))
-    axes.set_xlim(0, 1)
-    axes.set_ylim(0, 1)
-    axes.set_zlim(0, 1)
-    axes.set_title(f"inverse-HDR cube {document['duration_s']:.2f}s")
-    figure.tight_layout()
-    path.parent.mkdir(parents=True, exist_ok=True)
-    figure.savefig(path, dpi=110)

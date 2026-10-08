@@ -177,16 +177,23 @@ pub fn migrate_v0_to_v1(bundle: &Value) -> Result<Value, AssetError> {
                 }
             }
         }
-        let mut body = obj(vec![
-            ("duration_s", clip["duration_s"].clone()),
-            ("sample_rate", clip["sample_rate"].clone()),
-            ("wav_url", json!(format!("/library/{wav_path}"))),
-        ]);
-        for key in ["n_words", "n_turns"] {
-            if !clip[key].is_null() {
-                body.insert(key.into(), clip[key].clone());
+        // Library imports have no per-line script, so speakers stay unresolved.
+        // The key lives in the body map (sorted with the other fields) so a
+        // regen matches the committed catalog instead of a hand-inserted key.
+        let mut body = json!({
+            "duration_s": clip["duration_s"].clone(),
+            "sample_rate": clip["sample_rate"].clone(),
+            "speakers": "unresolved",
+            "wav_url": format!("/library/{wav_path}"),
+        });
+        if let Some(map) = body.as_object_mut() {
+            for key in ["n_words", "n_turns"] {
+                if !clip[key].is_null() {
+                    map.insert(key.into(), clip[key].clone());
+                }
             }
         }
+        let body = body.as_object().cloned().unwrap_or_default();
         let status = if wav.is_some() { "ok" } else { "missing" };
         let Some(wav) = wav else {
             return fail("clip_missing_wav", format!("v0 clip {id}: no sha256 for {wav_path}; hash the file before migrating"));
@@ -311,6 +318,7 @@ pub fn migrate_v0_to_v1(bundle: &Value) -> Result<Value, AssetError> {
                 "cube_shape_f_t": [freq_bins, time_bins],
                 "json_url": format!("/library/{json_path}"),
                 "png_url": format!("/library/{png_path}"),
+                "speakers": "unresolved",
             }),
         })?;
         let cube_uid = remember(&mut assets, cube_envelope);

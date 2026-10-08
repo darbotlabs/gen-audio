@@ -43,6 +43,18 @@ def test_voice_ids_come_from_the_persona_map():
         raise AssertionError("pocket_tts was given a voice the catalog does not list")
 
 
+def test_two_personas_keep_sentence_boundaries():
+    prepared = prepare_prompt(
+        "Hello from the user. Frank heard the rest of the sentence today.",
+        ["alice", "frank"],
+        "kokoro_onnx",
+        6,
+    )
+    assert "Speaker 1 (Alice): Hello from the user." in prepared.script_text
+    assert "Speaker 2 (Frank): Frank heard the rest of the sentence today." in prepared.script_text
+    assert prepared.spoken_text.split() == "Hello from the user. Frank heard the rest of the sentence today.".split()
+
+
 def test_authored_speaker_script_keeps_the_user_text():
     prompt = "Speaker 1 (Alice): Alpha beta.\nSpeaker 2 (Frank): Gamma.\n"
     prepared = prepare_prompt(prompt, ["alice", "frank"], "kokoro_onnx", 8)

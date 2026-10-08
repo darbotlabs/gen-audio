@@ -13,7 +13,7 @@ from gen_audio.audio_io import write_wav
 from gen_audio.cube_layers import library_cube
 from gen_audio.cube_revision import measure
 from gen_audio.identity import mint
-from gen_audio.pipeline import cube_document, cube_geometry, run_pipeline
+from gen_audio.pipeline import cube_document, run_pipeline
 
 
 def test_wer_counts_edits():
@@ -28,7 +28,11 @@ def test_cube_duration_matches_the_buffer():
     document = cube_document(audio, rate, duration_s=duration, engine="tone", derived_from=["asset-src"])
     assert document["duration_s"] == duration
     assert document["cube_revision"] == 3
-    assert document["layer_method"] == "library_r3"
+    assert "layer_method" not in document
+    assert document["provenance"]["module"] == "gen_audio.cube_layers"
+    assert document["provenance"]["generator"] == "gen_audio.cube_layers.library_cube"
+    assert document["provenance"]["layer_method"] == "library_r3"
+    assert document["provenance"]["params"]["n_fft"] == 1024
     assert document["inv_hdr"] == measure(audio, rate).inv_hdr
     assert 0.0 < document["layer_score"] < 1.0
     assert document["cube_shape_f_t"][0] == (1024 // 2 + 1) // 5
@@ -68,13 +72,11 @@ def test_generated_cube_layers_match_library_cube():
 
 
 def test_library_cube_geometry_matches_the_misaki_clip():
-    geo = cube_geometry(3_345_000, 24_000)
-    assert geo["stft_frames"] == 13067
-    assert geo["freq_bins"] == 102
-    assert geo["time_bins"] == 395
-    assert geo["bin_seconds"] == pytest.approx(0.352)
-    assert geo["cube_covers_s"] == pytest.approx(139.04)
-    assert geo["cube_shape_f_t"] == [102, 395]
+    doc, _cloud = library_cube(np.zeros(3_345_000, dtype=np.float64), 24_000, stem="misaki", engine="misaki_kokoro", revision=3)
+    assert doc["stft_frames"] == 13067
+    assert doc["cube_shape_f_t"] == [102, 395]
+    assert doc["bin_seconds"] == pytest.approx(0.352)
+    assert doc["cube_covers_s"] == pytest.approx(139.04)
 
 
 def test_media_a_uid_matches_the_v1_golden_vector():

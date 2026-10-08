@@ -121,17 +121,15 @@ def prepare_prompt(
         spoken = " ".join(turn.text for turn in turns)
         speaker_ids = [turn.speaker_id for turn in turns]
     else:
-        words = text.split()
-        if not words:
+        pieces = _pieces_for_speakers(text, len(personas))
+        if not pieces:
             raise PromptError("empty prompt; no sample script is used")
-        spans = _contiguous_spans(words, len(personas))
         lines: list[str] = []
         spoken_parts: list[str] = []
         speaker_ids = []
-        for index, (persona_id, span) in enumerate(zip(personas, spans, strict=True), start=1):
-            if not span:
+        for index, (persona_id, body) in enumerate(zip(personas, pieces, strict=True), start=1):
+            if not body.strip():
                 continue
-            body = " ".join(span)
             name = PERSONAS[persona_id]["name"]
             lines.append(f"Speaker {index} ({name}): {body}")
             spoken_parts.append(body)
@@ -178,8 +176,49 @@ def _format_authored(turns) -> str:
     return "\n".join(lines) + "\n"
 
 
+def _sentences(text: str) -> list[str]:
+    """Pieces that end on ``.?!``. Words inside a sentence stay together."""
+    pieces: list[str] = []
+    start = 0
+    for match in re.finditer(r"[.!?]+(?:\s+|$)", text):
+        piece = text[start : match.end()].strip()
+        if piece:
+            pieces.append(piece)
+        start = match.end()
+    tail = text[start:].strip()
+    if tail:
+        pieces.append(tail)
+    return pieces
+
+
+def _split_clause(piece: str) -> list[str] | None:
+    """One extra cut, on a clause boundary, when there are fewer sentences than speakers."""
+    for pattern in (r"(?<=;)\s+", r"(?<=,)\s+", r"\s+[—–-]\s+"):
+        parts = [part.strip() for part in re.split(pattern, piece, maxsplit=1) if part.strip()]
+        if len(parts) == 2:
+            return parts
+    return None
+
+
+def _pieces_for_speakers(text: str, count: int) -> list[str]:
+    """Contiguous sentence groups. A mid-sentence cut is only the last resort."""
+    pieces = _sentences(text)
+    while len(pieces) < count:
+        if not pieces:
+            break
+        index = max(range(len(pieces)), key=lambda item: len(pieces[item].split()))
+        broken = _split_clause(pieces[index])
+        if broken is None:
+            break
+        pieces = pieces[:index] + broken + pieces[index + 1 :]
+    if len(pieces) < count:
+        words = text.split()
+        return [" ".join(span) for span in _contiguous_spans(words, count)]
+    return [" ".join(group) for group in _contiguous_spans(pieces, count)]
+
+
 def _contiguous_spans(words: list[str], count: int) -> list[list[str]]:
-    """Split words into ``count`` ordered spans. No word is added or dropped."""
+    """Split items into ``count`` ordered spans. No item is added or dropped."""
     base, extra = divmod(len(words), count)
     spans: list[list[str]] = []
     cursor = 0

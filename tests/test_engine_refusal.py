@@ -24,6 +24,19 @@ def test_vibevoice_default_device_does_not_require_cuda(monkeypatch):
     assert "CUDA" not in blob
 
 
+def test_vibevoice_dtype_follows_the_device(monkeypatch):
+    from gen_audio.adapters import _vibevoice_dtype_name
+
+    monkeypatch.delenv("GEN_AUDIO_VIBEVOICE_DTYPE", raising=False)
+    assert _vibevoice_dtype_name("cpu") == "float32"
+    assert _vibevoice_dtype_name("cuda") == "float16"
+    assert _vibevoice_dtype_name("cuda:0") == "float16"
+    monkeypatch.setenv("GEN_AUDIO_VIBEVOICE_DTYPE", "float16")
+    assert _vibevoice_dtype_name("cpu") == "float16"
+    monkeypatch.setenv("GEN_AUDIO_VIBEVOICE_DTYPE", "fp32")
+    assert _vibevoice_dtype_name("cuda:0") == "fp32"
+
+
 def test_vibevoice_cuda_device_refuses_when_cuda_is_absent(monkeypatch):
     monkeypatch.setenv("GEN_AUDIO_VIBEVOICE_DEVICE", "cuda")
     monkeypatch.setenv("GEN_AUDIO_VIBEVOICE_MODEL", "/tmp/gen-audio-vibevoice-missing")

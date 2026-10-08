@@ -141,7 +141,7 @@ def _cuda_available() -> bool:
 
 
 def _vibevoice_device() -> str:
-    """Torch device for VibeVoice weights. Default ``cpu`` (1.5B has run there in fp16).
+    """Torch device for VibeVoice weights. Default ``cpu``.
 
     ``GEN_AUDIO_VIBEVOICE_DEVICE`` overrides it (``cpu``, ``cuda``, ``cuda:0``).
     A missing CUDA device is a refusal only when this value asks for CUDA.
@@ -150,6 +150,38 @@ def _vibevoice_device() -> str:
     if not raw or raw.lower() == "cpu":
         return "cpu"
     return raw
+
+
+def _vibevoice_dtype_name(device: str) -> str:
+    """``float32`` on CPU unless ``GEN_AUDIO_VIBEVOICE_DTYPE`` is set.
+
+    A CUDA device keeps ``float16`` when the variable is unset. Accepted names
+    are ``float32``/``fp32``, ``float16``/``fp16``, and ``bfloat16``/``bf16``.
+    """
+    configured = os.environ.get("GEN_AUDIO_VIBEVOICE_DTYPE", "").strip().lower()
+    if configured:
+        return configured
+    if device.lower().startswith("cpu"):
+        return "float32"
+    return "float16"
+
+
+def _vibevoice_torch_dtype(torch, name: str):
+    table = {
+        "float32": torch.float32,
+        "fp32": torch.float32,
+        "float16": torch.float16,
+        "fp16": torch.float16,
+        "bfloat16": torch.bfloat16,
+        "bf16": torch.bfloat16,
+    }
+    dtype = table.get(name)
+    if dtype is None:
+        raise EngineRefusal(
+            "vibevoice",
+            [f"GEN_AUDIO_VIBEVOICE_DTYPE {name!r} is not float32, float16, or bfloat16"],
+        )
+    return dtype
 
 
 def _missing_vibevoice() -> list[str]:
@@ -285,9 +317,10 @@ def _synth_vibevoice(turns: list[Turn], cast: CastMap, output: Path) -> dict:
         raise EngineRefusal("vibevoice", [f"vibevoice import failed: {exc}"]) from exc
     try:
         processor = VibeVoiceProcessor.from_pretrained(model_dir)
+        dtype_name = _vibevoice_dtype_name(device)
         model = VibeVoiceForConditionalGenerationInference.from_pretrained(
             model_dir,
-            torch_dtype=torch.float16,
+            torch_dtype=_vibevoice_torch_dtype(torch, dtype_name),
         ).to(device)
         script = "\n".join(f"Speaker {turn.speaker_id}: {turn.text}" for turn in turns)
         inputs = processor(text=script, return_tensors="pt")

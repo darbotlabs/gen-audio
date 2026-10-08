@@ -230,10 +230,19 @@ fn command(plan: &PythonPlan) -> Command {
 }
 
 pub fn start_plan(plan: &PythonPlan) -> Result<std::process::Child, String> {
-    command(plan)
+    let mut command = command(plan);
+    command
         .stdin(std::process::Stdio::null())
         .stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped());
+    // Own process group so a timeout or cancel can signal the python child
+    // and anything it spawned.
+    #[cfg(unix)]
+    {
+        use std::os::unix::process::CommandExt;
+        command.process_group(0);
+    }
+    command
         .spawn()
         .map_err(|err| format!("failed to start python: {err}"))
 }

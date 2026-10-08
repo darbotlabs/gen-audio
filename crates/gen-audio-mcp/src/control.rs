@@ -853,7 +853,7 @@ fn start_generate(
         Ok(body) => body,
         Err(err) => {
             CANCEL.lock().expect("cancel").remove(&job);
-            let _ = child.kill();
+            stop_child(&mut child);
             let _ = child.wait();
             return Err((err.code, err.message));
         }
@@ -1067,12 +1067,12 @@ fn wait_child(
     loop {
         if cancel.load(Ordering::SeqCst) {
             cancelled = true;
-            let _ = child.kill();
+            stop_child(&mut child);
             break;
         }
         if started.elapsed() > timeout {
             timed_out = true;
-            let _ = child.kill();
+            stop_child(&mut child);
             break;
         }
         match child.try_wait() {
@@ -1085,6 +1085,24 @@ fn wait_child(
     let _ = out.join();
     let stderr = err.join().unwrap_or_default();
     (timed_out, cancelled, stderr)
+}
+
+/// Signal the generate child and its process group. The group leader is the
+/// python process started with `process_group(0)`; grandchildren stay in that
+/// group unless they call setpgid themselves.
+fn stop_child(child: &mut std::process::Child) {
+    #[cfg(unix)]
+    {
+        let pid = child.id();
+        if pid > 0 {
+            let _ = std::process::Command::new("kill")
+                .args(["-KILL", "--", &format!("-{pid}")])
+                .stdout(std::process::Stdio::null())
+                .stderr(std::process::Stdio::null())
+                .status();
+        }
+    }
+    let _ = child.kill();
 }
 
 fn read_pipe<R: Read>(pipe: Option<R>) -> String {
