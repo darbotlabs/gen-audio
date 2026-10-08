@@ -28,7 +28,7 @@ reconciled choices listed at the end.
   "schema_version": "1.0.0",          // semver; only the major enters the uid; unknown major rejected
   "uid_scheme": "ga1",
   "kind": "cube_ihdr",                // closed enum, snake_case (see §4)
-  "uid": "ga:cube_ihdr:26plzjawolfu5es5gab5agoxte",
+  "uid": "ga:cube_ihdr:biaxxmnibxtcur7nxdu3ffvna4",
   "legacy_id": "lib-misaki-kokoro.cube", // old card id / tileId / clipId / persona id; never hashed
   "status": "ok",                     // ok | missing | unavailable; never hashed
   "fields":  { ... },                 // HASHED identity fields: fixed per-kind allowlist, integers only
@@ -116,10 +116,10 @@ uid      = "ga:" K ":" base32(digest[0..16])        RFC 4648 alphabet a-z2-7, lo
   (`control.rs`). `uid_scheme: "ga1"`. Rehashing in place is never allowed: a
   new scheme or major mints a new uid plus `relations.supersedes: [old uid]`.
 - **Worked example (real misaki cube):**
-  - `JCS(identity)` = `{"fields":{"bin_frames":8448,"covers_ms":139040,"cube_revision":3,"duration_ms":139375,"freq_bins":102,"generator_sha256":"68d0f9ff…71af9",...,"layer_method":"library_r3",...},"kind":"cube_ihdr","media":[{"role":"cube_json",...},{"role":"cube_png",...}],"schema_major":1,"src":["ga:audio_clip:vtwxksrsuci7zygslimzfy7kdy"]}`
-  - digest = `d79ebca4…9090`
-  - uid = `ga:cube_ihdr:26plzjawolfu5es5gab5agoxte`
-  - glyph = `⣗⢞`
+  - `JCS(identity)` = `{"fields":{"bin_frames":8448,"covers_ms":139040,"cube_revision":3,"duration_ms":139375,"freq_bins":102,"generator_sha256":"410fa703…2db35",...,"layer_method":"library_r3",...},"kind":"cube_ihdr","media":[{"role":"cube_json",...},{"role":"cube_png",...}],"schema_major":1,"src":["ga:audio_clip:vtwxksrsuci7zygslimzfy7kdy"]}`
+  - digest = `0a017bb1…c47e`
+  - uid = `ga:cube_ihdr:biaxxmnibxtcur7nxdu3ffvna4`
+  - glyph = `⠊⠁`
 
   Darbot's earlier worked example (`…ay76z`, built from the old kokoro_onnx
   cube under a 130-bit encoding) no longer applies: this spec takes 128 bits and
