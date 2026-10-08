@@ -67,10 +67,6 @@ pub enum Action {
     Compare {
         uids: Vec<String>,
     },
-    /// Switches `clock.source` inside `compare` and does not change focus.
-    CompareSelect {
-        uid: String,
-    },
     Seek {
         uid: String,
         t: f64,
@@ -320,13 +316,6 @@ impl Viewport {
                 }
                 self.compare = uids;
                 Ok(json!({"op": "compare", "uids": self.compare}))
-            }
-            Action::CompareSelect { uid } => {
-                if !self.compare.iter().any(|item| item == &uid) {
-                    return Err(ReduceError::invalid("compare select is outside compare"));
-                }
-                self.clock_source = Some(uid.clone());
-                Ok(json!({"op": "compare_select", "clock": {"source": uid}, "focus": self.focus}))
             }
             Action::Seek { uid, t } => {
                 self.require_asset(&uid)?;
@@ -1466,6 +1455,23 @@ mod tests {
         assert_eq!(err.code, -32602);
         assert_eq!(vp.snapshot()["ui"]["compare"].as_array().unwrap().len(), 2);
         assert_eq!(vp.snapshot()["ui"]["focus"], "lib-misaki-kokoro");
+    }
+
+    #[test]
+    fn compare_has_no_select_action() {
+        // Selecting inside compare is not its own action. Clock source moves
+        // through Seek and Play. The old variant's name is built here so this
+        // file does not contain that identifier once the variant is gone.
+        let marker = ["Compare", "Select"].concat();
+        let src = include_str!("viewport.rs");
+        assert!(!src.contains(&marker), "dead {marker} action must not stay");
+        let mut vp = Viewport::release();
+        vp.apply(Action::Compare {
+            uids: vec!["lib-kokoro-onnx".into(), "lib-misaki-kokoro".into()],
+        })
+        .unwrap();
+        assert_eq!(vp.snapshot()["ui"]["compare"].as_array().unwrap().len(), 2);
+        assert!(vp.snapshot()["ui"]["clock"]["source"].is_null());
     }
 
     #[test]
