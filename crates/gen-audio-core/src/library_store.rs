@@ -452,6 +452,36 @@ fn upsert(root: &Path, incoming: Vec<Value>) -> Result<(), String> {
     Ok(())
 }
 
+/// Copy the cube JSON provenance onto the envelope in the library-cube shape:
+/// `generator` is the module path, `layer_method` is the method name, and
+/// `params` are the generator parameters. This base records the module in
+/// `provenance.module`; a document that already stores the path in
+/// `generator` (the library-cube shape) is copied as-is. Missing keys stay absent.
+fn apply_cube_provenance(provenance: &mut Value, cube: &Value) {
+    let Some(recorded) = cube.get("provenance").and_then(Value::as_object) else {
+        return;
+    };
+    if let Some(method) = recorded.get("layer_method").filter(|value| value.is_string()) {
+        provenance["layer_method"] = method.clone();
+    }
+    let module = recorded
+        .get("module")
+        .and_then(Value::as_str)
+        .filter(|text| !text.is_empty())
+        .or_else(|| {
+            recorded
+                .get("generator")
+                .and_then(Value::as_str)
+                .filter(|text| !text.is_empty())
+        });
+    if let Some(module) = module {
+        provenance["generator"] = json!(module);
+    }
+    if let Some(params) = recorded.get("params").filter(|value| value.is_object()) {
+        provenance["params"] = params.clone();
+    }
+}
+
 /// Copy recorded speaker facts from cube.json. Missing facts stay unresolved.
 fn apply_speech_facts(body: &mut Value, kind: &str, cube: &Value) {
     let speakers = cube.get("speakers").cloned().unwrap_or(json!("unresolved"));
@@ -553,6 +583,9 @@ fn envelope(
     }
     if let Some(model) = voice_model {
         provenance["voice_model"] = json!(model);
+    }
+    if kind == "cube_ihdr" {
+        apply_cube_provenance(&mut provenance, cube);
     }
     let mut body = json!({});
     if kind == "audio_clip" {
@@ -763,7 +796,7 @@ mod tests {
         let _ = fs::remove_dir_all(&work);
         fs::create_dir_all(&work).unwrap();
         let wav_bytes = b"RIFF-library-clip";
-        let json_bytes = br#"{"speakers":"unresolved","duration_s":1.0}"#;
+        let json_bytes = br#"{"speakers":"unresolved","duration_s":1.0,"provenance":{"module":"gen_audio.cube_layers","generator":"gen_audio.cube_layers.library_cube","layer_method":"library_r3","params":{"n_fft":1024,"hop":256}}}"#;
         let png_bytes = b"\x89PNG-cube";
         fs::write(work.join("fitted.wav"), wav_bytes).unwrap();
         fs::write(work.join("cube.json"), json_bytes).unwrap();
@@ -828,6 +861,9 @@ mod tests {
                 let roles: Vec<&str> = asset["media"].as_array().unwrap().iter().map(|item| item["role"].as_str().unwrap()).collect();
                 assert_eq!(roles, ["cube_json", "cube_png"]);
                 assert!(asset["honesty"]["claims"].as_array().unwrap().iter().any(|claim| claim == "library_cube"));
+                assert_eq!(asset["provenance"]["layer_method"], "library_r3");
+                assert_eq!(asset["provenance"]["generator"], "gen_audio.cube_layers");
+                assert_eq!(asset["provenance"]["params"]["n_fft"], 1024);
             }
             other => panic!("expected the imported cube, got {other:?}"),
         }
