@@ -167,15 +167,29 @@ function Invoke-Step {
     Write-Step "== $Name $result $detail"
 }
 
+function Test-Shebang {
+    # True when the file starts with "#!/" or "#! /" (a Rust "#![attr]" does not).
+    param([Parameter(Mandatory = $true)][string]$Path)
+    $buffer = New-Object byte[] 3
+    try {
+        $stream = [System.IO.File]::OpenRead($Path)
+        try { $read = $stream.Read($buffer, 0, 3) } finally { $stream.Dispose() }
+    } catch { return $false }
+    return ($read -ge 3 -and $buffer[0] -eq 0x23 -and $buffer[1] -eq 0x21 -and ($buffer[2] -eq 0x2F -or $buffer[2] -eq 0x20))
+}
+
 function Get-ScriptFile {
     # Walk the tree on disk (tracked, untracked and ignored files alike).
+    # A script is any file with an executable script extension (PowerShell,
+    # cmd, Python, POSIX shells, NSIS, Node, VBScript) or, whatever its name,
+    # a first line that is a shebang ("#!/..." or "#! /...").
     # Prunes dependency and build caches that never hold authored scripts:
     # .git, node_modules, target, Python caches, virtualenvs (any folder with
     # pyvenv.cfg), and generated app output (apps/desktop/dist, src-tauri/gen).
     param([Parameter(Mandatory = $true)][string]$Root, [string[]]$Exclude = @())
     $pruneNames = @('.git', 'node_modules', 'target', '__pycache__', '.pytest_cache', '.mypy_cache', '.ruff_cache', '.venv', 'venv')
     $prunePaths = @('apps/desktop/dist', 'apps/desktop/src-tauri/gen') + @($Exclude | ForEach-Object { ($_ -replace '\\', '/').Trim('/') })
-    $extensions = @('.ps1', '.psm1', '.bat', '.cmd', '.py')
+    $extensions = @('.ps1', '.psm1', '.bat', '.cmd', '.py', '.sh', '.bash', '.zsh', '.ksh', '.fish', '.nsh', '.js', '.mjs', '.cjs', '.mts', '.cts', '.vbs')
     $stack = New-Object System.Collections.Generic.Stack[string]
     $stack.Push($Root)
     while ($stack.Count -gt 0) {
@@ -186,7 +200,7 @@ function Get-ScriptFile {
                 if ($pruneNames -contains $entry.Name -or $entry.Name -like '*.egg-info' -or $prunePaths -contains $rel) { continue }
                 if (Test-Path -LiteralPath (Join-Path $entry.FullName 'pyvenv.cfg')) { continue }
                 $stack.Push($entry.FullName)
-            } elseif ($extensions -contains $entry.Extension.ToLowerInvariant() -or ($entry.Name -eq 'manifest.json' -and $rel -match '(^|/)library/manifest\.json$')) {
+            } elseif ($extensions -contains $entry.Extension.ToLowerInvariant() -or ($entry.Name -eq 'manifest.json' -and $rel -match '(^|/)library/manifest\.json$') -or (Test-Shebang -Path $entry.FullName)) {
                 [pscustomobject]@{ Rel = $rel; Full = $entry.FullName }
             }
         }
@@ -196,9 +210,12 @@ function Get-ScriptFile {
 function Invoke-SprawlGate {
     <#
     Fails on any finding:
-      outside-allowlist  a *.ps1/*.psm1/*.bat/*.cmd/*.py outside the allowlist:
+      outside-allowlist  a script (see Get-ScriptFile: any executable script
+                         extension, .sh included, or a shebang) outside the allowlist:
                          scripts/{build-tauri-windows,test,mcp-call,ui-shot}.ps1,
-                         scripts/lib/*.ps1, scripts/*.py, tests/**/*.py, src/**/*.py
+                         scripts/lib/*.ps1, scripts/*.py, tests/**/*.py, src/**/*.py,
+                         the NSIS installer hook apps/desktop/src-tauri/windows/hooks.nsh
+                         (tauri.conf.json installerHooks), apps/desktop/validate.check.mts
       thick-shim         a scripts/*.py that is not a thin CLI shim into gen_audio.cli
                          (over 20 lines or no `from gen_audio.cli` import)
       vcvars             a script other than scripts/lib/devenv.ps1 sources vcvars/VsDevCmd
@@ -209,7 +226,8 @@ function Invoke-SprawlGate {
     This file defines the patterns, so it is not content-scanned itself.
     #>
     param([Parameter(Mandatory = $true)][string]$Root, [string[]]$Exclude = @())
-    $entryPoints = @('scripts/build-tauri-windows.ps1', 'scripts/test.ps1', 'scripts/mcp-call.ps1', 'scripts/ui-shot.ps1')
+    $entryPoints = @('scripts/build-tauri-windows.ps1', 'scripts/test.ps1', 'scripts/mcp-call.ps1', 'scripts/ui-shot.ps1',
+        'apps/desktop/src-tauri/windows/hooks.nsh', 'apps/desktop/validate.check.mts')
     $self = 'scripts/test.ps1'
     $vcvarsOwner = 'scripts/lib/devenv.ps1'
     $tauriOwner = 'scripts/build-tauri-windows.ps1'

@@ -13,8 +13,8 @@ Targets: Windows (WebView2, NSIS and MSI), macOS (WebKit, dmg), Linux (webkit2gt
 Release builds embed `apps/desktop/dist` (`frontendDist`: `../dist`). `devUrl` is only for `tauri dev`. The scripts build the Vite app and refuse to continue if `apps/desktop/dist/index.html` is missing, then run `tauri build`. The installed app keeps a tray icon and a taskbar button while the window is open. It starts `gen-audio-mcp` beside the executable on `127.0.0.1:8765` (or `GEN_AUDIO_MCP_ADDR`). Closing the window hides it. Quit is on the tray menu and stops the sidecar. On Windows, a successful sidecar start registers the app under the current user's Run key unless `GEN_AUDIO_AUTOSTART=0`.
 
 ```bash
-scripts/build-tauri.sh                 # Linux: mcp handshake, npm run build, then tauri build --bundles deb
-# Windows: scripts\build-tauri-windows.ps1 -Mode Full|NoBundle (see Scripts below)
+# Windows: scripts\build-tauri-windows.ps1 -Mode Full|NoBundle (see Scripts below), the only build script.
+# There is no Linux or macOS build script; CI's rust job runs `cargo check -p gen-audio-desktop` on Linux.
 ```
 
 ```bash
