@@ -109,11 +109,23 @@ def test_round_half_up_rejects_what_rust_rejects():
         rounding.round_half_up(2.0**53)
 
 
+def _png_pixels(path: Path) -> tuple[bytes, bytes]:
+    """IHDR and decompressed scanlines. zlib builds differ (CPython 3.14 on
+    Windows ships zlib-ng), so compressed bytes are not comparable; pixels are."""
+    raw = path.read_bytes()
+    idat = raw.index(b"IDAT")
+    length = struct.unpack(">I", raw[idat - 4 : idat])[0]
+    return raw[8:33], zlib.decompress(raw[idat + 4 : idat + 4 + length])
+
+
 @pytest.mark.parametrize("stem", ["bitdot_braille_vibevoice", "genaid_full_misaki_kokoro"])
-def test_committed_strips_reproduce_byte_for_byte(tmp_path, stem):
+def test_committed_strips_reproduce_pixel_for_pixel(tmp_path, stem):
     library = ROOT / "apps/desktop/public/library"
     wav = library / f"{stem}.wav"
     if not wav.exists():
         pytest.skip(f"{wav.name} is gitignored and not staged here")
     summary = module.write_strip(wav, "x", tmp_path)
-    assert (tmp_path / summary["png"]).read_bytes() == (library / summary["png"]).read_bytes()
+    assert _png_pixels(tmp_path / summary["png"]) == _png_pixels(library / summary["png"])
+    committed = json.loads((library / summary["png"].replace(".png", ".json")).read_text(encoding="utf-8"))
+    regenerated = json.loads((tmp_path / summary["png"].replace(".png", ".json")).read_text(encoding="utf-8"))
+    assert regenerated["fields"] == committed["fields"]
