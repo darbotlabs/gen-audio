@@ -38,8 +38,9 @@ jobs:
       - run: cargo test --workspace --exclude gen-audio-desktop
       # PR #5 verification E2. The library WAVs are gitignored, so CI takes
       # their identity from schemas/asset-object/media.lock.json; build_assets
-      # fails (never skips) when a WAV is neither on disk nor locked, or when a
-      # cube JSON's source_sha256 is not its clip's WAV.
+      # fails (never skips) when a WAV is neither on disk nor locked, when a
+      # cube JSON's source_sha256 is not its clip's WAV, or when a cube file's
+      # bytes differ from the sha256 media.lock.json "cubes" pins.
       - name: Regen gate (asset catalog, vectors)
         run: |
           cargo run -p gen-audio-core --example build_assets -- --from-lock
