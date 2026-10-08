@@ -196,8 +196,11 @@ test("csp: connect-src is exactly self, Tauri IPC and the MCP origin mcpCall pos
   ]);
   assert.ok(!csp.includes("*"), csp);
   const main = readFileSync(repo("apps/desktop/src/main.ts"), "utf8");
+  const control = readFileSync(repo("apps/desktop/src/play-control.ts"), "utf8");
   assert.match(main, /postMcp\(fetch, `\$\{origin\}\/mcp`, name, args, mcpFailures\)/);
-  assert.equal(main.match(/fetch\(/g)?.length, 1, "library media is the only other fetch");
+  assert.equal(main.match(/fetch\(/g)?.length ?? 0, 0, "main.ts does not open its own fetch");
+  assert.equal(main.match(/fetchLibraryBlob\(fetch,/g)?.length, 1, "library media is the only other fetch");
+  assert.equal(control.match(/fetchImpl\(/g)?.length, 2, "tool POST and library GET");
   // Only connect-src changed.
   assert.deepEqual(directives.get("default-src"), ["'self'"]);
   assert.deepEqual(directives.get("script-src"), ["'self'"]);

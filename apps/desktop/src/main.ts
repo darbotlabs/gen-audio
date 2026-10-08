@@ -14,7 +14,18 @@ import {
 import { isClipPlaying, seekActiveFraction, seekClipFraction, setCubeClockClip } from "./playback";
 import { applyClipNames, harvestNames } from "./library-meta";
 import { bindFloatingPlayback, pauseClip, playClip, releaseAllSeekBlobs, releaseDetachedTransports, renderTransport, seekClipOutcome, setUserPlayReporter } from "./playback";
-import { controlPlayOrigin, McpFailureCounter, postMcp, seekReportControl, userPlayControl } from "./play-control";
+import {
+  assetResolveFailure,
+  controlPlayOrigin,
+  fetchLibraryBlob,
+  McpFailureCounter,
+  mcpOriginFromStatus,
+  noteAssetResolveFailure,
+  noteMcpLookupError,
+  postMcp,
+  seekReportControl,
+  userPlayControl,
+} from "./play-control";
 import { selectViewport } from "./viewport-source";
 import { glyphBadge } from "./glyph";
 import { loadLibraryCatalog, type LibraryCatalog } from "./library-assets";
@@ -72,6 +83,13 @@ const loadDevAssets = async (): Promise<unknown[]> =>
 const board = required("#board");
 const empty = required("#empty");
 const status = required("#status");
+// Window->MCP failures are counted on McpFailureCounter and mirrored to
+// <html data-mcp-failures>. viewport_get (resyncViewport) is the MCP-readable
+// status. A failed address lookup, library fetch, or asset_resolve is counted
+// and shown; none of those failures is swallowed.
+const mcpFailures = new McpFailureCounter(undefined, (snapshot) => {
+  document.documentElement.dataset.mcpFailures = JSON.stringify(snapshot);
+});
 const fixture = makeFixture();
 let selection: VoiceSelection = {
   engineId: "",
@@ -88,12 +106,12 @@ let mcpOrigin = "http://127.0.0.1:8765";
 async function discoverMcp(): Promise<string> {
   try {
     const { invoke } = await import("@tauri-apps/api/core");
-    const status = await invoke<{ addr?: string; handshake_ok?: boolean }>("mcp_status");
-    if (status?.addr && status.handshake_ok !== false) {
-      mcpOrigin = `http://${status.addr}`;
-    }
-  } catch {
-    /* Vite without the Tauri shell keeps the default loopback port. */
+    const reported = await invoke<{ addr?: string; handshake_ok?: boolean }>("mcp_status");
+    const found = mcpOriginFromStatus(reported, mcpOrigin, mcpFailures);
+    mcpOrigin = found.origin;
+    if (found.notice) status.textContent = found.notice;
+  } catch (error) {
+    status.textContent = noteMcpLookupError(error, mcpOrigin, mcpFailures);
   }
   return mcpOrigin;
 }
@@ -628,13 +646,6 @@ function applyFlipcard(profile: Record<string, unknown>): void {
   setCardFlip(board, `profile-${personaId}`, true);
 }
 
-// Window->MCP failures are counted, not swallowed. No MCP-readable status
-// surface exists on this branch for the window to report into (viewport_get
-// is PR #4), so the counts live on <html data-mcp-failures> and console.warn.
-const mcpFailures = new McpFailureCounter(undefined, (snapshot) => {
-  document.documentElement.dataset.mcpFailures = JSON.stringify(snapshot);
-});
-
 async function mcpCall(name: string, args: Record<string, unknown>): Promise<unknown | null> {
   const origin = await mcpReady;
   const payload = await postMcp(fetch, `${origin}/mcp`, name, args, mcpFailures);
@@ -748,15 +759,8 @@ function setDerived(parentUid: string, role: string, honesty: string): void {
 }
 
 async function mediaBlob(urlPath: string): Promise<string | null> {
-  if (!urlPath.startsWith("/library/")) return null;
-  const origin = await mcpReady;
-  try {
-    const response = await fetch(`${origin}${urlPath}`);
-    if (!response.ok) return null;
-    return URL.createObjectURL(await response.blob());
-  } catch {
-    return null;
-  }
+  const blob = await fetchLibraryBlob(fetch, await mcpReady, urlPath, mcpFailures);
+  return blob ? URL.createObjectURL(blob) : null;
 }
 
 async function mountGeneratedVideo(urlPath: string): Promise<void> {
@@ -781,7 +785,29 @@ async function insertGeneratedTile(uid: string, args: Record<string, unknown>): 
   const slide = board.querySelector<HTMLElement>('[data-slide="library"]');
   if (!slide) return;
   const resolved = toolBody(await mcpCall("asset_resolve", { uid }));
-  if (!resolved || resolved.ok !== true) return;
+  const resolveError = assetResolveFailure(resolved);
+  if (resolveError || !resolved) {
+    const message = noteAssetResolveFailure(uid, resolveError ?? "asset_resolve failed", mcpFailures);
+    let tile = libraryTile(uid);
+    if (!tile) {
+      tile = document.createElement("article");
+      tile.className = "card livetile library-tile";
+      tile.tabIndex = -1;
+      slide.append(tile);
+    }
+    tile.dataset.uid = uid;
+    tile.dataset.kind = "LibraryClip";
+    tile.dataset.resolve = "failed";
+    let node = tile.querySelector<HTMLElement>(".resolve-error");
+    if (!node) {
+      node = document.createElement("p");
+      node.className = "resolve-error";
+      tile.append(node);
+    }
+    node.textContent = message;
+    status.textContent = message;
+    return;
+  }
   const legacy = String(resolved.tileId ?? args.legacyId ?? uid);
   const asset = (resolved.asset && typeof resolved.asset === "object" ? resolved.asset : {}) as Record<string, unknown>;
   const display = (asset.display && typeof asset.display === "object" ? asset.display : {}) as Record<string, unknown>;

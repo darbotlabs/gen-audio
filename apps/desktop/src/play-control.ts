@@ -104,6 +104,80 @@ export async function postMcp(
   }
 }
 
+export interface McpStatusReport {
+  addr?: string;
+  handshake_ok?: boolean;
+}
+
+/**
+ * Address from `mcp_status`. A failed handshake keeps `fallback` (8765) but
+ * is counted and named. A report with an address and a handshake that is not
+ * explicitly false replaces the fallback and counts nothing.
+ */
+export function mcpOriginFromStatus(
+  report: McpStatusReport | null | undefined,
+  fallback: string,
+  failures: McpFailureCounter,
+): { origin: string; notice: string | null } {
+  if (report?.addr && report.handshake_ok !== false) {
+    return { origin: `http://${report.addr}`, notice: null };
+  }
+  const kind = report?.handshake_ok === false ? "handshake" : "missing";
+  failures.note("mcp_status", kind);
+  return {
+    origin: fallback,
+    notice: `MCP address lookup failed (${kind}); using ${fallback}`,
+  };
+}
+
+/** The empty catch around the Tauri invoke. Count the error and name the fallback. */
+export function noteMcpLookupError(error: unknown, fallback: string, failures: McpFailureCounter): string {
+  const kind = error instanceof Error ? error.name : "error";
+  failures.note("mcp_status", kind);
+  return `MCP address lookup failed (${kind}); using ${fallback}`;
+}
+
+/**
+ * GET one library media URL. A non-library path is not a failure. A non-2xx
+ * response or a thrown fetch is counted and returns null.
+ */
+export async function fetchLibraryBlob(
+  fetchImpl: typeof fetch,
+  origin: string,
+  urlPath: string,
+  failures: McpFailureCounter,
+): Promise<Blob | null> {
+  if (!urlPath.startsWith("/library/")) return null;
+  try {
+    const response = await fetchImpl(`${origin}${urlPath}`);
+    if (!response.ok) {
+      failures.note("library_media", `http_${response.status}`);
+      return null;
+    }
+    return await response.blob();
+  } catch (error) {
+    failures.note("library_media", error instanceof Error ? error.name : "error");
+    return null;
+  }
+}
+
+/**
+ * Why a finished job cannot paint its tile. `null` when asset_resolve
+ * returned ok. A missing body and `ok: false` are both failures.
+ */
+export function assetResolveFailure(resolved: unknown): string | null {
+  if (!resolved || typeof resolved !== "object") return "asset_resolve failed";
+  const record = resolved as { ok?: unknown; error?: unknown };
+  if (record.ok === true) return null;
+  return typeof record.error === "string" && record.error.length > 0 ? record.error : "asset_resolve failed";
+}
+
+/** Count an asset_resolve failure and the sentence the tile shows. */
+export function noteAssetResolveFailure(uid: string, reason: string, failures: McpFailureCounter): string {
+  failures.note("asset_resolve", "ok_false");
+  return `asset_resolve failed for ${uid}: ${reason}`;
+}
+
 /** Where a control-bus seek landed, as the window measured it. */
 export interface SeekLanding {
   ok: boolean;
