@@ -14,6 +14,12 @@
 // of the same file once, then seek and verify `currentTime` actually landed.
 // A seek reports success only when it did.
 //
+// Blob URLs are cached one per clip key (the library clip id; one id per clip
+// uid): a re-rendered transport for the same clip and source reuses it, a new
+// source for that clip revokes the old one, and release()/releaseAll() revoke
+// on unmount. A failed fetch keeps its reason in the status, and play state
+// survives a seek that interrupts another seek's reload.
+//
 // Transport-agnostic on purpose: it takes a MediaLike and injectable source
 // ops, so a unified transport (and later the PR #4 reducer clock) can own it.
 
@@ -46,6 +52,8 @@ export interface MediaLike {
 /** How to get a seekable copy of a source. Browser default: fetch -> Blob -> object URL. */
 export interface SourceOps {
   toObjectUrl(url: string): Promise<string>;
+  /** Free an object URL toObjectUrl made. Browser default: URL.revokeObjectURL. */
+  revokeObjectUrl?(url: string): void;
 }
 
 export interface SeekOptions {
@@ -119,7 +127,14 @@ export const browserSourceOps: SourceOps = {
     if (!response.ok) throw new Error(`fetch ${response.status}`);
     return URL.createObjectURL(await response.blob());
   },
+  revokeObjectUrl(url: string): void {
+    URL.revokeObjectURL(url);
+  },
 };
+
+function errorText(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
 
 const defaultSleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
 
@@ -129,7 +144,11 @@ const defaultSleep = (ms: number) => new Promise<void>((resolve) => setTimeout(r
  */
 export class Seeker {
   private readonly tokens = new WeakMap<MediaLike, number>();
-  private readonly reloads = new WeakMap<MediaLike, Promise<boolean>>();
+  private readonly reloads = new WeakMap<MediaLike, Promise<{ ok: boolean; reason?: string }>>();
+  /** One blob URL per clip key, with the source it copies. */
+  private readonly blobs = new Map<string, { source: string; url: string }>();
+  /** Set when a reload paused a playing element; the seek that finishes resumes it. */
+  private readonly resumeAfterReload = new WeakMap<MediaLike, true>();
   private readonly timeoutMs: number;
   private readonly settleMs: number;
   private readonly sleep: (ms: number) => Promise<void>;
@@ -140,7 +159,29 @@ export class Seeker {
     this.sleep = options.sleep ?? defaultSleep;
   }
 
-  async seek(media: MediaLike, seconds: number): Promise<SeekResult> {
+  /** Revoke and forget the blob URL cached for a clip (its transport unmounted). */
+  release(key: string): void {
+    const cached = this.blobs.get(key);
+    if (!cached) return;
+    this.blobs.delete(key);
+    this.ops.revokeObjectUrl?.(cached.url);
+  }
+
+  /** Revoke every cached blob URL (page teardown). */
+  releaseAll(): void {
+    for (const key of [...this.blobs.keys()]) this.release(key);
+  }
+
+  /** Clip keys holding a blob URL right now. */
+  cachedKeys(): string[] {
+    return [...this.blobs.keys()];
+  }
+
+  /**
+   * Seek `media` to `seconds`. `key` names the clip for the blob cache
+   * (defaults to the element's current source).
+   */
+  async seek(media: MediaLike, seconds: number, key: string = media.src): Promise<SeekResult> {
     const token = (this.tokens.get(media) ?? 0) + 1;
     this.tokens.set(media, token);
     const stale = () => this.tokens.get(media) !== token;
@@ -154,28 +195,46 @@ export class Seeker {
       ...extra,
     });
 
-    if (!media.src) return result(false, "no wav");
-    if (!Number.isFinite(seconds) || seconds < 0) return result(false, "bad seek");
+    // Every outcome that is not superseded resumes a play a reload paused,
+    // including one paused by an older seek this one interrupted.
+    const finish = async (ok: boolean, status: string, extra: Partial<SeekResult> = {}): Promise<SeekResult> => {
+      if (this.resumeAfterReload.has(media)) {
+        this.resumeAfterReload.delete(media);
+        if (media.paused) {
+          try {
+            await media.play();
+          } catch {
+            /* the result still says where the clock is */
+          }
+        }
+      }
+      return result(ok, status, { ...extra, actual: media.currentTime });
+    };
+
+    if (!media.src) return finish(false, "no wav");
+    if (!Number.isFinite(seconds) || seconds < 0) return finish(false, "bad seek");
 
     let deferred = false;
     if (media.readyState < HAVE_METADATA) {
       deferred = true;
       await waitForEvent(media, ["loadedmetadata", "error"], this.timeoutMs);
       if (stale()) return result(false, "superseded", { deferred });
-      if (media.readyState < HAVE_METADATA) return result(false, "seek failed: the WAV metadata never loaded", { deferred });
+      if (media.readyState < HAVE_METADATA) return finish(false, "seek failed: the WAV metadata never loaded", { deferred });
     }
     if (Number.isFinite(media.duration) && seconds > media.duration) {
-      return result(false, `past end (${formatClock(media.duration)})`, { deferred });
+      return finish(false, `past end (${formatClock(media.duration)})`, { deferred });
     }
 
     let reloaded = false;
-    const wasPlaying = !media.paused;
+    let reloadFailure = "";
     if (!seekableCovers(media, seconds) && !media.src.startsWith("blob:")) {
-      reloaded = await this.reloadAsBlob(media);
+      const reload = await this.reloadAsBlob(media, key);
+      reloaded = reload.ok;
+      if (!reload.ok && reload.reason) reloadFailure = `${reload.reason}; `;
       if (stale()) return result(false, "superseded", { deferred, reloaded });
     }
     if (!seekableCovers(media, seconds)) {
-      return result(false, `seek failed: this WAV source cannot seek (stays at ${formatClock(media.currentTime)})`, { deferred, reloaded });
+      return finish(false, `seek failed: this WAV source cannot seek (${reloadFailure}stays at ${formatClock(media.currentTime)})`, { deferred, reloaded });
     }
 
     const started = Date.now();
@@ -183,37 +242,53 @@ export class Seeker {
     await waitForEvent(media, ["seeked", "error"], this.timeoutMs);
     if (this.settleMs > 0) await this.sleep(this.settleMs);
     if (stale()) return result(false, "superseded", { deferred, reloaded });
-    if (reloaded && wasPlaying && media.paused) {
-      try {
-        await media.play();
-      } catch {
-        /* the seek result below still says where the clock is */
-      }
-    }
     const actual = media.currentTime;
     const elapsedS = (Date.now() - started) / 1000;
     if (!landed(actual, seconds, !media.paused, elapsedS)) {
-      return result(false, `seek failed: at ${formatClock(actual)}, wanted ${formatClock(seconds)}`, { actual, deferred, reloaded });
+      return finish(false, `seek failed: at ${formatClock(actual)}, wanted ${formatClock(seconds)}`, { deferred, reloaded });
     }
-    return result(true, `seeked to ${formatClock(actual)}`, { actual, deferred, reloaded });
+    return finish(true, `seeked to ${formatClock(actual)}`, { deferred, reloaded });
   }
 
-  /** Move the element onto a blob: URL of the same file, once. Keeps play state for the caller. */
-  private reloadAsBlob(media: MediaLike): Promise<boolean> {
+  /**
+   * Move the element onto a blob: URL of the same file. One blob per clip
+   * key: reuse it for the same source, revoke it when the source changed.
+   */
+  private reloadAsBlob(media: MediaLike, key: string): Promise<{ ok: boolean; reason?: string }> {
     const pending = this.reloads.get(media);
     if (pending) return pending;
-    const run = (async () => {
+    const run = (async (): Promise<{ ok: boolean; reason?: string }> => {
       const original = media.src;
       try {
-        const objectUrl = await this.ops.toObjectUrl(original);
-        if (media.src !== original) return false;
-        if (!media.paused) media.pause();
+        let objectUrl: string;
+        const cached = this.blobs.get(key);
+        if (cached && cached.source === original) {
+          objectUrl = cached.url;
+        } else {
+          try {
+            objectUrl = await this.ops.toObjectUrl(original);
+          } catch (error) {
+            return { ok: false, reason: `blob reload failed: ${errorText(error)}` };
+          }
+          const prior = this.blobs.get(key);
+          if (prior && prior.source === original) {
+            // Another element of this clip cached it meanwhile: keep one.
+            this.ops.revokeObjectUrl?.(objectUrl);
+            objectUrl = prior.url;
+          } else {
+            if (prior) this.ops.revokeObjectUrl?.(prior.url);
+            this.blobs.set(key, { source: original, url: objectUrl });
+          }
+        }
+        if (media.src !== original) return { ok: false, reason: "blob reload failed: the source changed meanwhile" };
+        if (!media.paused) {
+          media.pause();
+          this.resumeAfterReload.set(media, true);
+        }
         media.src = objectUrl;
         media.load();
         await waitForEvent(media, ["loadedmetadata", "error"], this.timeoutMs);
-        return media.readyState >= HAVE_METADATA;
-      } catch {
-        return false;
+        return media.readyState >= HAVE_METADATA ? { ok: true } : { ok: false, reason: "blob reload failed: the blob never loaded metadata" };
       } finally {
         this.reloads.delete(media);
       }

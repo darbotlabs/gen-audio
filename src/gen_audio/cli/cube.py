@@ -7,10 +7,12 @@ Two commands share this entry point (scripts/cube_revision.py):
 - ``cube_revision.py layers WAV OUT_JSON --stem STEM --engine ENGINE
   [--label LABEL] [--png PNG]`` builds the rev 3 four-layer Library cube JSON
   (and PNG) that the Library tiles and the Cube tab load, with the WAV sha256
-  and the generator commit. See gen_audio.cube_layers.
-- ``cube_revision.py manifest [--manifest PATH]`` rewrites the cube mirror in
-  the Library manifest from the cube JSON (gen_audio.library_manifest;
-  standard library only, no WAVs needed).
+  and the generator's normalized sha256. See gen_audio.cube_layers.
+- ``cube_revision.py manifest [--manifest PATH] [--record-generator-commit]``
+  rewrites the cube mirror in the Library manifest from the cube JSON
+  (gen_audio.library_manifest; standard library only, no WAVs needed). With
+  ``--record-generator-commit`` it also writes each cube block's informational
+  ``generator_commit`` from git history; run it after the regen is committed.
 """
 
 from __future__ import annotations
@@ -21,7 +23,7 @@ import json
 import sys
 from pathlib import Path
 
-from gen_audio.library_manifest import sync_manifest
+from gen_audio.library_manifest import record_generator_commits, sync_manifest
 
 # numpy/soundfile-backed modules load inside the commands that need them, so
 # `manifest` runs on a bare Python (CI's Windows scripts job).
@@ -61,19 +63,27 @@ def manifest_main(argv: list[str]) -> int:
         description="Rewrite the Library manifest cube blocks from the four-layer cube JSON (no WAVs needed).",
     )
     parser.add_argument("--manifest", type=Path, default=LIBRARY_MANIFEST, help="manifest.json (default: the app's)")
+    parser.add_argument(
+        "--record-generator-commit",
+        action="store_true",
+        help="also set each cube block's generator_commit (information only, outside the uid) from git history",
+    )
     args = parser.parse_args(argv)
     try:
         changed = sync_manifest(args.manifest)
+        recorded = record_generator_commits(args.manifest, LIBRARY_MANIFEST.parents[4]) if args.record_generator_commit else None
     except (OSError, ValueError, KeyError) as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 1
     print(f"manifest cube mirror: {', '.join(changed) if changed else 'up to date'}")
+    if recorded is not None:
+        print(f"generator_commit: {', '.join(recorded) if recorded else 'up to date'}")
     return 0
 
 
 def layers_main(argv: list[str]) -> int:
     from gen_audio.audio_io import read_wav
-    from gen_audio.cube_layers import generator_commit, library_cube, write_cube_png
+    from gen_audio.cube_layers import library_cube, write_cube_png
 
     args = build_layers_parser().parse_args(argv)
     try:
@@ -84,7 +94,6 @@ def layers_main(argv: list[str]) -> int:
             stem=args.stem,
             engine=args.engine,
             source_sha256=hashlib.sha256(args.wav.read_bytes()).hexdigest(),
-            commit=generator_commit(),
             label=args.label,
         )
         args.out.parent.mkdir(parents=True, exist_ok=True)

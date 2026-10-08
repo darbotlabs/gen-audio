@@ -9,6 +9,9 @@ export interface PlayInfo {
 /** HTML audio transport for library tiles. Missing files stay missing. */
 
 const players = new Map<string, HTMLAudioElement>();
+/** The source each clip's transport was rendered with (before any blob swap). */
+const playerSources = new Map<string, string>();
+
 
 let activeId: string | null = null;
 /** The clip the cube is showing. The cube clock follows only this clip, not the last one played. */
@@ -30,13 +33,15 @@ let seeker = new Seeker();
 
 /** Test seam: swap the seeker (fake source ops, no settle delay). */
 export function setSeeker(next: Seeker): void {
+  seeker.releaseAll();
   seeker = next;
 }
 
 /** Seek an element and keep the cube and floater on the clock it actually reached. */
 async function seekTo(clipId: string, audio: HTMLAudioElement, seconds: number): Promise<SeekResult> {
   activeId = clipId;
-  const outcome = await seeker.seek(audio as unknown as MediaLike, seconds);
+  // One cached blob URL per clip (seek.ts); the clip id keys it.
+  const outcome = await seeker.seek(audio as unknown as MediaLike, seconds, clipId);
   if (outcome.status !== "superseded" && drivesCube(clipId)) {
     // ONE clock: the cube shows where the audio is, not where we asked it to go.
     const fraction = cubeFractionAt(outcome.ok ? outcome.actual : audio.currentTime, audio.duration);
@@ -48,7 +53,33 @@ async function seekTo(clipId: string, audio: HTMLAudioElement, seconds: number):
 
 /** Test seam: register a transport element without building the tile DOM. */
 export function registerPlayer(clipId: string, audio: HTMLAudioElement): void {
+  const source = audio.src;
+  const prior = playerSources.get(clipId);
+  // Same clip, new source: its cached blob copies the old file, so revoke it.
+  if (prior !== undefined && prior !== source) seeker.release(clipId);
+  playerSources.set(clipId, source);
   players.set(clipId, audio);
+}
+
+/**
+ * Drop transports whose element left the document (a re-render removed the
+ * tile) and revoke their cached blob URLs. main.ts calls it after each render.
+ */
+export function releaseDetachedTransports(): string[] {
+  const released: string[] = [];
+  for (const [clipId, audio] of players) {
+    if (audio.isConnected !== false) continue;
+    players.delete(clipId);
+    playerSources.delete(clipId);
+    seeker.release(clipId);
+    released.push(clipId);
+  }
+  return released;
+}
+
+/** Revoke every cached blob URL (page teardown). */
+export function releaseAllSeekBlobs(): void {
+  seeker.releaseAll();
 }
 
 export function setCubeClockClip(clipId: string | null, uid: string | null = null): void {
@@ -231,9 +262,22 @@ export function pauseClip(clipId: string): string {
  * only when currentTime actually landed (seek.ts).
  */
 export async function seekClip(clipId: string, seconds: number): Promise<string> {
+  return (await seekClipOutcome(clipId, seconds)).status;
+}
+
+/** Where a seek landed: what the window reports back for an MCP seek (ui_seek_report). */
+export interface SeekOutcome {
+  ok: boolean;
+  /** currentTime after the attempt; null when there is no element or no number. */
+  actual: number | null;
+  status: string;
+}
+
+export async function seekClipOutcome(clipId: string, seconds: number): Promise<SeekOutcome> {
   const audio = player(clipId);
-  if (!audio || !audio.src) return "no wav";
-  return (await seekTo(clipId, audio, seconds)).status;
+  if (!audio || !audio.src) return { ok: false, actual: null, status: "no wav" };
+  const outcome = await seekTo(clipId, audio, seconds);
+  return { ok: outcome.ok, actual: Number.isFinite(outcome.actual) ? outcome.actual : null, status: outcome.status };
 }
 
 /** Seek a specific library clip by shared-clock fraction 0..1 (the clip bound to the cube). */

@@ -99,12 +99,18 @@ pub fn migrate_v0_to_v1(bundle: &Value) -> Result<Value, AssetError> {
             ("unavailable", json!(unavailable)),
             ("note", model["note"].clone()),
         ]);
+        let offline_reason = model["offlineReason"].as_str();
         if let Some(clip) = clips.iter().find(|clip| clip["engineId"] == id.as_str() && clip["status"] != "ok") {
             body.insert(
                 "availability".into(),
                 json!({"status": clip["status"], "reason": clip["reason"], "legacy_clip_id": clip["id"]}),
             );
+        } else if let Some(reason) = offline_reason {
+            // The VibeVoice honesty contract for a model with offline clips only.
+            body.insert("availability".into(), json!({"status": "offline_only", "reason": reason}));
         }
+        // Status ok only for a model Generate can produce in this app.
+        let producible = model["synthAdapter"].as_bool().unwrap_or(false) && !unavailable;
         let mut claims = vec![];
         if unavailable {
             claims.push("engine_unavailable");
@@ -117,7 +123,7 @@ pub fn migrate_v0_to_v1(bundle: &Value) -> Result<Value, AssetError> {
             legacy_id: Some(id.clone()),
             title: model["label"].as_str().unwrap_or(&id).to_string(),
             summary: None,
-            status: if unavailable { "unavailable" } else { "ok" },
+            status: if producible { "ok" } else { "unavailable" },
             fields: json!({"model_id": id, "waveform": waveform}),
             media: vec![],
             src: vec![],
@@ -252,6 +258,13 @@ pub fn migrate_v0_to_v1(bundle: &Value) -> Result<Value, AssetError> {
         if let Some(hop) = hop {
             fields["hop_frames"] = json!(hop);
         }
+        // Cube identity (item 2): what made the cube is the generator's
+        // content hash and layer method. A commit SHA never enters fields.
+        for key in ["generator_sha256", "layer_method"] {
+            if let Some(value) = cube_doc.pointer(&format!("/provenance/{key}")).and_then(Value::as_str) {
+                fields[key] = json!(value);
+            }
+        }
         // E4: a cube JSON that names its WAV's sha256 must name this clip's WAV.
         if let Some(cube_source) = cube_doc["source_sha256"].as_str() {
             if cube_source != sha {
@@ -262,11 +275,16 @@ pub fn migrate_v0_to_v1(bundle: &Value) -> Result<Value, AssetError> {
             }
         }
         // Provenance comes from the cube JSON (gen_audio.cube_layers writes the
-        // generator path, its commit, layer_method and params); unhashed.
+        // generator path, generator_sha256, layer_method and params), plus the
+        // manifest cube block's generator_commit: information only, unhashed,
+        // so a rebase or squash never changes the uid.
         let mut cube_provenance = match cube_doc.get("provenance").and_then(Value::as_object) {
             Some(recorded) => recorded.clone(),
             None => obj(vec![("generator", json!("retired library cube generator (before gen_audio.cube_layers)"))]),
         };
+        if let Some(commit) = cube["generator_commit"].as_str() {
+            cube_provenance.insert("generator_commit".into(), json!(commit));
+        }
         let mut params = cube_provenance.get("params").and_then(Value::as_object).cloned().unwrap_or_default();
         params.insert("bins_inferred_from_shape".into(), json!(inferred));
         cube_provenance.insert("params".into(), Value::Object(params));

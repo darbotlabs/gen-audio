@@ -146,6 +146,8 @@ test("a failed blob fetch leaves the source alone and reports failure", async ()
   assert.equal(result.ok, false);
   assert.equal(media.src, "http://tauri.localhost/library/x.wav");
   assert.match(result.status, /^seek failed: this WAV source cannot seek/);
+  // D: the fetch failure reason reaches the user-visible status.
+  assert.equal(result.status, "seek failed: this WAV source cannot seek (blob reload failed: fetch 404; stays at 0:00)");
 });
 
 test("playing state survives the blob swap", async () => {
@@ -186,4 +188,100 @@ test("landed(): tolerance paused, forward drift only while playing", () => {
   assert.equal(landed(61.1, 60, true, 1), true);
   assert.equal(landed(59.5, 60, true, 1), false);
   assert.equal(landed(Number.NaN, 60, false), false);
+});
+
+/** Source ops that count object URLs made and revoked (D: blob leak). */
+function countingOps(): SourceOps & { created: string[]; revoked: string[]; live(): string[] } {
+  const created: string[] = [];
+  const revoked: string[] = [];
+  return {
+    created,
+    revoked,
+    live: () => created.filter((url) => !revoked.includes(url)),
+    async toObjectUrl(url: string) {
+      const objectUrl = `blob:gen-audio/${created.length + 1}?of=${url}`;
+      created.push(objectUrl);
+      return objectUrl;
+    },
+    revokeObjectUrl(url: string) {
+      revoked.push(url);
+    },
+  };
+}
+
+test("D: one blob URL per clip across re-renders; replace and unmount revoke; create/revoke balance", async () => {
+  const ops = countingOps();
+  const seeker = new Seeker(ops, fast);
+  const wav = "http://tauri.localhost/library/bitdot_braille_vibevoice.wav";
+  // Five re-renders of the same tile: each is a fresh <audio> on the asset URL.
+  for (let render = 0; render < 5; render++) {
+    const media = new FakeMedia(wav);
+    media.loadMetadata();
+    const result = await seeker.seek(media, 30 + render, "lib-bitdot");
+    assert.equal(result.ok, true, result.status);
+    assert.equal(ops.live().length, 1, `render ${render}: no duplicate blob for the clip`);
+  }
+  assert.equal(ops.created.length, 1, "re-renders reuse the cached blob URL");
+  // A second clip gets its own single blob.
+  const other = new FakeMedia("http://tauri.localhost/library/kokoro_onnx.wav");
+  other.loadMetadata();
+  await seeker.seek(other, 10, "lib-kokoro");
+  assert.deepEqual(seeker.cachedKeys().sort(), ["lib-bitdot", "lib-kokoro"]);
+  // Replace: the clip's source changed, so its old blob is revoked.
+  const replaced = new FakeMedia("http://tauri.localhost/library/bitdot_braille_vibevoice.v2.wav");
+  replaced.loadMetadata();
+  await seeker.seek(replaced, 12, "lib-bitdot");
+  assert.equal(ops.revoked.length, 1);
+  assert.match(ops.revoked[0], /of=http:\/\/tauri\.localhost\/library\/bitdot_braille_vibevoice\.wav$/);
+  assert.equal(ops.live().length, 2, "one live blob per clip");
+  // Unmount: release() revokes; releaseAll() clears the rest.
+  seeker.release("lib-bitdot");
+  seeker.releaseAll();
+  assert.equal(ops.created.length, ops.revoked.length, "every createObjectURL has a revokeObjectURL");
+  assert.equal(new Set(ops.revoked).size, ops.revoked.length, "nothing revoked twice");
+  assert.deepEqual(seeker.cachedKeys(), []);
+});
+
+test("D: two elements of one clip reloading at once still keep one blob", async () => {
+  const ops = countingOps();
+  const seeker = new Seeker(ops, fast);
+  const wav = "http://tauri.localhost/library/x.wav";
+  const a = new FakeMedia(wav);
+  const b = new FakeMedia(wav);
+  a.loadMetadata();
+  b.loadMetadata();
+  const [ra, rb] = await Promise.all([seeker.seek(a, 20, "lib-x"), seeker.seek(b, 40, "lib-x")]);
+  assert.equal(ra.ok && rb.ok, true);
+  assert.equal(ops.live().length, 1);
+  assert.equal(a.src, b.src);
+  seeker.releaseAll();
+  assert.equal(ops.live().length, 0);
+});
+
+test("D: play state carries across a seek that interrupts another seek's reload", async () => {
+  const media = new FakeMedia("http://tauri.localhost/library/x.wav");
+  media.loadMetadata();
+  await media.play();
+  let release!: () => void;
+  const gate = new Promise<void>((resolve) => (release = resolve));
+  const ops: SourceOps = {
+    async toObjectUrl() {
+      await gate;
+      return "blob:gen-audio/slow";
+    },
+    revokeObjectUrl() {},
+  };
+  const seeker = new Seeker(ops, fast);
+  const first = seeker.seek(media, 60, "lib-x");
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  release();
+  // Wait until the reload has paused the element and swapped the source, then interrupt.
+  while (!media.src.startsWith("blob:")) await new Promise((resolve) => setTimeout(resolve, 0));
+  assert.equal(media.paused, true, "the reload paused it");
+  const second = seeker.seek(media, 90, "lib-x");
+  assert.equal((await first).status, "superseded");
+  const landedResult = await second;
+  assert.equal(landedResult.ok, true, landedResult.status);
+  assert.equal(media.currentTime, 90);
+  assert.equal(media.paused, false, "still playing after the interrupted reload");
 });

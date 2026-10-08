@@ -13,8 +13,8 @@ import {
 } from "./cubeview";
 import { isClipPlaying, seekActiveFraction, seekClipFraction, setCubeClockClip } from "./playback";
 import { applyClipNames, harvestNames } from "./library-meta";
-import { bindFloatingPlayback, pauseClip, playClip, seekClip, setUserPlayReporter } from "./playback";
-import { controlPlayOrigin, userPlayControl } from "./play-control";
+import { bindFloatingPlayback, pauseClip, playClip, releaseAllSeekBlobs, releaseDetachedTransports, seekClipOutcome, setUserPlayReporter } from "./playback";
+import { controlPlayOrigin, mcpRequestBody, seekReportControl, userPlayControl } from "./play-control";
 import { fixturesRequested, selectViewport } from "./viewport-source";
 import { glyphBadge } from "./glyph";
 import { loadLibraryCatalog, type LibraryCatalog } from "./library-assets";
@@ -94,6 +94,8 @@ function show(documentIn: unknown): void {
   }
   const doc = documentIn as ViewportDocument;
   renderBoard(board, empty, doc);
+  // D: tiles this render removed give back their cached seek blob URLs.
+  releaseDetachedTransports();
   paintProfile();
   paintProfileCanvases();
   bindCubeCanvas();
@@ -216,6 +218,8 @@ async function bindCubeSource(clipId: string, url: string, source: string): Prom
  * Autoplay and other non-user starts use `playClip(..., "auto")` and change
  * nothing but the audio.
  */
+window.addEventListener("pagehide", () => releaseAllSeekBlobs());
+
 setUserPlayReporter((clipId) => {
   const request = userPlayControl(clipId);
   void mcpCall(request.name, request.args);
@@ -424,26 +428,40 @@ async function refreshConnectors(doc: ViewportDocument): Promise<ViewportDocumen
   }
 }
 
-document.querySelector("#show-example")?.addEventListener("click", () => {
-  if (!fixturesRequested(fixtureFlag)) {
-    status.textContent = "The labeled fixture deck is dev/test only (VITE_GEN_AUDIO_FIXTURES=1). Showing the Library deck.";
-  }
-  void loadShippedDocument().then(refreshConnectors).then(show);
-});
 document.querySelector("#show-empty")?.addEventListener("click", () => {
   show({ version: "1.0", title: "Darbot Gen-Audio", columns: 3, cards: [] });
 });
-document.querySelector("#run-improve")?.addEventListener("click", async () => {
-  try {
-    const { invoke } = await import("@tauri-apps/api/core");
-    const result = await invoke<Record<string, unknown>>("run_fixture_improve");
-    status.textContent = result.ok
-      ? "Python improve finished on the fixture tone (fixture only — not podcast speech)."
-      : `Python improve did not finish: ${JSON.stringify(result)}`;
-  } catch (error) {
-    status.textContent = `Python improve needs the desktop shell. ${String(error)}`;
-  }
-});
+// E1 addendum: the fixture controls exist only in dev/test builds. The check is
+// a literal import.meta.env comparison so Vite replaces it at build time and
+// the release bundle drops this block, labels and command name included
+// (apps/desktop/tests/viewport-source.test.ts greps dist for them).
+if (import.meta.env.VITE_GEN_AUDIO_FIXTURES === "1") {
+  const toolbar = document.querySelector(".ga-header-toolbar .toolbar");
+  const showExample = document.createElement("button");
+  showExample.type = "button";
+  showExample.id = "show-example";
+  showExample.textContent = "Load labeled example";
+  showExample.addEventListener("click", () => {
+    void loadShippedDocument().then(refreshConnectors).then(show);
+  });
+  const runImprove = document.createElement("button");
+  runImprove.type = "button";
+  runImprove.id = "run-improve";
+  runImprove.textContent = "Run Python improve on fixture";
+  runImprove.addEventListener("click", async () => {
+    try {
+      const { invoke } = await import("@tauri-apps/api/core");
+      const result = await invoke<Record<string, unknown>>("run_fixture_improve");
+      status.textContent = result.ok
+        ? "Python improve finished on the fixture tone (fixture only — not podcast speech)."
+        : `Python improve did not finish: ${JSON.stringify(result)}`;
+    } catch (error) {
+      status.textContent = `Python improve needs a debug desktop shell. ${String(error)}`;
+    }
+  });
+  toolbar?.prepend(showExample);
+  toolbar?.append(runImprove);
+}
 document.querySelector("#generate-podcast")?.addEventListener("click", () => {
   void submitGenerate();
 });
@@ -571,12 +589,9 @@ async function mcpCall(name: string, args: Record<string, unknown>): Promise<unk
     const response = await fetch("http://127.0.0.1:8765/mcp", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({
-        jsonrpc: "2.0",
-        id: 1,
-        method: "tools/call",
-        params: { name, arguments: args },
-      }),
+      // The exact body is the desktop half of the UI/agent contract
+      // (schemas/examples/control/*.json, tested from both sides).
+      body: JSON.stringify(mcpRequestBody(name, args)),
     });
     if (!response.ok) return null;
     const payload: unknown = await response.json();
@@ -631,9 +646,17 @@ function applyControl(event: { seq?: number; op?: string; args?: Record<string, 
       status.textContent = result === "playing" ? `Playing ${args.tileId}` : result;
     });
     else if (action === "pause") status.textContent = pauseClip(args.tileId);
-    else if (action === "seek") void seekClip(args.tileId, Number(args.seconds)).then((result) => {
-      if (result !== "superseded") status.textContent = result;
-    });
+    else if (action === "seek") {
+      const requested = Number(args.seconds);
+      void seekClipOutcome(args.tileId, requested).then((landing) => {
+        if (landing.status !== "superseded") status.textContent = landing.status;
+        // Tell MCP where it landed: ui_playback answers the agent with {requested_t, landed_t, ok, reason}.
+        if (typeof event.seq === "number") {
+          const report = seekReportControl(event.seq, requested, landing);
+          void mcpCall(report.name, report.args);
+        }
+      });
+    }
   } else if (event.op === "sidepane") {
     applySidepane({
       agents: Array.isArray(args.agents) ? args.agents.map(String) : undefined,
@@ -683,9 +706,12 @@ function connectControl(): void {
 }
 
 void loadShippedDocument().then(refreshConnectors).then(show);
-// Test hook: scrubs the cube and ONLY the clip the cube is bound to (never whatever played last).
-(window as unknown as { __genAudioScrub?: (f: number) => Promise<string> }).__genAudioScrub = (fraction: number) => {
-  setCubeScrub(fraction, { silent: true });
-  return cubeClipId ? seekClipFraction(cubeClipId, fraction) : Promise.resolve("no cube clip");
-};
+// Test hook (dev/test builds only, E1 addendum): scrubs the cube and ONLY the
+// clip the cube is bound to (never whatever played last).
+if (import.meta.env.VITE_GEN_AUDIO_FIXTURES === "1") {
+  (window as unknown as { __genAudioScrub?: (f: number) => Promise<string> }).__genAudioScrub = (fraction: number) => {
+    setCubeScrub(fraction, { silent: true });
+    return cubeClipId ? seekClipFraction(cubeClipId, fraction) : Promise.resolve("no cube clip");
+  };
+}
 connectControl();

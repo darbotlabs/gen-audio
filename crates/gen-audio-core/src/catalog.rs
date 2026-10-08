@@ -44,6 +44,12 @@ pub struct VoiceModel {
     pub synth_adapter: bool,
     pub unavailable: bool,
     pub note: &'static str,
+    /// Set when this app has no adapter for the model but a library clip was
+    /// rendered with it elsewhere: availability `offline_only` with this reason
+    /// (the VibeVoice honesty contract). Only models Generate can produce
+    /// (`synth_adapter`) have status ok.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub offline_reason: Option<&'static str>,
 }
 
 #[derive(Debug, Clone, Copy, Serialize)]
@@ -166,14 +172,16 @@ const VOICE_MODELS: &[VoiceModel] = &[
         synth_adapter: true,
         unavailable: false,
         note: "Python kokoro-onnx path. Needs local ONNX and voices files. Weights are not in this repo.",
+        offline_reason: None,
     },
     VoiceModel {
         id: "kokoro_dayour",
-        label: "dayour/kokoro",
+        label: "dayour/kokoro (offline only)",
         waveform: true,
         synth_adapter: false,
-        unavailable: false,
-        note: "dayour/kokoro torch runtime. Not vendored here. A library WAV may exist; this repo has no synth adapter.",
+        unavailable: true,
+        note: "dayour/kokoro torch runtime. Not vendored here. Its library WAVs are offline runs; this repo has no synth adapter.",
+        offline_reason: Some("offline runs only: rendered with the dayour/kokoro torch runtime outside this app; no in-app adapter, so Generate cannot produce it"),
     },
     VoiceModel {
         id: "misaki",
@@ -182,6 +190,7 @@ const VOICE_MODELS: &[VoiceModel] = &[
         synth_adapter: false,
         unavailable: false,
         note: "Grapheme-to-phoneme for Kokoro. It does not emit a waveform by itself.",
+        offline_reason: Some("G2P only, used offline for the misaki\u{2192}kokoro clip; no in-app adapter"),
     },
     VoiceModel {
         id: "vibevoice",
@@ -190,6 +199,7 @@ const VOICE_MODELS: &[VoiceModel] = &[
         synth_adapter: false,
         unavailable: true,
         note: "No adapter and no verified synth in this app.",
+        offline_reason: None,
     },
     VoiceModel {
         id: "magpie",
@@ -198,6 +208,7 @@ const VOICE_MODELS: &[VoiceModel] = &[
         synth_adapter: false,
         unavailable: true,
         note: "GGUF may exist on a machine; magpie-tts.cpp is not built here. No fake audio.",
+        offline_reason: None,
     },
     VoiceModel {
         id: "pocket_tts",
@@ -206,6 +217,7 @@ const VOICE_MODELS: &[VoiceModel] = &[
         synth_adapter: false,
         unavailable: true,
         note: "pocket_tts is not installed in this app. No teaser audio is reused.",
+        offline_reason: None,
     },
 ];
 
@@ -230,7 +242,7 @@ const LIBRARY: &[LibraryClipMeta] = &[
         wav_url: Some("/library/library_kokoro.wav"),
         cube_json_url: Some("/library/library_kokoro_cube3d.json"),
         sidecar_url: None,
-        summary: "Catalog says this clip is a real dayour/kokoro briefing. This process does not open the WAV. No synth adapter in this repo.",
+        summary: "Catalog says this clip is a real dayour/kokoro briefing rendered offline (dayour/kokoro torch, outside this app). This process does not open the WAV. No synth adapter in this repo.",
     },
     LibraryClipMeta {
         id: "lib-misaki-kokoro",
@@ -241,7 +253,7 @@ const LIBRARY: &[LibraryClipMeta] = &[
         wav_url: Some("/library/genaid_full_misaki_kokoro.wav"),
         cube_json_url: Some("/library/library_genaid_full_misaki_kokoro_cube3d.json"),
         sidecar_url: None,
-        summary: "Catalog says this clip is a real misaki→kokoro WAV with an Inverse-HDR cube. This process does not open the WAV.",
+        summary: "Catalog says this clip is a real misaki→kokoro WAV rendered offline (dayour/misaki G2P + dayour/kokoro torch, outside this app), with an Inverse-HDR cube. This process does not open the WAV.",
     },
     LibraryClipMeta {
         id: "lib-bitdot-braille-vibevoice",

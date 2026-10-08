@@ -265,3 +265,72 @@ fn media_lock_pins_every_library_wav() {
     }
     assert_eq!(wavs, lock.len(), "media.lock.json has entries no clip uses");
 }
+
+/// Item 2: a cube uid comes from the generator's content (generator_sha256,
+/// layer_method in fields; params via the cube JSON bytes), never a commit.
+#[test]
+fn cube_uid_is_generator_content_and_a_commit_is_provenance_only() {
+    let catalog = json(ASSETS);
+    let cubes: Vec<&Value> = catalog["assets"].as_array().unwrap().iter().filter(|asset| asset["kind"] == "cube_ihdr").collect();
+    assert_eq!(cubes.len(), 5);
+    for cube in cubes {
+        let id = &cube["legacy_id"];
+        let sha = cube["fields"]["generator_sha256"].as_str().unwrap_or_default();
+        assert!(gen_audio_core::asset::is_sha256_hex(sha), "{id}: fields.generator_sha256");
+        assert_eq!(cube["provenance"]["generator_sha256"], sha, "{id}");
+        assert_eq!(cube["fields"]["layer_method"], "library_r3", "{id}");
+        assert!(cube["fields"].as_object().unwrap().keys().all(|key| !key.contains("commit")), "{id}: no commit in identity");
+        let mut moved = cube.clone();
+        moved["provenance"]["generator_commit"] = Value::from("0123456789abcdef0123456789abcdef01234567");
+        assert_eq!(validate_envelope(&moved).unwrap().uid, cube["uid"].as_str().unwrap(), "{id}: a commit change keeps the uid");
+        let mut edited = cube.clone();
+        edited["fields"]["generator_sha256"] = Value::from("f".repeat(64));
+        assert_ne!(gen_audio_core::asset::envelope_identity(&edited).unwrap(), gen_audio_core::asset::envelope_identity(cube).unwrap(), "{id}");
+    }
+}
+
+/// E (Optimus, F5): status ok only for voice models Generate can produce in
+/// this app. Every model with no in-app adapter is offline_only (clips were
+/// rendered elsewhere, the VibeVoice honesty contract) or unavailable, with a
+/// reason; and its clips' provenance says "offline run".
+#[test]
+fn every_engine_without_an_in_app_adapter_is_offline_only_or_unavailable() {
+    let assets: Value = serde_json::from_str(ASSETS).unwrap();
+    let assets = assets["assets"].as_array().unwrap();
+    let models: Vec<&Value> = assets.iter().filter(|asset| asset["kind"] == "voice_model").collect();
+    assert_eq!(models.len(), gen_audio_core::catalog::voice_models().len());
+    for model in &models {
+        let id = model["legacy_id"].as_str().unwrap();
+        let adapter = model["body"]["synth_adapter"].as_bool().unwrap();
+        let spec = gen_audio_core::catalog::voice_model(id).unwrap();
+        assert_eq!(adapter, spec.synth_adapter, "{id}");
+        if adapter {
+            assert_eq!(model["status"], "ok", "{id} has an adapter");
+            assert!(model["body"].get("availability").is_none(), "{id}");
+            continue;
+        }
+        assert_eq!(model["status"], "unavailable", "{id}: no in-app adapter, so Generate cannot produce it");
+        let availability = &model["body"]["availability"];
+        let status = availability["status"].as_str().unwrap_or_else(|| panic!("{id}: no availability"));
+        assert!(matches!(status, "offline_only" | "unavailable"), "{id}: {status}");
+        assert!(!availability["reason"].as_str().unwrap_or("").is_empty(), "{id}: availability needs a reason");
+        // A model whose clips exist here only as offline renders says so on each clip.
+        for clip in assets.iter().filter(|asset| {
+            asset["kind"] == "audio_clip" && asset["provenance"]["voice_model"] == model["uid"]
+        }) {
+            let generator = clip["provenance"]["generator"].as_str().unwrap_or("");
+            assert!(generator.contains("offline run"), "{id}: clip {} provenance {generator}", clip["legacy_id"]);
+        }
+    }
+    let status = |id: &str| models.iter().find(|model| model["legacy_id"] == id).unwrap()["body"]["availability"]["status"].clone();
+    assert_eq!(status("kokoro_dayour"), "offline_only");
+    assert_eq!(status("misaki"), "offline_only");
+    assert_eq!(status("vibevoice"), "unavailable");
+    // The engine list agrees: only the implemented engine is producible.
+    for engine in gen_audio_core::engines::engines() {
+        let implemented = engine.status == gen_audio_core::engines::EngineStatus::Implemented;
+        if let Some(spec) = gen_audio_core::catalog::voice_model(engine.id) {
+            assert_eq!(implemented, spec.synth_adapter, "{}", engine.id);
+        }
+    }
+}

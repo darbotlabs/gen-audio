@@ -732,7 +732,7 @@ mod tests {
         let clip = gen_audio_core::asset_catalog::uid_for_legacy("audio_clip", "lib-misaki-kokoro").unwrap();
         let out = handle(
             &agent,
-            json!({"jsonrpc":"2.0","id":1,"method":"session/new","params":{"cwd":".","assets":[clip, "ga:cube_ihdr:himuxssd74afzm5eeqjfti5ple"]}}),
+            json!({"jsonrpc":"2.0","id":1,"method":"session/new","params":{"cwd":".","assets":[clip, "ga:cube_ihdr:26plzjawolfu5es5gab5agoxte"]}}),
         )
         .unwrap();
         let result = &out.response.unwrap()["result"];
@@ -744,7 +744,7 @@ mod tests {
             json!(["lib-misaki-kokoro"]),
             json!([clip, clip]),
             json!(vec![clip; 9]),
-            json!("ga:cube_ihdr:himuxssd74afzm5eeqjfti5ple"),
+            json!("ga:cube_ihdr:26plzjawolfu5es5gab5agoxte"),
         ] {
             let err = handle(&agent, json!({"jsonrpc":"2.0","id":2,"method":"session/new","params":{"cwd":".","assets":bad}}));
             assert!(err.is_err(), "{bad} should be rejected");

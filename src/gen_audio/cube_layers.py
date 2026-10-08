@@ -8,11 +8,17 @@ Revision 3 (``LIBRARY_REVISION``, ``LAYER_METHOD`` ``library_r3``) is the one
 method for all Library clips: the same ``LIBRARY_PARAMS`` for every WAV, no
 per-clip overrides. Each cube JSON records ``source_sha256`` (sha256 of the
 WAV bytes) and ``provenance``: ``generator`` (this file's repo path),
-``generator_commit`` (``git log -1`` on this file when the cube was made),
-``layer_method`` and ``params``. The commit is part of the cube JSON and so of
-the cube asset uid: a commit that changes this file, or a rebase/squash that
-rewrites that commit, needs a regen (tests/test_cube_layers.py checks it
-against ``git log -1`` when the history is complete).
+``generator_sha256`` (sha256 of this file's bytes with CRLF normalized to LF,
+:func:`generator_sha256`), ``layer_method`` and ``params``. Those bytes are
+the cube asset's identity (its uid hashes the cube JSON), so identity comes
+from what the generator says, not from git history: a commit that changes
+this file needs a regen, and a rebase, squash or CRLF checkout does not
+(tests/test_cube_layers.py fails with "regenerate cubes" on a mismatch, and
+build_assets checks it too). No commit SHA is written here. The commit that
+holds these bytes is information only; ``cube_revision.py manifest
+--record-generator-commit`` writes it to the manifest cube block after the
+regen is committed, and build_assets copies it into the cube envelope's
+unhashed provenance (docs/ASSET_OBJECT_MODEL.md, "Cube identity").
 
 Method:
 
@@ -40,13 +46,13 @@ the cube covers ``cube_shape_f_t[1] * bin_seconds`` seconds of the WAV.
 
 from __future__ import annotations
 
-import subprocess
 from dataclasses import asdict, dataclass
 from pathlib import Path
 
 import numpy as np
 
 from gen_audio.cube_revision import measure
+from gen_audio.library_manifest import normalized_sha256
 
 LAYER_NAMES = ("signal", "tonality", "confidence", "quality")
 LAYER_COLORS = (
@@ -76,21 +82,24 @@ GENERATOR_PATH = "src/gen_audio/cube_layers.py"
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
 
-def generator_commit(repo: Path | str = REPO_ROOT) -> str:
-    """Full SHA of the last commit that changed this file (``git log -1``)."""
-    try:
-        out = subprocess.run(
-            ["git", "log", "-1", "--format=%H", "--", GENERATOR_PATH],
-            cwd=repo,
-            capture_output=True,
-            text=True,
-            check=True,
-        ).stdout.strip()
-    except (OSError, subprocess.CalledProcessError) as exc:
-        raise RuntimeError(f"git log -1 on {GENERATOR_PATH} failed; run from a git checkout ({exc})") from exc
-    if len(out) != 40:
-        raise RuntimeError(f"{GENERATOR_PATH} has no commit yet; commit the generator before making cubes")
-    return out
+def generator_sha256(repo: Path | str = REPO_ROOT) -> str:
+    """sha256 of this generator's bytes with CRLF normalized to LF.
+
+    A Windows checkout with core.autocrlf=true hashes the same as a Linux one.
+    """
+    return normalized_sha256((Path(repo) / GENERATOR_PATH).read_bytes())
+
+
+def check_generator(doc: dict, repo: Path | str = REPO_ROOT) -> None:
+    """Raise ValueError unless a cube JSON was made by this generator's bytes."""
+    recorded = (doc.get("provenance") or {}).get("generator_sha256")
+    current = generator_sha256(repo)
+    if recorded != current:
+        raise ValueError(
+            f"cube {doc.get('wavUrl')} was made by {GENERATOR_PATH} with sha256 {recorded}, "
+            f"but the file now hashes to {current} (CRLF->LF); regenerate cubes: "
+            "python scripts/cube_revision.py layers ... for each Library WAV"
+        )
 
 
 def stft_mag(audio: np.ndarray, n_fft: int = 1024, hop: int = 256) -> np.ndarray:
@@ -217,18 +226,15 @@ def library_cube(
     stem: str,
     engine: str,
     source_sha256: str,
-    commit: str,
     label: str | None = None,
 ) -> tuple[dict, tuple]:
     """Build the rev 3 Library cube document. Returns (doc, point_cloud) where
     point_cloud feeds :func:`write_cube_png`. ``source_sha256`` is the sha256
-    of the WAV file, ``commit`` is :func:`generator_commit`, and ``label``
-    names the clip in the title (default: the stem)."""
+    of the WAV file and ``label`` names the clip in the title (default: the
+    stem). ``provenance.generator_sha256`` is :func:`generator_sha256`."""
     params = LIBRARY_PARAMS
     if len(source_sha256) != 64 or any(c not in "0123456789abcdef" for c in source_sha256):
         raise ValueError("source_sha256 must be 64 lowercase hex digits")
-    if len(commit) != 40:
-        raise ValueError("commit must be a full 40-digit git SHA")
     y = np.asarray(audio, dtype=np.float64)
     if y.ndim != 1 or len(y) == 0:
         raise ValueError("library_cube expects non-empty mono audio")
@@ -298,7 +304,7 @@ def library_cube(
         "legend": dict(LEGEND),
         "provenance": {
             "generator": GENERATOR_PATH,
-            "generator_commit": commit,
+            "generator_sha256": generator_sha256(),
             "layer_method": LAYER_METHOD,
             "params": asdict(params),
         },

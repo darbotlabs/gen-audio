@@ -2,7 +2,9 @@
 // fixtures; VITE_GEN_AUDIO_FIXTURES=1 (PR #4's flag) brings them back.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, readdirSync, rmSync, statSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { DEV_FIXTURE_CLAIMS, fixturesRequested, isDevFixture, selectViewport } from "../src/viewport-source.ts";
 import { modelCubes, type AssetEnvelope } from "../src/library-assets.ts";
@@ -48,6 +50,103 @@ test("E1: no stub ids and no stand-in / not-remeasured text in the release catal
   }
 });
 
+// E1 addendum (widened): fixture controls, the fixture header text and the
+// scrub test hook never reach a release build; the fixture Tauri commands are
+// not registered in a release exe.
+const RELEASE_FORBIDDEN = ["Load labeled example", "Run Python improve", "fixture canvases", "__genAudioScrub", "run_fixture_improve"];
+
+function distText(dir: string): string {
+  const parts: string[] = [];
+  const walk = (at: string) => {
+    for (const name of readdirSync(at)) {
+      const path = join(at, name);
+      if (statSync(path).isDirectory()) walk(path);
+      else if (/\.(html|js|css|json)$/.test(name)) parts.push(readFileSync(path, "utf8"));
+    }
+  };
+  walk(dir);
+  return parts.join("\n");
+}
+
+async function viteBuild(flag: string | undefined): Promise<string> {
+  const { build } = await import("vite");
+  const outDir = mkdtempSync(join(tmpdir(), "ga-dist-"));
+  const saved = process.env.VITE_GEN_AUDIO_FIXTURES;
+  if (flag === undefined) delete process.env.VITE_GEN_AUDIO_FIXTURES;
+  else process.env.VITE_GEN_AUDIO_FIXTURES = flag;
+  try {
+    await build({ root: repo("apps/desktop"), logLevel: "silent", build: { outDir, emptyOutDir: true } });
+    return distText(outDir);
+  } finally {
+    if (saved === undefined) delete process.env.VITE_GEN_AUDIO_FIXTURES;
+    else process.env.VITE_GEN_AUDIO_FIXTURES = saved;
+    rmSync(outDir, { recursive: true, force: true });
+  }
+}
+
+test("E1 addendum: index.html has no fixture controls or fixture header text", () => {
+  const html = readFileSync(repo("apps/desktop/index.html"), "utf8");
+  for (const text of RELEASE_FORBIDDEN) assert.ok(!html.includes(text), text);
+  assert.ok(!html.includes('id="show-example"') && !html.includes('id="run-improve"'));
+});
+
+test("E1 addendum: a release vite build contains none of the fixture strings; a dev build does", async () => {
+  const release = await viteBuild(undefined);
+  for (const text of RELEASE_FORBIDDEN) assert.equal(release.split(text).length - 1, 0, `${text} in release dist`);
+  // Not vacuous: the same build with the dev flag carries the controls and the hook.
+  const dev = await viteBuild("1");
+  for (const text of ["Load labeled example", "Run Python improve", "__genAudioScrub", "run_fixture_improve"]) {
+    assert.ok(dev.includes(text), `${text} missing from the dev build`);
+  }
+});
+
+test("E1 addendum: release Tauri builds do not register the fixture commands", () => {
+  const lib = readFileSync(repo("apps/desktop/src-tauri/src/lib.rs"), "utf8");
+  const release = lib.match(/#\[cfg\(not\(debug_assertions\)\)\]\s*fn invoke_handler\(\)[^{]*\{([^}]*)\}/);
+  assert.ok(release, "a cfg(not(debug_assertions)) invoke_handler");
+  const registered = release[1].replace(/tauri::generate_handler!\[|\]/g, "").split(",").map((name) => name.trim()).filter(Boolean);
+  assert.deepEqual(registered.sort(), ["connector_statuses", "mcp_status"]);
+  for (const name of ["viewport_example", "run_fixture_improve"]) {
+    assert.ok(!registered.includes(name), `${name} registered in release`);
+    // The function itself is not compiled in release, so no release handler could name it.
+    assert.match(lib, new RegExp(`#\\[cfg\\(debug_assertions\\)\\]\\s*#\\[tauri::command\\]\\s*fn ${name}\\(`), `${name} is debug-only`);
+  }
+  assert.match(lib, /\.invoke_handler\(invoke_handler\(\)\)/);
+  // Release grants no fixture permission: build.rs reads only capabilities/default.json there.
+  const caps = readFileSync(repo("apps/desktop/src-tauri/capabilities/default.json"), "utf8");
+  assert.doesNotMatch(caps, /fixture|viewport-example/);
+  const build = readFileSync(repo("apps/desktop/src-tauri/build.rs"), "utf8");
+  assert.match(build, /const RELEASE_COMMANDS: &\[&str\] = &\["connector_statuses", "mcp_status"\];/);
+  assert.match(build, /CARGO_CFG_DEBUG_ASSERTIONS/);
+  assert.match(build, /capabilities_path_pattern\("\.\/capabilities\/default\.json"\)/);
+  assert.ok(!/generate_handler!\[[^\]]*run_fixture_improve/.test(lib.replace(/#\[cfg\(debug_assertions\)\][^]*?\n}\n/g, "")));
+});
+
+// E: status ok only for engines Generate can produce; every voice model with
+// no in-app adapter is offline_only or unavailable, with a reason.
+test("E: every engine with no in-app adapter is offline_only or unavailable", async () => {
+  const { VOICE_MODELS } = await import("../src/catalog.ts");
+  const assets: AssetEnvelope[] = load("apps/desktop/public/library/assets.json").assets;
+  for (const voice of VOICE_MODELS) {
+    const model = assets.find((asset) => asset.kind === "voice_model" && asset.legacy_id === voice.id);
+    assert.ok(model, voice.id);
+    const availability = model.body?.availability as { status?: string; reason?: string } | undefined;
+    if (voice.synthAdapter) {
+      assert.equal(model.status, "ok", voice.id);
+      continue;
+    }
+    assert.equal(model.status, "unavailable", `${voice.id}: Generate cannot produce it`);
+    assert.ok(availability?.status === "offline_only" || availability?.status === "unavailable", `${voice.id}: ${availability?.status}`);
+    assert.ok(availability?.reason, `${voice.id}: needs a reason`);
+    if (availability?.status === "offline_only") assert.equal(availability.reason, voice.offlineReason, `${voice.id}: TS and Rust catalogs agree`);
+  }
+  const kokoro = assets.find((asset) => asset.kind === "voice_model" && asset.legacy_id === "kokoro_dayour");
+  assert.equal((kokoro?.body?.availability as { status?: string }).status, "offline_only");
+  for (const clip of assets.filter((asset) => asset.kind === "audio_clip" && asset.provenance?.voice_model === kokoro?.uid)) {
+    assert.match(String(clip.provenance?.generator), /offline run/, String(clip.legacy_id));
+  }
+});
+
 // E4: the voice model cards' Cube tabs, from the real release catalog.
 test("E4: each voice model's Cube tab lists that engine's real rev 3 cubes", () => {
   const assets: AssetEnvelope[] = load("apps/desktop/public/library/assets.json").assets;
@@ -58,6 +157,7 @@ test("E4: each voice model's Cube tab lists that engine's real rev 3 cubes", () 
   assert.equal(onnx.state === "cubes" && onnx.offline, false);
   const dayour = modelCubes(assets, "kokoro_dayour");
   assert.deepEqual(titles(dayour), ["dayour/kokoro", "misaki\u2192kokoro"]);
+  assert.equal(dayour.state === "cubes" && dayour.offline, true, "dayour/kokoro's cubes are offline runs (E)");
   const vibe = modelCubes(assets, "vibevoice");
   assert.deepEqual(titles(vibe), ["Bitdot braille (VibeVoice-1.5B)"]);
   assert.equal(vibe.state === "cubes" && vibe.offline, true, "VibeVoice's bitdot cube is an offline run");
