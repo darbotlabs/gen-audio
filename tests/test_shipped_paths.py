@@ -299,7 +299,8 @@ PATH_KEYS = frozenset({
     "raw_output", "output", "log", "prompt_wav", "script", "python",
 })
 # `model` is a path unless it is a hub id (exactly org/name, no file
-# extension, nothing by that name in the repo): the generator's own rule.
+# extension, nothing by that name in the repo, and a model id the repo pins):
+# the generator's own rule.
 
 
 def _is_path_valued(key: str, value: str) -> bool:
@@ -735,9 +736,52 @@ def test_the_shipped_vibevoice_free_text_passes_the_writer(tmp_path, key):
     doc = json.loads((REPO / "apps" / "desktop" / "public" / "library" / "bitdot_braille_vibevoice.synth.json").read_text(encoding="utf-8"))
     if key == "model":
         assert doc[key] == "microsoft/VibeVoice-1.5B"
-    repo = tmp_path / "work" / "gen-audio"
-    repo.mkdir(parents=True)
+    repo, _ = _work(tmp_path)
     assert sidecar_payload({"engine": "vibevoice", key: doc[key]}, "PCM_16", {}, repo)[key] == doc[key]
+
+
+# Low 1 (0298102's rule): an org/name `model` that existed nowhere was a hub id
+# by being absent, so a missing local `models/VibeVoice-1.5B` was trusted as an
+# identifier. A hub id is now a model id the repo already pins (the Library
+# manifest's provenance `model`), for the shipped check, the writer and the
+# sync alike.
+LOW1_MISSING = "models/VibeVoice-1.5B"
+LOW1_PINNED = "microsoft/VibeVoice-1.5B"
+
+
+@pytest.mark.parametrize("where", ["shipped-check", "writer", "sync"])
+def test_a_missing_org_name_model_is_a_path_not_a_hub_id(tmp_path, where):
+    assert not (REPO / LOW1_MISSING).exists()
+    if where == "shipped-check":
+        assert _is_path_valued("model", LOW1_MISSING)
+        reason = _path_ok(LOW1_MISSING, {})
+        assert reason and "does not resolve" in reason, reason
+    elif where == "writer":
+        from gen_audio.cli.synth import sidecar_payload
+
+        repo, _ = _work(tmp_path)
+        with pytest.raises(ValueError, match=rf"\$\.model {re.escape(repr(LOW1_MISSING))} does not resolve"):
+            sidecar_payload({"engine": "vibevoice", "model": LOW1_MISSING}, "PCM_16", {}, repo)
+    else:
+        from gen_audio.library_manifest import label_work_dir_paths
+
+        reported = label_work_dir_paths({"engine": "vibevoice", "model": LOW1_MISSING}, REPO, None, {}, "x.synth.json")
+        assert any(f"$.model {LOW1_MISSING!r} does not resolve" in problem for problem in reported), reported
+
+
+@pytest.mark.parametrize("where", ["shipped-check", "writer", "sync"])
+def test_the_pinned_hub_id_stays_a_hub_id(tmp_path, where):
+    if where == "shipped-check":
+        assert not _is_path_valued("model", LOW1_PINNED)
+    elif where == "writer":
+        from gen_audio.cli.synth import sidecar_payload
+
+        repo, _ = _work(tmp_path)
+        assert sidecar_payload({"engine": "vibevoice", "model": LOW1_PINNED}, "PCM_16", {}, repo)["model"] == LOW1_PINNED
+    else:
+        from gen_audio.library_manifest import label_work_dir_paths
+
+        assert label_work_dir_paths({"engine": "vibevoice", "model": LOW1_PINNED}, REPO, None, {}, "x.synth.json") == []
 
 
 def test_a_library_outside_the_web_root_fails_closed_and_names_both_paths(tmp_path):

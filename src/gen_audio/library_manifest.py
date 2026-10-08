@@ -152,16 +152,36 @@ _HUB_ID = re.compile(r"[A-Za-z0-9][\w.-]*/[A-Za-z0-9][\w.-]*")
 _MODEL_FILE = re.compile(r"\.(onnx|bin|safetensors|pt|pth|ckpt|gguf|ggml|pkl|npz|npy|h5|tflite|json|wav|py|txt|log)$", re.IGNORECASE)
 
 
+def pinned_model_ids(repo_root) -> frozenset[str]:
+    """The model ids the repo already pins: each Library clip's provenance
+    `model` (``clips[].provenance.params.model``) in the committed
+    manifest.json under the app's web root, the one place they are written
+    (build_assets copies them into assets.json). No manifest, no pins."""
+    if repo_root is None:
+        return frozenset()
+    manifest = _public_dir(repo_root) / "library" / "manifest.json"
+    if not manifest.is_file():
+        return frozenset()
+    clips = json.loads(manifest.read_text(encoding="utf-8")).get("clips") or []
+    models = (((clip.get("provenance") or {}).get("params") or {}).get("model") for clip in clips if isinstance(clip, dict))
+    return frozenset(model for model in models if isinstance(model, str))
+
+
 def model_is_hub_id(value: str, roots=()) -> bool:
     """C1 Low 2: `model` is exempt from the path rule only as a hub id
     (`microsoft/VibeVoice-1.5B`): exactly org/name with no file extension,
-    and nothing by that name under any of ``roots`` (the repo root, the run's
-    work dir). Anything else (`models/VibeVoice-1.5B` when it is a directory
-    there, `VibeVoice-1.5B/model.safetensors`, an absolute or label form) is
-    a recorded path and follows the C1 rule."""
+    nothing by that name under any of ``roots`` (the repo root first, then
+    the run's work dir), and a model id the repo already pins
+    (:func:`pinned_model_ids` of the repo root). An org/name that exists
+    nowhere is not a hub id by being absent: `models/VibeVoice-1.5B` is a
+    missing local path until the repo pins it. Anything else
+    (`VibeVoice-1.5B/model.safetensors`, an absolute or label form) is a
+    recorded path and follows the C1 rule."""
     if not _HUB_ID.fullmatch(value) or _MODEL_FILE.search(value):
         return False
-    return not any((Path(root) / value).exists() for root in roots if root is not None)
+    if any((Path(root) / value).exists() for root in roots if root is not None):
+        return False
+    return value in pinned_model_ids(roots[0] if roots else None)
 
 
 def _path_part(value: str) -> tuple[str, str]:
