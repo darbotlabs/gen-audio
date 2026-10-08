@@ -27,12 +27,95 @@ pub struct Scratch {
     pub dir: PathBuf,
     issued: Mutex<HashSet<String>>,
     preexisting: HashSet<String>,
+    /// Set when this scratch created the directory. Dropped with the scratch,
+    /// including on panic, so the temp directory does not stay behind.
+    cleanup: Option<TempWorkDir>,
+}
+
+/// A directory under the temp root. Removed when this value drops, including
+/// when the owner panics.
+pub struct TempWorkDir {
+    path: PathBuf,
+}
+
+impl TempWorkDir {
+    fn create() -> std::io::Result<Self> {
+        let nanos = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|elapsed| elapsed.as_nanos())
+            .unwrap_or(0);
+        let dir = std::env::temp_dir().join(format!("gen-audio-{}-{nanos}", std::process::id()));
+        fs::create_dir_all(&dir)?;
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            fs::set_permissions(&dir, fs::Permissions::from_mode(0o700))?;
+        }
+        let path = dir.canonicalize()?;
+        // A listener thread can outlive every test and be killed without Drop.
+        // The exit hook removes any directory still registered.
+        remember_work_dir(&path);
+        Ok(Self { path })
+    }
+
+    pub fn path(&self) -> &Path {
+        &self.path
+    }
+}
+
+impl std::ops::Deref for TempWorkDir {
+    type Target = Path;
+    fn deref(&self) -> &Path {
+        &self.path
+    }
+}
+
+impl Drop for TempWorkDir {
+    fn drop(&mut self) {
+        forget_work_dir(&self.path);
+        let _ = fs::remove_dir_all(&self.path);
+    }
+}
+
+static LIVE_WORK_DIRS: Mutex<Vec<PathBuf>> = Mutex::new(Vec::new());
+
+fn remember_work_dir(path: &Path) {
+    #[cfg(unix)]
+    {
+        use std::sync::Once;
+        static ONCE: Once = Once::new();
+        ONCE.call_once(|| unsafe {
+            extern "C" {
+                fn atexit(cb: extern "C" fn()) -> i32;
+            }
+            extern "C" fn reap_work_dirs() {
+                let Ok(mut live) = LIVE_WORK_DIRS.lock() else {
+                    return;
+                };
+                for path in live.drain(..) {
+                    let _ = fs::remove_dir_all(path);
+                }
+            }
+            let _ = atexit(reap_work_dirs);
+        });
+    }
+    if let Ok(mut live) = LIVE_WORK_DIRS.lock() {
+        live.push(path.to_path_buf());
+    }
+}
+
+fn forget_work_dir(path: &Path) {
+    if let Ok(mut live) = LIVE_WORK_DIRS.lock() {
+        live.retain(|item| item != path);
+    }
 }
 
 impl Scratch {
     pub fn create() -> Result<Self, String> {
-        let dir = make_work_dir().map_err(|err| err.to_string())?;
-        Self::new(dir)
+        let owned = TempWorkDir::create().map_err(|err| err.to_string())?;
+        let mut scratch = Self::new(owned.path().to_path_buf())?;
+        scratch.cleanup = Some(owned);
+        Ok(scratch)
     }
 
     pub fn new(dir: PathBuf) -> Result<Self, String> {
@@ -55,6 +138,7 @@ impl Scratch {
             dir,
             issued: Mutex::new(HashSet::new()),
             preexisting,
+            cleanup: None,
         })
     }
 
@@ -127,19 +211,8 @@ fn reject_sensitive_scratch(dir: &Path) -> Result<(), String> {
     Ok(())
 }
 
-pub fn make_work_dir() -> std::io::Result<PathBuf> {
-    let nanos = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.as_nanos())
-        .unwrap_or(0);
-    let dir = std::env::temp_dir().join(format!("gen-audio-{}-{nanos}", std::process::id()));
-    fs::create_dir_all(&dir)?;
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        fs::set_permissions(&dir, fs::Permissions::from_mode(0o700))?;
-    }
-    Ok(dir.canonicalize()?)
+pub fn make_work_dir() -> std::io::Result<TempWorkDir> {
+    TempWorkDir::create()
 }
 
 // Tests point `mcp.addr` at their own file without mutating the process
@@ -456,6 +529,25 @@ mod tests {
     use super::*;
 
     #[test]
+    fn work_dir_is_removed_when_its_owner_drops_or_panics() {
+        let scratch = Scratch::create().unwrap();
+        let dir = scratch.dir.clone();
+        assert!(dir.exists());
+        drop(scratch);
+        assert!(!dir.exists(), "a dropped scratch left {dir:?}");
+
+        let probe = std::sync::Mutex::new(PathBuf::new());
+        let caught = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            let scratch = Scratch::create().unwrap();
+            *probe.lock().unwrap() = scratch.dir.clone();
+            panic!("owner panicked");
+        }));
+        assert!(caught.is_err());
+        let dir = probe.lock().unwrap().clone();
+        assert!(!dir.exists(), "a panicked scratch left {dir:?}");
+    }
+
+    #[test]
     fn rejects_traversal_and_absolute_paths() {
         let work = make_work_dir().unwrap();
         assert!(write_name(&work, "../x.wav").is_err());
@@ -499,13 +591,12 @@ mod tests {
             "a legacy file with a dead port is removed"
         );
         drop(_addr);
-        let scratch = Scratch::new(work.clone()).unwrap();
+        let scratch = Scratch::new(work.path().to_path_buf()).unwrap();
         fs::write(work.join("secret.json"), b"{\"token\":\"sekret\"}").unwrap();
         assert!(scratch.open_input("secret.json").is_err());
         scratch.prepare_output("out.wav").unwrap();
         fs::write(work.join("out.wav"), b"RIFFdemo").unwrap();
         assert!(scratch.open_input("out.wav").is_ok());
-        let _ = fs::remove_dir_all(&work);
     }
 
     #[cfg(unix)]

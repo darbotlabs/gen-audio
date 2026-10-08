@@ -903,7 +903,7 @@ fn begin_generate(
     personas: &[String],
     duration_s: f64,
     prompt: &str,
-) -> Result<(PathBuf, std::process::Child), String> {
+) -> Result<(paths::TempWorkDir, std::process::Child), String> {
     let repo = paths::find_repo_root()
         .ok_or_else(|| "failed to start: repository root was not found".to_string())?;
     let work = paths::make_work_dir().map_err(|err| format!("failed to start: {err}"))?;
@@ -923,7 +923,7 @@ fn start_generate(
     voice: String,
     normalized: Value,
     side: Value,
-    work: PathBuf,
+    work: paths::TempWorkDir,
     mut child: std::process::Child,
     duration_s: f64,
 ) -> Result<Value, (i32, String)> {
@@ -994,7 +994,7 @@ fn start_generate(
 fn complete_generate(
     job: String,
     voice: String,
-    work: PathBuf,
+    work: paths::TempWorkDir,
     child: std::process::Child,
     cancel: Arc<AtomicBool>,
     timeout: Duration,

@@ -831,6 +831,13 @@ mod tests {
                 .map(|d| d.as_nanos())
                 .unwrap_or(0)
         ));
+        struct RemoveDir(std::path::PathBuf);
+        impl Drop for RemoveDir {
+            fn drop(&mut self) {
+                let _ = std::fs::remove_dir_all(&self.0);
+            }
+        }
+        let _remove = RemoveDir(dir.clone());
         std::fs::create_dir_all(&dir).unwrap();
         let wav = dir.join("big.wav");
         std::fs::File::create(&wav).unwrap().set_len(64 * 1024 * 1024 + 1).unwrap();
@@ -844,7 +851,6 @@ mod tests {
                 gen_audio_core::library_store::set_root_override_for_test(Some(library));
             },
         );
-        let _ = std::fs::remove_dir_all(&dir);
         assert_eq!(status, 413, "{text}");
         let lines = logged_after(&peer, &before);
         assert_eq!(lines.len(), 1, "{lines:?} {text}");
