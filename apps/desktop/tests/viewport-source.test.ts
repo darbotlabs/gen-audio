@@ -8,6 +8,8 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { DEV_FIXTURE_CLAIMS, fixturesRequested, isDevFixture, selectViewport } from "../src/viewport-source.ts";
 import { modelCubes, type AssetEnvelope } from "../src/library-assets.ts";
+import { validateViewport } from "../src/validate.ts";
+import { Ajv2020 } from "ajv/dist/2020.js";
 
 const repo = (path: string) => fileURLToPath(new URL(`../../../${path}`, import.meta.url));
 const load = (path: string) => JSON.parse(readFileSync(repo(path), "utf8"));
@@ -208,5 +210,36 @@ test("Library cards' hand-written cube facts match the cube JSON", () => {
     if (inv) assert.equal(inv.value, doc.inv_hdr.toFixed(3), `${card.id} adaptive inv-HDR (not layer_score)`);
     const cube = facts.find((fact) => fact.title === "Cube");
     if (cube) assert.ok(cube.value.startsWith(`rev ${doc.cube_revision} \u00b7 ${doc.cube_shape_f_t[1]} time bins`), `${card.id} adaptive Cube: ${cube.value}`);
+  }
+});
+
+// AP-OPT-1: schemas allow only what the product renders. Nothing renders a
+// persona cube, so a voice_profile carrying spectrogram3d "library-cube-hook"
+// (with or without its cubeJsonUrl) is refused by validate.ts, by
+// voice_profile.schema.json and by card-viewport.schema.json alike.
+test("AP-OPT-1: spectrogram3d library-cube-hook on a voice_profile is rejected by validate.ts and both schemas", () => {
+  const hooked = [
+    { spectrogram3d: "library-cube-hook", cubeJsonUrl: "/library/library_kokoro_cube3d.json" },
+    { spectrogram3d: "library-cube-hook" },
+  ];
+  type Card = { kind: string; body: Record<string, unknown> };
+  const example = load("schemas/examples/viewport.example.json") as { cards: Card[] };
+  assert.equal(validateViewport(example, "allowed"), null, "baseline example passes validate.ts");
+  const ajv = new Ajv2020({ allErrors: true, strict: false, validateFormats: false });
+  ajv.addSchema(load("schemas/voice_profile.schema.json"));
+  const profileSchema = ajv.getSchema("https://darbotlabs.dev/gen-audio/voice-profile.schema.json");
+  assert.ok(profileSchema, "voice_profile.schema.json compiles");
+  const viewportSchema = ajv.compile(load("schemas/card-viewport.schema.json"));
+  assert.equal(viewportSchema(example), true, JSON.stringify(viewportSchema.errors));
+  const optimus = load("schemas/examples/voice_profile.optimus.json");
+  assert.equal(profileSchema(optimus), true, JSON.stringify(profileSchema.errors));
+  for (const hook of hooked) {
+    const doc = structuredClone(example);
+    const profile = doc.cards.find((card) => card.kind === "VoiceProfile");
+    assert.ok(profile, "example has a VoiceProfile card");
+    Object.assign(profile.body, hook);
+    assert.match(validateViewport(doc, "allowed") ?? "", /spectrogram3d/, `validate.ts accepts ${JSON.stringify(hook)}`);
+    assert.equal(viewportSchema(doc), false, `card-viewport.schema.json accepts ${JSON.stringify(hook)}`);
+    assert.equal(profileSchema({ ...optimus, ...hook }), false, `voice_profile.schema.json accepts ${JSON.stringify(hook)}`);
   }
 });

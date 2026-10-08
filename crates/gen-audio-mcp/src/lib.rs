@@ -19,6 +19,8 @@ use serde_json::{json, Value};
 pub struct Server {
     pub scratch: Scratch,
     pub repo: Option<PathBuf>,
+    /// HTTP rejections seen by this server's listener (served on /health).
+    pub rejections: std::sync::Arc<http::RejectionStats>,
 }
 
 impl Server {
@@ -32,6 +34,7 @@ impl Server {
         Self {
             scratch,
             repo: find_repo_root(),
+            rejections: Default::default(),
         }
     }
 
@@ -40,6 +43,7 @@ impl Server {
         Self {
             scratch: Scratch::create().expect("isolated work directory"),
             repo: find_repo_root(),
+            rejections: Default::default(),
         }
     }
 }

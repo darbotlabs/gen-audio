@@ -197,7 +197,9 @@ function validateBody(id: string, kind: string, body: Record<string, unknown>, f
       if (!boundedString(reference, 1, 80)) return `card ${id} ref is invalid`;
     }
     if (body.spectrogram2d !== "none") return `card ${id} spectrogram2d must be none (a persona has no audio)`;
-    if (body.spectrogram3d !== "none" && body.spectrogram3d !== "library-cube-hook" && body.spectrogram3d !== "fixture-cube") {
+    // AP-OPT-1: only what the product renders. Nothing renders a persona
+    // cube, so "library-cube-hook" (and its cubeJsonUrl) is refused.
+    if (body.spectrogram3d !== "none" && body.spectrogram3d !== "fixture-cube") {
       return `card ${id} spectrogram3d is not a known hook`;
     }
     if (body.notPodcast !== true) return `card ${id} must set notPodcast true`;
@@ -208,11 +210,7 @@ function validateBody(id: string, kind: string, body: Record<string, unknown>, f
     if (!boundedString(body.disclaimer, 12, 400) || !String(body.disclaimer).toLowerCase().includes("not")) {
       return `card ${id} disclaimer must say the profile is not a podcast render`;
     }
-    if (body.spectrogram3d === "library-cube-hook") {
-      if (!boundedString(body.cubeJsonUrl, 1, 260)) return `card ${id} cubeJsonUrl is required for a library cube hook`;
-    } else if (body.cubeJsonUrl) {
-      return `card ${id} cubeJsonUrl is only set for a library-cube-hook`;
-    }
+    if (body.cubeJsonUrl !== undefined) return `card ${id} must not link a cube on a voice profile`;
   }
   if (kind === "ConnectorStatus") {
     if (typeof body.connectorId !== "string" || !CONNECTOR_IDS.includes(body.connectorId as (typeof CONNECTOR_IDS)[number])) {

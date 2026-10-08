@@ -6,8 +6,8 @@ use gen_audio_core::asset::{
     bin_frames_inferred, check_media_path, glyph_from_uid, is_dev_fixture, mint, ms_from_frames, normalize_nfc, parse_uid, round_half_up, validate_envelope,
     validate_set, verify_media, MediaCheck, MediaDigest,
 };
-use gen_audio_core::asset_migrate::migrate_to_v1;
-use serde_json::{json, Value};
+use gen_audio_core::asset_migrate::{migrate_to_v1, verify_cube_lock};
+use serde_json::{json, Map, Value};
 
 const VECTORS: &str = include_str!("../../../schemas/asset-object/vectors/v1.json");
 const FIXTURES: &str = include_str!("../../../schemas/asset-object/vectors/fixtures_v1.json");
@@ -264,6 +264,75 @@ fn media_lock_pins_every_library_wav() {
         }
     }
     assert_eq!(wavs, lock.len(), "media.lock.json has entries no clip uses");
+}
+
+/// Every cube file (JSON + PNG) the library manifest names, with its on-disk
+/// facts; `edit` may rewrite one file's bytes first (a hand edit).
+fn cube_file_facts(edit: impl Fn(&str, Vec<u8>) -> Vec<u8>) -> Map<String, Value> {
+    let library = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../apps/desktop/public/library");
+    let manifest: Value = json(&std::fs::read_to_string(library.join("manifest.json")).unwrap());
+    let mut facts = Map::new();
+    for clip in manifest["clips"].as_array().unwrap() {
+        for key in ["jsonUrl", "pngUrl"] {
+            if let Some(path) = clip["cube"][key].as_str().and_then(|url| url.strip_prefix("/library/")) {
+                let bytes = edit(path, std::fs::read(library.join(path)).unwrap());
+                facts.insert(path.into(), serde_json::json!({"sha256": gen_audio_core::asset::sha256_hex(&bytes), "bytes": bytes.len()}));
+            }
+        }
+    }
+    facts
+}
+
+/// -FromLock verifies the cube bytes: the WAV-backed regen pins every cube
+/// file it made in media.lock.json "cubes", byte for byte.
+#[test]
+fn media_lock_pins_every_cube_file_byte_for_byte() {
+    let locked = json(MEDIA_LOCK)["cubes"].as_object().cloned().unwrap_or_default();
+    let actual = cube_file_facts(|_, bytes| bytes);
+    assert_eq!(actual.len(), 10, "5 cubes x (JSON, PNG)");
+    assert_eq!(verify_cube_lock(&locked, &actual), Ok(()));
+}
+
+/// The M8 repro (PR5_VERIFICATION v4, regen-gate-and-mutations-noWAV.log:80-93):
+/// a hand-edited layer_score in library_kokoro_cube3d.json passed
+/// build_assets --from-lock with exit 0. A mode that can't regenerate must at
+/// least verify what was generated.
+#[test]
+fn from_lock_refuses_a_hand_edited_layer_score() {
+    let locked = json(MEDIA_LOCK)["cubes"].as_object().cloned().unwrap_or_default();
+    let actual = cube_file_facts(|path, bytes| {
+        if path != "library_kokoro_cube3d.json" {
+            return bytes;
+        }
+        let text = String::from_utf8(bytes).unwrap();
+        assert!(text.contains("\"layer_score\": 0.2396223396062851"), "repro anchor moved");
+        text.replacen("\"layer_score\": 0.2396223396062851", "\"layer_score\": 0.2996223396062851", 1).into_bytes()
+    });
+    let errors = verify_cube_lock(&locked, &actual).unwrap_err();
+    assert_eq!(errors.len(), 1, "{errors:?}");
+    assert!(errors[0].contains("library_kokoro_cube3d.json"), "{errors:?}");
+}
+
+/// A cube the lock doesn't know and a lock entry no cube uses both fail;
+/// an empty lock is not a pass.
+#[test]
+fn cube_lock_check_fails_on_unlocked_and_stale_entries() {
+    let facts = |sha: &str| serde_json::json!({"sha256": sha.repeat(64), "bytes": 1});
+    let mut locked = Map::new();
+    locked.insert("a_cube3d.json".into(), facts("a"));
+    locked.insert("gone_cube3d.json".into(), facts("b"));
+    let mut actual = Map::new();
+    actual.insert("a_cube3d.json".into(), facts("a"));
+    actual.insert("new_cube3d.png".into(), facts("c"));
+    let errors = verify_cube_lock(&locked, &actual).unwrap_err();
+    assert_eq!(errors.len(), 2, "{errors:?}");
+    assert!(errors.iter().any(|e| e.contains("new_cube3d.png")) && errors.iter().any(|e| e.contains("gone_cube3d.json")), "{errors:?}");
+    assert!(verify_cube_lock(&Map::new(), &actual).is_err());
+    let mut bytes_only = actual.clone();
+    bytes_only.remove("new_cube3d.png");
+    bytes_only["a_cube3d.json"]["bytes"] = Value::from(2);
+    locked.remove("gone_cube3d.json");
+    assert!(verify_cube_lock(&locked, &bytes_only).is_err(), "a byte count change alone fails");
 }
 
 /// Item 2: a cube uid comes from the generator's content (generator_sha256,
