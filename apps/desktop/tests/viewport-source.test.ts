@@ -250,3 +250,30 @@ test("AP-OPT-1: spectrogram3d library-cube-hook or fixture-cube on a voice_profi
     assert.equal(profileSchema({ ...optimus, ...hook }), false, `voice_profile.schema.json accepts ${JSON.stringify(hook)}`);
   }
 });
+
+// L1 (Optimus): a card with no uid has no flip control (flipGlyph keys on the
+// card uid). The schema and BOTH validators (validate.ts and
+// crates/gen-audio-core/src/cards.rs) must reject what the UI cannot render.
+// Do not invent a glyph without a uid — identity is what flip state keys on.
+test("L1: a card without uid is rejected by validate.ts and card-viewport.schema.json", () => {
+  const negative = load("schemas/examples/viewport.missing-uid.negative.json");
+  const err = validateViewport(negative);
+  assert.match(err ?? "", /uid/, `validate.ts accepted a card with no uid: ${err}`);
+  assert.match(err ?? "", /engine-kokoro|required/, err ?? "");
+
+  const release = load("schemas/examples/viewport.release.json") as {
+    cards: Array<Record<string, unknown>>;
+  };
+  assert.equal(validateViewport(release), null, "shipped release deck still passes");
+  const dropped = structuredClone(release);
+  delete dropped.cards[0].uid;
+  assert.match(validateViewport(dropped) ?? "", /uid/, "dropping uid from a shipped card must fail");
+
+  const ajv = new Ajv2020({ allErrors: true, strict: false, validateFormats: false });
+  const viewportSchema = ajv.compile(load("schemas/card-viewport.schema.json"));
+  assert.equal(viewportSchema(negative), false, "schema must reject the negative deck");
+  assert.ok(
+    (viewportSchema.errors ?? []).some((e) => e.params && (e.params as { missingProperty?: string }).missingProperty === "uid"),
+    `schema errors should name missing uid: ${JSON.stringify(viewportSchema.errors)}`,
+  );
+});

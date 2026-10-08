@@ -1,0 +1,17 @@
+{
+  "version": "1.0",
+  "title": "Negative: card without uid",
+  "columns": 1,
+  "cards": [
+    {
+      "id": "engine-kokoro",
+      "kind": "EngineStatus",
+      "title": "kokoro-onnx",
+      "body": {
+        "engineId": "kokoro_onnx",
+        "status": "weights_absent",
+        "summary": "Negative-deck probe: this card deliberately omits uid so both validators must reject it."
+      }
+    }
+  ]
+}

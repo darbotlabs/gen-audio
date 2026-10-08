@@ -67,13 +67,14 @@ fn validate_card(card: &Value, seen: &mut std::collections::BTreeSet<String>) ->
         return Err(format!("card {id} has unknown kind {kind}"));
     }
     expect_string(obj.get("title"), "title", 1, 120)?;
-    if let Some(uid) = obj.get("uid") {
-        // Asset object model v1: the card uid sits alongside the legacy id.
-        let uid = uid.as_str().ok_or_else(|| format!("card {id} uid must be a string"))?;
-        match crate::asset::parse_uid(uid) {
-            Ok(("card", _)) => {}
-            _ => return Err(format!("card {id} uid must be ga:card:<26 base32>")),
-        }
+    // L1: uid is required. The flip glyph keys on it; no glyph without a uid.
+    let uid = obj
+        .get("uid")
+        .and_then(Value::as_str)
+        .ok_or_else(|| format!("card {id} uid is required"))?;
+    match crate::asset::parse_uid(uid) {
+        Ok(("card", _)) => {}
+        _ => return Err(format!("card {id} uid must be ga:card:<26 base32>")),
     }
     if let Some(span) = obj.get("span") {
         let n = span.as_u64().ok_or("span must be an integer")?;
@@ -416,5 +417,23 @@ mod tests {
         assert!(validate_viewport(&doc).is_err());
         doc["cards"][0]["uid"] = Value::String("ga:card:not-base32".into());
         assert!(validate_viewport(&doc).is_err());
+    }
+
+    /// L1 (Optimus): a card with no uid has no flip control, so the validator
+    /// must reject what the UI cannot render. Identity is what flip state keys on.
+    #[test]
+    fn card_uid_is_required() {
+        let negative: Value =
+            serde_json::from_str(include_str!("../../../schemas/examples/viewport.missing-uid.negative.json")).unwrap();
+        let err = validate_viewport(&negative).expect_err("deck with a card missing uid must fail");
+        assert!(err.contains("uid"), "{err}");
+        assert!(err.contains("engine-kokoro") || err.contains("required"), "{err}");
+
+        let mut release: Value =
+            serde_json::from_str(include_str!("../../../schemas/examples/viewport.release.json")).unwrap();
+        assert!(validate_viewport(&release).is_ok());
+        release["cards"][0].as_object_mut().unwrap().remove("uid");
+        let err = validate_viewport(&release).expect_err("dropping uid from a shipped card must fail");
+        assert!(err.contains("uid"), "{err}");
     }
 }
