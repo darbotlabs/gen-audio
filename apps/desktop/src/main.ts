@@ -17,6 +17,8 @@ import { bindFloatingPlayback, pauseClip, playClip, releaseAllSeekBlobs, release
 import {
   assetResolveFailure,
   controlPlayOrigin,
+  controlBackoffMs,
+  controlDisconnectedNotice,
   fetchLibraryBlob,
   McpFailureCounter,
   mcpOriginFromStatus,
@@ -24,6 +26,7 @@ import {
   noteMcpLookupError,
   postMcp,
   seekReportControl,
+  surfaceUiError,
   userPlayControl,
 } from "./play-control";
 import { selectViewport } from "./viewport-source";
@@ -102,6 +105,11 @@ let activePreview: ProfilePreview = profilePreview(selection);
 let controlCursor = 0;
 const seenControl = new Set<number>();
 let mcpOrigin = "http://127.0.0.1:8765";
+let controlAttempt = 0;
+
+function failUi(error: unknown, where: string): void {
+  status.textContent = surfaceUiError(error, where);
+}
 
 export async function discoverMcp(): Promise<string> {
   try {
@@ -144,14 +152,18 @@ function show(documentIn: unknown): void {
   bindRename();
   void harvestLibrary();
   bindFloatingPlayback();
-  void loadLibraryCatalog(loadDevAssets()).then((catalog) => {
-    libraryCatalog = catalog;
-    decorateLibraryTiles(board, catalog, (uid) => glyphBadge(uid, { role: "clip", onCopy: announceCopy }));
-    fillModelCubes(board, catalog, { openCube: (url, source) => void openCube(url, source), selectTile });
-    syncCubeChrome();
-  });
+  void loadLibraryCatalog(loadDevAssets())
+    .then((catalog) => {
+      libraryCatalog = catalog;
+      decorateLibraryTiles(board, catalog, (uid) => glyphBadge(uid, { role: "clip", onCopy: announceCopy }));
+      fillModelCubes(board, catalog, { openCube: (url, source) => void openCube(url, source), selectTile });
+      syncCubeChrome();
+    })
+    .catch((error: unknown) => failUi(error, "library catalog"));
   const n = slides(board).length;
-  status.textContent = `${doc.cards.length} cards · ${n} snap slides · spectrogram follows side pane`;
+  if (status.dataset.control !== "disconnected") {
+    status.textContent = `${doc.cards.length} cards · ${n} snap slides · spectrogram follows side pane`;
+  }
   requestAnimationFrame(() => goToSlide(board, 0));
 }
 
@@ -350,19 +362,23 @@ function bindCubeCanvas(): void {
     }
     const request = userPlayControl(cubeClipId);
     void mcpCall(request.name, request.args);
-    void playClip(cubeClipId, "user").then((result) => {
-      status.textContent = result === "playing" ? `Cube live clock follows ${cubeClipId}` : result;
-      syncCubeChrome();
-    });
+    void playClip(cubeClipId, "user")
+      .then((result) => {
+        status.textContent = result === "playing" ? `Cube live clock follows ${cubeClipId}` : result;
+        syncCubeChrome();
+      })
+      .catch((error: unknown) => failUi(error, "play"));
   });
   document.querySelector("#cube-scrub")?.addEventListener("input", (event) => {
     const input = event.target as HTMLInputElement;
     const fraction = Number(input.value) / 1000;
     // ONE clock: scrubber seeks library audio AND slices cube layers.
     setCubeScrub(fraction);
-    void (cubeClipId ? seekClipFraction(cubeClipId, fraction) : seekActiveFraction(fraction)).then((seeked) => {
-      if (seeked !== "no player" && seeked !== "superseded") status.textContent = `Shared clock ${Math.round(fraction * 100)}% \u00b7 ${seeked}`;
-    });
+    void (cubeClipId ? seekClipFraction(cubeClipId, fraction) : seekActiveFraction(fraction))
+      .then((seeked) => {
+        if (seeked !== "no player" && seeked !== "superseded") status.textContent = `Shared clock ${Math.round(fraction * 100)}% \u00b7 ${seeked}`;
+      })
+      .catch((error: unknown) => failUi(error, "seek"));
   });
   onCubeClock((fraction) => {
     const fp = document.querySelector<HTMLInputElement>("#fp-scrub");
@@ -414,17 +430,19 @@ function bindRename(): void {
       const semantic = tile.querySelector<HTMLInputElement>("[data-field='semantic']")?.value ?? "";
       const face = tile.querySelector<HTMLInputElement>("[data-field='face']")?.value ?? "";
       applyClipNames(tile, semantic, face);
-      void mcpCall("library_harvest", { clipId: id, personaId, apply: true }).then((payload) => {
-        const body = toolBody(payload);
-        if (!body) {
-          status.textContent = `Names stay on ${id}. MCP is not listening, so the profile ref was not written.`;
-          return;
-        }
-        status.textContent = `Attached clip:${id} to persona ${personaId}. Audio was not decoded. synthesizedSpeech is false.`;
-        if (body.profile && typeof body.profile === "object") {
-          applyFlipcard(body.profile as Record<string, unknown>);
-        }
-      });
+      void mcpCall("library_harvest", { clipId: id, personaId, apply: true })
+        .then((payload) => {
+          const body = toolBody(payload);
+          if (!body) {
+            status.textContent = `Names stay on ${id}. MCP is not listening, so the profile ref was not written.`;
+            return;
+          }
+          status.textContent = `Attached clip:${id} to persona ${personaId}. Audio was not decoded. synthesizedSpeech is false.`;
+          if (body.profile && typeof body.profile === "object") {
+            applyFlipcard(body.profile as Record<string, unknown>);
+          }
+        })
+        .catch((error: unknown) => failUi(error, "library harvest"));
     });
   });
 }
@@ -501,7 +519,8 @@ async function refreshConnectors(doc: ViewportDocument): Promise<ViewportDocumen
       card.body.detail = report.detail;
     }
     return next;
-  } catch {
+  } catch (error) {
+    failUi(error, "connector status");
     return doc;
   }
 }
@@ -520,7 +539,10 @@ if (import.meta.env.VITE_GEN_AUDIO_FIXTURES === "1") {
   showExample.id = "show-example";
   showExample.textContent = "Load labeled example";
   showExample.addEventListener("click", () => {
-    void loadShippedDocument().then(refreshConnectors).then(show);
+    void loadShippedDocument()
+      .then(refreshConnectors)
+      .then(show)
+      .catch((error: unknown) => failUi(error, "viewport"));
   });
   const runImprove = document.createElement("button");
   runImprove.type = "button";
@@ -611,7 +633,8 @@ function toolBody(payload: unknown): Record<string, unknown> | null {
   try {
     const body = JSON.parse(text) as unknown;
     return body && typeof body === "object" ? (body as Record<string, unknown>) : null;
-  } catch {
+  } catch (error) {
+    failUi(error, "tool result");
     return null;
   }
 }
@@ -662,7 +685,8 @@ function noteControlSeq(payload: unknown): void {
     if (typeof body.seq === "number") seenControl.add(body.seq);
     if (typeof body.sidepane?.seq === "number") seenControl.add(body.sidepane.seq);
   } catch {
-    /* tool text is not a control envelope */
+    // Tool text is often a generate result, not a control envelope. A parse
+    // failure here means "no seq to remember", which is not a stream error.
   }
 }
 
@@ -696,26 +720,34 @@ function applyControl(event: { seq?: number; op?: string; args?: Record<string, 
     bindCubeToPlayingClip(args.uid);
   } else if (event.op === "play" && typeof args.playing === "string") {
     const origin = args.origin === "user" ? "user" : "auto";
-    void playClip(args.playing, origin).then((result) => {
-      status.textContent = result === "playing" ? `Playing ${args.playing}` : result;
-      syncCubeChrome();
-    });
+    void playClip(args.playing, origin)
+      .then((result) => {
+        status.textContent = result === "playing" ? `Playing ${args.playing}` : result;
+        syncCubeChrome();
+      })
+      .catch((error: unknown) => failUi(error, "play"));
   } else if (event.op === "playback" && typeof args.tileId === "string") {
     const action = String(args.action ?? "");
-    if (action === "play") void playClip(args.tileId, controlPlayOrigin(args)).then((result) => {
-      status.textContent = result === "playing" ? `Playing ${args.tileId}` : result;
-    });
+    if (action === "play") {
+      void playClip(args.tileId, controlPlayOrigin(args))
+        .then((result) => {
+          status.textContent = result === "playing" ? `Playing ${args.tileId}` : result;
+        })
+        .catch((error: unknown) => failUi(error, "play"));
+    }
     else if (action === "pause") status.textContent = pauseClip(args.tileId);
     else if (action === "seek") {
       const requested = Number(args.seconds);
-      void seekClipOutcome(args.tileId, requested).then((landing) => {
-        if (landing.status !== "superseded") status.textContent = landing.status;
-        // Tell MCP where it landed: ui_playback answers the agent with {requested_t, landed_t, ok, reason}.
-        if (typeof event.seq === "number") {
-          const report = seekReportControl(event.seq, requested, landing);
-          void mcpCall(report.name, report.args);
-        }
-      });
+      void seekClipOutcome(args.tileId, requested)
+        .then((landing) => {
+          if (landing.status !== "superseded") status.textContent = landing.status;
+          // Tell MCP where it landed: ui_playback answers the agent with {requested_t, landed_t, ok, reason}.
+          if (typeof event.seq === "number") {
+            const report = seekReportControl(event.seq, requested, landing);
+            void mcpCall(report.name, report.args);
+          }
+        })
+        .catch((error: unknown) => failUi(error, "seek"));
     }
   } else if (event.op === "sidepane") {
     applySidepane({
@@ -906,36 +938,62 @@ async function resyncViewport(): Promise<void> {
   }
 }
 
-void loadShippedDocument().then(refreshConnectors).then(show);
+void loadShippedDocument()
+  .then(refreshConnectors)
+  .then(show)
+  .catch((error: unknown) => failUi(error, "viewport"));
+
+function markControlDown(): void {
+  status.dataset.control = "disconnected";
+  status.textContent = controlDisconnectedNotice(controlAttempt);
+  const wait = controlBackoffMs(controlAttempt);
+  controlAttempt += 1;
+  window.setTimeout(connectControl, wait);
+}
+
+function markControlUp(): void {
+  controlAttempt = 0;
+  if (status.dataset.control === "disconnected") delete status.dataset.control;
+}
 
 function connectControl(): void {
-  void mcpReady.then((origin) => {
-    let source: EventSource;
-    try {
-      source = new EventSource(`${origin}/control/stream?after=${controlCursor}&wait=2000`);
-    } catch {
-      return;
-    }
-    source.addEventListener("gap", () => {
-      void resyncViewport();
-    });
-    source.addEventListener("control", (event) => {
+  void mcpReady
+    .then((origin) => {
+      let source: EventSource;
       try {
-        const parsed = JSON.parse((event as MessageEvent).data) as { seq?: number; op?: string; args?: Record<string, unknown> };
-        if (typeof parsed.seq === "number" && parsed.seq > controlCursor + 1) {
-          void resyncViewport();
-          return;
-        }
-        applyControl(parsed);
-      } catch {
-        /* ignore malformed events */
+        source = new EventSource(`${origin}/control/stream?after=${controlCursor}&wait=2000`);
+      } catch (error) {
+        failUi(error, "control stream");
+        markControlDown();
+        return;
       }
+      source.onopen = () => markControlUp();
+      source.addEventListener("gap", () => {
+        void resyncViewport();
+      });
+      source.addEventListener("control", (event) => {
+        try {
+          const parsed = JSON.parse((event as MessageEvent).data) as { seq?: number; op?: string; args?: Record<string, unknown> };
+          if (typeof parsed.seq === "number" && parsed.seq > controlCursor + 1) {
+            void resyncViewport();
+            return;
+          }
+          applyControl(parsed);
+        } catch (error) {
+          // Keep the stream. One bad frame must not look like a disconnect.
+          mcpFailures.note("control_stream", "malformed");
+          failUi(error, "control event");
+        }
+      });
+      source.onerror = () => {
+        source.close();
+        markControlDown();
+      };
+    })
+    .catch((error: unknown) => {
+      failUi(error, "control stream");
+      markControlDown();
     });
-    source.onerror = () => {
-      source.close();
-      window.setTimeout(connectControl, 50);
-    };
-  });
 }
 // Test hook (dev/test builds only): scrubs the cube and ONLY the clip the cube is bound to.
 if (import.meta.env.VITE_GEN_AUDIO_FIXTURES === "1") {

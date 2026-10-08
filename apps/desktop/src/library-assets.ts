@@ -122,8 +122,17 @@ export function mediaUrl(asset: AssetEnvelope, role: string): string | null {
 }
 
 /** `extraAssets`: dev/test-only envelopes (VITE_GEN_AUDIO_FIXTURES=1); release passes none. */
+function loggedEmpty<T>(error: unknown, where: string, empty: T): T {
+  const detail = error instanceof Error ? `${error.name}: ${error.message}` : String(error);
+  console.warn(`gen-audio: ${where}: ${detail}`);
+  return empty;
+}
+
 export function loadLibraryCatalog(extraAssets: Promise<unknown[]> = Promise.resolve([])): Promise<LibraryCatalog | null> {
-  pending ??= Promise.all([fetch("/library/assets.json").then((response) => (response.ok ? response.json() : null)), extraAssets.catch(() => [])])
+  pending ??= Promise.all([
+    fetch("/library/assets.json").then((response) => (response.ok ? response.json() : null)),
+    extraAssets.catch((error: unknown) => loggedEmpty(error, "dev assets", [] as unknown[])),
+  ])
     .then(([doc, extra]: [{ assets?: unknown[] } | null, unknown[]]) => {
       if (!doc || !Array.isArray(doc.assets)) return null;
       const assets = [...doc.assets, ...extra].filter(safe);
@@ -137,6 +146,6 @@ export function loadLibraryCatalog(extraAssets: Promise<unknown[]> = Promise.res
         cubeForUrl: (url) => assets.find((asset) => asset.kind === "cube_ihdr" && mediaUrl(asset, "cube_json") === url) ?? null,
       } satisfies LibraryCatalog;
     })
-    .catch(() => null);
+    .catch((error: unknown) => loggedEmpty(error, "library catalog", null));
   return pending;
 }

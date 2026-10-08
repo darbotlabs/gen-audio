@@ -151,7 +151,12 @@ fn boot_mcp() -> (McpRuntime, Option<Child>) {
                 let _ = child.kill();
                 let _ = child.wait();
             }
-            Err(_) => {}
+            Err(err) => {
+                // The in-process listener still starts below. The sidecar
+                // error has to be visible or a missing binary looks like a
+                // successful boot.
+                eprintln!("gen-audio: MCP sidecar failed to start: {err}");
+            }
         }
     }
     match bind_loopback_range(&addr) {

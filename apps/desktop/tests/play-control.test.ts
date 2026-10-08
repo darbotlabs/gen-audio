@@ -7,7 +7,7 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import type { AddressInfo } from "node:net";
-import { controlPlayOrigin, McpFailureCounter, mcpRequestBody, postMcp, seekReportControl, userPlayControl } from "../src/play-control.ts";
+import { controlBackoffMs, controlDisconnectedNotice, controlPlayOrigin, McpFailureCounter, mcpRequestBody, postMcp, seekReportControl, surfaceUiError, userPlayControl } from "../src/play-control.ts";
 import { Seeker } from "../src/seek.ts";
 
 const repo = (path: string) => fileURLToPath(new URL(`../../../${path}`, import.meta.url));
@@ -204,4 +204,19 @@ test("csp: connect-src is exactly self, Tauri IPC and the MCP origin mcpCall pos
   // Only connect-src changed.
   assert.deepEqual(directives.get("default-src"), ["'self'"]);
   assert.deepEqual(directives.get("script-src"), ["'self'"]);
+});
+
+test("control reconnect backs off and the disconnected state is visible", () => {
+  assert.equal(controlBackoffMs(0), 250);
+  assert.equal(controlBackoffMs(1), 500);
+  assert.equal(controlBackoffMs(2), 1000);
+  assert.equal(controlBackoffMs(6), 8000);
+  assert.match(controlDisconnectedNotice(0), /disconnected/);
+  assert.match(controlDisconnectedNotice(0), /250ms/);
+  assert.match(controlDisconnectedNotice(2), /1s/);
+});
+
+test("a surfaced UI error names where it happened and the error", () => {
+  const message = surfaceUiError(new TypeError("offline"), "play");
+  assert.match(message, /^play: TypeError: offline$/);
 });

@@ -159,8 +159,9 @@ function makeEl(tag = "div"): El {
   }) as El;
 }
 
-function installDom(): { root: El; byId: Map<string, El> } {
+function installDom(): { root: El; byId: Map<string, El>; timers: number[] } {
   const byId = new Map<string, El>();
+  const timers: number[] = [];
   const body = makeEl("body");
   const root = makeEl("html");
   root.append(body);
@@ -211,7 +212,11 @@ function installDom(): { root: El; byId: Map<string, El> } {
       return 1;
     },
     cancelAnimationFrame() {},
-    setTimeout,
+    setTimeout(fn: () => void, ms?: number) {
+      timers.push(ms ?? 0);
+      void fn;
+      return 0;
+    },
     clearTimeout,
     setInterval() {
       return 0;
@@ -230,11 +235,11 @@ function installDom(): { root: El; byId: Map<string, El> } {
     },
     cancelAnimationFrame() {},
   });
-  return { root, byId };
+  return { root, byId, timers };
 }
 
 test("main.ts counts a failed lookup, a failed library fetch, and a dropped resolve", async () => {
-  const { root, byId } = installDom();
+  const { root, byId, timers } = installDom();
   const calls: string[] = [];
   globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input);
@@ -264,6 +269,10 @@ test("main.ts counts a failed lookup, a failed library fetch, and a dropped reso
       insertGeneratedTile: (uid: string, args: Record<string, unknown>) => Promise<void>;
     };
     await new Promise((resolve) => setTimeout(resolve, 50));
+    const bootStatus = byId.get("status");
+    assert.equal(bootStatus?.dataset.control, "disconnected");
+    assert.match(bootStatus?.textContent ?? "", /disconnected/i);
+    assert.equal(timers[0], 250, "the first retry waits 250ms, not a fixed 50ms");
     const booted = JSON.parse(root.dataset.mcpFailures ?? "{}") as Record<string, number>;
     assert.equal(booted["mcp_status:TypeError"], 1, "boot lookup must count the tauri failure");
 

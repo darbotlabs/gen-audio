@@ -203,3 +203,24 @@ export function seekReportControl(
   const reason = landing.status === "superseded" ? "superseded by a newer seek" : landing.status;
   return { name: "ui_seek_report", args: { seq, requested_t: requested, landed_t: landedT, ok: landing.ok, reason: reason.slice(0, 240) } };
 }
+
+/** Delay before the next control-stream connect. 250ms, then double, capped at 8s. */
+export function controlBackoffMs(attempt: number): number {
+  const step = Math.min(Math.max(0, attempt), 5);
+  return 250 * 2 ** step;
+}
+
+/** Status line while the control stream is down. The window shows this instead of retrying silently. */
+export function controlDisconnectedNotice(attempt: number): string {
+  const wait = controlBackoffMs(attempt);
+  const when = wait >= 1000 ? `${wait / 1000}s` : `${wait}ms`;
+  return `Control stream disconnected. Retrying in ${when}.`;
+}
+
+/** One sentence for a failure the window used to drop. Also written to the console. */
+export function surfaceUiError(error: unknown, where: string): string {
+  const detail = error instanceof Error ? `${error.name}: ${error.message}` : String(error);
+  const message = `${where}: ${detail}`;
+  console.warn(`gen-audio: ${message}`);
+  return message;
+}
