@@ -165,6 +165,24 @@ pub fn write_mcp_addr(addr: &str) -> Result<(), String> {
     fs::write(&path, format!("{addr}\n{}\n", std::process::id())).map_err(|err| err.to_string())
 }
 
+/// The one line written when `mcp.addr` cannot be saved.
+pub fn mcp_addr_write_failure_line(err: &str) -> String {
+    format!("gen-audio-mcp: mcp.addr write failed: {err}")
+}
+
+/// Write `mcp.addr` and log when it fails. Callers must use this instead of
+/// discarding `write_mcp_addr`: a silent failure leaves the desktop and the
+/// listener disagreeing about the port.
+pub fn publish_mcp_addr(addr: &str) -> Result<(), String> {
+    match write_mcp_addr(addr) {
+        Ok(()) => Ok(()),
+        Err(err) => {
+            eprintln!("{}", mcp_addr_write_failure_line(&err));
+            Err(err)
+        }
+    }
+}
+
 /// Remove `mcp.addr` when this process receives SIGINT or SIGTERM.
 /// [`reap_stale_mcp_addr`] still drops a file whose pid is already dead,
 /// which covers SIGKILL and a handler that never ran.
@@ -526,5 +544,30 @@ mod tests {
         }
         write_mcp_addr("127.0.0.1:9").expect("write mcp.addr");
         std::thread::sleep(std::time::Duration::from_secs(30));
+    }
+
+    #[test]
+    fn mcp_addr_write_error_is_logged() {
+        let blocker = std::env::temp_dir().join(format!(
+            "gen-audio-mcp-addr-blocker-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_nanos())
+                .unwrap_or(0)
+        ));
+        fs::write(&blocker, b"not-a-directory").unwrap();
+        let target = blocker.join("mcp.addr");
+        let saved = std::env::var("GEN_AUDIO_MCP_ADDR_FILE").ok();
+        std::env::set_var("GEN_AUDIO_MCP_ADDR_FILE", &target);
+        let err = publish_mcp_addr("127.0.0.1:9").expect_err("parent is a file, not a directory");
+        let line = mcp_addr_write_failure_line(&err);
+        assert!(line.starts_with("gen-audio-mcp: mcp.addr write failed:"), "{line}");
+        assert!(line.contains(&err), "{line}");
+        match saved {
+            Some(value) => std::env::set_var("GEN_AUDIO_MCP_ADDR_FILE", value),
+            None => std::env::remove_var("GEN_AUDIO_MCP_ADDR_FILE"),
+        }
+        let _ = fs::remove_file(&blocker);
     }
 }

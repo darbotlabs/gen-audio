@@ -30,7 +30,7 @@ pub fn serve(addr: &str) -> std::io::Result<()> {
     gen_audio_core::paths::reap_stale_mcp_addr();
     let listener = bind_listener(addr)?;
     if let Ok(bound) = listener.local_addr() {
-        let _ = gen_audio_core::paths::write_mcp_addr(&bound.to_string());
+        let _ = gen_audio_core::paths::publish_mcp_addr(&bound.to_string());
     }
     accept_loop(listener);
     Ok(())

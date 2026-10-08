@@ -128,7 +128,7 @@ fn boot_mcp() -> (McpRuntime, Option<Child>) {
     gen_audio_core::paths::reap_stale_mcp_addr();
     let addr = preferred_addr();
     if http::initialize_handshake(&addr).is_ok() {
-        let _ = gen_audio_core::paths::write_mcp_addr(&addr);
+        let _ = gen_audio_core::paths::publish_mcp_addr(&addr);
         return (
             runtime(addr, true, "initialize ok (already listening)", "existing"),
             None,
@@ -140,7 +140,7 @@ fn boot_mcp() -> (McpRuntime, Option<Child>) {
         match spawn_hidden(cmd) {
             Ok(child) => {
                 if wait_for_handshake(&addr) {
-                    let _ = gen_audio_core::paths::write_mcp_addr(&addr);
+                    let _ = gen_audio_core::paths::publish_mcp_addr(&addr);
                     register_login_autostart();
                     return (
                         runtime(addr, true, "initialize ok (sidecar)", "sidecar"),
@@ -157,7 +157,7 @@ fn boot_mcp() -> (McpRuntime, Option<Child>) {
     match bind_loopback_range(&addr) {
         Ok(bound) => {
             let text = bound.to_string();
-            let _ = gen_audio_core::paths::write_mcp_addr(&text);
+            let _ = gen_audio_core::paths::publish_mcp_addr(&text);
             let detail = if text == addr {
                 "initialize ok (in-process)".to_string()
             } else {
