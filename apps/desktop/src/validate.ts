@@ -177,8 +177,9 @@ function validateBody(id: string, kind: string, body: Record<string, unknown>): 
     }
     if (body.spectrogram2d !== "none") return `card ${id} spectrogram2d must be none (a persona has no audio)`;
     // AP-OPT-1: only what the product renders. Nothing renders a persona
-    // cube, so "library-cube-hook" (and its cubeJsonUrl) is refused.
-    if (body.spectrogram3d !== "none" && body.spectrogram3d !== "fixture-cube") {
+    // cube, so "library-cube-hook" (and its cubeJsonUrl) and "fixture-cube"
+    // are refused: "none" is the only value.
+    if (body.spectrogram3d !== "none") {
       return `card ${id} spectrogram3d is not a known hook`;
     }
     if (body.notPodcast !== true) return `card ${id} must set notPodcast true`;
