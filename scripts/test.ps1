@@ -3,6 +3,12 @@
 Run every Gen-Audio check from one entry point and exit non-zero on any failure.
 
 .DESCRIPTION
+Preflight (always first, cannot be skipped): git ls-files --eol. A tracked
+file whose .gitattributes rule says eol=lf but whose working copy has CRLF
+(or mixed) line endings fails the run before any step: byte-equality tests
+and media sha256 would otherwise fail later for a checkout reason. It lists
+the files and prints the fix; it never rewrites anything itself.
+
 Steps, in order (skip any with -Skip):
   Wavs    -WithWav only: every WAV in schemas/asset-object/media.lock.json is
           staged in apps/desktop/public/library and its sha256 equals the lock.
@@ -89,6 +95,7 @@ if ($script:fromLock -and $script:withWav) { throw '-FromLock and -WithWav exclu
 $logDir = Join-Path $root ("artifacts\test-logs\{0}-{1}" -f (Get-Date -Format 'yyyyMMdd-HHmmss'), ($Tag -replace '[^A-Za-z0-9_.-]', '_'))
 New-Item -ItemType Directory -Force -Path $logDir | Out-Null
 $results = New-Object System.Collections.Generic.List[object]
+$script:skipDetail = '-Skip'
 
 function Add-LogLine {
     # Append lines to a log as UTF-8 and pass them on. (Tee-Object -Append
@@ -111,6 +118,25 @@ function Invoke-Logged {
     return $LASTEXITCODE
 }
 
+function Get-EolMismatch {
+    # `git ls-files --eol` rows ("i/lf  w/crlf  attr/text eol=lf<TAB>path")
+    # whose attribute says eol=lf while the working copy is CRLF or mixed.
+    # Typical cause: core.autocrlf=true and a checkout made before
+    # .gitattributes existed. Emits objects with Path and Index (lf/crlf/...).
+    param([Parameter(Mandatory = $true)][string]$Root)
+    $rows = @(& git -C $Root -c core.quotepath=off ls-files --eol 2>&1)
+    if ($LASTEXITCODE -ne 0) { throw "git ls-files --eol failed: $($rows -join ' ')" }
+    foreach ($row in $rows) {
+        $parts = "$row" -split "`t", 2
+        if ($parts.Count -ne 2) { continue }
+        $info = $parts[0]
+        if ($info -match '\bw/(crlf|mixed)\b' -and $info -match 'attr/.*\beol=lf\b') {
+            $index = if ($info -match '\bi/(\S+)') { $Matches[1] } else { '' }
+            [pscustomobject]@{ Path = $parts[1]; Index = $index }
+        }
+    }
+}
+
 function Get-PythonExe {
     # -Python, then GEN_AUDIO_PYTHON, then python / python3 on PATH.
     if ($script:pythonExe) { return $script:pythonExe }
@@ -122,7 +148,7 @@ function Get-PythonExe {
 function Invoke-Step {
     param([Parameter(Mandatory = $true)][string]$Name, [Parameter(Mandatory = $true)][scriptblock]$Body)
     if ($script:skipSteps -contains $Name) {
-        $results.Add([pscustomobject]@{ Step = $Name; Result = 'SKIP'; Seconds = 0; Detail = '-Skip' })
+        $results.Add([pscustomobject]@{ Step = $Name; Result = 'SKIP'; Seconds = 0; Detail = $script:skipDetail })
         return
     }
     Write-Step "== $Name"
@@ -227,6 +253,30 @@ function Invoke-SprawlGate {
 
 Write-Step "scripts/test.ps1 -Tag $Tag (PowerShell $($PSVersionTable.PSVersion)); logs in $logDir"
 if (Test-IsWindowsHost) { Import-VsDevEnv }
+
+Invoke-Step 'Eol' {
+    param($log)
+    $bad = @(Get-EolMismatch -Root $root)
+    if ($bad.Count -eq 0) { return 'git ls-files --eol: no CRLF working copies under an eol=lf rule' }
+    $lines = @("EOL_PREFLIGHT FAIL: $($bad.Count) tracked file(s) have eol=lf in .gitattributes but CRLF in the working copy:")
+    $lines += @($bad | ForEach-Object { "  EOL_CRLF $($_.Path) (index $($_.Index))" })
+    $lines += 'Fix it yourself (this check never rewrites files). Commit or stash your changes first.'
+    if (@($bad | Where-Object { $_.Index -ne 'lf' }).Count -gt 0) {
+        $lines += '  The index holds CRLF too: git add --renormalize . ; then commit the result.'
+    }
+    if (@($bad | Where-Object { $_.Index -eq 'lf' }).Count -gt 0) {
+        $lines += '  The index is already LF, only the working copy is CRLF: refresh the checkout with'
+        $lines += '    git rm --cached -r . ; git reset --hard'
+        $lines += '  WARNING: reset --hard discards uncommitted changes. Commit or stash first.'
+    }
+    $lines | Add-LogLine -Log $log | Out-Host
+    throw "$($bad.Count) CRLF working file(s) under eol=lf: $(@($bad | ForEach-Object { $_.Path }) -join ', ')"
+}
+if (@($results | Where-Object { $_.Step -eq 'Eol' -and $_.Result -eq 'FAIL' }).Count -gt 0) {
+    # Every later step would fail or mislead on these bytes; stop here.
+    $script:skipSteps = @('Wavs', 'Pssa', 'Sprawl', 'Regen', 'Cargo', 'Npm', 'Python')
+    $script:skipDetail = 'Eol preflight failed'
+}
 
 if ($script:withWav) {
     Invoke-Step 'Wavs' {
