@@ -42,6 +42,14 @@ Method:
 
 Scrub mapping: ``bin_seconds`` = ``downsample_sf_st[1] * hop / sample_rate``;
 the cube covers ``cube_shape_f_t[1] * bin_seconds`` seconds of the WAV.
+
+``pipeline_r2`` is an explicit comparison method, not the current Generate
+pipeline default. It ports PR #4's zero-padded STFT, fixed 5 x 33 block
+averaging before the layer formulas, grid/max signal, spectral-flatness
+tonality, global p70 confidence floor, and 0.5 signal + 0.5 tonality quality.
+Both methods share preview selection and the rms/peak inverse-HDR metric.
+Comparison documents record the original formula source and the same WAV's
+sha256; changing this generator requires regenerating both methods.
 """
 
 from __future__ import annotations
@@ -51,6 +59,7 @@ from pathlib import Path
 
 import numpy as np
 
+from gen_audio.audio_io import as_mono, validate_frame_count, validate_sample_rate
 from gen_audio.cube_revision import measure
 from gen_audio.library_manifest import normalized_sha256
 
@@ -62,6 +71,26 @@ LAYER_COLORS = (
     (0.95, 0.25, 0.55),
 )
 LEGEND = {"signal": "blue", "tonality": "green", "confidence": "orange", "quality": "pink"}
+
+LIBRARY_R3 = "library_r3"
+PIPELINE_R2 = "pipeline_r2"
+LAYER_METHODS = (LIBRARY_R3, PIPELINE_R2)
+DEFAULT_LAYER_METHOD = LIBRARY_R3
+LAYER_METHOD_LABELS = {
+    LIBRARY_R3: "Library formulas, rev 3",
+    PIPELINE_R2: "Pipeline formulas, rev 2 (PR #4)",
+}
+PIPELINE_R2_SOURCE = (
+    "darbotlabs/gen-audio@204d0de45766ad31af89d8f5aee6c1a014010834 src/gen_audio/pipeline.py "
+    "cube_document L275-L337, _stft_magnitude L340-L349, _frame_flatness L383-L387, _unit L390-L394"
+)
+PIPELINE_R2_DOWNSAMPLE = (5, 33)
+
+
+def _check_method(method: str) -> str:
+    if method not in LAYER_METHODS:
+        raise ValueError(f"unknown layer_method {method!r}; expected one of {', '.join(LAYER_METHODS)}")
+    return method
 
 
 @dataclass(frozen=True)
@@ -76,7 +105,7 @@ class CubeParams:
 
 # The one Library cube method. Every shipped cube uses exactly these.
 LIBRARY_REVISION = 3
-LAYER_METHOD = "library_r3"
+LAYER_METHOD = LIBRARY_R3
 LIBRARY_PARAMS = CubeParams()
 GENERATOR_PATH = "src/gen_audio/cube_layers.py"
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -122,8 +151,54 @@ def stft_mag(audio: np.ndarray, n_fft: int = 1024, hop: int = 256) -> np.ndarray
     return np.abs(np.fft.rfft(frames, axis=1)).T
 
 
-def compute_layers(mag: np.ndarray, sample_rate: int, n_fft: int) -> dict[str, np.ndarray]:
-    """The four honesty layers at full STFT resolution, float32 in [0, 1]."""
+def pipeline_r2_stft(samples: np.ndarray, n_fft: int = 1024, hop: int = 256) -> np.ndarray:
+    """PR #4 STFT: zero pad, Hann window and ``1 + n // hop`` frames."""
+    values = np.asarray(samples, dtype=np.float64).reshape(-1)
+    if type(n_fft) is not int or not 16 <= n_fft <= 16384 or type(hop) is not int or hop < 1:
+        raise ValueError("invalid pipeline_r2 STFT dimensions")
+    frames = 1 + int(values.size) // hop
+    if frames * n_fft > 64_000_000:
+        raise ValueError("pipeline_r2 STFT exceeds the work limit")
+    padded = np.pad(values, (n_fft // 2, n_fft // 2 + hop))
+    window = np.hanning(n_fft)
+    strides = (padded.strides[0] * hop, padded.strides[0])
+    view = np.lib.stride_tricks.as_strided(padded, shape=(frames, n_fft), strides=strides, writeable=False)
+    return np.abs(np.fft.rfft(view * window, axis=1)).T
+
+
+def pipeline_r2_grid(mag: np.ndarray) -> np.ndarray:
+    """Crop and block-average the PR #4 magnitude into complete 5 x 33 blocks."""
+    sf, st = PIPELINE_R2_DOWNSAMPLE
+    freq_bins, time_bins = mag.shape[0] // sf, mag.shape[1] // st
+    if freq_bins < 1 or time_bins < 1:
+        raise ValueError("audio is too short for a pipeline_r2 cube")
+    cropped = mag[:freq_bins * sf, :time_bins * st]
+    return cropped.reshape(freq_bins, sf, time_bins, st).mean(axis=(1, 3))
+
+
+def _pipeline_r2_layers(grid: np.ndarray) -> dict[str, np.ndarray]:
+    peak = float(np.max(grid)) if grid.size else 0.0
+    signal = np.zeros_like(grid) if peak <= 1e-12 else grid / peak
+    power = np.maximum(grid, 1e-12)
+    flatness = np.clip(np.exp(np.mean(np.log(power), axis=0)) / np.maximum(np.mean(power, axis=0), 1e-12), 0.0, 1.0)
+    tonality = (1.0 - flatness) * (signal > 1e-4)
+    floor = float(np.percentile(grid, 70))
+    confidence = np.clip(grid / (grid + floor + 1e-12), 0.0, 1.0)
+    quality = 0.5 * signal + 0.5 * np.clip(tonality, 0.0, 1.0)
+    return {
+        "signal": signal,
+        "tonality": np.clip(tonality, 0.0, 1.0),
+        "confidence": confidence,
+        "quality": np.clip(quality, 0.0, 1.0),
+    }
+
+
+def compute_layers(
+    mag: np.ndarray, sample_rate: int, n_fft: int, method: str = DEFAULT_LAYER_METHOD,
+) -> dict[str, np.ndarray]:
+    """Library layers at full resolution, or PR #4 float64 layers on its grid."""
+    if _check_method(method) == PIPELINE_R2:
+        return _pipeline_r2_layers(pipeline_r2_grid(mag))
     eps = 1e-12
     logm = np.log1p(mag)
     lo, hi = np.percentile(logm, [5, 99.5])
@@ -253,6 +328,15 @@ def layer_score(layers: dict[str, np.ndarray]) -> float:
     )
 
 
+def cube_json_name(stem: str, method: str = DEFAULT_LAYER_METHOD) -> str:
+    base = f"library_{stem.removeprefix('library_')}"
+    return f"{base}_cube3d.json" if _check_method(method) == LIBRARY_R3 else f"{base}_{method}_cube3d.json"
+
+
+def cube_png_name(stem: str, method: str = DEFAULT_LAYER_METHOD) -> str:
+    return f"{stem}_cube3d.png" if _check_method(method) == LIBRARY_R3 else f"{stem}_{method}_cube3d.png"
+
+
 def library_cube(
     audio: np.ndarray,
     sample_rate: int,
@@ -261,22 +345,32 @@ def library_cube(
     engine: str,
     source_sha256: str,
     label: str | None = None,
+    method: str = DEFAULT_LAYER_METHOD,
 ) -> tuple[dict, tuple]:
     """Build the rev 3 Library cube document. Returns (doc, point_cloud) where
     point_cloud feeds :func:`write_cube_png`. ``source_sha256`` is the sha256
     of the WAV file and ``label`` names the clip in the title (default: the
-    stem). ``provenance.generator_sha256`` is :func:`generator_sha256`."""
+    stem). ``method='pipeline_r2'`` selects the archived comparison formulas
+    instead. ``provenance.generator_sha256`` is :func:`generator_sha256`."""
+    _check_method(method)
     params = LIBRARY_PARAMS
-    if len(source_sha256) != 64 or any(c not in "0123456789abcdef" for c in source_sha256):
+    if not isinstance(source_sha256, str) or len(source_sha256) != 64 or any(c not in "0123456789abcdef" for c in source_sha256):
         raise ValueError("source_sha256 must be 64 lowercase hex digits")
     y = np.asarray(audio, dtype=np.float64)
     if y.ndim != 1 or len(y) == 0:
         raise ValueError("library_cube expects non-empty mono audio")
-    if sample_rate <= 0:
-        raise ValueError("sample rate must be positive")
-    mag = stft_mag(y, n_fft=params.n_fft, hop=params.hop)
-    full = compute_layers(mag, sample_rate, params.n_fft)
-    layers, sf, st = downsample_cube(full, max_f=params.max_f, max_t=params.max_t)
+    sample_rate = validate_sample_rate(sample_rate)
+    y = as_mono(y)
+    validate_frame_count(y.size, sample_rate)
+    if method == PIPELINE_R2:
+        mag = pipeline_r2_stft(y, n_fft=params.n_fft, hop=params.hop)
+        full = compute_layers(mag, sample_rate, params.n_fft, method=method)
+        layers = full
+        sf, st = PIPELINE_R2_DOWNSAMPLE
+    else:
+        mag = stft_mag(y, n_fft=params.n_fft, hop=params.hop)
+        full = compute_layers(mag, sample_rate, params.n_fft)
+        layers, sf, st = downsample_cube(full, max_f=params.max_f, max_t=params.max_t)
     cloud = layers_to_points(layers, thresh=params.thresh)
     x, yy, _z, _rgba, vals, lids = cloud
     nf, nt = next(iter(layers.values())).shape
@@ -285,6 +379,8 @@ def library_cube(
     stats = {}
     for name in LAYER_NAMES:
         mat = full[name]
+        if method == PIPELINE_R2:
+            mat = mat.reshape(-1)
         stats[name] = {
             "mean": float(mat.mean()),
             "std": float(mat.std()),
@@ -298,7 +394,7 @@ def library_cube(
         "source_sha256": source_sha256,
         "engine": engine,
         "title": f"Inverse-HDR cube \u2014 {label or stem}",
-        "cube_revision": LIBRARY_REVISION,
+        "cube_revision": LIBRARY_REVISION if method == LIBRARY_R3 else 2,
         "sample_rate": int(sample_rate),
         "duration_s": float(len(y) / sample_rate),
         "n_fft": params.n_fft,
@@ -316,16 +412,30 @@ def library_cube(
         "axes": {"x": "time bin", "y": "freq bin", "z": "layer (+value)"},
         "layers": stats,
         "points_preview": points,
-        "pngUrl": f"/library/{stem}_cube3d.png",
+        "pngUrl": f"/library/{cube_png_name(stem, method)}",
         "wavUrl": f"/library/{stem}.wav",
         "legend": dict(LEGEND),
         "provenance": {
             "generator": GENERATOR_PATH,
             "generator_sha256": generator_sha256(),
-            "layer_method": LAYER_METHOD,
+            "layer_method": method,
             "params": asdict(params),
         },
     }
+    if method == PIPELINE_R2:
+        doc["title"] += f" \u2014 {LAYER_METHOD_LABELS[method]}"
+        doc.update({
+            "layer_method": method,
+            "layer_method_label": LAYER_METHOD_LABELS[method],
+            "layer_method_source": PIPELINE_R2_SOURCE,
+            "layer_stats_on": "r2 grid: 5 x 33 block average of the STFT magnitude, before the layer formulas",
+            "compare_to": f"/library/{cube_json_name(stem)}",
+        })
+        doc["provenance"]["params"] = {
+            "n_fft": params.n_fft, "hop": params.hop,
+            "downsample_sf_st": list(PIPELINE_R2_DOWNSAMPLE),
+            "thresh": params.thresh, "per_layer": params.per_layer,
+        }
     return doc, cloud
 
 

@@ -1,0 +1,797 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://darbotlabs.dev/gen-audio/schemas/semantic-cube.schema.json",
+  "title": "Semantic metric cube v1",
+  "description": "Portable observations and authored spatial mappings. No code, URLs, implicit metrics, or live data feeds. Null observations are omitted from rendering. At most 1 MiB UTF-8 per document.",
+  "type": "object",
+  "properties": {
+    "schema_version": {
+      "const": "1.0.0"
+    },
+    "kind": {
+      "const": "semantic_cube"
+    },
+    "id": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_.-]{0,63}$"
+    },
+    "title": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 120,
+      "pattern": "^[^\\u0000-\\u001f\\u007f]+$"
+    },
+    "domain": {
+      "enum": [
+        "agent.session",
+        "storyline",
+        "camera",
+        "market.stock",
+        "market.crypto",
+        "custom"
+      ]
+    },
+    "source": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "enum": [
+            "measured",
+            "authored",
+            "example"
+          ]
+        },
+        "label": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 240,
+          "pattern": "^[^\\u0000-\\u001f\\u007f]+$"
+        }
+      },
+      "required": [
+        "kind",
+        "label"
+      ],
+      "additionalProperties": false
+    },
+    "axes": {
+      "type": "object",
+      "properties": {
+        "x": {
+          "type": "object",
+          "properties": {
+            "label": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64,
+              "pattern": "^[^\\u0000-\\u001f\\u007f]+$"
+            },
+            "unit": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 24,
+              "pattern": "^[^\\u0000-\\u001f\\u007f]+$"
+            },
+            "minimum": {
+              "type": "number",
+              "minimum": -1000000000000000.0,
+              "maximum": 1000000000000000.0
+            },
+            "maximum": {
+              "type": "number",
+              "minimum": -1000000000000000.0,
+              "maximum": 1000000000000000.0
+            }
+          },
+          "required": [
+            "label",
+            "unit",
+            "minimum",
+            "maximum"
+          ],
+          "additionalProperties": false
+        },
+        "y": {
+          "type": "object",
+          "properties": {
+            "label": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64,
+              "pattern": "^[^\\u0000-\\u001f\\u007f]+$"
+            },
+            "unit": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 24,
+              "pattern": "^[^\\u0000-\\u001f\\u007f]+$"
+            },
+            "minimum": {
+              "type": "number",
+              "minimum": -1000000000000000.0,
+              "maximum": 1000000000000000.0
+            },
+            "maximum": {
+              "type": "number",
+              "minimum": -1000000000000000.0,
+              "maximum": 1000000000000000.0
+            }
+          },
+          "required": [
+            "label",
+            "unit",
+            "minimum",
+            "maximum"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "x",
+        "y"
+      ],
+      "additionalProperties": false
+    },
+    "layers": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 16,
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_.-]{0,63}$"
+          },
+          "label": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64,
+            "pattern": "^[^\\u0000-\\u001f\\u007f]+$"
+          },
+          "metric": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_.-]{0,63}$"
+          },
+          "unit": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 24,
+            "pattern": "^[^\\u0000-\\u001f\\u007f]+$"
+          },
+          "minimum": {
+            "type": "number",
+            "minimum": -1000000000000000.0,
+            "maximum": 1000000000000000.0
+          },
+          "maximum": {
+            "type": "number",
+            "minimum": -1000000000000000.0,
+            "maximum": 1000000000000000.0
+          },
+          "scale": {
+            "enum": [
+              "linear",
+              "log"
+            ]
+          },
+          "outside": {
+            "enum": [
+              "reject",
+              "clip"
+            ]
+          },
+          "position": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1
+          },
+          "color": {
+            "type": "string",
+            "pattern": "^#[0-9a-fA-F]{6}$"
+          },
+          "opacity": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1
+          },
+          "gain": {
+            "type": "number",
+            "minimum": 0.25,
+            "maximum": 3
+          },
+          "blend": {
+            "enum": [
+              "normal",
+              "add",
+              "multiply"
+            ]
+          },
+          "enabled": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "id",
+          "label",
+          "metric",
+          "unit",
+          "minimum",
+          "maximum",
+          "scale",
+          "outside",
+          "position",
+          "color",
+          "opacity",
+          "gain",
+          "blend",
+          "enabled"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "records": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 2048,
+      "items": {
+        "$ref": "https://darbotlabs.dev/gen-audio/schemas/semantic-record.schema.json#/$defs/record"
+      }
+    }
+  },
+  "required": [
+    "schema_version",
+    "kind",
+    "id",
+    "title",
+    "domain",
+    "source",
+    "axes",
+    "layers",
+    "records"
+  ],
+  "additionalProperties": false,
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "domain": {
+            "const": "agent.session"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "records": {
+            "items": {
+              "$ref": "https://darbotlabs.dev/gen-audio/schemas/semantic-record.schema.json#/$defs/agent.session"
+            }
+          },
+          "layers": {
+            "items": {
+              "properties": {
+                "metric": {
+                  "enum": [
+                    "latency_ms",
+                    "tokens",
+                    "cost_usd",
+                    "confidence"
+                  ]
+                }
+              },
+              "allOf": [
+                {
+                  "if": {
+                    "properties": {
+                      "metric": {
+                        "const": "latency_ms"
+                      }
+                    }
+                  },
+                  "then": {
+                    "properties": {
+                      "unit": {
+                        "const": "ms"
+                      }
+                    }
+                  }
+                },
+                {
+                  "if": {
+                    "properties": {
+                      "metric": {
+                        "const": "tokens"
+                      }
+                    }
+                  },
+                  "then": {
+                    "properties": {
+                      "unit": {
+                        "const": "count"
+                      }
+                    }
+                  }
+                },
+                {
+                  "if": {
+                    "properties": {
+                      "metric": {
+                        "const": "cost_usd"
+                      }
+                    }
+                  },
+                  "then": {
+                    "properties": {
+                      "unit": {
+                        "const": "USD"
+                      }
+                    }
+                  }
+                },
+                {
+                  "if": {
+                    "properties": {
+                      "metric": {
+                        "const": "confidence"
+                      }
+                    }
+                  },
+                  "then": {
+                    "properties": {
+                      "unit": {
+                        "const": "ratio"
+                      }
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "domain": {
+            "const": "storyline"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "records": {
+            "items": {
+              "$ref": "https://darbotlabs.dev/gen-audio/schemas/semantic-record.schema.json#/$defs/storyline"
+            }
+          },
+          "layers": {
+            "items": {
+              "properties": {
+                "metric": {
+                  "enum": [
+                    "tension",
+                    "pace",
+                    "sentiment"
+                  ]
+                }
+              },
+              "allOf": [
+                {
+                  "if": {
+                    "properties": {
+                      "metric": {
+                        "const": "tension"
+                      }
+                    }
+                  },
+                  "then": {
+                    "properties": {
+                      "unit": {
+                        "const": "ratio"
+                      }
+                    }
+                  }
+                },
+                {
+                  "if": {
+                    "properties": {
+                      "metric": {
+                        "const": "pace"
+                      }
+                    }
+                  },
+                  "then": {
+                    "properties": {
+                      "unit": {
+                        "const": "ratio"
+                      }
+                    }
+                  }
+                },
+                {
+                  "if": {
+                    "properties": {
+                      "metric": {
+                        "const": "sentiment"
+                      }
+                    }
+                  },
+                  "then": {
+                    "properties": {
+                      "unit": {
+                        "const": "score"
+                      }
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "domain": {
+            "const": "camera"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "records": {
+            "items": {
+              "$ref": "https://darbotlabs.dev/gen-audio/schemas/semantic-record.schema.json#/$defs/camera"
+            }
+          },
+          "layers": {
+            "items": {
+              "properties": {
+                "metric": {
+                  "enum": [
+                    "yaw_deg",
+                    "pitch_deg",
+                    "roll_deg",
+                    "fov_deg"
+                  ]
+                }
+              },
+              "allOf": [
+                {
+                  "if": {
+                    "properties": {
+                      "metric": {
+                        "const": "yaw_deg"
+                      }
+                    }
+                  },
+                  "then": {
+                    "properties": {
+                      "unit": {
+                        "const": "deg"
+                      }
+                    }
+                  }
+                },
+                {
+                  "if": {
+                    "properties": {
+                      "metric": {
+                        "const": "pitch_deg"
+                      }
+                    }
+                  },
+                  "then": {
+                    "properties": {
+                      "unit": {
+                        "const": "deg"
+                      }
+                    }
+                  }
+                },
+                {
+                  "if": {
+                    "properties": {
+                      "metric": {
+                        "const": "roll_deg"
+                      }
+                    }
+                  },
+                  "then": {
+                    "properties": {
+                      "unit": {
+                        "const": "deg"
+                      }
+                    }
+                  }
+                },
+                {
+                  "if": {
+                    "properties": {
+                      "metric": {
+                        "const": "fov_deg"
+                      }
+                    }
+                  },
+                  "then": {
+                    "properties": {
+                      "unit": {
+                        "const": "deg"
+                      }
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "domain": {
+            "const": "market.stock"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "records": {
+            "items": {
+              "$ref": "https://darbotlabs.dev/gen-audio/schemas/semantic-record.schema.json#/$defs/market.stock"
+            }
+          },
+          "layers": {
+            "items": {
+              "properties": {
+                "metric": {
+                  "enum": [
+                    "open",
+                    "high",
+                    "low",
+                    "close",
+                    "volume",
+                    "change_pct"
+                  ]
+                }
+              },
+              "allOf": [
+                {
+                  "if": {
+                    "properties": {
+                      "metric": {
+                        "const": "open"
+                      }
+                    }
+                  },
+                  "then": {
+                    "properties": {
+                      "unit": {
+                        "const": "quote"
+                      }
+                    }
+                  }
+                },
+                {
+                  "if": {
+                    "properties": {
+                      "metric": {
+                        "const": "high"
+                      }
+                    }
+                  },
+                  "then": {
+                    "properties": {
+                      "unit": {
+                        "const": "quote"
+                      }
+                    }
+                  }
+                },
+                {
+                  "if": {
+                    "properties": {
+                      "metric": {
+                        "const": "low"
+                      }
+                    }
+                  },
+                  "then": {
+                    "properties": {
+                      "unit": {
+                        "const": "quote"
+                      }
+                    }
+                  }
+                },
+                {
+                  "if": {
+                    "properties": {
+                      "metric": {
+                        "const": "close"
+                      }
+                    }
+                  },
+                  "then": {
+                    "properties": {
+                      "unit": {
+                        "const": "quote"
+                      }
+                    }
+                  }
+                },
+                {
+                  "if": {
+                    "properties": {
+                      "metric": {
+                        "const": "volume"
+                      }
+                    }
+                  },
+                  "then": {
+                    "properties": {
+                      "unit": {
+                        "const": "base"
+                      }
+                    }
+                  }
+                },
+                {
+                  "if": {
+                    "properties": {
+                      "metric": {
+                        "const": "change_pct"
+                      }
+                    }
+                  },
+                  "then": {
+                    "properties": {
+                      "unit": {
+                        "const": "%"
+                      }
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "domain": {
+            "const": "market.crypto"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "records": {
+            "items": {
+              "$ref": "https://darbotlabs.dev/gen-audio/schemas/semantic-record.schema.json#/$defs/market.crypto"
+            }
+          },
+          "layers": {
+            "items": {
+              "properties": {
+                "metric": {
+                  "enum": [
+                    "open",
+                    "high",
+                    "low",
+                    "close",
+                    "volume",
+                    "change_pct"
+                  ]
+                }
+              },
+              "allOf": [
+                {
+                  "if": {
+                    "properties": {
+                      "metric": {
+                        "const": "open"
+                      }
+                    }
+                  },
+                  "then": {
+                    "properties": {
+                      "unit": {
+                        "const": "quote"
+                      }
+                    }
+                  }
+                },
+                {
+                  "if": {
+                    "properties": {
+                      "metric": {
+                        "const": "high"
+                      }
+                    }
+                  },
+                  "then": {
+                    "properties": {
+                      "unit": {
+                        "const": "quote"
+                      }
+                    }
+                  }
+                },
+                {
+                  "if": {
+                    "properties": {
+                      "metric": {
+                        "const": "low"
+                      }
+                    }
+                  },
+                  "then": {
+                    "properties": {
+                      "unit": {
+                        "const": "quote"
+                      }
+                    }
+                  }
+                },
+                {
+                  "if": {
+                    "properties": {
+                      "metric": {
+                        "const": "close"
+                      }
+                    }
+                  },
+                  "then": {
+                    "properties": {
+                      "unit": {
+                        "const": "quote"
+                      }
+                    }
+                  }
+                },
+                {
+                  "if": {
+                    "properties": {
+                      "metric": {
+                        "const": "volume"
+                      }
+                    }
+                  },
+                  "then": {
+                    "properties": {
+                      "unit": {
+                        "const": "base"
+                      }
+                    }
+                  }
+                },
+                {
+                  "if": {
+                    "properties": {
+                      "metric": {
+                        "const": "change_pct"
+                      }
+                    }
+                  },
+                  "then": {
+                    "properties": {
+                      "unit": {
+                        "const": "%"
+                      }
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        }
+      }
+    }
+  ]
+}

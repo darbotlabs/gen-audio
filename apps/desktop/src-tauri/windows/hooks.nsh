@@ -2,7 +2,6 @@
 !macroend
 
 !macro NSIS_HOOK_POSTINSTALL
-  CreateShortCut "$SMSTARTUP\Darbot Gen-Audio.lnk" "$INSTDIR\gen-audio.exe"
 !macroend
 
 !macro NSIS_HOOK_PREUNINSTALL

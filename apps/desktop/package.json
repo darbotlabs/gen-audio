@@ -1,18 +1,24 @@
 {
   "name": "gen-audio-desktop",
   "private": true,
-  "version": "0.1.0",
+  "version": "1.0.3",
   "type": "module",
   "scripts": {
-    "dev": "vite",
+    "dev": "tauri dev",
+    "frontend:dev": "vite",
+    "generate:validators": "node scripts/generate-validators.mjs",
+    "prebuild": "npm run generate:validators && npm run check:library",
+    "pretest": "node scripts/generate-validators.mjs --check",
     "build": "tsc --noEmit && vite build",
-    "preview": "vite preview",
-    "test": "node --import tsx --test tests/*.test.ts src/clock-bind.test.ts"
+    "check:library": "node --import tsx --test tests/library.test.ts",
+    "test": "node --import tsx --test tests/*.test.ts src/clock-bind.test.ts",
+    "tauri": "tauri"
   },
   "dependencies": {
     "@tauri-apps/api": "^2.1.1"
   },
   "devDependencies": {
+    "@tauri-apps/cli": "2.12.1",
     "ajv": "^8.20.0",
     "tsx": "^4.23.15",
     "typescript": "~5.6.3",

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import numpy as np
+import pytest
 
 from gen_audio.audio_io import read_wav, write_wav
 from gen_audio.improve import (
@@ -11,6 +12,7 @@ from gen_audio.improve import (
     peak_normalize,
     resample_audio,
     trim_silence,
+    trim_bounds,
 )
 
 
@@ -89,3 +91,14 @@ def test_all_silence_is_refused():
 
     with pytest.raises(ValueError, match="silence"):
         improve(np.zeros(16_000, dtype=np.float32), 16_000)
+
+
+@pytest.mark.parametrize("kwargs", [
+    {"threshold_db": float("nan")}, {"threshold_db": 1},
+    {"pad_ms": float("inf")}, {"pad_ms": -1}, {"pad_ms": 60001},
+])
+def test_trim_guards_are_shared_by_direct_bounds_and_publish_chain(kwargs):
+    audio = _tone(0.25, 440, 24000)
+    for operation in (trim_bounds, trim_silence, improve):
+        with pytest.raises(ValueError):
+            operation(audio, 24000, **kwargs)

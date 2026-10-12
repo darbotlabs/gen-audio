@@ -5,7 +5,7 @@
 //! stdio lifetime and does not pin a client to a Serve node.
 
 use std::collections::HashMap;
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 
 use gen_audio_connectors::health_all;
 use serde_json::{json, Value};
@@ -20,11 +20,21 @@ struct Track {
     /// Library asset uids bound to this track (max 8). Uids only, never paths.
     #[allow(dead_code)]
     assets: Vec<String>,
+    server: Arc<SessionServer>,
+}
+
+struct SessionServer(gen_audio_mcp::Server);
+
+impl Drop for SessionServer {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_dir_all(&self.0.scratch.dir);
+    }
 }
 
 pub struct Agent {
     sessions: Mutex<HashMap<String, Track>>,
     next: Mutex<u64>,
+    next_tool: std::sync::atomic::AtomicU64,
 }
 
 impl Agent {
@@ -32,6 +42,7 @@ impl Agent {
         Self {
             sessions: Mutex::new(HashMap::new()),
             next: Mutex::new(1),
+            next_tool: std::sync::atomic::AtomicU64::new(1),
         }
     }
 }
@@ -51,12 +62,17 @@ pub struct AcpOutput {
 pub fn handle(agent: &Agent, message: Value) -> Result<AcpOutput, String> {
     let obj = message.as_object().ok_or("request must be an object")?;
     let id = obj.get("id").cloned();
+    if id.as_ref().is_some_and(|id| !gen_audio_core::subprocess::valid_rpc_id(id)) {
+        return Err("invalid request id".into());
+    }
     if obj.get("jsonrpc").and_then(Value::as_str) != Some("2.0") {
         return Err("jsonrpc must be 2.0".into());
     }
-    let method = obj.get("method").and_then(Value::as_str).unwrap_or("");
+    let method = obj.get("method").and_then(Value::as_str).filter(|s| !s.is_empty() && s.len() <= 128)
+        .ok_or("invalid method")?;
     let params = obj.get("params").cloned().unwrap_or(json!({}));
-    let notification = matches!(id, None | Some(Value::Null));
+    if !params.is_object() { return Err("params must be an object".into()); }
+    let notification = id.is_none();
     let (result, notes) = match method {
         "initialize" => (initialize(&params)?, Vec::new()),
         "session/new" => (session_new(agent, &params)?, Vec::new()),
@@ -80,7 +96,10 @@ pub fn handle(agent: &Agent, message: Value) -> Result<AcpOutput, String> {
 }
 
 fn initialize(params: &Value) -> Result<Value, String> {
-    let version = params.get("protocolVersion").and_then(Value::as_u64).unwrap_or(1);
+    let version = match params.get("protocolVersion") {
+        None => 1,
+        Some(v) => v.as_u64().ok_or("protocolVersion must be an integer")?,
+    };
     if version != 1 {
         return Err(format!("unsupported ACP protocolVersion {version}"));
     }
@@ -90,35 +109,44 @@ fn initialize(params: &Value) -> Result<Value, String> {
             "loadSession": false,
             "promptCapabilities": {"image": false, "audio": false, "embeddedContext": false}
         },
-        "agentInfo": {"name": "gen-audio", "version": "0.1.0"},
+        "agentInfo": {"name": "gen-audio", "version": env!("CARGO_PKG_VERSION")},
         "authMethods": []
     }))
 }
 
 fn session_new(agent: &Agent, params: &Value) -> Result<Value, String> {
     let cwd = params.get("cwd").and_then(Value::as_str).unwrap_or("");
-    if cwd.is_empty() || cwd.chars().count() > 512 {
+    if cwd.is_empty() || cwd.len() > 512 || cwd.chars().any(char::is_control) {
         return Err("session/new requires cwd".into());
     }
     // ACP requires cwd. This agent does not open it and does not read files from it.
-    let agents = params.get("agents").and_then(Value::as_array).cloned().unwrap_or_default();
-    let voice = params.get("voice").and_then(Value::as_str).unwrap_or("").to_string();
+    let agents = match params.get("agents") {
+        None => Vec::new(),
+        Some(value) => value.as_array().ok_or("agents must be an array")?.clone(),
+    };
+    let voice = match params.get("voice") {
+        None => String::new(),
+        Some(value) => value.as_str().ok_or("voice must be a string")?.to_string(),
+    };
     if !agents.is_empty() || !voice.is_empty() {
         gen_audio_mcp::control::validate_track(&agents, &voice).map_err(|(_, message)| message)?;
     }
     let agent_ids: Vec<String> = agents.iter().filter_map(|value| value.as_str().map(str::to_string)).collect();
     let assets = session_assets(params.get("assets"))?;
+    let mut sessions = agent.sessions.lock().map_err(|_| "sessions lock")?;
+    if sessions.len() >= 32 { return Err("session capacity reached (32); cancel unused sessions".into()); }
     let mut next = agent.next.lock().expect("session counter");
     let id = format!("gen-audio-session-{next}");
     *next += 1;
     drop(next);
-    agent.sessions.lock().expect("sessions").insert(
+    sessions.insert(
         id.clone(),
         Track {
             cwd: cwd.to_string(),
             agents: agent_ids.clone(),
             voice: voice.clone(),
             assets: assets.clone(),
+            server: Arc::new(SessionServer(gen_audio_mcp::Server::try_isolated()?)),
         },
     );
     Ok(json!({"sessionId": id, "agents": agent_ids, "voice": voice, "assets": assets}))
@@ -151,6 +179,7 @@ fn session_prompt(agent: &Agent, params: &Value) -> Result<(Value, Vec<Value>), 
         .get("sessionId")
         .and_then(Value::as_str)
         .ok_or("session/prompt requires sessionId")?;
+    check_session_id(session_id)?;
     let track = agent
         .sessions
         .lock()
@@ -181,26 +210,27 @@ fn session_prompt(agent: &Agent, params: &Value) -> Result<(Value, Vec<Value>), 
         });
         return Ok((json!({"stopReason": "end_turn"}), vec![note]));
     }
-    let mut calls = product_plan(&prompt, &track);
-    for (name, args) in &calls {
-        if name == "ui_set_sidepane" || name == "ui_generate" {
-            if let Some(stored) = agent.sessions.lock().expect("sessions").get_mut(session_id) {
-                if let Some(list) = args.get("agents").and_then(Value::as_array) {
-                    stored.agents = list.iter().filter_map(|value| value.as_str().map(str::to_string)).collect();
-                }
-                if let Some(voice) = args.get("voice").and_then(Value::as_str) {
-                    stored.voice = voice.to_string();
-                }
-            }
+    let mut calls = if prompt.trim_start().starts_with('{') {
+        let request: Value = serde_json::from_str(&prompt).map_err(|_| "invalid tool JSON prompt")?;
+        let name = request["name"].as_str().ok_or("tool JSON prompt requires name")?;
+        let mut args = request.get("arguments").cloned().unwrap_or(json!({}));
+        if !args.is_object() { return Err("tool arguments must be an object".into()); }
+        if name == "synth" && args.get("castMap").is_none() {
+            if args.get("agents").is_none() { args["agents"] = json!(track.agents); }
+            if args.get("voice").is_none() { args["voice"] = json!(track.voice); }
         }
-    }
+        vec![(name.to_string(), args)]
+    } else { product_plan(&prompt, &track) };
+    if calls.len() > 16 { return Err("prompt exceeds 16 tool calls".into()); }
     if calls.is_empty() {
         calls.push(("voice_profile_list".into(), json!({})));
     }
     let mut notes = Vec::new();
     let mut summary = String::new();
-    for (index, (name, args)) in calls.iter().enumerate() {
-        let tool_id = format!("gen-audio-tool-{}", index + 1);
+    let mut speech = false;
+    let mut failures = 0usize;
+    for (name, args) in &calls {
+        let tool_id = format!("gen-audio-tool-{}", agent.next_tool.fetch_add(1, std::sync::atomic::Ordering::Relaxed));
         notes.push(json!({
             "jsonrpc": "2.0",
             "method": "session/update",
@@ -215,9 +245,21 @@ fn session_prompt(agent: &Agent, params: &Value) -> Result<(Value, Vec<Value>), 
                 }
             }
         }));
-        match mcp_tool(name, args.clone()) {
+        match mcp_tool(&track.server.0, name, args.clone()) {
             Ok(value) => {
                 let text = value["content"][0]["text"].as_str().unwrap_or("");
+                let failed = value["isError"] == true;
+                failures += usize::from(failed);
+                let payload: Value = serde_json::from_str(text).unwrap_or(Value::Null);
+                speech |= !failed && payload["synthesizedSpeech"] == true;
+                if !failed && (name == "ui_set_sidepane" || name == "ui_generate") {
+                    if let Some(stored) = agent.sessions.lock().expect("sessions").get_mut(session_id) {
+                        if let Some(list) = args.get("agents").and_then(Value::as_array) {
+                            stored.agents = list.iter().filter_map(|value| value.as_str().map(str::to_string)).collect();
+                        }
+                        if let Some(voice) = args.get("voice").and_then(Value::as_str) { stored.voice = voice.to_string(); }
+                    }
+                }
                 if !summary.is_empty() {
                     summary.push('\n');
                 }
@@ -230,13 +272,14 @@ fn session_prompt(agent: &Agent, params: &Value) -> Result<(Value, Vec<Value>), 
                         "update": {
                             "sessionUpdate": "tool_call_update",
                             "toolCallId": tool_id,
-                            "status": "completed",
+                            "status": if failed { "failed" } else { "completed" },
                             "content": [{"type": "text", "text": text}]
                         }
                     }
                 }));
             }
             Err(err) => {
+                failures += 1;
                 if !summary.is_empty() {
                     summary.push('\n');
                 }
@@ -257,7 +300,7 @@ fn session_prompt(agent: &Agent, params: &Value) -> Result<(Value, Vec<Value>), 
             }
         }
     }
-    summary.push_str(" synthesizedSpeech is false. This agent does not invent a podcast.");
+    summary.push_str(&format!("\nsynthesizedSpeech is {speech}. {failures} tool call(s) failed."));
     notes.push(json!({
         "jsonrpc": "2.0",
         "method": "session/update",
@@ -282,6 +325,7 @@ fn control_tool(name: &str) -> bool {
             | "ui_set_sidepane"
             | "ui_generate"
             | "ui_compare"
+            | "ui_cube"
             | "library_rename"
             | "viewport_get"
             | "card_export"
@@ -311,8 +355,8 @@ fn raw_desktop_addr() -> Option<String> {
     #[cfg(test)]
     {
         let overridden = DESKTOP_ADDR.with(|slot| slot.borrow().clone());
-        if overridden.is_some() {
-            return overridden;
+        if let Some(address) = overridden {
+            return address;
         }
         // GEN_AUDIO_MCP_ADDR is process-global. Tests that swap it hold this
         // lock across the swap and the read, so a parallel test cannot observe
@@ -343,31 +387,41 @@ fn ensure_loopback_target(addr: &str) -> Result<(), String> {
 
 /// UI actions go to the desktop's bound MCP listener.
 /// An in-process server has a different control bus, so it is not a fallback.
-fn mcp_tool(name: &str, args: Value) -> Result<Value, String> {
-    if let Some(addr) = desktop_addr()? {
-        return gen_audio_mcp::http::tools_call(&addr, name, &args);
-    }
+fn mcp_tool(server: &gen_audio_mcp::Server, name: &str, args: Value) -> Result<Value, String> {
     if control_tool(name) {
+        if let Some(addr) = desktop_addr()? {
+            let token = desktop_token().ok_or("desktop control requires GEN_AUDIO_MCP_TOKEN from the owned desktop connection")?;
+            let payload = gen_audio_mcp::http::tools_call(&addr, &token, name, &args)?;
+            return Ok(json!({
+                "content":[{"type":"text","text":payload.to_string()}],
+                "isError":payload["ok"] == false
+            }));
+        }
         return Err(
             "desktop control endpoint is not bound; refusing to apply this action on an isolated bus"
                 .into(),
         );
     }
-    let server = gen_audio_mcp::Server::boot();
-    let result = gen_audio_mcp::call_tool(&server, &json!({"name": name, "arguments": args}))
-        .map_err(|err| err.message);
-    let _ = std::fs::remove_dir_all(&server.scratch.dir);
-    result
+    gen_audio_mcp::call_tool(server, &json!({"name": name, "arguments": args}))
+        .map_err(|err| err.message)
+}
+
+fn desktop_token() -> Option<String> {
+    #[cfg(test)]
+    if DESKTOP_ADDR.with(|slot| slot.borrow().is_some()) {
+        return Some("a".repeat(64));
+    }
+    std::env::var("GEN_AUDIO_MCP_TOKEN").ok()
 }
 
 #[cfg(test)]
 thread_local! {
-    static DESKTOP_ADDR: std::cell::RefCell<Option<String>> = const { std::cell::RefCell::new(None) };
+    static DESKTOP_ADDR: std::cell::RefCell<Option<Option<String>>> = const { std::cell::RefCell::new(None) };
 }
 
 #[cfg(test)]
 fn bind_desktop_for_test(addr: Option<String>) {
-    DESKTOP_ADDR.with(|slot| *slot.borrow_mut() = addr);
+    DESKTOP_ADDR.with(|slot| *slot.borrow_mut() = addr.map(Some));
 }
 
 fn is_verb(token: &str) -> bool {
@@ -394,7 +448,11 @@ fn is_verb(token: &str) -> bool {
 }
 
 fn product_plan(prompt: &str, track: &Track) -> Vec<(String, Value)> {
-    let tokens: Vec<String> = prompt.split_whitespace().map(str::to_string).collect();
+    let (commands, script_text) = match prompt.split_once('\n') {
+        Some((commands, text)) if commands.split_whitespace().any(|word| word.eq_ignore_ascii_case("generate")) => (commands, Some(text)),
+        _ => (prompt, None),
+    };
+    let tokens: Vec<String> = commands.split_whitespace().map(str::to_string).collect();
     let mut calls = Vec::new();
     let mut agents: Vec<String> = Vec::new();
     let mut voice: Option<String> = None;
@@ -520,16 +578,8 @@ fn product_plan(prompt: &str, track: &Track) -> Vec<(String, Value)> {
             _ => index += 1,
         }
     }
-    let fallback_agents = if track.agents.is_empty() {
-        vec!["alice".to_string()]
-    } else {
-        track.agents.clone()
-    };
-    let fallback_voice = if track.voice.is_empty() {
-        "kokoro_onnx".to_string()
-    } else {
-        track.voice.clone()
-    };
+    let fallback_agents = track.agents.clone();
+    let fallback_voice = track.voice.clone();
     if !agents.is_empty() || voice.is_some() {
         let agents = if agents.is_empty() { fallback_agents } else { agents };
         let voice = voice.unwrap_or(fallback_voice);
@@ -549,20 +599,13 @@ fn product_plan(prompt: &str, track: &Track) -> Vec<(String, Value)> {
         );
     }
     if generate {
-        let voice_id = calls
+        let requested = calls
             .iter()
             .find(|(name, _)| name == "ui_generate")
-            .and_then(|(_, args)| args.get("voice").and_then(Value::as_str))
-            .unwrap_or("");
-        let adapter = gen_audio_core::catalog::voice_model(voice_id)
-            .map(|model| model.synth_adapter)
-            .unwrap_or(false);
-        if adapter {
-            calls.push((
-                "synth".into(),
-                json!({"output": "request.wav", "script": "examples/podcast_script_sample.txt"}),
-            ));
-        }
+            .map(|(_, args)| args.clone()).unwrap_or(json!({}));
+        let mut args = requested;
+        if let Some(text) = script_text { args["scriptText"] = json!(text); }
+        calls.push(("synth".into(), args));
     }
     calls
 }
@@ -572,23 +615,32 @@ fn session_cancel(agent: &Agent, params: &Value) -> Result<Value, String> {
         .get("sessionId")
         .and_then(Value::as_str)
         .ok_or("session/cancel requires sessionId")?;
+    check_session_id(session_id)?;
     agent.sessions.lock().expect("sessions").remove(session_id);
     Ok(json!({}))
+}
+
+fn check_session_id(id: &str) -> Result<(), String> {
+    if id.is_empty() || id.len() > 128 || !id.chars().all(|ch| ch.is_ascii_alphanumeric() || ch == '-') {
+        return Err("invalid sessionId".into());
+    }
+    Ok(())
 }
 
 fn prompt_text(prompt: Option<&Value>) -> Result<String, String> {
     let blocks = prompt
         .and_then(Value::as_array)
         .ok_or("prompt must be an array of content blocks")?;
+    if blocks.is_empty() || blocks.len() > 64 { return Err("prompt must contain 1 to 64 text blocks".into()); }
     let mut text = String::new();
     for block in blocks {
-        if block.get("type").and_then(Value::as_str) == Some("text") {
-            if let Some(piece) = block.get("text").and_then(Value::as_str) {
-                text.push_str(piece);
-            }
-        }
+        if block.get("type").and_then(Value::as_str) != Some("text") { return Err("only text prompt blocks are supported".into()); }
+        let piece = block.get("text").and_then(Value::as_str).ok_or("text block needs text")?;
+        if text.len() + piece.len() > 256 * 1024 { return Err("prompt is too long".into()); }
+        if !text.is_empty() { text.push('\n'); }
+        text.push_str(piece);
     }
-    if text.chars().count() > 8_000 {
+    if text.trim().is_empty() || text.chars().count() > 32_000 || text.contains('\0') {
         return Err("prompt is too long".into());
     }
     Ok(text)
@@ -654,9 +706,18 @@ pub fn smoke() -> Result<String, String> {
 
 pub fn stdio_loop(agent: &Agent) {
     let stdin = std::io::stdin();
+    let mut input = stdin.lock();
     let mut stdout = std::io::stdout().lock();
-    for line in stdin.lock().lines() {
-        let Ok(line) = line else { break };
+    loop {
+        let line = match gen_audio_core::subprocess::read_line_bounded(&mut input, 1024 * 1024) {
+            Ok(Some(line)) => line,
+            Ok(None) => break,
+            Err(error) => {
+                let _ = writeln!(stdout, "{}", json!({"jsonrpc":"2.0","id":null,"error":{"code":-32600,"message":error}}));
+                let _ = stdout.flush();
+                break;
+            }
+        };
         if line.trim().is_empty() {
             continue;
         }
@@ -672,7 +733,8 @@ pub fn stdio_loop(agent: &Agent) {
                 continue;
             }
         };
-        let request_id = message.get("id").cloned().unwrap_or(Value::Null);
+        let notification = message.get("id").is_none() && message.is_object();
+        let request_id = message.get("id").filter(|id| gen_audio_core::subprocess::valid_rpc_id(id)).cloned().unwrap_or(Value::Null);
         match handle(agent, message) {
             Ok(output) => {
                 for note in output.notifications {
@@ -685,13 +747,13 @@ pub fn stdio_loop(agent: &Agent) {
             }
             Err(err) => {
                 let id = request_id;
-                if id.is_null() {
+                if notification {
                     continue;
                 }
                 let _ = writeln!(
                     stdout,
                     "{}",
-                    json!({"jsonrpc":"2.0","id": id, "error": {"code": -32603, "message": err}})
+                    json!({"jsonrpc":"2.0","id": id, "error": {"code": if err.starts_with("method not found") { -32601 } else if err.starts_with("invalid request") || err.starts_with("jsonrpc") || err.starts_with("request must") || err == "invalid method" { -32600 } else { -32602 }, "message": gen_audio_core::redact::redact_secrets(&err)}})
                 );
                 let _ = stdout.flush();
             }
@@ -699,7 +761,7 @@ pub fn stdio_loop(agent: &Agent) {
     }
 }
 
-use std::io::{BufRead, Write};
+use std::io::Write;
 
 #[cfg(test)]
 mod tests {
@@ -799,10 +861,11 @@ mod tests {
         let blob = serde_json::to_string(&prompted.notifications).unwrap();
         assert!(blob.contains("ui_generate"), "{blob}");
         assert!(blob.contains("synth"), "{blob}");
-        assert!(blob.contains("No speech was invented"), "{blob}");
+        assert!(blob.contains("scriptText"), "{blob}");
+        assert!(blob.contains("\"status\":\"failed\""), "{blob}");
         assert!(blob.contains("tool_call"), "{blob}");
         assert!(!blob.contains("\"synthesizedSpeech\":true"), "{blob}");
-        assert!(blob.contains("GEN_AUDIO_KOKORO_MODEL and GEN_AUDIO_KOKORO_VOICES are unset"), "{blob}");
+        assert!(blob.contains("provide exactly one of script or scriptText"), "{blob}");
         let rejected = handle(
             &agent,
             json!({
@@ -834,9 +897,10 @@ mod tests {
     fn session_new_binds_library_asset_uids() {
         let agent = Agent::new();
         let clip = gen_audio_core::asset_catalog::uid_for_legacy("audio_clip", "lib-misaki-kokoro").unwrap();
+        let cube = gen_audio_core::asset_catalog::uid_for_legacy("cube_ihdr", "lib-misaki-kokoro.cube").unwrap();
         let out = handle(
             &agent,
-            json!({"jsonrpc":"2.0","id":1,"method":"session/new","params":{"cwd":".","assets":[clip, "ga:cube_ihdr:biaxxmnibxtcur7nxdu3ffvna4"]}}),
+            json!({"jsonrpc":"2.0","id":1,"method":"session/new","params":{"cwd":".","assets":[clip, cube]}}),
         )
         .unwrap();
         let result = &out.response.unwrap()["result"];
@@ -857,10 +921,11 @@ mod tests {
 
     #[test]
     fn t14_navigate_reaches_the_bound_desktop_bus() {
-        let addr = gen_audio_mcp::http::spawn_loopback("127.0.0.1:0").unwrap();
+        let token = "a".repeat(64);
+        let addr = gen_audio_mcp::http::spawn_loopback("127.0.0.1:0", &token).unwrap();
         let addr = addr.to_string();
         bind_desktop_for_test(Some(addr.clone()));
-        let before = gen_audio_mcp::http::get_control(&addr, 0).unwrap();
+        let before = gen_audio_mcp::http::get_control(&addr, &token, 0).unwrap();
         let cursor = before["cursor"].as_u64().unwrap_or(0);
         let agent = Agent::new();
         let created = handle(
@@ -886,7 +951,7 @@ mod tests {
         let blob = serde_json::to_string(&prompted.notifications).unwrap();
         assert!(blob.contains("ui_navigate"), "{blob}");
         assert!(!blob.contains("isolated bus"), "{blob}");
-        let after = gen_audio_mcp::http::get_control(&addr, cursor).unwrap();
+        let after = gen_audio_mcp::http::get_control(&addr, &token, cursor).unwrap();
         let events = after["events"].as_array().cloned().unwrap_or_default();
         assert!(
             events.iter().any(|event| {
@@ -895,20 +960,56 @@ mod tests {
             }),
             "{after}"
         );
-        let view = gen_audio_mcp::http::tools_call(&addr, "viewport_get", &json!({})).unwrap();
+        let view = gen_audio_mcp::http::tools_call(&addr, &token, "viewport_get", &json!({})).unwrap();
         assert_eq!(view["ui"]["slide"], "slide:spatial");
     }
 
     #[test]
     fn ui_navigate_without_a_desktop_does_not_touch_an_isolated_bus() {
-        bind_desktop_for_test(None);
+        // An actual installed desktop may be running on the test machine.
+        DESKTOP_ADDR.with(|slot| *slot.borrow_mut() = Some(None));
         let marker = format!("isolated-{}", std::process::id());
-        let err = mcp_tool("ui_navigate", json!({"slide": "spatial", "tileId": marker})).unwrap_err();
+        let err = mcp_tool(&gen_audio_mcp::Server::isolated(), "ui_navigate", json!({"slide": "spatial", "tileId": marker})).unwrap_err();
         assert!(err.contains("not bound"), "{err}");
         let delta = gen_audio_mcp::control::since(0);
         assert!(
             delta.events.iter().all(|event| event["args"]["tileId"] != marker),
             "isolated ACP published onto the local bus"
         );
+        bind_desktop_for_test(None);
+    }
+
+    #[test]
+    fn session_scratch_survives_calls_and_generation_preserves_content() {
+        let agent = Agent::new();
+        let created = session_new(&agent, &json!({"cwd":".","agents":["alice"],"voice":"kokoro_onnx"})).unwrap();
+        let id = created["sessionId"].as_str().unwrap();
+        let dir;
+        {
+            let sessions = agent.sessions.lock().unwrap();
+            let track = &sessions[id];
+            dir = track.server.0.scratch.dir.clone();
+            let calls = product_plan("generate\nOnly this supplied content.", track);
+            let synth = calls.iter().find(|(name,_)| name == "synth").unwrap();
+            assert_eq!(synth.1["scriptText"], "Only this supplied content.");
+            assert_eq!(synth.1["agents"], json!(["alice"]));
+            assert!(synth.1.get("script").is_none());
+            mcp_tool(&track.server.0,"fixture_tone",json!({})).unwrap();
+            mcp_tool(&track.server.0,"list_engines",json!({})).unwrap();
+            assert!(track.server.0.scratch.open_input("fixture-tone.wav").is_ok());
+        }
+        session_cancel(&agent,&json!({"sessionId":id})).unwrap();
+        assert!(!dir.exists());
+    }
+
+    #[test]
+    fn session_and_prompt_limits() {
+        let agent = Agent::new();
+        assert!(initialize(&json!({"protocolVersion":"1"})).is_err());
+        assert!(session_new(&agent,&json!({"cwd":".","agents":"alice"})).is_err());
+        assert!(prompt_text(Some(&json!([{"type":"image","text":"x"}]))).is_err());
+        assert!(prompt_text(Some(&json!([{"type":"text","text":"x".repeat(32_001)}]))).is_err());
+        for _ in 0..32 { session_new(&agent,&json!({"cwd":"."})).unwrap(); }
+        assert!(session_new(&agent,&json!({"cwd":"."})).unwrap_err().contains("capacity"));
     }
 }

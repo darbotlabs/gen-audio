@@ -291,7 +291,9 @@ fn main() {
 
     let card = |id: &str| {
         let mut p = parts("card", id, json!({"card_id": id, "view": "LibraryClip"}));
-        p.body = json!({"id": id, "kind": "LibraryClip", "title": id, "body": {}});
+        p.body = json!({"id": id, "kind": "LibraryClip", "title": id, "body": {
+            "engineId": "kokoro_onnx", "status": "unavailable", "synthesizedSpeech": false, "summary": "Cycle fixture"
+        }});
         build_envelope(p).unwrap()
     };
 
@@ -310,6 +312,18 @@ fn main() {
     push("title_change_keeps_uid", retitled, true);
     push("fixture_claims_speech", { let mut c = kokoro.clone(); c["honesty"]["fixture"] = json!(true); c["honesty"]["synthesized_speech"] = json!(true); c }, false);
     let profile_env = find("optimus", "voice_profile");
+    push("ok_profile_v2", profile_env.clone(), true);
+    push("ok_profile_v2_card", find("profile-optimus", "card"), true);
+    for field in ["profileVersion", "engineManifests"] {
+        let mut missing = profile_env.clone();
+        missing["body"].as_object_mut().unwrap().remove(field);
+        push(&format!("profile_v2_missing_{field}"), missing, false);
+    }
+    push("profile_v2_unknown_binding_field", {
+        let mut p = profile_env.clone();
+        p["body"]["engineManifests"]["vibevoice"]["ready"] = json!(true);
+        p
+    }, false);
     push("profile_claims_speech", { let mut p = profile_env.clone(); p["honesty"]["synthesized_speech"] = json!(true); p }, false);
     push("profile_not_marked_not_podcast", { let mut p = profile_env.clone(); p["honesty"]["not_podcast"] = json!(false); p }, false);
     let clip_parts = |media: Vec<Value>, provenance: Map<String, Value>| {
@@ -458,6 +472,13 @@ fn main() {
         build_envelope(p).unwrap()
     };
     push_set("duration_drift", vec![kokoro.clone(), find("misaki", "voice_model"), clip.clone(), drift]);
+    let card = |id: &str| {
+        let mut p = parts("card", id, json!({"card_id": id, "view": "LibraryClip"}));
+        p.body = json!({"id": id, "kind": "LibraryClip", "title": id, "body": {
+            "engineId": "kokoro_onnx", "status": "unavailable", "synthesizedSpeech": false, "summary": "Cycle fixture"
+        }});
+        build_envelope(p).unwrap()
+    };
     let (mut a, mut b) = (card("cycle-a"), card("cycle-b"));
     let (ua, ub) = (a["uid"].clone(), b["uid"].clone());
     a["relations"] = json!({"bound_to": [ub]});
@@ -495,12 +516,45 @@ fn main() {
     let mut foreign_cube = v0.clone();
     foreign_cube["manifest"]["clips"][0]["cube"] = json!({"jsonUrl": "/library/golden_cube3d.json", "pngUrl": "/library/golden_cube3d.png"});
     foreign_cube["cube_docs"] = json!({"golden_cube3d.json": {"source_sha256": "0".repeat(64), "cube_revision": 3, "sample_rate": 24000, "duration_s": 1.0}});
-    let migrations = vec![
+    let mut migrations = vec![
         json!({"name": "cube_made_from_another_wav", "before": foreign_cube, "after": null, "error": code(migrate_to_v1(&foreign_cube))}),
         json!({"name": "v0_manifest_clip_to_v1", "synthetic_media": "golden.wav = 1.000 s 24 kHz mono 16-bit silent PCM WAV (48044 bytes, all-zero samples)", "before": v0, "after": after, "error": null}),
         json!({"name": "v0_rename_keeps_uid", "before": retitled_v0, "after": retitled_after, "error": null}),
         json!({"name": "unknown_major_rejected", "before": {"schema_version": "2.0.0", "assets": []}, "after": null, "error": code(migrate_to_v1(&json!({"schema_version": "2.0.0", "assets": []})))}),
     ];
+
+    let profile_bundle = |profile: Value| {
+        let bytes = serde_json::to_string_pretty(&profile).unwrap() + "\n";
+        json!({
+            "manifest": {"clips": []},
+            "voice_models": serde_json::to_value(gen_audio_core::catalog::voice_models()).unwrap(),
+            "profiles": [{"path": "voice_profile.optimus.json", "profile": profile}],
+            "cards": [{
+                "id": "profile-optimus", "kind": "VoiceProfile", "title": "Optimus profile", "body": profile,
+            }],
+            "cube_docs": {}, "spectrograms": [],
+            "media": {"voice_profile.optimus.json": {"sha256": sha256_hex(bytes.as_bytes()), "bytes": bytes.len()}},
+        })
+    };
+    let before = profile_bundle(profile_env["body"].clone());
+    let after = migrate_to_v1(&before).expect("profile v2 migration");
+    validate_set(after["assets"].as_array().unwrap()).expect("valid profile v2 migration");
+    assert_eq!(migrate_to_v1(&after).unwrap(), after, "v1 profile migration stays idempotent");
+    let mut changed_profile = profile_env["body"].clone();
+    changed_profile["engineManifests"]["vibevoice"]["language"] = json!("en-us");
+    let changed_before = profile_bundle(changed_profile);
+    let changed_after = migrate_to_v1(&changed_before).expect("updated profile v2 migration");
+    validate_set(changed_after["assets"].as_array().unwrap()).expect("valid updated profile v2 migration");
+    assert_ne!(after["legacy_index"]["voice_profile:optimus"], changed_after["legacy_index"]["voice_profile:optimus"]);
+    for (legacy, uid) in after["legacy_index"].as_object().unwrap() {
+        if legacy != "voice_profile:optimus" {
+            assert_eq!(*uid, changed_after["legacy_index"][legacy], "{legacy} identity is unchanged");
+        }
+    }
+    let changed_card = changed_after["assets"].as_array().unwrap().iter().find(|asset| asset["kind"] == "card").unwrap();
+    assert_eq!(changed_card["relations"]["bound_to"], json!([changed_after["legacy_index"]["voice_profile:optimus"]]));
+    migrations.push(json!({"name": "profile_v2_to_v1_asset", "before": before, "after": after, "error": null}));
+    migrations.push(json!({"name": "profile_v2_binding_changes_uid_and_card_relation", "before": changed_before, "after": changed_after, "error": null}));
 
     let doc = json!({
         "schema_version": "1.0.0",

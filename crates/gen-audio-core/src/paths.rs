@@ -7,6 +7,7 @@
 
 use std::collections::HashSet;
 use std::fs;
+use std::io::{Read, Write};
 use std::path::{Component, Path, PathBuf};
 use std::sync::Mutex;
 
@@ -26,6 +27,8 @@ const TRUSTED_SCRIPTS: &[&str] = &[
 pub struct Scratch {
     pub dir: PathBuf,
     issued: Mutex<HashSet<String>>,
+    reserved: Mutex<HashSet<String>>,
+    private: Mutex<HashSet<String>>,
     preexisting: HashSet<String>,
     /// Set when this scratch created the directory. Dropped with the scratch,
     /// including on panic, so the temp directory does not stay behind.
@@ -44,8 +47,15 @@ impl TempWorkDir {
             .duration_since(std::time::UNIX_EPOCH)
             .map(|elapsed| elapsed.as_nanos())
             .unwrap_or(0);
-        let dir = std::env::temp_dir().join(format!("gen-audio-{}-{nanos}", std::process::id()));
-        fs::create_dir_all(&dir)?;
+        // Installed SDK resources are read-only. Scratch belongs to the user,
+        // independently of the checkout or the executable's installation path.
+        let root = std::env::temp_dir().join("gen-audio-work");
+        fs::create_dir_all(&root)?;
+        reject_symlink(&root).map_err(std::io::Error::other)?;
+        static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
+        let serial = NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        let dir = root.join(format!("gen-audio-{}-{nanos}-{serial}", std::process::id()));
+        fs::create_dir(&dir)?;
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt;
@@ -110,6 +120,28 @@ fn forget_work_dir(path: &Path) {
     }
 }
 
+pub struct SpeechReservation<'a> {
+    pub output: PathBuf,
+    pub manifest: PathBuf,
+    scratch: &'a Scratch,
+}
+
+impl std::fmt::Debug for SpeechReservation<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("SpeechReservation").field("output", &self.output).finish()
+    }
+}
+
+impl Drop for SpeechReservation<'_> {
+    fn drop(&mut self) {
+        for path in [&self.output, &self.manifest] {
+            if let Some(name) = path.file_name().and_then(|name| name.to_str()) {
+                self.scratch.discard_reserved(name);
+            }
+        }
+    }
+}
+
 impl Scratch {
     pub fn create() -> Result<Self, String> {
         let owned = TempWorkDir::create().map_err(|err| err.to_string())?;
@@ -119,6 +151,7 @@ impl Scratch {
     }
 
     pub fn new(dir: PathBuf) -> Result<Self, String> {
+        reject_symlink(&dir)?;
         let dir = dir
             .canonicalize()
             .map_err(|err| format!("work directory: {err}"))?;
@@ -127,8 +160,9 @@ impl Scratch {
         }
         reject_sensitive_scratch(&dir)?;
         let mut preexisting = HashSet::new();
-        if let Ok(entries) = fs::read_dir(&dir) {
-            for entry in entries.flatten() {
+        {
+            for entry in fs::read_dir(&dir).map_err(|e| e.to_string())? {
+                let entry = entry.map_err(|e| e.to_string())?;
                 if let Some(name) = entry.file_name().to_str() {
                     preexisting.insert(name.to_string());
                 }
@@ -137,6 +171,8 @@ impl Scratch {
         Ok(Self {
             dir,
             issued: Mutex::new(HashSet::new()),
+            reserved: Mutex::new(HashSet::new()),
+            private: Mutex::new(HashSet::new()),
             preexisting,
             cleanup: None,
         })
@@ -147,11 +183,14 @@ impl Scratch {
     pub fn adopt_new_files(&self) -> Result<(), String> {
         let mut issued = self.issued.lock().map_err(|_| "scratch lock".to_string())?;
         let entries = fs::read_dir(&self.dir).map_err(|err| err.to_string())?;
-        for entry in entries.flatten() {
+        for entry in entries {
+            let entry = entry.map_err(|e| e.to_string())?;
             let Some(name) = entry.file_name().to_str().map(str::to_string) else {
                 continue;
             };
-            if self.preexisting.contains(&name) || issued.contains(&name) {
+            if self.preexisting.contains(&name) || issued.contains(&name)
+                || self.reserved.lock().map_err(|_| "scratch lock")?.contains(&name)
+                || self.private.lock().map_err(|_| "scratch lock")?.contains(&name) {
                 continue;
             }
             let path = self.dir.join(&name);
@@ -168,6 +207,9 @@ impl Scratch {
     pub fn prepare_output(&self, name: &str) -> Result<PathBuf, String> {
         let path = write_name(&self.dir, name)?;
         reject_symlink(&path)?;
+        if self.reserved.lock().map_err(|_| "scratch lock")?.contains(name) {
+            return Err("output name is reserved for synthesis".into());
+        }
         let mut issued = self.issued.lock().map_err(|_| "scratch lock".to_string())?;
         if path.exists() && !issued.contains(name) {
             return Err("refusing to overwrite a file this process did not create".into());
@@ -192,11 +234,116 @@ impl Scratch {
         }
         Ok(canon)
     }
+
+    /// Issue only a validated output, never sibling files merely discovered in
+    /// the work directory. Used after synthesis integrity verification.
+    pub fn adopt_file(&self, name: &str) -> Result<(), String> {
+        let path = read_name_in_work(&self.dir, name)?;
+        reject_symlink(&path)?;
+        if self.preexisting.contains(name) || self.private.lock().map_err(|_| "scratch lock")?.contains(name) {
+            return Err("cannot adopt a preexisting file".into());
+        }
+        self.issued.lock().map_err(|_| "scratch lock")?.insert(name.into());
+        self.reserved.lock().map_err(|_| "scratch lock")?.remove(name);
+        Ok(())
+    }
+
+    /// Reserve the WAV and its manifest together, without issuing unverified files.
+    pub fn reserve_speech(&self, name: &str) -> Result<(PathBuf, PathBuf), String> {
+        self.reserve_speech_with_manifest(name, ".json")
+    }
+
+    pub fn reserve_speech_guard(&self, name: &str) -> Result<SpeechReservation<'_>, String> {
+        let (output, manifest) = self.reserve_speech(name)?;
+        Ok(SpeechReservation { output, manifest, scratch: self })
+    }
+
+    pub(crate) fn reserve_speech_with_manifest(&self, name: &str, suffix: &str) -> Result<(PathBuf, PathBuf), String> {
+        if !matches!(suffix, ".json" | ".synth.json") {
+            return Err("unsupported speech manifest suffix".into());
+        }
+        if !name.ends_with(".wav") {
+            return Err("speech output must end in .wav".into());
+        }
+        let wav = write_name(&self.dir, name)?;
+        let manifest_name = format!("{}{suffix}", name.strip_suffix(".wav").unwrap());
+        let manifest = write_name(&self.dir, &manifest_name)?;
+        let mut reserved = self.reserved.lock().map_err(|_| "scratch lock")?;
+        for (name, path) in [(name, &wav), (manifest_name.as_str(), &manifest)] {
+            reject_symlink(path)?;
+            if path.exists() || reserved.contains(name) || self.preexisting.contains(name) {
+                return Err("speech output must have a unique, unused name".into());
+            }
+        }
+        reserved.insert(name.into());
+        reserved.insert(manifest_name);
+        Ok((wav, manifest))
+    }
+
+    /// Failed model-worker publications must never become readable via a later
+    /// directory-wide adoption. Keep the reservation if removal fails.
+    pub(crate) fn discard_reserved(&self, name: &str) {
+        let path = match write_name(&self.dir, name) {
+            Ok(path) => path,
+            Err(_) => {
+                eprintln!("speech reservation cleanup rejected an invalid name");
+                return;
+            }
+        };
+        let mut reserved = match self.reserved.lock() {
+            Ok(reserved) => reserved,
+            Err(_) => {
+                eprintln!("speech reservation cleanup could not acquire its lock");
+                return;
+            }
+        };
+        if reserved.contains(name) {
+            match fs::remove_file(path) {
+                Ok(()) => { reserved.remove(name); }
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => { reserved.remove(name); }
+                Err(error) => {
+                    eprintln!("speech reservation cleanup failed; output remains inaccessible: {}", error.kind());
+                }
+            }
+        }
+    }
+
+    pub fn unique_name(&self, suffix: &str) -> String {
+        static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
+        format!("speech-{}-{}{suffix}", std::process::id(), NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed))
+    }
+
+    /// Internal inputs are create-new, bounded and deliberately never issued
+    /// through the public file capability set.
+    pub fn write_private_input(&self, bytes: &[u8], suffix: &str) -> Result<PathBuf, String> {
+        if bytes.len() > 256 * 1024 || !matches!(suffix, ".txt" | ".json") {
+            return Err("private input exceeds limit or has an invalid suffix".into());
+        }
+        let path = self.dir.join(self.unique_name(suffix));
+        self.private.lock().map_err(|_| "scratch lock")?
+            .insert(path.file_name().unwrap().to_string_lossy().into_owned());
+        let mut options = fs::OpenOptions::new();
+        options.write(true).create_new(true);
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::OpenOptionsExt;
+            options.mode(0o600);
+        }
+        let mut file = options.open(&path).map_err(|e| format!("private input: {e}"))?;
+        if let Err(e) = file.write_all(bytes) {
+            drop(file);
+            fs::remove_file(&path).map_err(|cleanup| format!("private input cleanup: {cleanup}"))?;
+            return Err(format!("private input write: {e}"));
+        }
+        Ok(path)
+    }
 }
 
 fn reject_sensitive_scratch(dir: &Path) -> Result<(), String> {
     if let Some(repo) = find_repo_root() {
-        if dir.starts_with(&repo) || repo.starts_with(dir) {
+        let generated = repo.join("target").join("gen-audio-work");
+        let is_generated_child = dir.parent() == Some(generated.as_path());
+        if (dir.starts_with(&repo) && !is_generated_child) || repo.starts_with(dir) {
             return Err("work directory must not contain or sit inside the repository".into());
         }
     }
@@ -292,6 +439,7 @@ pub fn publish_mcp_addr(addr: &str) -> Result<(), String> {
 }
 
 fn log_stderr(line: &str) {
+    #[cfg(unix)]
     let text = format!("{line}\n");
     #[cfg(unix)]
     {
@@ -299,7 +447,7 @@ fn log_stderr(line: &str) {
     }
     #[cfg(not(unix))]
     {
-        eprintln!("{line}");
+        let _ = writeln!(std::io::stderr().lock(), "{line}");
     }
 }
 
@@ -393,7 +541,7 @@ fn port_accepts(addr: &str) -> bool {
 }
 
 pub fn find_repo_root() -> Option<PathBuf> {
-    if let Ok(raw) = std::env::var("GEN_AUDIO_REPO") {
+    if let Some(raw) = crate::runtime_config::setting("GEN_AUDIO_REPO") {
         let path = PathBuf::from(raw);
         if is_repo(&path) {
             return path.canonicalize().ok();
@@ -466,7 +614,11 @@ pub fn read_trusted_script(repo: &Path, rel: &str) -> Result<PathBuf, String> {
     if !TRUSTED_SCRIPTS.contains(&rel) {
         return Err("script is not in the trusted list".into());
     }
-    read_repo_relative(repo, rel)
+    let script = read_repo_relative(repo, rel)?;
+    if script != repo.canonicalize().map_err(|e| e.to_string())?.join(rel) {
+        return Err("trusted entry point must not be redirected".into());
+    }
+    Ok(script)
 }
 
 pub fn read_repo_relative(repo: &Path, raw: &str) -> Result<PathBuf, String> {
@@ -478,6 +630,7 @@ pub fn read_repo_relative(repo: &Path, raw: &str) -> Result<PathBuf, String> {
     if !canon.starts_with(&root) {
         return Err("repo path escapes the repository".into());
     }
+    reject_quarantine(&canon)?;
     if !canon.is_file() {
         return Err(format!("not a file: {raw}"));
     }
@@ -513,17 +666,38 @@ fn is_foreign_absolute(raw: &str) -> bool {
     bytes.len() >= 3 && bytes[0].is_ascii_alphabetic() && bytes[1] == b':'
 }
 
-fn reject_symlink(path: &Path) -> Result<(), String> {
+pub fn reject_quarantine(path: &Path) -> Result<(), String> {
+    if path.components().any(|part| part.as_os_str().to_string_lossy().to_ascii_lowercase().contains("quarantine")) {
+        return Err("quarantined files must not be used".into());
+    }
+    Ok(())
+}
+
+pub fn read_bounded(path: &Path, cap: usize) -> Result<Vec<u8>, String> {
+    reject_symlink(path)?;
+    if !path.is_file() {
+        return Err("expected a regular file".into());
+    }
+    let mut data = Vec::new();
+    fs::File::open(path).map_err(|_| "cannot open bounded file")?
+        .take(cap as u64 + 1).read_to_end(&mut data).map_err(|_| "cannot read bounded file")?;
+    if data.len() > cap { return Err("file exceeds byte limit".into()); }
+    Ok(data)
+}
+
+pub(crate) fn reject_symlink(path: &Path) -> Result<(), String> {
     match fs::symlink_metadata(path) {
         Ok(meta) if meta.file_type().is_symlink() => {
             Err("refusing to follow a symlink in the work directory".into())
         }
-        _ => Ok(()),
+        Ok(_) => Ok(()),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(_) => Err("cannot inspect file metadata".into()),
     }
 }
 
 fn single_component(name: &str) -> Result<String, String> {
-    if name.is_empty()
+    if name.is_empty() || name.len() > 180
         || name.contains('\0')
         || name.contains('/')
         || name.contains('\\')
@@ -533,6 +707,12 @@ fn single_component(name: &str) -> Result<String, String> {
     }
     if name.starts_with('.') {
         return Err("file name must not be hidden or relative".into());
+    }
+    let stem = name.split('.').next().unwrap_or("").to_ascii_uppercase();
+    if matches!(stem.as_str(), "CON" | "PRN" | "AUX" | "NUL")
+        || (stem.len() == 4 && (stem.starts_with("COM") || stem.starts_with("LPT"))
+            && matches!(stem.as_bytes()[3], b'1'..=b'9')) {
+        return Err("reserved device file names are not accepted".into());
     }
     if !name
         .chars()
@@ -546,6 +726,17 @@ fn single_component(name: &str) -> Result<String, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn temporary_work_is_writable_outside_installed_resources_and_is_reaped() {
+        let work = make_work_dir().unwrap();
+        let path = work.path().to_path_buf();
+        assert!(path.starts_with(std::env::temp_dir().canonicalize().unwrap()));
+        if let Some(repo) = find_repo_root() { assert!(!path.starts_with(repo)); }
+        fs::write(path.join("probe.txt"), b"private runtime probe").unwrap();
+        drop(work);
+        assert!(!path.exists());
+    }
 
     /// TCP port held without `listen()`. `connect` is refused immediately, and
     /// another process cannot bind the same address. Non-Linux uses TEST-NET-1
@@ -791,5 +982,25 @@ mod tests {
             "stderr did not report the write failure:\n{stderr}"
         );
         let _ = fs::remove_file(&blocker);
+    }
+
+    #[test]
+    fn speech_reservations_and_private_inputs_are_not_public() {
+        let scratch = Scratch::create().unwrap();
+        let (wav, manifest) = scratch.reserve_speech("fresh.wav").unwrap();
+        assert!(scratch.reserve_speech("fresh.wav").is_err());
+        assert!(scratch.reserve_speech("../escape.wav").is_err());
+        assert!(scratch.reserve_speech("bad.json").is_err());
+        fs::write(&wav, b"test").unwrap();
+        fs::write(&manifest, b"{}").unwrap();
+        let input = scratch.write_private_input(b"{}", ".json").unwrap();
+        assert!(scratch.write_private_input(&vec![0; 256 * 1024 + 1], ".txt").is_err());
+        scratch.adopt_new_files().unwrap();
+        assert!(scratch.open_input("fresh.wav").is_err());
+        assert!(scratch.open_input(input.file_name().unwrap().to_str().unwrap()).is_err());
+        scratch.adopt_file("fresh.wav").unwrap();
+        assert!(scratch.open_input("fresh.wav").is_ok());
+        assert!(scratch.reserve_speech("fresh.wav").is_err());
+        fs::remove_dir_all(&scratch.dir).unwrap();
     }
 }

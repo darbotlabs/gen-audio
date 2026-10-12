@@ -3,12 +3,15 @@
 from __future__ import annotations
 
 import argparse
+from contextlib import redirect_stdout
 import json
+import sys
 from pathlib import Path
 
 from gen_audio.adapters import EngineRefusal, synthesize
 from gen_audio.assets import asset_object
 from gen_audio.cast import load_cast_map, read_script
+from gen_audio.guards import read_bounded_text
 from gen_audio.pipeline import run_pipeline
 from gen_audio.prompt_script import PromptError, prepare_prompt, write_prepared
 from gen_audio.speakers import SpeakerError, timeline_from_dict
@@ -24,7 +27,7 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def main(argv: list[str] | None = None) -> int:
+def main(argv: list[str] | None = None, *, resident=None) -> int:
     args = build_parser().parse_args(argv)
     out_dir = args.out_dir.resolve()
     prompt_path = args.prompt_file.resolve()
@@ -35,7 +38,7 @@ def main(argv: list[str] | None = None) -> int:
         return 2
     personas = [part.strip() for part in args.personas.split(",") if part.strip()]
     try:
-        prompt = prompt_path.read_text(encoding="utf-8")
+        prompt = read_bounded_text(prompt_path)
         prepared = prepare_prompt(prompt, personas, args.engine, args.duration_s)
         script_path = out_dir / "scripts" / "script.txt"
         cast_path = out_dir / "cast.json"
@@ -44,7 +47,9 @@ def main(argv: list[str] | None = None) -> int:
         turns = read_script(script_path)
         cast = load_cast_map(cast_path)
         raw_path = out_dir / "raw.wav"
-        rendered = synthesize(args.engine, turns, cast, raw_path)
+        with redirect_stdout(sys.stderr):
+            rendered = (synthesize(args.engine, turns, cast, raw_path) if resident is None else
+                        synthesize(args.engine, turns, cast, raw_path, resident=resident))
         speech = timeline_from_dict(rendered["speech"]) if isinstance(rendered, dict) and rendered.get("speech") else None
         manifest = run_pipeline(
             raw_path,
@@ -54,6 +59,7 @@ def main(argv: list[str] | None = None) -> int:
             duration_target_s=prepared.duration_s,
             script_asset=script_asset,
             speech=speech,
+            agent_names=rendered.get("metadata", {}).get("agentNames", ()) if isinstance(rendered, dict) else (),
         )
         manifest["spokenText"] = prepared.spoken_text
         manifest["speed"] = prepared.speed
@@ -85,6 +91,7 @@ def _emit(out_dir: Path, manifest: dict) -> None:
         "duration_s": manifest.get("duration_s"),
         "durationHonoured": manifest.get("durationHonoured"),
         "speech_s": manifest.get("speech_s"),
+        "metadata": manifest.get("metadata", {}),
     }
     print(json.dumps(summary))
 

@@ -1,0 +1,893 @@
+{
+ "speech_only": {
+  "bitdot_braille_vibevoice": {
+   "speech_frame_frac": 0.7496870008202737,
+   "layer_means": {
+    "signal": 0.11327333003282547,
+    "tonality": 0.20791013538837433,
+    "confidence": 0.3575860857963562,
+    "quality": 0.30275171995162964
+   },
+   "inv_hdr_formula_on_speech_frames": 0.22369076050817965
+  },
+  "genaid_full_vibevoice_final": {
+   "speech_frame_frac": 0.8762416841337829,
+   "layer_means": {
+    "signal": 0.13186493515968323,
+    "tonality": 0.23616546392440796,
+    "confidence": 0.3379542827606201,
+    "quality": 0.31175678968429565
+   },
+   "inv_hdr_formula_on_speech_frames": 0.23513630777597427
+  },
+  "genaid_full_misaki_kokoro": {
+   "speech_frame_frac": 0.7471493074156271,
+   "layer_means": {
+    "signal": 0.14431175589561462,
+    "tonality": 0.27963316440582275,
+    "confidence": 0.5994716882705688,
+    "quality": 0.2896214425563812
+   },
+   "inv_hdr_formula_on_speech_frames": 0.29823603183031083
+  }
+ },
+ "rms_silence_test": {
+  "rms_silence_thresh_dbfs": -53.64034652709961,
+  "silence_frame_frac": 0.20273712386133058,
+  "frame_occ_silence": {
+   "signal": 0.006790649252318757,
+   "tonality": 0.026275109503837196,
+   "confidence": 0.07156436899555342,
+   "quality": 0.9993702906708377
+  },
+  "frame_occ_nonsilence": {
+   "signal": 0.2662406815761448,
+   "tonality": 0.3408349396441954,
+   "confidence": 0.4220869828283336,
+   "quality": 0.9894979411670636
+  },
+  "inter_turn_silences": [
+   {
+    "between_turns": [
+     1,
+     2
+    ],
+    "silence_s": [
+     7.136,
+     7.659
+    ],
+    "dur_s": 0.523
+   },
+   {
+    "between_turns": [
+     2,
+     3
+    ],
+    "silence_s": [
+     17.92,
+     18.624
+    ],
+    "dur_s": 0.704
+   },
+   {
+    "between_turns": [
+     3,
+     4
+    ],
+    "silence_s": [
+     35.424,
+     36.0
+    ],
+    "dur_s": 0.576
+   },
+   {
+    "between_turns": [
+     4,
+     5
+    ],
+    "silence_s": [
+     47.029,
+     47.808
+    ],
+    "dur_s": 0.779
+   },
+   {
+    "between_turns": [
+     5,
+     6
+    ],
+    "silence_s": [
+     55.691,
+     56.192
+    ],
+    "dur_s": 0.501
+   },
+   {
+    "between_turns": [
+     6,
+     7
+    ],
+    "silence_s": [
+     67.211,
+     68.235
+    ],
+    "dur_s": 1.024
+   },
+   {
+    "between_turns": [
+     7,
+     8
+    ],
+    "silence_s": [
+     84.235,
+     84.587
+    ],
+    "dur_s": 0.352
+   },
+   {
+    "between_turns": [
+     8,
+     9
+    ],
+    "silence_s": [
+     91.061,
+     91.712
+    ],
+    "dur_s": 0.651
+   },
+   {
+    "between_turns": [
+     9,
+     10
+    ],
+    "silence_s": [
+     93.909,
+     94.56
+    ],
+    "dur_s": 0.651
+   },
+   {
+    "between_turns": [
+     10,
+     11
+    ],
+    "silence_s": [
+     109.653,
+     110.336
+    ],
+    "dur_s": 0.683
+   },
+   {
+    "between_turns": [
+     11,
+     12
+    ],
+    "silence_s": [
+     113.76,
+     114.432
+    ],
+    "dur_s": 0.672
+   },
+   {
+    "between_turns": [
+     12,
+     13
+    ],
+    "silence_s": [
+     125.109,
+     125.717
+    ],
+    "dur_s": 0.608
+   },
+   {
+    "between_turns": [
+     13,
+     14
+    ],
+    "silence_s": [
+     138.549,
+     139.189
+    ],
+    "dur_s": 0.64
+   },
+   {
+    "between_turns": [
+     14,
+     15
+    ],
+    "silence_s": [
+     147.701,
+     148.512
+    ],
+    "dur_s": 0.811
+   },
+   {
+    "between_turns": [
+     15,
+     16
+    ],
+    "silence_s": [
+     150.88,
+     151.339
+    ],
+    "dur_s": 0.459
+   },
+   {
+    "between_turns": [
+     16,
+     17
+    ],
+    "silence_s": [
+     167.723,
+     168.736
+    ],
+    "dur_s": 1.013
+   },
+   {
+    "between_turns": [
+     17,
+     18
+    ],
+    "silence_s": [
+     173.856,
+     174.507
+    ],
+    "dur_s": 0.651
+   },
+   {
+    "between_turns": [
+     18,
+     19
+    ],
+    "silence_s": [
+     187.84,
+     188.533
+    ],
+    "dur_s": 0.693
+   },
+   {
+    "between_turns": [
+     19,
+     20
+    ],
+    "silence_s": [
+     195.573,
+     196.597
+    ],
+    "dur_s": 1.024
+   },
+   {
+    "between_turns": [
+     20,
+     21
+    ],
+    "silence_s": [
+     210.293,
+     210.88
+    ],
+    "dur_s": 0.587
+   },
+   {
+    "between_turns": [
+     21,
+     22
+    ],
+    "silence_s": [
+     217.568,
+     218.347
+    ],
+    "dur_s": 0.779
+   },
+   {
+    "between_turns": [
+     22,
+     23
+    ],
+    "silence_s": [
+     224.853,
+     225.493
+    ],
+    "dur_s": 0.64
+   },
+   {
+    "between_turns": [
+     23,
+     24
+    ],
+    "silence_s": [
+     236.832,
+     237.483
+    ],
+    "dur_s": 0.651
+   },
+   {
+    "between_turns": [
+     24,
+     25
+    ],
+    "silence_s": [
+     241.152,
+     241.973
+    ],
+    "dur_s": 0.821
+   },
+   {
+    "between_turns": [
+     25,
+     26
+    ],
+    "silence_s": [
+     245.109,
+     245.451
+    ],
+    "dur_s": 0.341
+   }
+  ],
+  "inter_turn_silence_dur": {
+   "median": 0.651,
+   "min": 0.341,
+   "max": 1.024,
+   "n_ge_0.5s": 22
+  },
+  "halves_ge80pct_in_inter_turn_silence": {
+   "n_halves": 18,
+   "signal_dot_flat_frac": 1.0,
+   "signal_tonality_confidence_all_flat_frac": 1.0,
+   "mean_signal_occ": 0.007871154285022752
+  },
+  "halves_lt5pct_silent_frames": {
+   "n_halves": 247,
+   "signal_dot_flat_frac": 0.242914979757085,
+   "signal_tonality_confidence_all_flat_frac": 0.16194331983805668,
+   "mean_signal_occ": 0.2749759661629506
+  },
+  "inter_turn_silences_with_an_all_flat_half": [
+   25,
+   25
+  ]
+ },
+ "per_speaker_turn_means": {
+  "Speaker 1": {
+   "signal": [
+    0.08083548855323058,
+    0.06830678135156631,
+    0.09231317043304443
+   ],
+   "tonality": [
+    0.14939545496151999,
+    0.12477963417768478,
+    0.16244767606258392
+   ],
+   "confidence": [
+    0.258733399785482,
+    0.21626360714435577,
+    0.28259193897247314
+   ],
+   "quality": [
+    0.31482990888448864,
+    0.294525146484375,
+    0.33035245537757874
+   ]
+  },
+  "Speaker 2": {
+   "signal": [
+    0.10684587176029499,
+    0.09512034803628922,
+    0.1455785036087036
+   ],
+   "tonality": [
+    0.19011125427026015,
+    0.16908292472362518,
+    0.23717105388641357
+   ],
+   "confidence": [
+    0.3287828289545499,
+    0.2911641597747803,
+    0.4227370023727417
+   ],
+   "quality": [
+    0.2828868501461469,
+    0.24294565618038177,
+    0.300804078578949
+   ]
+  }
+ },
+ "per_speaker_signal_occ": {
+  "Speaker 1": [
+   0.14664071305315737,
+   0.1963685119534588
+  ],
+  "Speaker 2": [
+   0.19731637616154732,
+   0.33793704118452156
+  ]
+ },
+ "quality_value_baseline_median": 0.2995409071445465,
+ "braille_line_quality_by_value": "⣾⣾⠉⢹⢹⠈⠀⢨⣷⣶⣶⢴⣶⢸⢱⡎⣾⡆⠈⣿⠙⢹⠉⣿⠋⡏⡇⣡⠏⠉⠉⡏⠉⠁⠉⠁⣦⣾⢹⣶⢰⣾⠀⢱⣷⢹⣶⠉⡏⠉⡇⠏⡿⡇⠆⠉⢰⣶⣶⣶⡈⣶⣶⣶⣶⠀⣶⠉⢹⡆⠁⠁⢁⣈⠈⣷⠁⠀⠉⠋⠉⢸⢀⠁⢀⡆⣀⢰⣾⣶⢰⠉⡇⠁⢰⣿⡆⢡⡏⣾⠁⣿⡆⣿⡆⢹⣶⡞⢰⡎⢹⡆⠀⠈⢱⢱⣾⣶⢱⣷⡆⢰⢰⢰⢸⠉⣿⣾⢩⢹⡇⡇⠀⣽⢻⠀⠙⡏⠈⠈⣆⣶⣾⣶⢰⡆⣶⡏⠙⣿⠈⢱⣶⡆⣷⡇⣾⣿⣶⡀⣾⣧⢱⣶⡇⣿⣿⡎⠉⣿⢾⠉⠇⠉⠱⣾⢠⣰⢱⣶⢱⢹⢰⠈⣾⣶⣷⡄⢹⠏⠉⠙⠇⠙⠀⠈⢹⣶⠈⣾⡾⡏⢰⢰⣷⢱⡇⡎⣷⣿⠉⡿⡇⠈⠉⠇⠁⠁⢱⣶⢰⡇⣶⣷⡆⢹⣿⠏⡇⠁⠁⠉⠋⠉⠁⢈⠉⢱⢸⢰⣶⠉⣇⢹⠁⠀⣶",
+ "quality_by_value_raised_halves": 247,
+ "slices": [
+  {
+   "t0": 3,
+   "occ_cell": "⢰",
+   "occ_cp": "U+28B0",
+   "occ_rows": [
+    "○ ○",
+    "○ ●",
+    "○ ●",
+    "○ ●"
+   ],
+   "q_value_cell": "⢹",
+   "q_value_cp": "U+28B9",
+   "q_value_rows": [
+    "● ●",
+    "○ ●",
+    "○ ●",
+    "○ ●"
+   ],
+   "occ_left": {
+    "quality": 1.0,
+    "confidence": 0.0517,
+    "tonality": 0.0135,
+    "signal": 0.0039
+   },
+   "occ_right": {
+    "quality": 1.0,
+    "confidence": 0.5017,
+    "tonality": 0.3979,
+    "signal": 0.2963
+   },
+   "quality_val_halves": [
+    0.31003937125205994,
+    0.365518718957901
+   ],
+   "where": [
+    "turn 1 (Speaker 1)",
+    "turn 1 (Speaker 1)"
+   ],
+   "asr_words": "Frank today's",
+   "rms_dbfs": -27.527000999231714
+  },
+  {
+   "t0": 6,
+   "occ_cell": "⠀",
+   "occ_cp": "U+2800",
+   "occ_rows": [
+    "○ ○",
+    "○ ○",
+    "○ ○",
+    "○ ○"
+   ],
+   "q_value_cell": "⠀",
+   "q_value_cp": "U+2800",
+   "q_value_rows": [
+    "○ ○",
+    "○ ○",
+    "○ ○",
+    "○ ○"
+   ],
+   "occ_left": {
+    "quality": 1.0,
+    "confidence": 0.3211,
+    "tonality": 0.2703,
+    "signal": 0.224
+   },
+   "occ_right": {
+    "quality": 0.9579,
+    "confidence": 0.0442,
+    "tonality": 0.0246,
+    "signal": 0.0141
+   },
+   "quality_val_halves": [
+    0.2914826273918152,
+    0.2949007749557495
+   ],
+   "where": [
+    "gap",
+    "gap"
+   ],
+   "asr_words": "bitbraille.",
+   "rms_dbfs": -28.855254671409543
+  },
+  {
+   "t0": 10,
+   "occ_cell": "⣶",
+   "occ_cp": "U+28F6",
+   "occ_rows": [
+    "○ ○",
+    "● ●",
+    "● ●",
+    "● ●"
+   ],
+   "q_value_cell": "⣶",
+   "q_value_cp": "U+28F6",
+   "q_value_rows": [
+    "○ ○",
+    "● ●",
+    "● ●",
+    "● ●"
+   ],
+   "occ_left": {
+    "quality": 1.0,
+    "confidence": 0.4422,
+    "tonality": 0.376,
+    "signal": 0.3201
+   },
+   "occ_right": {
+    "quality": 1.0,
+    "confidence": 0.4191,
+    "tonality": 0.3429,
+    "signal": 0.2733
+   },
+   "quality_val_halves": [
+    0.28648561239242554,
+    0.28831034898757935
+   ],
+   "where": [
+    "turn 2 (Speaker 2)",
+    "turn 2 (Speaker 2)"
+   ],
+   "asr_words": "inverse HDR bitcube",
+   "rms_dbfs": -24.02039032721591
+  },
+  {
+   "t0": 18,
+   "occ_cell": "⠀",
+   "occ_cp": "U+2800",
+   "occ_rows": [
+    "○ ○",
+    "○ ○",
+    "○ ○",
+    "○ ○"
+   ],
+   "q_value_cell": "⠈",
+   "q_value_cp": "U+2808",
+   "q_value_rows": [
+    "○ ●",
+    "○ ○",
+    "○ ○",
+    "○ ○"
+   ],
+   "occ_left": {
+    "quality": 1.0,
+    "confidence": 0.0034,
+    "tonality": 0.0,
+    "signal": 0.0
+   },
+   "occ_right": {
+    "quality": 1.0,
+    "confidence": 0.2768,
+    "tonality": 0.1932,
+    "signal": 0.118
+   },
+   "quality_val_halves": [
+    0.28853949904441833,
+    0.32776781916618347
+   ],
+   "where": [
+    "gap",
+    "gap"
+   ],
+   "asr_words": "Braille before",
+   "rms_dbfs": -31.673388860523314
+  },
+  {
+   "t0": 11,
+   "occ_cell": "⢴",
+   "occ_cp": "U+28B4",
+   "occ_rows": [
+    "○ ○",
+    "○ ●",
+    "● ●",
+    "○ ●"
+   ],
+   "q_value_cell": "⢴",
+   "q_value_cp": "U+28B4",
+   "q_value_rows": [
+    "○ ○",
+    "○ ●",
+    "● ●",
+    "○ ●"
+   ],
+   "occ_left": {
+    "quality": 0.8102,
+    "confidence": 0.3759,
+    "tonality": 0.2949,
+    "signal": 0.2235
+   },
+   "occ_right": {
+    "quality": 1.0,
+    "confidence": 0.4219,
+    "tonality": 0.3288,
+    "signal": 0.2535
+   },
+   "quality_val_halves": [
+    0.21526239812374115,
+    0.24689355492591858
+   ],
+   "where": [
+    "turn 2 (Speaker 2)",
+    "turn 2 (Speaker 2)"
+   ],
+   "asr_words": "bitcube that we build from",
+   "rms_dbfs": -24.524606898713934
+  },
+  {
+   "t0": 128,
+   "occ_cell": "⢠",
+   "occ_cp": "U+28A0",
+   "occ_rows": [
+    "○ ○",
+    "○ ○",
+    "○ ●",
+    "○ ●"
+   ],
+   "q_value_cell": "⢩",
+   "q_value_cp": "U+28A9",
+   "q_value_rows": [
+    "● ●",
+    "○ ○",
+    "○ ●",
+    "○ ●"
+   ],
+   "occ_left": {
+    "quality": 1.0,
+    "confidence": 0.3264,
+    "tonality": 0.2513,
+    "signal": 0.185
+   },
+   "occ_right": {
+    "quality": 1.0,
+    "confidence": 0.3607,
+    "tonality": 0.2986,
+    "signal": 0.2406
+   },
+   "quality_val_halves": [
+    0.30385956168174744,
+    0.3107790946960449
+   ],
+   "where": [
+    "turn 13 (Speaker 1)",
+    "turn 13 (Speaker 1)"
+   ],
+   "asr_words": "is our interpretation.",
+   "rms_dbfs": -33.02213470129605
+  },
+  {
+   "t0": 196,
+   "occ_cell": "⢰",
+   "occ_cp": "U+28B0",
+   "occ_rows": [
+    "○ ○",
+    "○ ●",
+    "○ ●",
+    "○ ●"
+   ],
+   "q_value_cell": "⢹",
+   "q_value_cp": "U+28B9",
+   "q_value_rows": [
+    "● ●",
+    "○ ●",
+    "○ ●",
+    "○ ●"
+   ],
+   "occ_left": {
+    "quality": 1.0,
+    "confidence": 0.1493,
+    "tonality": 0.0688,
+    "signal": 0.0168
+   },
+   "occ_right": {
+    "quality": 1.0,
+    "confidence": 0.4369,
+    "tonality": 0.3714,
+    "signal": 0.303
+   },
+   "quality_val_halves": [
+    0.32470792531967163,
+    0.30198997259140015
+   ],
+   "where": [
+    "gap",
+    "gap"
+   ],
+   "asr_words": "Which makes",
+   "rms_dbfs": -27.153657209619656
+  },
+  {
+   "t0": 205,
+   "occ_cell": "⢰",
+   "occ_cp": "U+28B0",
+   "occ_rows": [
+    "○ ○",
+    "○ ●",
+    "○ ●",
+    "○ ●"
+   ],
+   "q_value_cell": "⢱",
+   "q_value_cp": "U+28B1",
+   "q_value_rows": [
+    "● ○",
+    "○ ●",
+    "○ ●",
+    "○ ●"
+   ],
+   "occ_left": {
+    "quality": 1.0,
+    "confidence": 0.3192,
+    "tonality": 0.2026,
+    "signal": 0.1265
+   },
+   "occ_right": {
+    "quality": 1.0,
+    "confidence": 0.4534,
+    "tonality": 0.3844,
+    "signal": 0.3219
+   },
+   "quality_val_halves": [
+    0.3381444811820984,
+    0.28163668513298035
+   ],
+   "where": [
+    "turn 20 (Speaker 2)",
+    "turn 20 (Speaker 2)"
+   ],
+   "asr_words": "so matching",
+   "rms_dbfs": -26.03581553349113
+  }
+ ],
+ "dips": {
+  "confidence": [
+   {
+    "t0": 33,
+    "mean": 0.26835837960243225,
+    "signal_occ": 0.21728671560698434,
+    "rms_dbfs": -25.018655804214838,
+    "where": "turn 3 (Speaker 1)",
+    "asr_words": "gives a grid time"
+   },
+   {
+    "t0": 121,
+    "mean": 0.2713964581489563,
+    "signal_occ": 0.2187383351997014,
+    "rms_dbfs": -25.703240289093458,
+    "where": "turn 12 (Speaker 2)",
+    "asr_words": "clip, busier than"
+   },
+   {
+    "t0": 128,
+    "mean": 0.2646847665309906,
+    "signal_occ": 0.21505376344086022,
+    "rms_dbfs": -33.02213470129605,
+    "where": "turn 13 (Speaker 1)",
+    "asr_words": "is our interpretation."
+   },
+   {
+    "t0": 176,
+    "mean": 0.28037288784980774,
+    "signal_occ": 0.22918107694564974,
+    "rms_dbfs": -26.02515405038391,
+    "where": "turn 18 (Speaker 2)",
+    "asr_words": "like a clip, a"
+   },
+   {
+    "t0": 221,
+    "mean": 0.27982568740844727,
+    "signal_occ": 0.22477292522085354,
+    "rms_dbfs": -27.827560530060836,
+    "where": "turn 22 (Speaker 2)",
+    "asr_words": "from measuring sound."
+   },
+   {
+    "t0": 238,
+    "mean": 0.2815500795841217,
+    "signal_occ": 0.23545269793870013,
+    "rms_dbfs": -26.811049268117813,
+    "where": "turn 24 (Speaker 2)",
+    "asr_words": "don't, we'll say"
+   }
+  ],
+  "quality": [
+   {
+    "t0": 11,
+    "mean": 0.23107795417308807,
+    "signal_occ": 0.23850109908340592,
+    "rms_dbfs": -24.524606898713934,
+    "where": "turn 2 (Speaker 2)",
+    "asr_words": "bitcube that we build from"
+   },
+   {
+    "t0": 17,
+    "mean": 0.2518410384654999,
+    "signal_occ": 0.2467131184936336,
+    "rms_dbfs": -24.94377427397413,
+    "where": "turn 2 (Speaker 2)",
+    "asr_words": "starts to read like Braille"
+   },
+   {
+    "t0": 66,
+    "mean": 0.2519071698188782,
+    "signal_occ": 0.28086765376798967,
+    "rms_dbfs": -23.94545188964795,
+    "where": "turn 6 (Speaker 2)",
+    "asr_words": "with a penalty for low"
+   },
+   {
+    "t0": 90,
+    "mean": 0.24671243131160736,
+    "signal_occ": 0.24847579942764708,
+    "rms_dbfs": -27.51013450265344,
+    "where": "turn 8 (Speaker 2)",
+    "asr_words": "time and that frequency."
+   },
+   {
+    "t0": 163,
+    "mean": 0.25294458866119385,
+    "signal_occ": 0.27244826013023105,
+    "rms_dbfs": -24.33761705177075,
+    "where": "turn 16 (Speaker 2)",
+    "asr_words": "hints at a muddy or band"
+   },
+   {
+    "t0": 246,
+    "mean": 0.24898941814899445,
+    "signal_occ": 0.32638629671104474,
+    "rms_dbfs": -22.609862175335465,
+    "where": "gap",
+    "asr_words": "See you next time."
+   }
+  ]
+ },
+ "dips_medians": {
+  "confidence": 0.347541943192482,
+  "quality": 0.2964524030685425
+ },
+ "energy": {
+  "first_half_mean_dbfs": -26.843871934371695,
+  "second_half_mean_dbfs": -27.421742888170453,
+  "slope_db_per_min": -0.3373896729417026,
+  "p10": -31.641462624027803,
+  "p90": -23.621169334351336,
+  "min": [
+   241,
+   -40.58930040112307
+  ],
+  "max": [
+   0,
+   -21.5397353806448
+  ],
+  "10s_min": {
+   "t0": 210,
+   "rms_dbfs_mean_of_1s": -29.92726798368337
+  },
+  "10s_max": {
+   "t0": 180,
+   "rms_dbfs_mean_of_1s": -25.518501449377517
+  }
+ },
+ "bandwidth": {
+  "bitdot_braille_vibevoice": {
+   "bw90": 1722.65625,
+   "bw95": 2250.0,
+   "bw99": 3832.03125,
+   "energy_frac_above_4k": 0.00800338559878827,
+   "energy_frac_above_8k": 3.4086263078451276e-06,
+   "highest_freq_within_60dB_of_peak": 9175.78125
+  },
+  "genaid_full_vibevoice_final": {
+   "bw90": 1968.75,
+   "bw95": 2777.34375,
+   "bw99": 4136.71875,
+   "energy_frac_above_4k": 0.012292379401301292,
+   "energy_frac_above_8k": 1.3096878141617629e-05,
+   "highest_freq_within_60dB_of_peak": 11296.875
+  },
+  "genaid_full_misaki_kokoro": {
+   "bw90": 1335.9375,
+   "bw95": 3398.4375,
+   "bw99": 9234.375,
+   "energy_frac_above_4k": 0.04373331973836927,
+   "energy_frac_above_8k": 0.016130081611695175,
+   "highest_freq_within_60dB_of_peak": 12000.0
+  }
+ }
+}

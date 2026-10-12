@@ -1,6 +1,10 @@
 import { MAX_AGENTS, PERSONAS, VOICE_MODELS, personaById, voiceById } from "./catalog";
+import { buildSpeechRequest, type SpeechRequest, type ExecutionPreferences } from "./speech-request";
+import { engineManifest, managedVoiceReferences } from "./profiles";
+import { createEngineLoader } from "./engine-load";
 
 const files: File[] = [];
+const chosenReferences = new Map<string, string>();
 
 export interface StudioSelection {
   engineId: string;
@@ -10,13 +14,14 @@ export interface StudioSelection {
   durationMin: number;
 }
 
-let emitFn: () => void = () => {};
+let emitFn: (forceLoad?: boolean) => void = () => {};
 
 export function bindStudio(
   board: HTMLElement,
   status: HTMLElement,
   onChange: (selection: StudioSelection) => void,
-): void {
+  loadEngine: (engine: string) => Promise<Record<string, unknown>>,
+): ReturnType<typeof createEngineLoader> {
   const drop = required("#model-drop");
   const loaded = required("#loaded-model");
   const loadedId = required("#loaded-model-id");
@@ -24,6 +29,20 @@ export function bindStudio(
   const fileInput = requiredInput("#source-files");
   const fileList = required("#file-list");
   const voice = requiredSelect("#voice");
+  const loader = createEngineLoader(loadEngine, state => {
+    const title = voiceById(state.engine)?.label ?? state.engine;
+    loaded.dataset.engineId = state.engine;
+    loaded.dataset.engineTitle = title;
+    loaded.dataset.runtimePhase = state.phase;
+    loaded.textContent = title;
+    drop.classList.toggle("is-loaded", state.phase === "loaded");
+    const execution = state.execution ? ` · ${state.execution.backend.toUpperCase()} ${state.execution.precision} · ${state.execution.hardware}` : "";
+    loadedId.textContent = state.phase === "loaded" ? `${state.engine}${execution} · PID ${state.pid}` :
+      state.phase === "loading" ? "Loading configured model weights…" : state.error ?? "Model loading failed.";
+    status.textContent = state.phase === "loaded" ? `Loaded ${title} into model worker ${state.pid}.` :
+      state.phase === "loading" ? `Loading ${title}…` : `${title} was not loaded: ${state.error}`;
+  });
+  let requestedEngine = "";
   voice.replaceChildren();
   for (const model of VOICE_MODELS) {
     const option = document.createElement("option");
@@ -47,8 +66,11 @@ export function bindStudio(
     renderAgents([...current, next.id]);
     emit();
   });
-  voice.addEventListener("change", emit);
-  required("#duration").addEventListener("change", emit);
+  voice.addEventListener("change", () => emit(true));
+  for (const id of ["#execution-backend", "#execution-precision", "#execution-attention"]) {
+    requiredSelect(id).addEventListener("change", () => { if (voice.value === "vibevoice") emit(true); });
+  }
+  required("#duration").addEventListener("change", () => emit());
 
   fileInput.addEventListener("change", () => {
     if (fileInput.files) addFiles(fileInput.files, fileList);
@@ -60,9 +82,6 @@ export function bindStudio(
       addFiles(pasted, fileList);
       event.preventDefault();
     }
-  });
-  required("#generate-podcast").addEventListener("click", () => {
-    status.textContent = describeRequest();
   });
 
   let drag: { card: HTMLElement; pointerId: number; startX: number; startY: number; active: boolean } | null = null;
@@ -103,10 +122,8 @@ export function bindStudio(
       loaded.dataset.engineTitle = title;
       loaded.dataset.engineId = id;
       loadedId.textContent = id;
-      drop.classList.add("is-loaded");
       if (voiceById(id)) voice.value = id;
-      status.textContent = `Loaded voice model ${title} (${id}).`;
-      emit();
+      emit(true);
     }
     drop.classList.remove("is-hot");
     ghost.hidden = true;
@@ -116,13 +133,19 @@ export function bindStudio(
   board.addEventListener("pointerup", finish);
   board.addEventListener("pointercancel", finish);
 
-  emitFn = () => {
+  emitFn = (forceLoad = false) => {
+    document.querySelectorAll<HTMLElement>(".reference-field, #vibevoice-options").forEach(node => { node.hidden = voice.value !== "vibevoice"; });
     onChange(readSelection());
+    if (forceLoad || requestedEngine !== voice.value) {
+      requestedEngine = voice.value;
+      void loader.load(requestedEngine);
+    }
   };
   emit();
+  return loader;
 
-  function emit(): void {
-    emitFn();
+  function emit(forceLoad = false): void {
+    emitFn(forceLoad);
   }
 }
 
@@ -176,6 +199,39 @@ export function promptNote(): string {
   return promptText().slice(0, 200);
 }
 
+export async function readSpeechRequest(): Promise<SpeechRequest> {
+  const node = document.querySelector<HTMLTextAreaElement>("#prompt");
+  const selection = readSelection();
+  return buildSpeechRequest(node?.value ?? "", [...files], { ...selection,
+    ...(selection.voice === "vibevoice" ? {
+      execution: readExecution(),
+      referenceIds: Array.from(document.querySelectorAll<HTMLSelectElement>(".reference-slot")).map(select => select.value),
+      maxSeconds: Number(requiredInput("#max-seconds").value), maxNewTokens: Number(requiredInput("#max-tokens").value), seed: Number(requiredInput("#generation-seed").value),
+    } : {}),
+  });
+}
+
+export function readExecution(): ExecutionPreferences {
+  const backend = requiredSelect("#execution-backend").value as ExecutionPreferences["backend"];
+  const precision = requiredSelect("#execution-precision").value as ExecutionPreferences["precision"];
+  const attention = requiredSelect("#execution-attention").value as NonNullable<ExecutionPreferences["attention"]>;
+  if (!["auto", "cpu", "rocm", "cuda"].includes(backend) || !["auto", "float32", "float16", "bfloat16"].includes(precision)) {
+    throw new Error("Choose a supported execution backend and precision.");
+  }
+  if (backend === "cpu" && precision === "float16") throw new Error("CPU inference supports FP32 or BF16.");
+  if (!["auto", "math", "efficient"].includes(attention)) throw new Error("Choose a supported attention policy.");
+  if (backend === "cpu" && !["auto", "math"].includes(attention)) throw new Error("CPU inference requires automatic or math attention.");
+  return { backend, device: backend === "cpu" ? "cpu" : backend === "auto" ? "auto" : "gpu",
+    device_index: 0, precision, attention, fallback: backend === "auto" ? "cpu" : "error" };
+}
+
+export function setScriptText(text: string): void {
+  requiredTextarea("#prompt").value = text;
+  files.length = 0;
+  required("#file-list").replaceChildren();
+  emitFn();
+}
+
 function renderAgents(ids: string[]): void {
   const host = required("#agents");
   const chosen = unique(ids).slice(0, MAX_AGENTS);
@@ -199,6 +255,18 @@ function renderAgents(ids: string[]): void {
       emitFn();
     });
     row.append(select);
+    const referenceField = document.createElement("label"); referenceField.className = "reference-field";
+    referenceField.hidden = selectValue("#voice") !== "vibevoice";
+    const reference = document.createElement("select"); reference.className = "reference-slot";
+    reference.setAttribute("aria-label", `VibeVoice reference for persona ${index + 1}`);
+    const empty = document.createElement("option"); empty.value = ""; empty.textContent = "Choose acoustic voice…"; reference.append(empty);
+    const preferred = chosenReferences.get(id) ?? engineManifest(id, "vibevoice")?.referenceId;
+    for (const voice of managedVoiceReferences) {
+      const option = document.createElement("option"); option.value = voice.id; option.textContent = `${voice.name} · ${voice.locale}`;
+      option.selected = preferred === voice.id; reference.append(option);
+    }
+    reference.addEventListener("change", () => { chosenReferences.set(id, reference.value); emitFn(); });
+    referenceField.append(reference); row.append(referenceField);
     if (index > 0) {
       const remove = document.createElement("button");
       remove.type = "button";
@@ -240,6 +308,16 @@ function addFiles(list: FileList, host: HTMLElement): void {
     files.push(file);
     const item = document.createElement("li");
     item.textContent = file.name;
+    const remove = document.createElement("button");
+    remove.type = "button";
+    remove.textContent = "Remove";
+    remove.setAttribute("aria-label", `Remove ${file.name}`);
+    remove.addEventListener("click", () => {
+      const index = files.indexOf(file);
+      if (index >= 0) files.splice(index, 1);
+      item.remove();
+    });
+    item.append(remove);
     host.append(item);
   }
 }

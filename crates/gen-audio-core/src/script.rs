@@ -116,10 +116,10 @@ fn enforce_limits(turns: &[Turn]) -> Result<(), String> {
         if turn.text.contains('\0') {
             return Err("segment contains a NUL byte".into());
         }
-        if turn.text.len() > per_segment {
+        if turn.text.chars().count() > per_segment {
             return Err(format!("segment exceeds {per_segment} characters"));
         }
-        total += turn.text.len();
+        total += turn.text.chars().count();
     }
     if total > total_cap {
         return Err(format!("script exceeds {total_cap} characters"));
@@ -128,12 +128,20 @@ fn enforce_limits(turns: &[Turn]) -> Result<(), String> {
 }
 
 fn parse_header(line: &str) -> Option<(String, Option<String>, Option<String>)> {
-    let rest = line.strip_prefix("Speaker ").or_else(|| line.strip_prefix("speaker "))?;
+    if !line.get(..7)?.eq_ignore_ascii_case("Speaker") {
+        return None;
+    }
+    let rest = line.get(7..)?;
+    if !rest.chars().next()?.is_whitespace() {
+        return None;
+    }
+    let rest = rest.trim_start();
     let id_end = rest.find(|ch: char| !ch.is_ascii_digit()).unwrap_or(rest.len());
     if id_end == 0 {
         return None;
     }
-    let id = rest[..id_end].parse::<u32>().ok()?.to_string();
+    let id = rest[..id_end].trim_start_matches('0');
+    let id = if id.is_empty() { "0" } else { id }.to_string();
     let after_id = rest[id_end..].trim_start();
     let (name, after_name) = if let Some(stripped) = after_id.strip_prefix('(') {
         let end = stripped.find(')')?;
@@ -168,5 +176,15 @@ mod tests {
         assert_eq!(turns[0].text, "Hello there.");
         assert_eq!(turns[1].script_name.as_deref(), Some("Frank"));
         assert_eq!(turns[1].text, "Second line.");
+    }
+
+    #[test]
+    fn headers_match_python_case_and_whitespace() {
+        let turns = parse_script("Speaker 01: First.\nSPEAKER\t2 (Frank): Second.\nsPeAkEr 1: Third.").unwrap();
+        assert_eq!(turns.len(), 3);
+        assert_eq!(turns[0].speaker_id, "1");
+        assert_eq!(turns[1].script_name.as_deref(), Some("Frank"));
+        assert_eq!(turns[1].text, "Second.");
+        assert_eq!(turns[2].text, "Third.");
     }
 }

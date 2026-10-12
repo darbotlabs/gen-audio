@@ -10,11 +10,47 @@ export interface PlayInfo {
 /** HTML audio transport for library tiles. Missing files stay missing. */
 
 const players = new Map<string, HTMLAudioElement>();
+const boundPlayers = new WeakSet<HTMLAudioElement>();
 /** The source each clip's transport was rendered with (before any blob swap). */
 const playerSources = new Map<string, string>();
 
+let speechObjectUrl: string | null = null;
+
+/** Only authenticated, hash-verified bytes become a playable/downloadable object URL. */
+export function showSpeechOutput(blob: Blob, fileName: string, duration: number): void {
+  const panel = document.querySelector<HTMLElement>("#speech-output");
+  const audio = document.querySelector<HTMLAudioElement>("#speech-audio");
+  const download = document.querySelector<HTMLAnchorElement>("#speech-download");
+  const info = document.querySelector<HTMLElement>("#speech-info");
+  if (!panel || !audio || !download || !info) throw new Error("Speech output controls are missing.");
+  clearSpeechOutput();
+  speechObjectUrl = URL.createObjectURL(blob);
+  audio.src = speechObjectUrl;
+  download.href = speechObjectUrl;
+  download.download = fileName;
+  info.textContent = `${fileName} · ${duration.toFixed(2)} seconds · verified WAV. Download to keep a copy.`;
+  panel.hidden = false;
+  audio.dataset.playbackTitle = fileName;
+  registerPlayer("generated-speech", audio);
+  bindFloatingPlayback();
+}
+
+export function clearSpeechOutput(): void {
+  const audio = document.querySelector<HTMLAudioElement>("#speech-audio");
+  audio?.pause();
+  audio?.removeAttribute("src");
+  audio?.load();
+  document.querySelector<HTMLAnchorElement>("#speech-download")?.removeAttribute("href");
+  document.querySelector<HTMLAnchorElement>("#manifest-download")?.removeAttribute("href");
+  const panel = document.querySelector<HTMLElement>("#speech-output");
+  if (panel) panel.hidden = true;
+  if (speechObjectUrl) URL.revokeObjectURL(speechObjectUrl);
+  speechObjectUrl = null;
+  if (activeId === "generated-speech") closeFloatingPlayback();
+}
 
 let activeId: string | null = null;
+let playbackRevision = 0;
 /** The clip the cube is showing. The cube clock follows only this clip, not the last one played. */
 let cubeClockClip: string | null = null;
 
@@ -23,10 +59,16 @@ let cubeClockUid: string | null = null;
 const playListeners = new Set<(clipId: string, info: PlayInfo) => void>();
 
 /** Reports a UI Play click (origin "user") to the control bus; set by main.ts. */
-let reportUserPlay: (clipId: string) => void = () => {};
+let reportUserPlay: (clipId: string, origin?: PlayOrigin) => void = () => {};
+let reportUserPause: (clipId: string) => void = () => {};
 
-export function setUserPlayReporter(report: (clipId: string) => void): void {
+export function setUserPlayReporter(report: (clipId: string, origin?: PlayOrigin) => void): void {
   reportUserPlay = report;
+}
+export function setUserPauseReporter(report: (clipId: string) => void): void { reportUserPause = report; }
+export function pauseClipByUser(clipId: string): string {
+  reportUserPause(clipId);
+  return pauseClip(clipId);
 }
 
 /** One seeker for every library transport (deferred, verified seeks; see seek.ts). */
@@ -60,6 +102,8 @@ async function seekTo(clipId: string, audio: HTMLAudioElement, seconds: number):
 
 /** Test seam: register a transport element without building the tile DOM. */
 export function registerPlayer(clipId: string, audio: HTMLAudioElement): void {
+  const previous = players.get(clipId);
+  if (previous && previous !== audio) previous.pause();
   const source = audio.src;
   const prior = playerSources.get(clipId);
   // Same clip, new source: its cached blob copies the old file, so revoke it.
@@ -76,11 +120,14 @@ export function releaseDetachedTransports(): string[] {
   const released: string[] = [];
   for (const [clipId, audio] of players) {
     if (audio.isConnected !== false) continue;
+    audio.pause();
     players.delete(clipId);
     playerSources.delete(clipId);
     seeker.release(clipId);
     released.push(clipId);
+    if (activeId === clipId) activeId = null;
   }
+  if (released.length) setPlayingChrome(anyPlaying());
   return released;
 }
 
@@ -92,6 +139,7 @@ export function releaseAllSeekBlobs(): void {
 export function setCubeClockClip(clipId: string | null, uid: string | null = null): void {
   cubeClockClip = clipId;
   cubeClockUid = clipId ? uid : null;
+  if (clipId) syncCubeToClip(clipId);
 }
 
 /** Shared clock source: the clip (legacy tile id and asset uid) whose seconds drive the cube. */
@@ -121,7 +169,10 @@ function syncCubeToClip(clipId: string): void {
 }
 
 function drivesCube(clipId: string | null): boolean {
-  return clipDrivesCube(clipId, cubeClockClip);
+  if (clipDrivesCube(clipId, cubeClockClip)) return true;
+  if (!clipId || !cubeClockClip) return false;
+  const audio = player(clipId);
+  return Boolean(audio && audio === player(cubeClockClip));
 }
 
 function cubeFraction(): number | null {
@@ -210,7 +261,7 @@ export function renderTransport(clipId: string, wavUrl: string | undefined, dura
     if (audio.paused) {
       reportUserPlay(clipId);
       void playClip(clipId, "user").catch((error: unknown) => surfaceUiError(error, "play"));
-    } else pauseClip(clipId);
+    } else pauseClipByUser(clipId);
   });
   scrub.addEventListener("input", () => {
     const duration = audio.duration || durationHint || 0;
@@ -229,7 +280,10 @@ export function renderTransport(clipId: string, wavUrl: string | undefined, dura
 function player(clipId: string): HTMLAudioElement | undefined {
   const direct = players.get(clipId);
   if (direct) return direct;
-  const tile = document.querySelector<HTMLElement>(`.library-tile[data-uid="${CSS.escape(clipId)}"]`);
+  const escaped = CSS.escape(clipId);
+  const tile = document.querySelector<HTMLElement>(`.library-tile[data-uid="${escaped}"]`)
+    ?? document.querySelector<HTMLElement>(`.library-tile[data-clip-uid="${escaped}"]`)
+    ?? document.querySelector<HTMLElement>(`.library-tile[data-asset-uid="${escaped}"]`);
   const id = tile?.dataset.id;
   return id ? players.get(id) : undefined;
 }
@@ -237,20 +291,22 @@ function player(clipId: string): HTMLAudioElement | undefined {
 export async function playClip(clipId: string, origin: PlayOrigin = "auto"): Promise<string> {
   const audio = player(clipId);
   if (!audio || !audio.src) return "no wav";
-  for (const [id, other] of players) {
-    if (id !== clipId && !other.paused) other.pause();
+  for (const other of players.values()) {
+    if (other !== audio && !other.paused) other.pause();
   }
   try {
+    const revision = ++playbackRevision;
     activeId = clipId;
     setPlayingChrome(true);
     await audio.play();
+    if (revision !== playbackRevision) return "superseded";
     syncFloater(clipId);
     startLiveCubeClock(cubeFraction);
     const info: PlayInfo = { origin };
     for (const listener of playListeners) listener(clipId, info);
     return "playing";
   } catch (error) {
-    if (!anyPlaying()) setPlayingChrome(false);
+    if (!anyPlaying()) { activeId = null; setPlayingChrome(false); }
     surfaceUiError(error, "play");
     return `play failed: ${String(error)}`;
   }
@@ -297,10 +353,12 @@ export async function seekClipFraction(clipId: string, fraction: number): Promis
   const audio = player(clipId);
   if (!audio || !audio.src) return "no wav";
   const duration = audio.duration;
-  if (!Number.isFinite(duration) || duration <= 0) return "no duration";
   // The scrub fraction is on the cube's clock (its WAV duration); convert to seconds on this clip.
   const clock = drivesCube(clipId) ? getCubeMeta()?.durationS ?? duration : duration;
-  const outcome = await seekTo(clipId, audio, Math.min(duration, Math.max(0, Math.min(1, fraction)) * clock));
+  if (!Number.isFinite(clock) || clock <= 0) return "no duration";
+  if (!Number.isFinite(fraction)) return "invalid fraction";
+  const seconds = Math.max(0, Math.min(1, fraction)) * clock;
+  const outcome = await seekTo(clipId, audio, Number.isFinite(duration) && duration > 0 ? Math.min(duration, seconds) : seconds);
   return outcome.ok ? `seeked ${clipId}` : outcome.status;
 }
 
@@ -356,20 +414,40 @@ function syncFloater(clipId: string): void {
   const audio = player(clipId);
   const ui = floater();
   if (!audio || !ui) return;
-  const tile = document.querySelector<HTMLElement>(`.card[data-id="${CSS.escape(clipId)}"]`);
-  ui.title.textContent = tile?.querySelector("h2")?.textContent?.trim() || clipId;
+  const tile = audio.closest?.(".card");
+  ui.title.textContent = audio.dataset?.playbackTitle || tile?.querySelector("h2")?.textContent?.trim() || clipId;
   const duration = audio.duration || 0;
   const cur = audio.currentTime || 0;
   ui.time.textContent = `${formatTime(cur)} / ${formatTime(duration)}`;
   ui.scrub.value = duration > 0 ? String(Math.round((cur / duration) * 1000)) : "0";
   ui.btn.textContent = audio.paused ? "Play" : "Pause";
+  ui.btn.setAttribute("aria-label", audio.paused ? "Play audio" : "Pause audio");
 }
 
 function setPlayingChrome(on: boolean): void {
   document.querySelector(".viewport")?.classList.toggle("is-playing", on);
   const ui = floater();
   if (!ui) return;
-  ui.root.hidden = !on;
+  ui.root.hidden = activeId === null;
+}
+
+/** Explicit close stops playback; subsequent media events cannot reopen the widget. */
+export function closeFloatingPlayback(): void {
+  const audio = activeId ? player(activeId) : undefined;
+  if (activeId) reportUserPause(activeId);
+  activeId = null;
+  ++playbackRevision;
+  audio?.pause();
+  if (audio) {
+    try { audio.currentTime = 0; } catch { /* Metadata may not have loaded yet. */ }
+  }
+  stopLiveCubeClock();
+  setPlayingChrome(false);
+}
+
+export function revealPlayingAudio(): void {
+  const audio = activeId ? player(activeId) : undefined;
+  audio?.dispatchEvent(new CustomEvent("reveal-playing-audio", { bubbles: true }));
 }
 
 function anyPlaying(): boolean {
@@ -381,14 +459,19 @@ function anyPlaying(): boolean {
 
 export function bindFloatingPlayback(): void {
   const ui = floater();
-  if (!ui || ui.root.dataset.bound === "1") return;
+  if (!ui) return;
+  if (ui.root.dataset.bound !== "1") {
   ui.root.dataset.bound = "1";
+  document.querySelector("#fp-goto")?.addEventListener("click", revealPlayingAudio);
+  document.querySelector("#fp-close")?.addEventListener("click", closeFloatingPlayback);
   ui.btn.addEventListener("click", () => {
     if (!activeId) return;
     const audio = player(activeId);
     if (!audio) return;
-    if (audio.paused) void playClip(activeId, "resume").catch((error: unknown) => surfaceUiError(error, "play"));
-    else pauseClip(activeId);
+    if (audio.paused) {
+      reportUserPlay(activeId, "resume");
+      void playClip(activeId, "resume").catch((error: unknown) => surfaceUiError(error, "play"));
+    } else pauseClipByUser(activeId);
   });
   ui.scrub.addEventListener("input", () => {
     if (!activeId) return;
@@ -397,8 +480,14 @@ export function bindFloatingPlayback(): void {
     const fraction = Number(ui.scrub.value) / 1000;
     void seekTo(activeId, audio, fraction * audio.duration).catch((error: unknown) => surfaceUiError(error, "seek"));
   });
+  }
   for (const [clipId, audio] of players) {
+    if (boundPlayers.has(audio)) continue;
+    boundPlayers.add(audio);
     audio.addEventListener("play", () => {
+      for (const other of players.values()) {
+        if (other !== audio && !other.paused) other.pause();
+      }
       activeId = clipId;
       setPlayingChrome(true);
       syncFloater(clipId);

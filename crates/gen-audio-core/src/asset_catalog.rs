@@ -25,12 +25,25 @@ pub const MAX_SESSION_ASSETS: usize = 8;
 /// served. A catalog that fails is not served at all.
 pub fn load_catalog(text: &str) -> Result<Vec<Value>, String> {
     let doc: Value = serde_json::from_str(text).map_err(|error| format!("bad_json: assets.json does not parse: {error}"))?;
+    let root = doc.as_object().ok_or("bad_catalog: catalog must be an object")?;
+    if root.keys().any(|key| !["schema_version", "uid_scheme", "assets", "legacy_index"].contains(&key.as_str()))
+        || root.get("uid_scheme").and_then(Value::as_str) != Some("ga1")
+        || root.get("schema_version").and_then(Value::as_str).and_then(|value| crate::asset::parse_schema_major(value).ok()) != Some(1)
+    {
+        return Err("bad_catalog: invalid catalog header".into());
+    }
     let mut assets = doc
         .get("assets")
         .and_then(Value::as_array)
         .cloned()
         .ok_or_else(|| "bad_catalog: assets.json has no assets array".to_string())?;
     validate_set(&assets).map_err(|error| format!("catalog set check failed: {error}"))?;
+    let expected: serde_json::Map<String, Value> = assets.iter().filter_map(|asset| {
+        asset["legacy_id"].as_str().map(|id| (format!("{}:{id}", asset["kind"].as_str().unwrap_or_default()), asset["uid"].clone()))
+    }).collect();
+    if doc["legacy_index"].as_object() != Some(&expected) {
+        return Err("bad_catalog: legacy_index must exactly match the asset rows".into());
+    }
     assets.sort_by(|a, b| uid_of(a).cmp(uid_of(b)));
     Ok(assets)
 }
@@ -334,12 +347,15 @@ pub fn uid_for_legacy(kind: &str, legacy_id: &str) -> Option<String> {
 mod tests {
     use super::*;
 
-    const MISAKI_CUBE: &str = "ga:cube_ihdr:biaxxmnibxtcur7nxdu3ffvna4";
+    fn misaki_cube() -> String {
+        uid_for_legacy("cube_ihdr", "lib-misaki-kokoro.cube").expect("misaki cube")
+    }
 
     #[test]
     fn resolves_full_uid_and_prefix() {
-        assert!(matches!(resolve(MISAKI_CUBE).unwrap(), Resolve::Found(asset) if asset["legacy_id"] == "lib-misaki-kokoro.cube"));
-        assert!(matches!(resolve("ga:cube_ihdr:biaxxmni").unwrap(), Resolve::Found(_)));
+        let cube = misaki_cube();
+        assert!(matches!(resolve(&cube).unwrap(), Resolve::Found(asset) if asset["legacy_id"] == "lib-misaki-kokoro.cube"));
+        assert!(matches!(resolve(&cube[..21]).unwrap(), Resolve::Found(_)));
         assert!(matches!(resolve("ga:cube_ihdr:aaaaaaaaaaaaaaaaaaaaaaaaaa").unwrap(), Resolve::NotFound));
         assert!(matches!(resolve("ga:cube_ihdr:biax"), Err(CatalogError::Invalid(_))));
         assert!(matches!(resolve("ga:widget:biaxxmnibxtcur7nxdu3ffvna4"), Err(CatalogError::Invalid(_))));
@@ -361,11 +377,11 @@ mod tests {
 
     #[test]
     fn runtime_load_runs_the_set_check() {
-        assert_eq!(catalog_health().unwrap(), assets().len());
+        assert_eq!(catalog_health().unwrap(), catalog().len());
         let mut doc: Value = serde_json::from_str(CATALOG_JSON).unwrap();
         // Drop the misaki clip: every envelope is still valid on its own, but
         // its cube and spectrogram now derive from a uid outside the set.
-        let clip = resolve(MISAKI_CUBE).ok().and_then(|found| match found {
+        let clip = resolve(&misaki_cube()).ok().and_then(|found| match found {
             Resolve::Found(cube) => cube["src"][0].as_str().map(str::to_string),
             _ => None,
         });
@@ -399,7 +415,7 @@ mod tests {
             Some("lib-misaki-kokoro")
         );
         assert_eq!(
-            tile_id_for(&require(MISAKI_CUBE).unwrap()).as_deref(),
+            tile_id_for(&require(&misaki_cube()).unwrap()).as_deref(),
             Some("lib-misaki-kokoro")
         );
         let card = uid_for_legacy("card", "profile-optimus").unwrap();

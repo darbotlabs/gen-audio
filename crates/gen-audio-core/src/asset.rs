@@ -853,6 +853,7 @@ pub fn validate_envelope(envelope: &Value) -> Result<Minted, AssetError> {
     check_honesty(kind, envelope)?;
     check_required_media(kind, envelope)?;
     check_speech_facts(kind, envelope)?;
+    check_envelope_shape(envelope, kind)?;
     Ok(minted)
 }
 
@@ -1102,6 +1103,142 @@ fn check_display(display: Option<&Value>, glyph: &str) -> Result<(), AssetError>
     if let Some(rev) = display.get("display_rev") {
         if !rev.as_u64().is_some_and(|value| value <= MAX_SAFE_INTEGER as u64) {
             return err("bad_display_rev", "display.display_rev must be a non-negative integer");
+        }
+    }
+    Ok(())
+}
+
+fn closed_object<'a>(value: &'a Value, allowed: &[&str], required: &[&str]) -> Result<&'a Map<String, Value>, AssetError> {
+    let obj = value.as_object().ok_or_else(|| AssetError { code: "bad_envelope", detail: "expected an object".into() })?;
+    for key in obj.keys() {
+        if !allowed.contains(&key.as_str()) {
+            return err("unknown_property", format!("unexpected property {key}"));
+        }
+    }
+    for key in required {
+        if !obj.contains_key(*key) {
+            return err("bad_envelope", format!("missing required property {key}"));
+        }
+    }
+    Ok(obj)
+}
+
+fn check_envelope_shape(envelope: &Value, kind: &str) -> Result<(), AssetError> {
+    let required = ["schema_version", "uid_scheme", "kind", "uid", "status", "fields", "media", "src", "honesty", "display"];
+    let root = closed_object(envelope, &[
+        "schema_version", "uid_scheme", "kind", "uid", "status", "fields", "media",
+        "src", "honesty", "display", "legacy_id", "relations", "provenance", "body", "extensions",
+    ], &required)?;
+    if !matches!(root["status"].as_str(), Some("ok" | "missing" | "unavailable")) {
+        return err("bad_status", "status must be ok, missing or unavailable");
+    }
+    for (key, max) in [("media", 8), ("src", 16)] {
+        if !root[key].as_array().is_some_and(|items| items.len() <= max) {
+            return err("bad_envelope", format!("{key} must be an array of at most {max} entries"));
+        }
+    }
+    let src = root["src"].as_array().unwrap();
+    if src.iter().enumerate().any(|(index, value)| src[..index].contains(value)) {
+        return err("bad_envelope", "src must be unique");
+    }
+    for item in root["media"].as_array().unwrap() {
+        let media = closed_object(item, &["role", "path", "sha256", "bytes", "mime"], &["role", "path", "sha256", "bytes"])?;
+        if media.get("mime").is_some_and(|mime| !matches!(mime.as_str(), Some("audio/wav" | "image/png" | "application/json" | "text/plain"))) {
+            return err("bad_media", "unknown media mime type");
+        }
+    }
+    let display = closed_object(&root["display"], DISPLAY_KEYS, &["title", "glyph"])?;
+    for (key, min, max) in [("title", 1, 160), ("glyph", 2, 2), ("summary", 0, 400), ("semantic_name", 0, 160), ("face_name", 0, 160)] {
+        if display.get(key).is_some_and(|value| !value.as_str().is_some_and(|text| (min..=max).contains(&text.chars().count()))) {
+            return err("bad_envelope", format!("display.{key} must be a bounded string"));
+        }
+    }
+    closed_object(&root["honesty"], &["synthesized_speech", "fixture", "not_podcast", "claims", "note"], &["synthesized_speech", "fixture"])?;
+    if let Some(relations) = root.get("relations") {
+        let obj = closed_object(relations, &["composes", "bound_to", "supersedes", "layer_of"], &[])?;
+        for (key, value) in obj {
+            if key == "layer_of" {
+                if value.as_str().and_then(|uid| parse_uid(uid).ok()).is_none_or(|(kind, _)| kind != "cube_ihdr") {
+                    return err("bad_envelope", "relations.layer_of must be a cube uid");
+                }
+            } else if !value.as_array().is_some_and(|items| {
+                items.len() <= 8 && !items.iter().enumerate().any(|(index, value)| items[..index].contains(value))
+            }) {
+                return err("bad_envelope", format!("relations.{key} must be an array of at most 8 unique uids"));
+            }
+        }
+    }
+    if let Some(provenance) = root.get("provenance") {
+        closed_object(provenance, &["generator", "engine", "voice_model", "g2p_model", "params", "created_at", "generator_sha256", "generator_commit", "layer_method"], &[])?;
+    }
+    if root.get("extensions").is_some_and(|value| !value.is_object()) {
+        return err("bad_envelope", "extensions must be an object");
+    }
+    if let Some(body) = root.get("body") {
+        check_body_shape(kind, body)?;
+    }
+    Ok(())
+}
+
+fn check_body_shape(kind: &str, body: &Value) -> Result<(), AssetError> {
+    let invalid = |detail| AssetError { code: "bad_body", detail };
+    match kind {
+        "voice_profile" => return crate::cards::validate_voice_profile(body).map_err(invalid),
+        "card" => return crate::cards::validate_viewport(&json!({
+            "version": "1.0", "title": "Asset card", "cards": [body],
+        })).map_err(invalid),
+        _ => {}
+    }
+    let (strings, numbers, integers, booleans, arrays, objects): (&[&str], &[&str], &[&str], &[&str], &[&str], &[&str]) = match kind {
+        "voice_model" => (&["label", "note"], &[], &[], &["waveform", "synth_adapter", "unavailable"], &[], &["availability"]),
+        "audio_clip" => (&["wav_url"], &["duration_s"], &["sample_rate", "n_words", "n_turns"], &[], &[], &[]),
+        "cube_ihdr" => (&["json_url", "png_url"], &["inv_hdr", "layer_score", "duration_s", "bin_seconds", "cube_covers_s"], &[], &[], &["cube_shape_f_t"], &[]),
+        "spectrogram_2d" => (&["png_url"], &["seconds_per_px"], &[], &[], &[], &[]),
+        "layer" => (&[], &["mean", "std", "p50", "p90", "active_frac"], &[], &[], &["shape"], &[]),
+        "podcast_script" => (&["text_url"], &[], &[], &[], &["speakers"], &[]),
+        "transcript" => (&["text_url"], &[], &[], &[], &[], &[]),
+        "mcp_tool" => (&["description"], &[], &[], &[], &[], &[]),
+        _ => return err("bad_body", format!("unknown body kind {kind}")),
+    };
+    let speech_keys: &[&str] = match kind {
+        "audio_clip" => &["speakers", "segments"],
+        "cube_ihdr" => &["speakers", "segments", "speaker_idx"],
+        _ => &[],
+    };
+    let allowed: Vec<_> = [strings, numbers, integers, booleans, arrays, objects, speech_keys].concat();
+    let obj = closed_object(body, &allowed, &[])?;
+    for (key, value) in obj {
+        let key = key.as_str();
+        if speech_keys.contains(&key) {
+            if key != "speakers" && !value.is_array() {
+                return err("bad_body", format!("{kind}.body.{key} must be an array"));
+            }
+            continue;
+        }
+        let valid = (strings.contains(&key) && value.is_string())
+            || (numbers.contains(&key) && value.is_number())
+            || (integers.contains(&key) && value.as_f64().is_some_and(|n| n.fract() == 0.0))
+            || (booleans.contains(&key) && value.is_boolean())
+            || (arrays.contains(&key) && value.as_array().is_some_and(|items| {
+                items.iter().all(|item| if key == "speakers" { item.is_string() } else { item.as_f64().is_some_and(|n| n.fract() == 0.0) })
+                    && (key != "cube_shape_f_t" || items.len() == 2)
+            }))
+            || (objects.contains(&key) && value.is_object());
+        if !valid {
+            return err("bad_body", format!("{kind}.body.{key} has the wrong type"));
+        }
+        if matches!(key, "wav_url" | "json_url" | "png_url") {
+            let path = value.as_str().unwrap().strip_prefix("/library/")
+                .ok_or_else(|| invalid(format!("{key} must be a /library/ URL")))?;
+            check_media_path(path)?;
+        }
+    }
+    if let Some(availability) = obj.get("availability") {
+        let availability = closed_object(availability, &["status", "reason", "legacy_clip_id"], &[])?;
+        for (key, value) in availability {
+            if !value.is_string() || (key == "status" && !matches!(value.as_str(), Some("unavailable" | "offline_only" | "weights_absent" | "external" | "running"))) {
+                return err("bad_body", format!("availability.{key} is invalid"));
+            }
         }
     }
     Ok(())

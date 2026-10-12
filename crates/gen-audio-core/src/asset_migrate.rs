@@ -61,13 +61,15 @@ fn clip_voice_model(engine: &str) -> Option<(&'static str, Option<&'static str>)
     match engine {
         "kokoro_onnx" => Some(("kokoro_onnx", None)),
         "kokoro_dayour" => Some(("kokoro_dayour", None)),
+        "vibevoice" => Some(("vibevoice", None)),
+        "personaplex" => Some(("personaplex", None)),
         // dayour/kokoro KPipeline.generate_from_tokens on misaki G2P phonemes.
         "misaki_kokoro" => Some(("kokoro_dayour", Some("misaki"))),
-        // Rendered offline with microsoft/VibeVoice-1.5B; the app has no adapter.
-        "vibevoice" => Some(("vibevoice", None)),
         _ => None,
     }
 }
+
+pub const COMPARE_LAYER_METHODS: &[&str] = &["pipeline_r2"];
 
 pub fn migrate_v0_to_v1(bundle: &Value) -> Result<Value, AssetError> {
     let media = bundle.get("media").cloned().unwrap_or_else(|| json!({}));
@@ -108,6 +110,8 @@ pub fn migrate_v0_to_v1(bundle: &Value) -> Result<Value, AssetError> {
         } else if let Some(reason) = offline_reason {
             // The VibeVoice honesty contract for a model with offline clips only.
             body.insert("availability".into(), json!({"status": "offline_only", "reason": reason}));
+        } else if !model["synthAdapter"].as_bool().unwrap_or(false) {
+            body.insert("availability".into(), json!({"status": "unavailable", "reason": model["note"]}));
         }
         // Status ok only for a model Generate can produce in this app.
         let producible = model["synthAdapter"].as_bool().unwrap_or(false) && !unavailable;
@@ -218,11 +222,34 @@ pub fn migrate_v0_to_v1(bundle: &Value) -> Result<Value, AssetError> {
         clip_wav_sha.insert(id.clone(), sha.clone());
 
         let Some(cube) = clip.get("cube").filter(|cube| cube.is_object()) else { continue };
+        let mut cubes = vec![(None, cube)];
+        let mut methods = std::collections::BTreeSet::new();
+        let mut primary_cube_uid = None;
+        for entry in cube["compare"].as_array().into_iter().flatten() {
+            let method = entry["layer_method"].as_str().unwrap_or_default();
+            if !COMPARE_LAYER_METHODS.contains(&method) || !methods.insert(method) {
+                return fail("bad_layer_method", format!("v0 clip {id}: unsupported or duplicate comparison layer_method {method:?}"));
+            }
+            cubes.push((Some(method), entry));
+        }
+        for (comparison, cube) in cubes {
+        let cube_legacy = match comparison {
+            Some(method) => format!("{id}.cube.{method}"),
+            None => format!("{id}.cube"),
+        };
         let json_path = cube["jsonUrl"].as_str().and_then(web_to_library_path).unwrap_or_default();
         let png_path = cube["pngUrl"].as_str().and_then(web_to_library_path).unwrap_or_default();
         let Some(cube_doc) = bundle.pointer("/cube_docs").and_then(|docs| docs.get(&json_path)) else {
             return fail("cube_doc_missing", format!("v0 clip {id}: cube JSON {json_path} not supplied"));
         };
+        if let Some(method) = comparison {
+            if cube_doc.pointer("/provenance/layer_method").or_else(|| cube_doc.get("layer_method")).and_then(Value::as_str) != Some(method) {
+                return fail("bad_layer_method", format!("{json_path}: layer_method does not match {method}"));
+            }
+            if cube_doc["source_sha256"].as_str() != Some(sha.as_str()) {
+                return fail("source_sha_mismatch", format!("{json_path}: source_sha256 does not match {wav_path}"));
+            }
+        }
         let cube_sr = cube_doc["sample_rate"].as_u64().unwrap_or(sample_rate);
         let cube_duration_s = cube_doc["duration_s"].as_f64().or_else(|| cube["duration_s"].as_f64()).unwrap_or(0.0);
         let shape = cube_doc["cube_shape_f_t"]
@@ -293,13 +320,18 @@ pub fn migrate_v0_to_v1(bundle: &Value) -> Result<Value, AssetError> {
         }
         let mut params = cube_provenance.get("params").and_then(Value::as_object).cloned().unwrap_or_default();
         params.insert("bins_inferred_from_shape".into(), json!(inferred));
+        if let Some(method) = comparison {
+            fields["layer_method"] = json!(method);
+            params.insert("layer_method".into(), json!(method));
+            params.insert("compare_to".into(), json!(primary_cube_uid));
+        }
         cube_provenance.insert("params".into(), Value::Object(params));
         let mut cube_media = Vec::new();
         cube_media.extend(media_ref(&media, "cube_json", &json_path, "application/json"));
         cube_media.extend(media_ref(&media, "cube_png", &png_path, "image/png"));
         let cube_envelope = build_envelope(EnvelopeParts {
             kind: "cube_ihdr",
-            legacy_id: Some(format!("{id}.cube")),
+            legacy_id: Some(cube_legacy.clone()),
             title: cube_doc["title"].as_str().map(str::to_string).unwrap_or_else(|| format!("Inverse-HDR cube — {id}")),
             summary: cube["note"].as_str().map(str::to_string),
             status: "ok",
@@ -322,13 +354,16 @@ pub fn migrate_v0_to_v1(bundle: &Value) -> Result<Value, AssetError> {
             }),
         })?;
         let cube_uid = remember(&mut assets, cube_envelope);
+        if comparison.is_none() {
+            primary_cube_uid = Some(cube_uid.clone());
+        }
         for (layer_index, name) in crate::asset::LAYER_NAMES.iter().enumerate() {
             let Some(stats) = cube_doc.pointer(&format!("/layers/{name}")) else { continue };
             let mut relations = Map::new();
             relations.insert("layer_of".into(), json!(cube_uid));
             let layer = build_envelope(EnvelopeParts {
                 kind: "layer",
-                legacy_id: Some(format!("{id}.cube.{name}")),
+                legacy_id: Some(format!("{cube_legacy}.{name}")),
                 title: format!("{name} layer"),
                 summary: None,
                 status: "ok",
@@ -341,6 +376,7 @@ pub fn migrate_v0_to_v1(bundle: &Value) -> Result<Value, AssetError> {
                 body: stats.clone(),
             })?;
             remember(&mut assets, layer);
+        }
         }
     }
 

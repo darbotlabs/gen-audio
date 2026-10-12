@@ -1,17 +1,267 @@
 {
-  "agentName": "Alice",
-  "personaId": "alice",
-  "voiceModel": "kokoro_onnx",
-  "voiceLabel": "kokoro-onnx",
-  "tone": "warm",
-  "purpose": "Walk through a labeled example",
-  "domain": "SDK onboarding",
   "accent": "General American",
-  "traits": "Persona Alice is the agent name. Kokoro pack id af_heart is a reference on this profile, not the Voice selector.",
-  "refs": ["kokoro-pack:af_heart", "persona:alice"],
+  "adaptiveCard": {
+    "$schema": "https://adaptivecards.io/schemas/adaptive-card.json",
+    "actions": [
+      {
+        "data": {
+          "arguments": {
+            "agents": [
+              "alice"
+            ]
+          },
+          "tool": "ui_set_sidepane"
+        },
+        "title": "Use Alice",
+        "type": "Action.Submit"
+      },
+      {
+        "data": {
+          "arguments": {
+            "slide": "slide:studio"
+          },
+          "tool": "ui_navigate"
+        },
+        "title": "Gen-Audio desktop studio",
+        "type": "Action.Submit"
+      },
+      {
+        "data": {
+          "arguments": {
+            "slide": "slide:library"
+          },
+          "tool": "ui_navigate"
+        },
+        "title": "Gen-Audio SDK and audio library",
+        "type": "Action.Submit"
+      },
+      {
+        "data": {
+          "arguments": {
+            "referenceId": "en-Alice_woman"
+          },
+          "tool": "voice_reference_prepare"
+        },
+        "title": "Prepare Alice",
+        "type": "Action.Submit"
+      }
+    ],
+    "body": [
+      {
+        "text": "Alice",
+        "type": "TextBlock",
+        "weight": "Bolder",
+        "wrap": true
+      },
+      {
+        "facts": [
+          {
+            "title": "AgentName",
+            "value": "Alice"
+          },
+          {
+            "title": "Artist",
+            "value": "Alice"
+          },
+          {
+            "title": "Purpose",
+            "value": "Walk through a labeled example"
+          },
+          {
+            "title": "Domain",
+            "value": "SDK onboarding"
+          },
+          {
+            "title": "Accent",
+            "value": "General American"
+          },
+          {
+            "title": "Traits",
+            "value": "Persona Alice is the agent name. Kokoro pack id af_heart is a reference on this profile, not the Voice selector."
+          }
+        ],
+        "type": "FactSet"
+      },
+      {
+        "text": "Engine bindings",
+        "type": "TextBlock",
+        "weight": "Bolder"
+      },
+      {
+        "facts": [
+          {
+            "title": "kokoro_onnx",
+            "value": "script_tts / mapped / af_heart"
+          },
+          {
+            "title": "kokoro_dayour",
+            "value": "script_tts / mapped / af_heart"
+          },
+          {
+            "title": "misaki",
+            "value": "g2p / mapped / af_heart"
+          },
+          {
+            "title": "vibevoice",
+            "value": "script_tts / mapped / en-Alice_woman"
+          },
+          {
+            "title": "personaplex",
+            "value": "speech_to_speech / mapped / en-Alice_woman"
+          },
+          {
+            "title": "magpie",
+            "value": "script_tts / unmapped / No binding assigned"
+          },
+          {
+            "title": "pocket_tts",
+            "value": "script_tts / unmapped / No binding assigned"
+          }
+        ],
+        "type": "FactSet"
+      },
+      {
+        "text": "Reference samples: Alice",
+        "type": "TextBlock",
+        "wrap": true
+      },
+      {
+        "text": "Projects: Gen-Audio desktop studio (apps/desktop); Gen-Audio SDK and audio library (src/gen_audio)",
+        "type": "TextBlock",
+        "wrap": true
+      }
+    ],
+    "type": "AdaptiveCard",
+    "version": "1.5"
+  },
+  "agentName": "Alice",
+  "disclaimer": "Persona config for Alice on voice model kokoro-onnx. No audio of this persona yet; not a podcast render.",
+  "domain": "SDK onboarding",
+  "engineManifests": {
+    "kokoro_dayour": {
+      "adapter": "external",
+      "capability": "script_tts",
+      "language": "en-us",
+      "mapping": "mapped",
+      "requires": [
+        "external_runtime"
+      ],
+      "voiceId": "af_heart"
+    },
+    "kokoro_onnx": {
+      "adapter": "synth",
+      "capability": "script_tts",
+      "language": "en-us",
+      "mapping": "mapped",
+      "requires": [
+        "kokoro_model",
+        "kokoro_voice_pack"
+      ],
+      "voiceId": "af_heart"
+    },
+    "magpie": {
+      "adapter": "external",
+      "capability": "script_tts",
+      "language": "en",
+      "mapping": "unmapped",
+      "requires": [
+        "external_runtime",
+        "voice_mapping"
+      ]
+    },
+    "misaki": {
+      "adapter": "g2p",
+      "capability": "g2p",
+      "downstreamEngine": "kokoro_onnx",
+      "language": "en-us",
+      "mapping": "mapped",
+      "requires": [
+        "kokoro_waveform_engine"
+      ],
+      "voiceId": "af_heart"
+    },
+    "personaplex": {
+      "adapter": "model_generate",
+      "capability": "speech_to_speech",
+      "language": "en",
+      "mapping": "mapped",
+      "referenceId": "en-Alice_woman",
+      "requires": [
+        "isolated_python312",
+        "personaplex_checkpoint",
+        "input_audio",
+        "persona_prompt",
+        "reference_wav"
+      ]
+    },
+    "pocket_tts": {
+      "adapter": "external",
+      "capability": "script_tts",
+      "language": "en",
+      "mapping": "unmapped",
+      "requires": [
+        "external_runtime",
+        "voice_mapping"
+      ]
+    },
+    "vibevoice": {
+      "adapter": "model_generate",
+      "capability": "script_tts",
+      "language": "en",
+      "mapping": "mapped",
+      "referenceId": "en-Alice_woman",
+      "requires": [
+        "isolated_python312",
+        "vibevoice_checkpoint",
+        "local_tokenizer",
+        "reference_wav"
+      ]
+    }
+  },
+  "linkedProjects": [
+    {
+      "id": "gen-audio-desktop",
+      "name": "Gen-Audio desktop studio",
+      "path": "apps/desktop",
+      "slide": "studio"
+    },
+    {
+      "id": "gen-audio-sdk",
+      "name": "Gen-Audio SDK and audio library",
+      "path": "src/gen_audio",
+      "slide": "library"
+    }
+  ],
+  "metadata": {
+    "artist": "Alice"
+  },
+  "notPodcast": true,
+  "personaId": "alice",
+  "profileVersion": "2.0",
+  "purpose": "Walk through a labeled example",
+  "refs": [
+    "kokoro-pack:af_heart",
+    "persona:alice"
+  ],
+  "samples": [
+    {
+      "kind": "acoustic_reference",
+      "label": "Alice",
+      "referenceId": "en-Alice_woman"
+    }
+  ],
   "spectrogram2d": "none",
   "spectrogram3d": "none",
-  "notPodcast": true,
   "synthesizedSpeech": false,
-  "disclaimer": "Persona config for Alice on voice model kokoro-onnx. No audio of this persona yet; not a podcast render."
+  "tags": [
+    "agent",
+    "alice",
+    "script_tts",
+    "g2p",
+    "speech_to_speech"
+  ],
+  "tone": "warm",
+  "traits": "Persona Alice is the agent name. Kokoro pack id af_heart is a reference on this profile, not the Voice selector.",
+  "voiceLabel": "kokoro-onnx",
+  "voiceModel": "kokoro_onnx"
 }

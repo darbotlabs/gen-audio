@@ -1,0 +1,27 @@
+{
+  "image": "bitdot_braille_vibevoice_strip.png",
+  "width_px": 5930,
+  "height_px": 64,
+  "duration_s": 247.06666666666666,
+  "px_per_s": 24.00161899622234,
+  "s_per_px": 0.04166385609893199,
+  "time_to_px": "x = t_s * px_per_s  (x = t_s / duration_s * width_px), clamp to [0, width_px-1]",
+  "px_to_time": "t_s = x * s_per_px (left edge); column center = (x + 0.5) * s_per_px",
+  "rows": {
+    "n": 64,
+    "kind": "mel bands",
+    "fmin_hz": 0,
+    "fmax_hz": 12000.0,
+    "row0": "highest band (top)",
+    "row_last": "lowest band (bottom)"
+  },
+  "value": "mean mel power per column, dB re clip max, clipped to [-80, 0], colormap magma",
+  "stft": {
+    "n_fft": 1024,
+    "hop": 256,
+    "sample_rate": 24000,
+    "frames": 23163,
+    "frames_per_px_avg": 3.906070826306914
+  },
+  "wav": "bitdot_braille_vibevoice.wav"
+}

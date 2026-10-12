@@ -1,0 +1,21 @@
+# Explicit opt-in installation only; never install into the Python 3.14 app.
+# py -3.12 -m venv .venv-vibevoice
+# .\.venv-vibevoice\Scripts\python -m pip install -r runtimes\requirements-vibevoice.txt
+# $env:PYTHONPATH=(Resolve-Path src)
+# .\.venv-vibevoice\Scripts\python -m gen_audio.model_workers --help
+# Installation needs network; inference does not. No models are installed here.
+--extra-index-url https://download.pytorch.org/whl/cpu
+torch==2.6.0+cpu
+numpy==2.1.3
+transformers==4.51.3
+accelerate==1.6.0
+safetensors==0.5.3
+datasets==3.5.0
+gradio==5.50.0
+peft==0.15.2
+diffusers==0.32.2
+librosa==0.11.0
+numba==0.61.2
+scipy==1.15.2
+soundfile==0.13.1
+vibevoice @ git+https://github.com/vibevoice-community/VibeVoice.git@952326ddb264062466a888cf32a5b2f4e803e16e

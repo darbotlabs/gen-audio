@@ -273,10 +273,14 @@ fn cube_file_facts(edit: impl Fn(&str, Vec<u8>) -> Vec<u8>) -> Map<String, Value
     let manifest: Value = json(&std::fs::read_to_string(library.join("manifest.json")).unwrap());
     let mut facts = Map::new();
     for clip in manifest["clips"].as_array().unwrap() {
-        for key in ["jsonUrl", "pngUrl"] {
-            if let Some(path) = clip["cube"][key].as_str().and_then(|url| url.strip_prefix("/library/")) {
-                let bytes = edit(path, std::fs::read(library.join(path)).unwrap());
-                facts.insert(path.into(), serde_json::json!({"sha256": gen_audio_core::asset::sha256_hex(&bytes), "bytes": bytes.len()}));
+        let mut cubes = vec![&clip["cube"]];
+        cubes.extend(clip["cube"]["compare"].as_array().into_iter().flatten());
+        for cube in cubes {
+            for key in ["jsonUrl", "pngUrl"] {
+                if let Some(path) = cube[key].as_str().and_then(|url| url.strip_prefix("/library/")) {
+                    let bytes = edit(path, std::fs::read(library.join(path)).unwrap());
+                    facts.insert(path.into(), serde_json::json!({"sha256": gen_audio_core::asset::sha256_hex(&bytes), "bytes": bytes.len()}));
+                }
             }
         }
     }
@@ -289,8 +293,76 @@ fn cube_file_facts(edit: impl Fn(&str, Vec<u8>) -> Vec<u8>) -> Map<String, Value
 fn media_lock_pins_every_cube_file_byte_for_byte() {
     let locked = json(MEDIA_LOCK)["cubes"].as_object().cloned().unwrap_or_default();
     let actual = cube_file_facts(|_, bytes| bytes);
-    assert_eq!(actual.len(), 10, "5 cubes x (JSON, PNG)");
+    let catalog = json(ASSETS);
+    let cubes = catalog["assets"].as_array().unwrap().iter().filter(|asset| asset["kind"] == "cube_ihdr").count();
+    assert!(cubes >= 5, "all primary cubes remain present");
+    assert_eq!(actual.len(), cubes * 2, "every primary/comparison cube has JSON and PNG");
     assert_eq!(verify_cube_lock(&locked, &actual), Ok(()));
+}
+
+fn comparison_bundle() -> Value {
+    let primary = json(include_str!("../../../apps/desktop/public/library/library_genaid_full_misaki_kokoro_cube3d.json"));
+    let comparison = json(include_str!("../../../apps/desktop/public/library/library_genaid_full_misaki_kokoro_pipeline_r2_cube3d.json"));
+    let digest = |n: u8| json!({"sha256": format!("{n:064x}"), "bytes": 10});
+    json!({
+        "manifest": {"clips": [{
+            "id": "lib-misaki-kokoro", "engineId": "misaki_kokoro", "title": "Misaki",
+            "status": "ok", "synthesizedSpeech": false, "sample_rate": 24000,
+            "duration_s": 139.375, "wavUrl": "/library/m.wav",
+            "cube": {"jsonUrl": "/library/c.json", "pngUrl": "/library/c.png",
+                "compare": [{"layer_method": "pipeline_r2", "jsonUrl": "/library/c2.json", "pngUrl": "/library/c2.png"}]}
+        }]},
+        "voice_models": [], "cards": [], "profiles": [], "spectrograms": [],
+        "cube_docs": {"c.json": primary, "c2.json": comparison},
+        "media": {
+            "m.wav": {"sha256": primary["source_sha256"], "bytes": 6690044, "frames": 3345000, "sample_rate": 24000, "channels": 1},
+            "c.json": digest(1), "c.png": digest(2), "c2.json": digest(3), "c2.png": digest(4)
+        }
+    })
+}
+
+#[test]
+fn comparison_cubes_migrate_as_separate_derivations_of_the_same_wav() {
+    let migrated = migrate_to_v1(&comparison_bundle()).expect("comparison migration");
+    let assets = migrated["assets"].as_array().unwrap();
+    validate_set(assets).expect("comparison catalog");
+    let schema = validator();
+    for asset in assets {
+        assert!(schema.is_valid(asset), "{}", asset["legacy_id"]);
+    }
+    let primary = assets.iter().find(|asset| asset["legacy_id"] == "lib-misaki-kokoro.cube").unwrap();
+    let comparison = assets.iter().find(|asset| asset["legacy_id"] == "lib-misaki-kokoro.cube.pipeline_r2").unwrap();
+    assert_eq!(comparison["fields"]["layer_method"], "pipeline_r2");
+    assert_eq!(comparison["fields"]["cube_revision"], 2);
+    assert_eq!(comparison["fields"]["source_sha256"], primary["fields"]["source_sha256"]);
+    assert_eq!(comparison["provenance"]["params"]["compare_to"], primary["uid"]);
+    assert_eq!(comparison["src"], primary["src"]);
+    assert_ne!(comparison["uid"], primary["uid"]);
+    for cube in [primary, comparison] {
+        let layers: Vec<_> = assets.iter().filter(|asset| asset["kind"] == "layer" && asset["src"][0] == cube["uid"]).collect();
+        assert_eq!(layers.len(), 4);
+        assert!(layers.iter().all(|layer| layer["relations"]["layer_of"] == cube["uid"]));
+        assert_eq!(cube["media"].as_array().unwrap().len(), 2);
+    }
+}
+
+#[test]
+fn comparison_migration_rejects_foreign_sources_and_invalid_methods() {
+    let mut bundle = comparison_bundle();
+    bundle["cube_docs"]["c2.json"]["source_sha256"] = json!("0".repeat(64));
+    assert_eq!(code(migrate_to_v1(&bundle)), "source_sha_mismatch");
+    for method in ["library_r3", "pipeline_r9"] {
+        let mut bundle = comparison_bundle();
+        bundle["manifest"]["clips"][0]["cube"]["compare"][0]["layer_method"] = json!(method);
+        assert_eq!(code(migrate_to_v1(&bundle)), "bad_layer_method");
+    }
+    let mut bundle = comparison_bundle();
+    bundle["cube_docs"]["c2.json"]["provenance"]["layer_method"] = json!("library_r3");
+    assert_eq!(code(migrate_to_v1(&bundle)), "bad_layer_method");
+    let mut bundle = comparison_bundle();
+    let entry = bundle["manifest"]["clips"][0]["cube"]["compare"][0].clone();
+    bundle["manifest"]["clips"][0]["cube"]["compare"].as_array_mut().unwrap().push(entry);
+    assert_eq!(code(migrate_to_v1(&bundle)), "bad_layer_method");
 }
 
 /// The M8 repro (PR5_VERIFICATION v4, regen-gate-and-mutations-noWAV.log:80-93):
@@ -341,13 +413,13 @@ fn cube_lock_check_fails_on_unlocked_and_stale_entries() {
 fn cube_uid_is_generator_content_and_a_commit_is_provenance_only() {
     let catalog = json(ASSETS);
     let cubes: Vec<&Value> = catalog["assets"].as_array().unwrap().iter().filter(|asset| asset["kind"] == "cube_ihdr").collect();
-    assert_eq!(cubes.len(), 5);
+    assert!(cubes.len() >= 5);
     for cube in cubes {
         let id = &cube["legacy_id"];
         let sha = cube["fields"]["generator_sha256"].as_str().unwrap_or_default();
         assert!(gen_audio_core::asset::is_sha256_hex(sha), "{id}: fields.generator_sha256");
         assert_eq!(cube["provenance"]["generator_sha256"], sha, "{id}");
-        assert_eq!(cube["fields"]["layer_method"], "library_r3", "{id}");
+        assert!(matches!(cube["fields"]["layer_method"].as_str(), Some("library_r3" | "pipeline_r2")), "{id}");
         assert!(cube["fields"].as_object().unwrap().keys().all(|key| !key.contains("commit")), "{id}: no commit in identity");
         let mut moved = cube.clone();
         moved["provenance"]["generator_commit"] = Value::from("0123456789abcdef0123456789abcdef01234567");
@@ -394,12 +466,29 @@ fn every_engine_without_an_in_app_adapter_is_offline_only_or_unavailable() {
     let status = |id: &str| models.iter().find(|model| model["legacy_id"] == id).unwrap()["body"]["availability"]["status"].clone();
     assert_eq!(status("kokoro_dayour"), "offline_only");
     assert_eq!(status("misaki"), "offline_only");
-    assert_eq!(status("vibevoice"), "unavailable");
+    let vibevoice = models.iter().find(|model| model["legacy_id"] == "vibevoice").unwrap();
+    assert_eq!(vibevoice["body"]["synth_adapter"], true);
+    assert_eq!(vibevoice["status"], "ok");
     // The engine list agrees: only the implemented engine is producible.
     for engine in gen_audio_core::engines::engines() {
         let implemented = engine.status == gen_audio_core::engines::EngineStatus::Implemented;
         if let Some(spec) = gen_audio_core::catalog::voice_model(engine.id) {
             assert_eq!(implemented, spec.synth_adapter, "{}", engine.id);
+        }
+    }
+}
+
+fn mutate_vector(value: &mut Value, vector: &Value) {
+    if let Some(edits) = vector["set"].as_object() {
+        for (path, replacement) in edits {
+            let (parent, key) = path.rsplit_once('/').unwrap();
+            value.pointer_mut(parent).unwrap().as_object_mut().unwrap().insert(key.to_string(), replacement.clone());
+        }
+    }
+    if let Some(removes) = vector["remove"].as_array() {
+        for path in removes {
+            let (parent, key) = path.as_str().unwrap().rsplit_once('/').unwrap();
+            value.pointer_mut(parent).unwrap().as_object_mut().unwrap().remove(key);
         }
     }
 }
@@ -531,4 +620,85 @@ fn speech_facts_reject_nine_speakers_overlap_and_overrun() {
         schema.is_valid(&touching),
         "schema rejects a 2-speaker clip"
     );
+}
+
+fn profile_card(profile: &Value) -> Value {
+    serde_json::json!({"version":"1.0","title":"Profile contract","cards":[
+        {"id":"profile-test","title":"Profile","kind":"VoiceProfile","body":profile}
+    ]})
+}
+
+#[test]
+fn shared_card_profile_and_envelope_contract_vectors() {
+    let vectors = json(include_str!("../../../schemas/validation-vectors.json"));
+    let viewport = json(VIEWPORT);
+    let profile = json(include_str!("../../../schemas/examples/voice_profile.alice.json"));
+    let assets = json(ASSETS);
+    let profile_schema = jsonschema::validator_for(&json(PROFILE_SCHEMA)).unwrap();
+    let card_schema = jsonschema::options()
+        .with_resource(json(PROFILE_SCHEMA)["$id"].as_str().unwrap(), jsonschema::Resource::from_contents(json(PROFILE_SCHEMA)).unwrap())
+        .build(&json(CARD_SCHEMA)).unwrap();
+    let asset_schema = validator();
+    for vector in vectors["cases"].as_array().unwrap() {
+        let base = vector["base"].as_str().unwrap();
+        let (target, kind) = base.split_once(':').unwrap_or((base, ""));
+        let mut value = match target {
+            "viewport" => viewport.clone(),
+            "profile" => profile.clone(),
+            "card" => viewport["cards"].as_array().unwrap().iter().find(|card| card["kind"] == kind).unwrap().clone(),
+            "asset" => assets["assets"].as_array().unwrap().iter().find(|asset| asset["kind"] == kind).unwrap().clone(),
+            _ => panic!("unknown base {base}"),
+        };
+        mutate_vector(&mut value, vector);
+        let name = vector["name"].as_str().unwrap();
+        let expected = vector["valid"].as_bool().unwrap();
+        if target == "card" {
+            value = serde_json::json!({"version":"1.0","title":"Contract","cards":[value]});
+        }
+        let (schema, result) = match target {
+            "profile" => (&profile_schema, gen_audio_core::cards::validate_voice_profile(&value)),
+            "asset" => (&asset_schema, validate_envelope(&value).map(|_| ()).map_err(|error| error.to_string())),
+            _ => (&card_schema, gen_audio_core::cards::validate_viewport(&value)),
+        };
+        assert_eq!(schema.is_valid(&value), expected, "{name}: schema");
+        assert_eq!(result.is_ok(), expected, "{name}: runtime {result:?}");
+        if target == "profile" {
+            let embedded = profile_card(&value);
+            assert_eq!(card_schema.is_valid(&embedded), expected, "{name}: embedded schema");
+            assert_eq!(gen_audio_core::cards::validate_viewport(&embedded).is_ok(), expected, "{name}: embedded runtime");
+        }
+    }
+}
+
+#[test]
+fn model_profiles_and_explicit_pack_assignments() {
+    use gen_audio_core::{cards, catalog};
+    let vectors = json(include_str!("../../../schemas/validation-vectors.json"));
+    for (id, expected) in vectors["packs"].as_object().unwrap() {
+        assert_eq!(catalog::persona_kokoro_pack(id), expected.as_str(), "{id}");
+    }
+    let schema = jsonschema::validator_for(&json(PROFILE_SCHEMA)).unwrap();
+    for person in catalog::personas() {
+        for model in catalog::voice_models() {
+            let profile = catalog::voice_profile_for_model(person.id, model.id).unwrap();
+            assert!(schema.is_valid(&profile), "{}/{}", person.id, model.id);
+            cards::validate_voice_profile(&profile).unwrap();
+            cards::validate_viewport(&profile_card(&profile)).unwrap();
+            assert_eq!(profile["synthesizedSpeech"], false);
+            assert_eq!(profile["notPodcast"], true);
+            assert!(profile.get("wavUrl").is_none());
+            if model.id != "kokoro_onnx" {
+                assert_eq!(profile["spectrogram3d"], "none");
+            }
+        }
+    }
+    for id in ["personaplex"] {
+        let model = catalog::voice_model(id).unwrap();
+        assert!(!model.synth_adapter);
+        assert!(model.unavailable);
+    }
+    assert!(catalog::voice_model("vibevoice").unwrap().synth_adapter);
+    assert!(!catalog::voice_model("vibevoice").unwrap().unavailable);
+    assert!(catalog::voice_profile_for_model("alice", "af_heart").is_none());
+    assert!(catalog::voice_profile_for_model("missing", "kokoro_onnx").is_none());
 }

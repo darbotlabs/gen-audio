@@ -3,13 +3,15 @@
   "$id": "https://github.com/darbotlabs/gen-audio/schemas/connectors/copilot.schema.json",
   "title": "CopilotConnectorConfig",
   "type": "object",
+  "additionalProperties": false,
   "description": "Bridge to GitHub Models or a user-supplied Copilot Studio endpoint. This is not the in-IDE Copilot chat SDK.",
   "properties": {
-    "COPILOT_GITHUB_TOKEN": { "type": "string" },
-    "GITHUB_TOKEN": { "type": "string" },
-    "GH_TOKEN": { "type": "string" },
-    "COPILOT_GITHUB_MODEL": { "type": "string", "default": "gpt-4o-mini" },
-    "COPILOT_STUDIO_ENDPOINT": { "type": "string", "description": "Optional https endpoint you control. The prompt is POSTed as JSON." },
+    "COPILOT_GITHUB_TOKEN": { "type": "string", "minLength": 1, "maxLength": 8192, "pattern": "^[^\\u0000-\\u001f\\u007f]+$" },
+    "GITHUB_TOKEN": { "type": "string", "minLength": 1, "maxLength": 8192, "pattern": "^[^\\u0000-\\u001f\\u007f]+$" },
+    "GH_TOKEN": { "type": "string", "minLength": 1, "maxLength": 8192, "pattern": "^[^\\u0000-\\u001f\\u007f]+$" },
+    "COPILOT_GITHUB_MODEL": { "type": "string", "minLength": 1, "maxLength": 80, "pattern": "^(?!.*\\.\\.)[A-Za-z0-9._-]+$", "default": "gpt-4o-mini" },
+    "COPILOT_STUDIO_ENDPOINT": { "type": "string", "minLength": 8, "maxLength": 300, "pattern": "^(https://|http://(127\\.0\\.0\\.1|localhost)(:[0-9]+)?(/|$))[^\\s@?#\\\\]*$", "description": "Optional endpoint you control; runtime checks port and resolved destination. Receives JSON prompt and returns an object with string text." },
+    "GEN_AUDIO_CONNECTOR_ALLOW_PRIVATE": { "enum": ["0", "1"] },
     "GEN_AUDIO_CONNECTOR_LIVE": { "enum": ["0", "1"] }
   }
 }

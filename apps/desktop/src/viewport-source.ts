@@ -10,6 +10,18 @@ export function selectViewport<T>(flag: string | undefined, release: T, example:
   return fixturesRequested(flag) ? example : release;
 }
 
+/** Full face ids take precedence over the deprecated front/back snapshot aliases. */
+export function snapshotFaces(ui: Record<string, unknown>): Array<{ tileId: string; faceId: string | null; flipped: boolean }> {
+  const faces = ui.faces && typeof ui.faces === "object" ? ui.faces as Record<string, unknown> : {};
+  const flipped = ui.flipped && typeof ui.flipped === "object" ? ui.flipped as Record<string, unknown> : {};
+  return [...new Set([...Object.keys(faces), ...Object.keys(flipped)])].map(view => {
+    const face = faces[view] as { face_id?: unknown; tileId?: unknown } | undefined;
+    const legacy = flipped[view] as { face?: unknown } | undefined;
+    return { tileId: typeof face?.tileId === "string" ? face.tileId : view.replace(/^view:/, ""),
+      faceId: typeof face?.face_id === "string" ? face.face_id : null, flipped: legacy?.face === "back" };
+  });
+}
+
 /** Claims that make an asset dev/test-only; mirrors Rust `asset::DEV_FIXTURE_CLAIMS`. */
 export const DEV_FIXTURE_CLAIMS = ["fixture_tone", "reference_only", "sample_content"] as const;
 

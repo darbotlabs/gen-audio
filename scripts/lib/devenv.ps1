@@ -7,6 +7,54 @@
 
 Set-StrictMode -Version 2.0
 
+function New-RuntimePayload {
+    [CmdletBinding(SupportsShouldProcess = $true, ConfirmImpact = 'Low')]
+    [OutputType([string])]
+    param([Parameter(Mandatory = $true)][string]$Root)
+    $rootPath = (Resolve-Path -LiteralPath $Root).Path
+    $destination = Join-Path $rootPath 'apps\desktop\src-tauri\gen\runtime'
+    $ancestor = $destination
+    while ($ancestor -ne $rootPath) {
+        if (Test-Path -LiteralPath $ancestor) {
+            if ((Get-Item -LiteralPath $ancestor).Attributes -band [IO.FileAttributes]::ReparsePoint) { throw 'Refusing redirected runtime staging ancestry' }
+        }
+        $ancestor = Split-Path -Parent $ancestor
+        if (-not $ancestor) { throw 'Runtime staging path escaped the repository' }
+    }
+    if (-not $PSCmdlet.ShouldProcess($destination, 'Stage installed runtime source and curated assets')) { return }
+    if (Test-Path -LiteralPath $destination) {
+        $resolved = (Resolve-Path -LiteralPath $destination).Path
+        if ($resolved -ne $destination -or (Get-Item -LiteralPath $resolved).Attributes -band [IO.FileAttributes]::ReparsePoint) { throw 'Refusing cleanup of a redirected runtime staging directory' }
+        Remove-Item -LiteralPath $resolved -Recurse -Force
+    }
+    New-Item -ItemType Directory -Path $destination -Force | Out-Null
+    $files = @(Get-Item -LiteralPath (Join-Path $rootPath 'pyproject.toml'))
+    # Prompt preparation reads the authoritative persona/voice map from this
+    # catalog. Installed prompt generation must have the same map as Rust.
+    $files += Get-Item -LiteralPath (Join-Path $rootPath 'crates\gen-audio-core\src\catalog.rs')
+    $files += @(Get-ChildItem -LiteralPath (Join-Path $rootPath 'src\gen_audio') -Recurse -File -Filter '*.py')
+    foreach ($name in @('improve.py', 'spectrogram.py', 'cube_revision.py', 'compare_wavs.py', 'synth_kokoro_onnx.py', 'generate.py')) {
+        $files += Get-Item -LiteralPath (Join-Path $rootPath "scripts\$name")
+    }
+    foreach ($folder in @('voices', 'examples', 'schemas', 'runtimes', 'apps\desktop\public\library')) {
+        $files += @(Get-ChildItem -LiteralPath (Join-Path $rootPath $folder) -Recurse -File |
+            Where-Object { $_.Extension -in @('.json', '.wav', '.png', '.txt') })
+    }
+    $inventory = @{}
+    foreach ($file in $files) {
+        if ($file.Attributes -band [IO.FileAttributes]::ReparsePoint) { throw "Runtime input is redirected: $($file.Name)" }
+        $relative = $file.FullName.Substring($rootPath.Length + 1)
+        $copy = Join-Path $destination $relative
+        New-Item -ItemType Directory -Path (Split-Path -Parent $copy) -Force | Out-Null
+        Copy-Item -LiteralPath $file.FullName -Destination $copy
+        $hash = Get-Sha256 -LiteralPath $file.FullName
+        if ((Get-Sha256 -LiteralPath $copy) -ne $hash) { throw "Runtime payload copy differs: $relative" }
+        $inventory[$relative.Replace('\', '/')] = $hash
+    }
+    $inventory | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $destination 'payload-sha256.json') -Encoding UTF8
+    return $destination
+}
+
 function Write-Step {
     # Console progress for a person watching the run. Results that other
     # tools read (BUILD_OK, TEST_SUMMARY, sha256 lines) go to the pipeline.
@@ -22,8 +70,10 @@ function Invoke-Checked {
     # function (param block) binds common parameters, so on Windows
     # PowerShell 5.1 `cargo build -p x` lost `-p` to -PipelineVariable and
     # on PowerShell 7.4+ it threw. Fix from Darbot's PR #3.
+    if ($args.Count -lt 1) { throw 'Invoke-Checked requires a command' }
     $file = [string]$args[0]
     $commandArgs = [string[]]@($args | Select-Object -Skip 1)
+    Get-Command $file -ErrorAction Stop | Out-Null
     # Native stderr (cargo progress) must not become a terminating error
     # when a caller redirects it under $ErrorActionPreference = 'Stop'.
     $ErrorActionPreference = 'Continue'
@@ -106,6 +156,7 @@ function Select-CargoBinArtifact {
         if (-not $message.PSObject.Properties['reason'] -or $message.reason -ne 'compiler-artifact') { continue }
         if ($message.target.name -ne $Bin -or @($message.target.kind) -notcontains 'bin') { continue }
         if (-not $message.PSObject.Properties['executable'] -or -not $message.executable) { continue }
+        if ($found) { throw "cargo reported multiple compiler-artifacts for bin $Bin" }
         $found = [pscustomobject]@{ Executable = [string]$message.executable; Fresh = [bool]$message.fresh }
     }
     if (-not $found) { throw "cargo reported no compiler-artifact for bin $Bin, so there is no way to tell which binary it built" }
@@ -119,7 +170,7 @@ function Invoke-CargoBinBuild {
     [CmdletBinding()]
     [OutputType([pscustomobject])]
     param([Parameter(Mandatory = $true)][string]$Package, [Parameter(Mandatory = $true)][string]$Bin, [string[]]$ExtraArgs = @())
-    $cargoArgs = @('build', '-p', $Package, '--bin', $Bin, '--message-format=json-render-diagnostics') + $ExtraArgs
+    $cargoArgs = @('build', '--locked', '-p', $Package, '--bin', $Bin, '--message-format=json-render-diagnostics') + $ExtraArgs
     $ErrorActionPreference = 'Continue'
     # stdout is cargo's JSON; stderr (diagnostics, progress) goes through the
     # host as text so a build transcript records it.
@@ -153,6 +204,7 @@ function Assert-BuildOutput {
     param([Parameter(Mandatory = $true)][string]$LiteralPath, [Parameter(Mandatory = $true)][string]$What, [AllowNull()]$Before)
     $after = Get-OutputFingerprint -LiteralPath $LiteralPath
     if (-not $after) { throw "$What is missing after the build: $LiteralPath" }
+    if ($after.Length -eq 0) { throw "$What is empty after the build: $LiteralPath" }
     $state = if ($Before -and $Before.Sha256 -eq $after.Sha256) { 'unchanged' } else { 'rebuilt' }
     return ($after | Add-Member -NotePropertyName State -NotePropertyValue $state -PassThru)
 }
@@ -198,12 +250,11 @@ function Test-IsWindowsHost {
 }
 
 function Import-VsDevEnv {
-    # Import the x64 MSVC build environment (cl.exe, link.exe, INCLUDE, LIB)
-    # into this PowerShell session from vcvars64.bat.
+    # Import the MSVC build environment (cl.exe, link.exe, INCLUDE, LIB).
     # Skips when cl.exe is already on PATH. Throws when Visual Studio or the
     # C++ build tools are missing; it never guesses a path.
     [CmdletBinding()]
-    param()
+    param([ValidateSet('x64', 'x86', 'arm64')][string]$Architecture = 'x64')
     if (-not (Test-IsWindowsHost)) {
         Write-Verbose 'Import-VsDevEnv: not Windows, nothing to import.'
         return
@@ -220,14 +271,15 @@ function Import-VsDevEnv {
     if ($LASTEXITCODE -ne 0 -or -not $vsPath) {
         throw 'vswhere found no Visual Studio install with the x64 C++ tools (Microsoft.VisualStudio.Component.VC.Tools.x86.x64).'
     }
-    $vcvars = Join-Path ([string]@($vsPath)[0]) 'VC\Auxiliary\Build\vcvars64.bat'
+    $vcvars = Join-Path ([string]@($vsPath)[0]) 'VC\Auxiliary\Build\vcvarsall.bat'
     if (-not (Test-Path -LiteralPath $vcvars)) {
-        throw "vcvars64.bat not found at $vcvars"
+        throw "vcvarsall.bat not found at $vcvars"
     }
     Write-Step "import MSVC environment from $vcvars"
-    $lines = & cmd.exe /d /s /c "`"$vcvars`" >nul && set"
+    $targetArch = switch ($Architecture) { 'x86' { 'x64_x86' } 'arm64' { 'x64_arm64' } default { 'x64' } }
+    $lines = & cmd.exe /d /s /c "`"$vcvars`" $targetArch >nul && set"
     if ($LASTEXITCODE -ne 0) {
-        throw "vcvars64.bat failed with exit $LASTEXITCODE"
+        throw "vcvarsall.bat failed with exit $LASTEXITCODE"
     }
     foreach ($line in $lines) {
         if ($line -match '^([^=]+)=(.*)$') {
@@ -235,6 +287,6 @@ function Import-VsDevEnv {
         }
     }
     if (-not (Get-Command cl.exe -ErrorAction SilentlyContinue)) {
-        throw 'vcvars64.bat ran but cl.exe is still not on PATH.'
+        throw 'vcvarsall.bat ran but cl.exe is still not on PATH.'
     }
 }

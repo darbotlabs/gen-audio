@@ -51,7 +51,7 @@ def probe(engine: str) -> Probe:
     return Probe(engine=engine, available=not missing, missing=missing)
 
 
-def synthesize(engine: str, turns: list[Turn], cast: CastMap, output: Path) -> dict:
+def synthesize(engine: str, turns: list[Turn], cast: CastMap, output: Path, *, resident=None) -> dict:
     """Render ``turns`` to ``output``. Raises ``EngineRefusal`` when the engine cannot run.
 
     A successful adapter returns ``engine``, ``sample_rate``, ``samples``, and
@@ -73,7 +73,9 @@ def synthesize(engine: str, turns: list[Turn], cast: CastMap, output: Path) -> d
     if cast.engine != engine:
         raise EngineRefusal(engine, [f"cast map engine is {cast.engine}, not {engine}"])
     if engine == "kokoro_onnx":
-        return _synth_kokoro(turns, cast, output)
+        return _synth_kokoro(turns, cast, output, resident=resident)
+    if resident is not None:
+        raise EngineRefusal(engine, ["resident prompt generation is not available for this adapter"])
     if engine in {"pocket_tts", "vibevoice", "magpie"}:
         raise EngineRefusal(
             engine,
@@ -222,16 +224,19 @@ def _missing_magpie() -> list[str]:
     return missing
 
 
-def _synth_kokoro(turns: list[Turn], cast: CastMap, output: Path) -> dict:
+def _synth_kokoro(turns: list[Turn], cast: CastMap, output: Path, *, resident=None) -> dict:
     from gen_audio.synth_kokoro_onnx import KokoroOnnxSynthesizer, resolve_model_paths
 
     model_path, voices_path = resolve_model_paths(None, None)
-    synth = KokoroOnnxSynthesizer(model_path, voices_path)
+    synth = resident if resident is not None else KokoroOnnxSynthesizer(model_path, voices_path)
+    if resident is not None:
+        synth.validate_loaded_assets(model_path, voices_path)
     result = synth.synthesize_turns(turns, cast, gap_s=0.15, improve_publish=False)
-    write_wav(output, result.audio, result.sample_rate, subtype="FLOAT")
+    write_wav(output, result.audio, result.sample_rate, subtype="FLOAT", agent_names=list(dict.fromkeys(turn.name for turn in result.turns)))
     return {
         "engine": "kokoro_onnx",
         "sample_rate": result.sample_rate,
+        "metadata": result.manifest()["metadata"],
         "samples": int(result.audio.size),
         "turns": len(result.turns),
         "speech": {

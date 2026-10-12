@@ -2,7 +2,7 @@
 
 gen-audio is a small Python 3.14 toolkit (`requires-python` is `>=3.14,<3.15`). The installable import name is `gen_audio`. It turns a labeled script into a mono WAV when kokoro-onnx and local model files are available, and it can process a WAV you already have without any model.
 
-The same floor applies to the spectrogram, the genaid-audio URL helpers, podcast script parsing, and any compare-list engine this package scores (VibeVoice, the PersonaPlex CPU stand-in `pocket_tts`, Magpie). genlm-audio, Gradio, and PersonaPlex are not vendored here. A process that imports `gen_audio` uses `>=3.14,<3.15`. Request limits, voice and model path confinement, checksum pins, and `/health` versus `/ready` live in `gen_audio.guards` and are described in `docs/genlm-audio/REVIEW-2026-10-06.md`.
+The same floor applies to the spectrogram, genaid-audio URL helpers, podcast script parsing, and base SDK. Isolated model workers use their own pinned Python 3.12 environment; they are not dependencies of the Python 3.14 SDK. genlm-audio and Gradio are not vendored here. Request limits, voice and model path confinement, checksum pins, and `/health` versus `/ready` live in `gen_audio.guards` and are described in `docs/genlm-audio/REVIEW-2026-10-06.md`.
 
 [darbotlabs/genaid](https://github.com/darbotlabs/genaid) is a different project (a JavaScript prompting framework). Nothing in that repository is imported here.
 
@@ -15,13 +15,23 @@ The same floor applies to the spectrogram, the genaid-audio URL helpers, podcast
 | `kokoro_onnx` | waveform synth | `KokoroOnnxSynthesizer` calls `kokoro_onnx.Kokoro.create` per turn. You pass the ONNX file and the voices file. |
 | `kokoro_dayour` | waveform synth | Compare-list name for the dayour Kokoro runtime. No code path calls it. |
 | `misaki` | grapheme-to-phoneme | Kokoro's G2P library (hexgrad/misaki). Not a waveform synth. kokoro-onnx phonemizes inside its own dependency tree. This package does not import misaki. |
-| `vibevoice` | waveform synth | Compare-list slot for VibeVoice. No adapter. |
+| `vibevoice` | waveform synth | Desktop/MCP dispatch through a pinned, isolated Python 3.12 CPU worker. Preflight requires local weights, tokenizer, dependencies, and sufficient RAM. Not a base SDK synthesizer. |
 | `magpie` | waveform synth | Compare-list slot for Magpie TTS. No adapter. |
 | `pocket_tts` | waveform synth | Compare-list slot for Kyutai Pocket TTS, named as the CPU stand-in when a Magpie render is unavailable. No adapter. |
 
 `gen_audio.compare.score_wav` reads a finished WAV and records inv-HDR, BW95, and clip fraction. An unregistered engine id is allowed and marked `"registered": false`. The score file does not sort engines or assign a quality rating.
 
 Synthesis is off unless you construct `KokoroOnnxSynthesizer`. Importing `gen_audio` does not import kokoro-onnx.
+
+### Desktop VibeVoice and unified voices
+
+The desktop Generate action calls authenticated MCP `studio_preflight`, then `synth`. Rust normalizes scripts to contiguous speaker numbers, confines managed reference WAVs to issued scratch, and checks their canonical SHA-256 and mono 24 kHz PCM16 format. The supervised CPU worker checks pinned dependencies, local model/tokenizer metadata, and memory before loading. A verified bounded partial artifact remains explicitly incomplete; it is never reported as a complete render.
+
+`voices/manifest.json` is the canonical version 2.0 library: nine personas, nine managed references, and seven engine manifests per persona. Kokoro ONNX/dayour, Misaki, VibeVoice, PersonaPlex, Magpie, and Pocket TTS retain separate capabilities and mapped/unmapped states. Misaki is G2P; PersonaPlex is speech-to-speech. A profile is not proof that every engine has an installed synthesizer. Profile flipcards expose and download the same complete manifest, validated by JSON Schema, TypeScript, and Rust.
+
+Verified generated WAVs and manifests are saved under `%LOCALAPPDATA%/Gen-Audio/library/{asset-digest}` with an `audio_clip` envelope. Reopening verifies media hashes and facts before issuing fresh scratch artifacts. Local installed-runtime settings are read from `%LOCALAPPDATA%/Gen-Audio/runtime.json` (or `GEN_AUDIO_CONFIG`), with explicit environment variables taking precedence. `scripts/connect-desktop-mcp.py` connects stdio clients to the installed app through a transient owner-only native connection export; bearer tokens are never printed.
+
+See [the migration record](MIGRATION-2026-10-08.md) for runtime requirements and remaining features. Stored prior VibeVoice media does not establish a successful render on the current machine.
 
 ### kokoro-onnx path
 
@@ -136,7 +146,7 @@ Do not point the artifact directory at a folder you then commit. Generated audio
 
 ## Desktop shell
 
-`apps/desktop` is a Vite + TypeScript viewport. `apps/desktop/src-tauri` is the Tauri 2 shell (Windows WebView2, macOS WebKit, Linux webkit2gtk 4.1). IPC commands are `connector_statuses`, `viewport_example`, and `run_fixture_improve`. The last one writes a fixture tone into the process work directory and calls `scripts/improve.py`. It does not accept a shell string.
+`apps/desktop` is a Vite + TypeScript viewport. `apps/desktop/src-tauri` is the Tauri 2 shell (Windows WebView2, macOS WebKit, Linux webkit2gtk 4.1). IPC commands include `connector_statuses`, `viewport_example`, `mcp_status`, and `run_fixture_improve`. The last writes a fixture tone and calls `scripts/improve.py`; it does not accept a shell string. `mcp_status` supplies the owned listener's address and transient bearer credential to the frontend, not to public logs.
 
 The browser checker in `apps/desktop/src/validate.ts` enforces the same honesty rules as `gen_audio_core::cards`: fixture visuals, `sampleScript: true`, unprobed versus probed serve rows, connector ids, and benchmark notes that say the figures were not remeasured. A rejected document replaces the board with that error. An empty card list keeps the empty-state sentence. Cards are validated again in `gen_audio_core::cards` before a document is treated as renderable. `SpectrogramPanel` and `Cube3D` must set `source` to `fixture-tone` and `notPodcast` to true. `BenchmarkCompare.measuredHere` must be false. Figures in the example board are copied from the 2026-10-06 compare notes (`gen_audio_core::benchmark`) and are not recomputed here. Inverse-HDR is not a publish ranking: those notes preferred the wider VibeVoice final even when Kokoro's inv-HDR rose more.
 
@@ -158,4 +168,20 @@ Vendor calls also require `GEN_AUDIO_CONNECTOR_LIVE=1`. Without it, a present to
 
 ## Work directory
 
-`GEN_AUDIO_WORK_DIR`, or a fresh `0700` directory under the system temp dir. It must not be the repository, a parent of the repository, the home directory, or the temp root. Fixture WAVs and Python outputs go there. They are not podcast renders. Do not commit that directory. Loopback MCP shares that scratch across tool calls in one process so `fixture_tone` can feed `improve`. A non-loopback bind (`GEN_AUDIO_MCP_HTTP_ALLOW_REMOTE=1`) uses a fresh scratch per connection and deletes it when the response is sent, so remote clients cannot read each other's files. The scratch is explicit data flow, not an MCP session id.
+`GEN_AUDIO_WORK_DIR`, or a dedicated generated work directory managed by `Scratch`. It must not be a sensitive root or an arbitrary repository subdirectory. Loopback MCP shares issued artifacts across calls, so synthesis can feed analysis and mastering. Private scripts/cast files are not public file capabilities. Do not commit scratch. All HTTP data routes require the process bearer token and validate host/origin; direct non-loopback binding is disabled. Scratch is explicit data flow, not an MCP session ID.
+
+## Original prototype migration
+
+The read-only `T:\Gen.AID.Audio` prototype is a behavioral reference, not a runtime dependency. Its `genaid-audio.py` Gradio UI and `api_server.py` FastAPI service are not copied into the desktop. Model inference remains behind isolated workers; Rust owns input contracts, orchestration and artifact validation.
+
+| Prototype behavior | Native migration | Deliberate correction |
+| --- | --- | --- |
+| Numbered speakers and rotating unlabeled lines | `authoring` analyzes/imports dialogue with an explicit indexing convention | No guessing between zero- and one-based labels; diagnostics never become spoken text |
+| Phi prompt construction and script generation | Local draft planning plus reviewed, opt-in configured connector generation | Duration budget counts one conversation, not duration multiplied by speakers; local Phi model loading is not claimed |
+| Raw preview and final mastered WAV | Separate original and mastered audio controls and downloads | Source stays unchanged; processing never asserts new speech synthesis |
+| FFmpeg podcast mastering | Bounded native process pipeline targeting -16 LUFS, -1.5 dBTP and LRA 4 | Measures actual results, rejects failed analysis and publishes a provenance report |
+| Managed voices and readiness | Existing profile-v2 voice inventory and isolated-worker preflight | A voice mapping or checkpoint on disk is not a loaded/validated model |
+
+`draft_plan` prepares the exact provider prompt locally. `draft_generate` requires explicit confirmation tied to that prompt's digest; the desktop displays the recipient and text first. Generated dialogue is validated separately and applied only after review. Mock connector output is never presented as a draft. No legacy script, deployment hostname, credential file or caller-selected executable participates.
+
+Deferred migration chunks are model-native PCM streaming with acknowledged cancellation, a bounded/durable job manager, local Phi lifecycle, and recording/import of new voice references. The prototype has no implemented source-document pipeline or independently editable segment stitching; those would be new features, not recovered functionality. Inferred word-based timing remains an estimate, never forced alignment.

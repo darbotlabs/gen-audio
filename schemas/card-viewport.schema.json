@@ -21,8 +21,8 @@
       "additionalProperties": false,
       "required": ["id", "kind", "title", "body"],
       "properties": {
-        "id": { "type": "string", "pattern": "^[A-Za-z0-9_-]{1,64}$" },
-        "uid": { "type": "string", "pattern": "^ga:card:[a-z2-7]{25}[aeimquy4]$", "description": "v1 asset uid (asset-object.schema.json). id stays the runtime handle." },
+        "id": { "type": "string", "pattern": "^[A-Za-z0-9_-]{1,64}$(?![\\s\\S])" },
+        "uid": { "type": "string", "pattern": "^ga:card:[a-z2-7]{25}[aeimquy4]$(?![\\s\\S])", "description": "v1 asset uid (asset-object.schema.json). id stays the runtime handle." },
         "kind": {
           "enum": [
             "EngineStatus",
@@ -55,24 +55,27 @@
     },
     "engineStatus": {
       "type": "object",
+      "additionalProperties": false,
       "required": ["engineId", "status", "summary"],
       "properties": {
-        "engineId": { "type": "string" },
+        "engineId": { "type": "string", "minLength": 1, "maxLength": 40 },
         "status": { "enum": ["implemented", "external", "library", "weights_absent", "unavailable"] },
-        "summary": { "type": "string" }
+        "summary": { "type": "string", "minLength": 1, "maxLength": 400 }
       }
     },
     "visual": {
       "type": "object",
+      "additionalProperties": false,
       "required": ["source", "notPodcast", "disclaimer"],
       "properties": {
         "source": { "const": "fixture-tone" },
         "notPodcast": { "const": true },
-        "disclaimer": { "type": "string", "minLength": 12, "pattern": "[Nn]ot" }
+        "disclaimer": { "type": "string", "minLength": 12, "maxLength": 400, "pattern": "[Nn][Oo][Tt]" }
       }
     },
     "podcastCast": {
       "type": "object",
+      "additionalProperties": false,
       "required": ["sampleScript", "speakers"],
       "properties": {
         "sampleScript": { "const": true },
@@ -81,11 +84,12 @@
           "minItems": 1,
           "items": {
             "type": "object",
+            "additionalProperties": false,
             "required": ["id", "name", "voice"],
             "properties": {
-              "id": { "type": "string" },
-              "name": { "type": "string" },
-              "voice": { "type": "string" }
+              "id": { "type": "string", "minLength": 1, "maxLength": 8 },
+              "name": { "type": "string", "minLength": 1, "maxLength": 40 },
+              "voice": { "type": "string", "minLength": 1, "maxLength": 40 }
             }
           }
         }
@@ -93,88 +97,92 @@
     },
     "serveHealth": {
       "type": "object",
+      "additionalProperties": false,
       "required": ["host", "port", "baseUrl", "healthUrl", "probed", "role"],
       "properties": {
-        "host": { "type": "string" },
+        "host": { "type": "string", "minLength": 1, "maxLength": 80 },
         "port": { "type": "integer", "minimum": 1, "maximum": 65535 },
-        "baseUrl": { "type": "string" },
-        "healthUrl": { "type": "string" },
+        "baseUrl": { "$ref": "#/$defs/httpUrl", "maxLength": 200 },
+        "healthUrl": { "$ref": "#/$defs/httpUrl", "maxLength": 220 },
         "probed": { "type": "boolean" },
         "ok": { "type": "boolean" },
         "role": { "enum": ["node", "shared-gateway"] }
-      }
+      },
+      "if": { "properties": { "probed": { "const": true } }, "required": ["probed"] },
+      "then": { "required": ["ok"] }
     },
     "benchmark": {
       "type": "object",
-      "required": ["measuredHere", "sourceNote", "rows"],
+      "additionalProperties": false,
+      "required": ["measuredHere", "rows"],
       "properties": {
-        "measuredHere": { "const": false },
-        "sourceNote": { "type": "string", "minLength": 12, "pattern": "[Nn]ot remeasured" },
+        "measuredHere": { "type": "boolean" },
+        "sourceNote": { "type": "string", "minLength": 12, "maxLength": 400 },
         "rows": {
           "type": "array",
           "items": {
             "type": "object",
+            "additionalProperties": false,
             "required": ["engine", "metric", "value"],
             "properties": {
-              "engine": { "type": "string" },
-              "metric": { "type": "string" },
+              "engine": { "type": "string", "minLength": 1, "maxLength": 40 },
+              "metric": { "type": "string", "minLength": 1, "maxLength": 40 },
               "value": { "type": ["number", "string"] },
               "unit": { "type": "string" },
               "note": { "type": "string" }
             }
           }
         }
+      },
+      "if": { "properties": { "measuredHere": { "const": false } }, "required": ["measuredHere"] },
+      "then": {
+        "required": ["sourceNote"],
+        "properties": {
+          "sourceNote": { "pattern": "[Nn][Oo][Tt] ([Rr][Ee])?[Mm][Ee][Aa][Ss][Uu][Rr][Ee][Dd]" }
+        }
+      },
+      "else": {
+        "properties": {
+          "sourceNote": { "not": { "pattern": "[Nn][Oo][Tt] ([Rr][Ee])?[Mm][Ee][Aa][Ss][Uu][Rr][Ee][Dd]" } }
+        }
       }
     },
     "libraryClip": {
       "type": "object",
+      "additionalProperties": false,
       "required": ["engineId", "status", "synthesizedSpeech", "summary"],
       "properties": {
-        "engineId": { "type": "string" },
+        "title": { "type": "string", "minLength": 1, "maxLength": 120 },
+        "engineId": { "type": "string", "minLength": 1, "maxLength": 40 },
         "status": { "enum": ["ok", "running", "weights_absent", "unavailable", "external"] },
         "synthesizedSpeech": { "type": "boolean" },
-        "summary": { "type": "string" },
-        "wavUrl": { "type": "string" },
-        "duration_s": { "type": "number" },
-        "sample_rate": { "type": "integer" },
-        "cubePngUrl": { "type": "string" },
-        "cubeJsonUrl": { "type": "string" },
-        "sidecarUrl": { "type": "string" },
-        "semanticName": { "type": "string" },
-        "faceName": { "type": "string" },
+        "summary": { "type": "string", "minLength": 1, "maxLength": 400 },
+        "wavUrl": { "$ref": "#/$defs/libraryUrl", "pattern": "\\.wav$" },
+        "duration_s": { "type": "number", "exclusiveMinimum": 0 },
+        "sample_rate": { "type": "integer", "minimum": 1, "maximum": 9007199254740991 },
+        "cubePngUrl": { "$ref": "#/$defs/libraryUrl" },
+        "cubeJsonUrl": { "$ref": "#/$defs/libraryUrl" },
+        "sidecarUrl": { "$ref": "#/$defs/libraryUrl" },
+        "semanticName": { "type": "string", "minLength": 1, "maxLength": 80 },
+        "faceName": { "type": "string", "minLength": 1, "maxLength": 80 },
         "inv_hdr": { "type": "number" }
-      }
+      },
+      "if": { "properties": { "synthesizedSpeech": { "const": true } }, "required": ["synthesizedSpeech"] },
+      "then": { "required": ["wavUrl", "duration_s", "sample_rate"] },
+      "else": { "not": { "required": ["wavUrl"] } }
     },
     "voiceProfile": {
-      "description": "Canonical fields also live in schemas/voice_profile.schema.json. agentName is a persona. voiceModel is a TTS id. af_heart belongs in refs.",
-      "type": "object",
-      "additionalProperties": false,
-      "required": ["agentName", "personaId", "voiceModel", "tone", "purpose", "domain", "accent", "traits", "refs", "spectrogram2d", "spectrogram3d", "notPodcast", "disclaimer"],
-      "properties": {
-        "agentName": { "type": "string", "minLength": 1, "maxLength": 40 },
-        "personaId": { "type": "string" },
-        "voiceModel": { "type": "string" },
-        "tone": { "type": "string" },
-        "purpose": { "type": "string" },
-        "domain": { "type": "string" },
-        "accent": { "type": "string" },
-        "traits": { "type": "string", "minLength": 12 },
-        "refs": { "type": "array", "minItems": 1, "maxItems": 8, "items": { "type": "string" } },
-        "spectrogram2d": { "const": "none" },
-        "spectrogram3d": { "enum": ["none"] },
-        "notPodcast": { "const": true },
-        "synthesizedSpeech": { "const": false },
-        "disclaimer": { "type": "string", "minLength": 12 }
-      }
+      "$ref": "https://darbotlabs.dev/gen-audio/voice-profile.schema.json"
     },
     "connectorStatus": {
       "type": "object",
+      "additionalProperties": false,
       "required": ["connectorId", "mode", "authenticated", "detail"],
       "properties": {
         "connectorId": { "enum": ["mcp", "acp", "harness", "copilot", "claude", "gpt", "gemini", "local"] },
         "mode": { "enum": ["mock", "live", "local", "token_present", "misconfigured"] },
         "authenticated": { "type": "boolean" },
-        "detail": { "type": "string" }
+        "detail": { "type": "string", "minLength": 1, "maxLength": 400 }
       }
     },
     "adaptiveCard": {
@@ -182,7 +190,7 @@
       "required": ["type", "version", "body"],
       "properties": {
         "type": { "const": "AdaptiveCard" },
-        "version": { "type": "string" },
+        "version": { "type": "string", "minLength": 1, "maxLength": 8 },
         "$schema": { "const": "http://adaptivecards.io/schemas/adaptive-card.json" },
         "body": {
           "type": "array",
@@ -190,6 +198,15 @@
           "items": { "type": "object" }
         }
       }
+    },
+    "libraryUrl": {
+      "type": "string",
+      "maxLength": 260,
+      "pattern": "^/library/(?!.*\\.\\.)[A-Za-z0-9_-][A-Za-z0-9_.-]{0,127}(/[A-Za-z0-9_-][A-Za-z0-9_.-]{0,127}){0,3}$(?![\\s\\S])"
+    },
+    "httpUrl": {
+      "type": "string",
+      "pattern": "^https?://[^/\\\\\\s@?#]+(/[^\\\\\\s]*)?$(?![\\s\\S])"
     }
   }
 }

@@ -57,10 +57,10 @@ Modes:
             or another verified copy); the Wavs step proves they are the
             locked bytes.
 
-The sprawl gate scans the working tree on disk, including untracked and
-gitignored files (artifacts/ counts), because one-off scripts hide in ignored
-folders. -SprawlExclude takes paths relative to the repo root to leave out of
-that scan; every excluded path is printed so the run says what it skipped.
+The sprawl gate scans authored files, including ignored output folders.
+Model snapshots and the explicit artifacts/anti-pattern quarantine are not
+build inputs and are reported as excluded. Filesystem links are not followed.
+-SprawlExclude adds explicit relative paths; every exclusion is printed.
 
 Logs: artifacts/test-logs/<yyyyMMdd-HHmmss>-<Tag>/<step>.log
 Works on Windows PowerShell 5.1 and PowerShell 7.
@@ -204,6 +204,10 @@ function Get-ScriptFile {
         $dir = $stack.Pop()
         foreach ($entry in @(Get-ChildItem -LiteralPath $dir -Force -ErrorAction SilentlyContinue)) {
             $rel = $entry.FullName.Substring($Root.Length).TrimStart('\', '/') -replace '\\', '/'
+            if ($entry.Attributes -band [System.IO.FileAttributes]::ReparsePoint) {
+                Write-Verbose "Sprawl scan does not follow filesystem link: $rel"
+                continue
+            }
             if ($entry.PSIsContainer) {
                 if ($pruneNames -contains $entry.Name -or $entry.Name -like '*.egg-info' -or $prunePaths -contains $rel) { continue }
                 if (Test-Path -LiteralPath (Join-Path $entry.FullName 'pyvenv.cfg')) { continue }
@@ -223,32 +227,35 @@ function Invoke-SprawlGate {
                          scripts/{build-tauri-windows,test,mcp-call,ui-shot}.ps1,
                          scripts/lib/*.ps1, scripts/*.py, tests/**/*.py, src/**/*.py,
                          the NSIS installer hook apps/desktop/src-tauri/windows/hooks.nsh
-                         (tauri.conf.json installerHooks), apps/desktop/validate.check.mts
+                         (tauri.conf.json installerHooks), apps/desktop/validate.check.mts,
+                         scripts/connect-desktop-mcp.py (installed-app stdio bridge)
       thick-shim         a scripts/*.py that is not a thin CLI shim into gen_audio.cli
                          (over 20 lines or no `from gen_audio.cli` import)
       vcvars             a script other than scripts/lib/devenv.ps1 sources vcvars/VsDevCmd
       tauri-build        more than one script calls the tauri CLI build
       bare-desktop-cargo any script compiles the desktop crate with cargo directly
-      cargo-clean        any script runs cargo clean
+      cargo-clean        a script other than the canonical build entry runs cargo clean
       manifest-copy      a library/manifest.json other than apps/desktop/public/library/manifest.json
     This file defines the patterns, so it is not content-scanned itself.
     #>
     param([Parameter(Mandatory = $true)][string]$Root, [string[]]$Exclude = @())
     $entryPoints = @('scripts/build-tauri-windows.ps1', 'scripts/test.ps1', 'scripts/mcp-call.ps1', 'scripts/ui-shot.ps1',
+        'scripts/connect-desktop-mcp.py',
         'apps/desktop/src-tauri/windows/hooks.nsh', 'apps/desktop/validate.check.mts')
     $self = 'scripts/test.ps1'
     $vcvarsOwner = 'scripts/lib/devenv.ps1'
     $tauriOwner = 'scripts/build-tauri-windows.ps1'
     $patterns = @{
         'vcvars'             = 'vcvars(64|32|all)?\.bat|VsDevCmd\.bat'
-        'tauri-build'        = '@tauri-apps/cli|cargo[ -]tauri\s+build|\btauri(\.cmd)?[''"]?\s+build\b'
+        'tauri-build'        = '@tauri-apps/cli|cargo[ -]tauri\s+build|\btauri(\.cmd)?[''"]?\s+build\b|\bnpm(\.cmd)?\s+run\s+tauri\s+--\s+build\b'
         'bare-desktop-cargo' = 'cargo\s+(build|run|rustc|install)\b[^\r\n]*(-p|--package)\s+gen-audio-desktop'
         'cargo-clean'        = 'cargo\s+clean\b'
     }
     $findings = New-Object System.Collections.Generic.List[string]
     $tauriCallers = New-Object System.Collections.Generic.List[string]
-    foreach ($exclude in $Exclude) { Write-Output "SPRAWL_EXCLUDED $exclude" }
-    $files = @(Get-ScriptFile -Root $Root -Exclude $Exclude)
+    $excludedRoots = @('models', 'artifacts/anti-pattern') + @($Exclude)
+    foreach ($exclude in $excludedRoots) { Write-Output "SPRAWL_EXCLUDED $exclude" }
+    $files = @(Get-ScriptFile -Root $Root -Exclude $excludedRoots)
     foreach ($file in $files) {
         $rel = $file.Rel
         if ($file.Full -like '*manifest.json') {
@@ -260,14 +267,14 @@ function Invoke-SprawlGate {
         if (-not $allowed) { $findings.Add("outside-allowlist $rel") }
         if ($rel -eq $self) { continue }
         $text = [System.IO.File]::ReadAllText($file.Full)
-        if ($rel -match '^scripts/[^/]+\.py$') {
+        if ($rel -match '^scripts/[^/]+\.py$' -and $rel -ne 'scripts/connect-desktop-mcp.py') {
             $lineCount = @($text -split "`n").Count
             if ($lineCount -gt 20 -or $text -notmatch 'from gen_audio\.cli') { $findings.Add("thick-shim $rel ($lineCount lines)") }
         }
         if ($text -match $patterns['vcvars'] -and $rel -ne $vcvarsOwner) { $findings.Add("vcvars $rel") }
         if ($text -match $patterns['tauri-build']) { $tauriCallers.Add($rel) }
         if ($text -match $patterns['bare-desktop-cargo']) { $findings.Add("bare-desktop-cargo $rel") }
-        if ($text -match $patterns['cargo-clean']) { $findings.Add("cargo-clean $rel") }
+        if ($text -match $patterns['cargo-clean'] -and $rel -ne $tauriOwner) { $findings.Add("cargo-clean $rel") }
     }
     foreach ($caller in $tauriCallers) {
         if ($tauriCallers.Count -gt 1 -or $caller -ne $tauriOwner) { $findings.Add("tauri-build $caller") }
@@ -278,7 +285,6 @@ function Invoke-SprawlGate {
 }
 
 Write-Step "scripts/test.ps1 -Tag $Tag (PowerShell $($PSVersionTable.PSVersion)); logs in $logDir"
-if (Test-IsWindowsHost) { Import-VsDevEnv }
 
 Invoke-Step 'Eol' {
     param($log)
@@ -355,6 +361,8 @@ Invoke-Step 'Sprawl' {
 
 Invoke-Step 'Regen' {
     param($log)
+    if (Test-IsWindowsHost) { Import-VsDevEnv }
+    $env:CARGO_BUILD_JOBS = '2'
     $library = 'apps/desktop/public/library'
     $generated = @("$library/assets.json", "$library/manifest.json", 'schemas/asset-object/fixtures/assets.dev.json',
         'schemas/asset-object/media.lock.json', 'schemas/asset-object/vectors/fixtures_v1.json',
@@ -365,12 +373,12 @@ Invoke-Step 'Regen' {
     if ($LASTEXITCODE -ne 0) { throw 'git status failed' }
     if ($dirty.Count -gt 0) { throw "generated files already differ from HEAD (commit or restore them first): $($dirty -join '; ')" }
     # build_assets names any missing WAV and exits 1; there is no skip path.
-    $buildArgs = @('run', '-q', '-p', 'gen-audio-core', '--example', 'build_assets')
+    $buildArgs = @('run', '--locked', '-q', '-p', 'gen-audio-core', '--example', 'build_assets')
     if ($script:fromLock) { $buildArgs += @('--', '--from-lock') }
     if ((Invoke-Logged -Log $log -File 'cargo' -Arguments $buildArgs) -ne 0) {
         throw "build_assets failed$(if (-not $script:fromLock) { ' (a missing library WAV fails here; stage the WAVs, or -FromLock in CI)' })"
     }
-    if ((Invoke-Logged -Log $log -File 'cargo' -Arguments @('run', '-q', '-p', 'gen-audio-core', '--example', 'asset_vectors')) -ne 0) { throw 'asset_vectors failed' }
+    if ((Invoke-Logged -Log $log -File 'cargo' -Arguments @('run', '--locked', '-q', '-p', 'gen-audio-core', '--example', 'asset_vectors')) -ne 0) { throw 'asset_vectors failed' }
     if ((Invoke-Logged -Log $log -File (Get-PythonExe) -Arguments @('scripts/cube_revision.py', 'manifest')) -ne 0) { throw 'cube_revision.py manifest failed' }
     $code = Invoke-Logged -Log $log -File 'git' -Arguments (@('diff', '--exit-code', '--stat', '--') + $generated)
     if ($code -ne 0) { throw "generated files drifted after build_assets + asset_vectors + manifest sync; see git diff (exit $code)" }
@@ -379,15 +387,17 @@ Invoke-Step 'Regen' {
 
 Invoke-Step 'Cargo' {
     param($log)
-    $cargoArgs = @('test', '--workspace')
+    $env:CARGO_BUILD_JOBS = '2'
+    $cargoArgs = @('test', '--locked', '--workspace')
     if (Test-IsWindowsHost) {
+        Import-VsDevEnv
         # tauri-build checks that the externalBin sidecar exists; stage a debug one if none is there.
         $triple = ((& rustc -vV) | Select-String -Pattern '^host: ').ToString().Split(':', 2)[1].Trim()
         $staged = Join-Path $root "apps\desktop\src-tauri\binaries\gen-audio-mcp-$triple.exe"
         if (-not (Test-Path -LiteralPath $staged)) {
-            if ((Invoke-Logged -Log $log -File 'cargo' -Arguments @('build', '-p', 'gen-audio-mcp')) -ne 0) { throw 'cargo build -p gen-audio-mcp failed' }
+            $artifact = Invoke-CargoBinBuild -Package gen-audio-mcp -Bin gen-audio-mcp
             New-Item -ItemType Directory -Force -Path (Split-Path -Parent $staged) | Out-Null
-            Copy-Item -LiteralPath (Join-Path $root 'target\debug\gen-audio-mcp.exe') -Destination $staged
+            Copy-Item -LiteralPath $artifact.Executable -Destination $staged
         }
     } else {
         $cargoArgs += @('--exclude', 'gen-audio-desktop')

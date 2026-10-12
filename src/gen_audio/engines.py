@@ -55,8 +55,9 @@ ENGINES: dict[str, EngineSpec] = {
         kind="synth",
         status="external",
         summary=(
-            "Compare slot for VibeVoice long-form multi-speaker synthesis. "
-            "No adapter and no weights are included."
+            "VibeVoice runs through the separate pinned Python 3.12 CPU worker "
+            "and desktop/MCP studio adapter, not the base SDK EngineAdapter registry. "
+            "Local weights, tokenizer, reference WAVs and memory preflight are required."
         ),
     ),
     "magpie": EngineSpec(

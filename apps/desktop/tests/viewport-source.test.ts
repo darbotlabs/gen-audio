@@ -2,8 +2,7 @@
 // fixtures; VITE_GEN_AUDIO_FIXTURES=1 (PR #4's flag) brings them back.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, readFileSync, readdirSync, rmSync, statSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { readFileSync, readdirSync, rmSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { DEV_FIXTURE_CLAIMS, fixturesRequested, isDevFixture, selectViewport } from "../src/viewport-source.ts";
@@ -72,7 +71,7 @@ function distText(dir: string): string {
 
 async function viteBuild(flag: string | undefined): Promise<string> {
   const { build } = await import("vite");
-  const outDir = mkdtempSync(join(tmpdir(), "ga-dist-"));
+  const outDir = join(repo("apps/desktop"), `.frontend-build-check-${process.pid}-${Date.now()}`);
   const saved = process.env.VITE_GEN_AUDIO_FIXTURES;
   if (flag === undefined) delete process.env.VITE_GEN_AUDIO_FIXTURES;
   else process.env.VITE_GEN_AUDIO_FIXTURES = flag;
@@ -162,7 +161,8 @@ test("E4: each voice model's Cube tab lists that engine's real rev 3 cubes", () 
   assert.equal(dayour.state === "cubes" && dayour.offline, true, "dayour/kokoro's cubes are offline runs (E)");
   const vibe = modelCubes(assets, "vibevoice");
   assert.deepEqual(titles(vibe), ["Bitdot braille (VibeVoice-1.5B)"]);
-  assert.equal(vibe.state === "cubes" && vibe.offline, true, "VibeVoice's bitdot cube is an offline run");
+  assert.equal(vibe.state === "cubes" && vibe.offline, false, "VibeVoice has a desktop worker adapter; that does not validate current inference");
+  assert.equal(vibe.state === "cubes" && vibe.rows[0].imported, true, "The stored bitdot render retains its imported provenance");
   for (const view of [onnx, dayour, vibe]) {
     assert.ok(view.state === "cubes");
     for (const row of view.rows) {
@@ -186,7 +186,8 @@ test("E4: every audio clip with a WAV has exactly one rev 3 cube made from that 
   assert.equal(clips.length, 5);
   for (const clip of clips) {
     const wav = clip.media.find((item) => item.role === "wav")!;
-    const cubes = assets.filter((asset) => asset.kind === "cube_ihdr" && asset.src.includes(clip.uid));
+    const allCubes = assets.filter((asset) => asset.kind === "cube_ihdr" && asset.src.includes(clip.uid));
+    const cubes = allCubes.filter(asset => asset.fields.cube_revision === 3);
     assert.equal(cubes.length, 1, clip.legacy_id);
     assert.equal(cubes[0].fields.cube_revision, 3, clip.legacy_id);
     assert.equal(cubes[0].fields.source_sha256, wav.sha256, clip.legacy_id);
@@ -195,6 +196,12 @@ test("E4: every audio clip with a WAV has exactly one rev 3 cube made from that 
     assert.equal(doc.provenance.layer_method, "library_r3");
     assert.equal(doc.provenance.generator, "src/gen_audio/cube_layers.py");
     assert.equal((cubes[0].provenance?.params as Record<string, unknown>).bins_inferred_from_shape, false, clip.legacy_id);
+    for (const comparison of allCubes.filter(asset => asset.fields.cube_revision === 2)) {
+      const alternate = load(`apps/desktop/public${mediaPath(comparison)}`);
+      assert.equal(alternate.provenance.layer_method, "pipeline_r2");
+      assert.equal(alternate.source_sha256, wav.sha256);
+      assert.equal(alternate.compare_to, `/library/${cubes[0].media.find(item => item.role === "cube_json")!.path}`);
+    }
   }
 });
 

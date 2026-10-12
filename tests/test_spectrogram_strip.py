@@ -17,7 +17,7 @@ from gen_audio.audio_io import read_wav
 from gen_audio.cli import spectrogram_strip as cli
 
 ROOT = Path(__file__).resolve().parents[1]
-VECTORS = json.loads((ROOT / "schemas/asset-object/vectors/v1.json").read_text(encoding="utf-8"))
+VECTORS = ROOT / "schemas/asset-object/vectors/v1.json"
 
 
 def _write_wav(path: Path, samples: np.ndarray, rate: int, float32: bool) -> None:
@@ -76,7 +76,7 @@ def test_png_writer_round_trips_pixels(tmp_path):
 
 def test_rounding_matches_every_shared_vector():
     by_op: dict[str, int] = {}
-    for row in VECTORS["rounding"]:
+    for row in json.loads(VECTORS.read_text(encoding="utf-8"))["rounding"]:
         op = row["op"]
         by_op[op] = by_op.get(op, 0) + 1
         if op == "ms_from_frames":
@@ -129,3 +129,54 @@ def test_committed_strips_reproduce_pixel_for_pixel(tmp_path, stem):
     committed = json.loads((library / summary["png"].replace(".png", ".json")).read_text(encoding="utf-8"))
     regenerated = json.loads((tmp_path / summary["png"].replace(".png", ".json")).read_text(encoding="utf-8"))
     assert regenerated["fields"] == committed["fields"]
+
+
+@pytest.mark.parametrize("kwargs", [
+    {"hop": 0}, {"n_fft": 1_000_000}, {"n_bands": 1000},
+    {"f_min": float("nan")}, {"f_max": float("inf")}, {"db_floor": 0},
+    {"hop": 1, "n_fft": 16384},
+])
+def test_strip_rejects_invalid_or_excessive_allocations(kwargs):
+    params = dict(n_fft=2048, hop=2400, n_bands=64, f_min=60.0, f_max=8000.0, db_floor=-80)
+    params.update(kwargs)
+    with pytest.raises(ValueError):
+        module.strip(np.ones(24000), 24000, **params)
+
+
+def test_strip_refuses_nonfinite_input_and_short_audio():
+    for samples in (np.array([float("nan")]), np.ones(2)):
+        with pytest.raises(ValueError):
+            module.strip(samples, 24000, 2048, 2400, 64, 60.0, 8000.0, -80)
+
+
+def test_strip_publication_collision_preserves_existing_pair(tmp_path):
+    wav = tmp_path / "tone.wav"
+    _write_wav(wav, np.sin(np.arange(24000) / 10), 24000, True)
+    out = tmp_path / "out"
+    summary = module.write_strip(wav, "tone", out)
+    png = out / summary["png"]
+    sidecar = png.with_suffix(".json")
+    before = (png.read_bytes(), sidecar.read_bytes())
+    with pytest.raises(FileExistsError):
+        module.write_strip(wav, "different-id", out)
+    assert (png.read_bytes(), sidecar.read_bytes()) == before
+    assert not list(out.glob("*.partial"))
+
+
+def test_strip_publication_failure_rolls_back_png(tmp_path, monkeypatch):
+    from gen_audio import artifacts
+
+    wav = tmp_path / "tone.wav"
+    _write_wav(wav, np.sin(np.arange(24000) / 10), 24000, True)
+    original = artifacts.os.link
+
+    def fail_sidecar(source, destination):
+        if Path(destination).suffix == ".json":
+            raise OSError("sidecar publication failed")
+        original(source, destination)
+
+    monkeypatch.setattr(artifacts.os, "link", fail_sidecar)
+    out = tmp_path / "out"
+    with pytest.raises(OSError, match="sidecar publication"):
+        module.write_strip(wav, "tone", out)
+    assert list(out.iterdir()) == []

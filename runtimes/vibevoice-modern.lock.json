@@ -1,0 +1,41 @@
+{
+  "source": {
+    "url": "https://codeload.github.com/vibevoice-community/VibeVoice/zip/952326ddb264062466a888cf32a5b2f4e803e16e",
+    "sha256": "041ad298d772efd112e57847406146a0299109e0d77690602cbcb13db5dff39e",
+    "root": "VibeVoice-952326ddb264062466a888cf32a5b2f4e803e16e",
+    "version": "0.1.0+genaudio.1"
+  },
+  "patches_sha256": "85d0ea4e814fc31677a85e6baa2927852023eabb22a962e57bc0542afbfa623b",
+  "wheel": "vibevoice-0.1.0+genaudio.1-py3-none-any.whl",
+  "wheel_sha256": "0003b02a18b6d72ea7e003bb90ed5b574c42c2357e8e4dd4eee8572a8975a358",
+  "files": {
+    "vibevoice/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "vibevoice/finetune/__init__.py": "cfeb39f98fbb8b370b3038890b9897ade8b2dc41e8fd10150ca03af3a00b218c",
+    "vibevoice/finetune/data_vibevoice.py": "9c8fe19a47c6799644309f286524b38966978df3096a129ac5f4f2cca6663ec1",
+    "vibevoice/finetune/train_vibevoice.py": "e44a579875481c790f00c626bb167f1a05b8c00a089d1f050746d45c76ed70fb",
+    "vibevoice/modular/__init__.py": "a16e164c3ee5dcc53361e8a06436f5bc0c55c051db65820b742b68e8d899a34c",
+    "vibevoice/modular/configuration_vibevoice.py": "5c73ac7d97865443dd74119e631c89b16e38250e0ba7c0c9cf548164c2446173",
+    "vibevoice/modular/configuration_vibevoice_streaming.py": "dcf0049454c3b9c911e94093a0b6972a4c1916dc11f8fbf541865f911b56314f",
+    "vibevoice/modular/lora_loading.py": "1418388a14702b2901eef856255e9857ab49b15901ca5ee5e203bcd64c4c2d96",
+    "vibevoice/modular/modeling_vibevoice.py": "da0390403defeb4808641c16bcf4e27d6f7f631f181009bc02b7ca9ce85daa20",
+    "vibevoice/modular/modeling_vibevoice_asr.py": "95ba827c81f35097233b12963eaa8de87cd5c5ce7691e2cc4ceb109043a42dfe",
+    "vibevoice/modular/modeling_vibevoice_inference.py": "9fd758c26c7ab6f2bcc6582a1815c15c4b6285340d2f6315f3fac5b04f80d59a",
+    "vibevoice/modular/modeling_vibevoice_streaming.py": "858a68fdf1c67a4ead1a1d5e82bba1c374147c5e8ea18278a286e8f25f61b2c1",
+    "vibevoice/modular/modeling_vibevoice_streaming_inference.py": "61822afae224bc44ce1429c0bd1dd99e9baa76ce276082c083ddf245878d59fe",
+    "vibevoice/modular/modular_vibevoice_diffusion_head.py": "2667bbc3033f0e7b563e70fb77f456e71ca9138d1c15ce48c58c84baff1fff75",
+    "vibevoice/modular/modular_vibevoice_text_tokenizer.py": "d32a704194200d265c94a5083ae7bd56c7548c4147c2d83c2d6fd1e7e6234643",
+    "vibevoice/modular/modular_vibevoice_tokenizer.py": "7f6f30b88e4e34c20160d7e99a5ceadac9cf43485c34a5bc17973569cd65140e",
+    "vibevoice/modular/streamer.py": "3fe03e658f3dc8fd5196938b406e5fc3b3c7289471073d05ba09e953a712ceef",
+    "vibevoice/processor/__init__.py": "3a0939ba9c27ceec0860ff21d43205254652ad9ce69112316b3430c25945c597",
+    "vibevoice/processor/vibevoice_asr_processor.py": "35e858139dac0c2c21b641f50cc66c5a4263c88607978aca7e8ed185503fdec2",
+    "vibevoice/processor/vibevoice_processor.py": "94e6972bcbd9af73bafcdc4e1fb93d4c2eddd890124fa428aaaceb1d2fa6d2d8",
+    "vibevoice/processor/vibevoice_streaming_processor.py": "147a48ee08178bc0fb124f5dd603c6bc52ffa5b2f6866a0add7e27654086bb78",
+    "vibevoice/processor/vibevoice_tokenizer_processor.py": "3ef14aef3488fb7d290f46d224ad01451ceb30faeebabddf67644170245487ad",
+    "vibevoice/schedule/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "vibevoice/schedule/dpm_solver.py": "dcd4c0e7e5c6e26400423ade764bc673bedbf77a8f55ea6d7e426b37d981906a",
+    "vibevoice/schedule/timestep_sampler.py": "70b003bdfdc716d09942ecfcd0e2f438bac27ea16da9527e105e008a0069dd83",
+    "vibevoice/scripts/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "vibevoice/scripts/convert_nnscaler_checkpoint_to_transformers.py": "3afc5f965535016b2967fbdeacff58089edcce4417b8df9228ab80b17bf074e5",
+    "vibevoice/scripts/merge_vibevoice_models.py": "b7acf3867d66d63b01fbafa12b6e63725dbb477231540bf39a9bc06f571a3e82"
+  }
+}

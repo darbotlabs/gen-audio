@@ -1,0 +1,15 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://darbot.labs/gen-audio/execution.schema.json",
+  "title": "Gen-Audio execution preferences",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "backend": {"type":"string","enum":["auto","cpu","cuda","rocm","directml","vitisai"],"default":"auto"},
+    "device": {"type":"string","enum":["auto","cpu","gpu","npu"],"default":"auto"},
+    "device_index": {"type":"integer","minimum":0,"maximum":15,"default":0},
+    "precision": {"type":"string","enum":["auto","float32","float16","bfloat16"],"default":"auto"},
+    "attention": {"type":"string","enum":["auto","math","efficient"],"default":"auto"},
+    "fallback": {"type":"string","enum":["error","cpu"],"default":"error"}
+  }
+}

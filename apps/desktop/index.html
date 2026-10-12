@@ -14,21 +14,19 @@
           <span class="mark">DARBOT</span>
           <span class="product">GEN-AUDIO</span>
         </div>
-        <p class="lede">
-          Snap slides + side pane. Profile maps are browser drawings — not product speech.
-        </p>
       </div>
       <div class="ga-header-toolbar" aria-label="Gen-Audio header toolbar">
         <div class="toolbar">
           <button type="button" id="show-empty">Clear viewport</button>
         </div>
         <p id="status" class="status" role="status"></p>
+        <p id="backend-status" class="status" role="status">Connecting to the owned desktop backend…</p>
       </div>
     </header>
     <div class="studio">
       <aside class="sidepane" aria-label="Podcast setup">
         <section id="model-drop" class="model-drop" aria-label="Loaded voice model">
-          <p class="pane-kicker">Loaded voice model</p>
+          <p class="pane-kicker">Selected voice engine</p>
           <p id="loaded-model" class="loaded-model">Drop an engine card here</p>
           <p id="loaded-model-id" class="loaded-id"></p>
         </section>
@@ -55,35 +53,92 @@
               <option value="10">10 min</option>
               <option value="30">30 min</option>
             </select>
+            <p class="field-hint">Planning hint only. Speech reads your script as supplied; it does not invent or pad text.</p>
           </label>
         </section>
         <section class="prompt-box" aria-label="Podcast prompt">
+          <fieldset id="vibevoice-options" hidden>
+            <legend>VibeVoice generation limits</legend>
+            <label>Execution <select id="execution-backend"><option value="auto">Automatic</option><option value="cpu">CPU only</option><option value="rocm">AMD GPU · ROCm</option><option value="cuda">NVIDIA GPU · CUDA</option></select></label>
+            <label>Precision <select id="execution-precision"><option value="auto">Automatic</option><option value="float32">FP32</option><option value="bfloat16">BF16</option><option value="float16">FP16</option></select></label>
+            <label>Attention <select id="execution-attention"><option value="auto">Automatic</option><option value="math">Math</option><option value="efficient">Efficient · experimental on ROCm</option></select></label>
+            <label>Output cap (seconds) <input id="max-seconds" type="number" min="1" max="60" value="30"></label>
+            <label>Token cap <input id="max-tokens" type="number" min="1" max="1024" value="512"></label>
+            <label>Seed <input id="generation-seed" type="number" min="0" max="4294967295" value="0"></label>
+            <p class="field-hint">Up to four speakers and 8192 characters. Limits cap output; they do not guarantee a duration. A capped render is labeled incomplete.</p>
+            <button type="button" id="check-vibevoice">Check VibeVoice readiness</button>
+          </fieldset>
           <label class="file-pick">
-            Choose files
-            <input id="source-files" type="file" multiple />
+            Choose text scripts (.txt, .md)
+            <input id="source-files" type="file" accept=".txt,.md,text/plain,text/markdown" multiple />
           </label>
           <ul id="file-list" class="file-list"></ul>
-          <textarea id="prompt" rows="3" placeholder="Paste a document or write a prompt (does not claim speech until synthesized)"></textarea>
-          <button type="button" id="generate-podcast">Generate podcast</button>
+          <textarea id="prompt" rows="5" aria-label="Words to synthesize" placeholder="Enter words to speak. With multiple personas, use Speaker 1: and Speaker 2: turns."></textarea>
+          <p class="field-hint">Kokoro maps Alice and Frank. VibeVoice uses the acoustic references selected beside each persona. One persona can read prose; multiple personas use Speaker N: turns.</p>
+          <button type="button" id="generate-podcast">Generate speech</button>
+        </section>
+        <section id="authoring-panel" class="authoring-panel" aria-label="Script authoring">
+          <details>
+            <summary>Script authoring and LLM draft</summary>
+            <label>Script import convention
+              <select id="script-indexing">
+                <option value="one_based">Speaker 1..N (strict)</option>
+                <option value="zero_based">Speaker 0..N-1 (convert)</option>
+                <option value="alternating">Unlabeled lines alternate speakers</option>
+              </select>
+            </label>
+            <button type="button" id="analyze-script">Analyze current script</button>
+            <label>Draft topic (separate from spoken words)
+              <textarea id="draft-topic" rows="3" maxlength="1000"></textarea>
+            </label>
+            <label>Style
+              <select id="draft-style"><option value="conversational">Conversation</option><option value="interview">Interview</option><option value="explainer">Explainer</option></select>
+            </label>
+            <label><input id="draft-rewrite" type="checkbox">Rewrite the current script instead of drafting from scratch</label>
+            <label>Draft provider
+              <select id="draft-connector"><option value="gpt">GPT</option><option value="claude">Claude API</option><option value="copilot">Copilot</option><option value="gemini">Gemini</option></select>
+            </label>
+            <p class="field-hint">English drafts use the selected personas and duration hint. Local Phi runtime loading is not migrated. Providers require configured credentials and live opt-in.</p>
+            <button type="button" id="plan-draft">Preview draft request</button>
+            <div id="draft-preview" hidden>
+              <p id="draft-recipient"></p>
+              <pre id="draft-preview-text"></pre>
+              <button type="button" id="send-draft" disabled>Confirm and send reviewed prompt</button>
+            </div>
+            <p id="authoring-info" role="status"></p>
+            <pre id="authoring-result"></pre>
+            <button type="button" id="apply-script" disabled>Apply validated script</button>
+          </details>
+        </section>
+        <section id="speech-output" class="speech-output" aria-label="Generated speech" hidden>
+          <p id="speech-info" role="status"></p>
+          <audio id="speech-audio" controls preload="metadata" aria-label="Play generated speech"></audio>
+          <a id="speech-download" download>Download verified WAV</a>
+          <a id="manifest-download" download>Download generation manifest</a>
+          <button type="button" id="master-audio" disabled>Create podcast master</button>
+          <p id="master-info" role="status"></p>
+          <audio id="master-player" controls aria-label="Play mastered audio" hidden></audio>
+          <a id="master-download" download hidden>Download mastered WAV</a>
+          <a id="master-report-download" download hidden>Download mastering report</a>
+        </section>
+        <section class="saved-generations" aria-label="Saved generations">
+          <h3>Saved generations</h3>
+          <p class="field-hint">Verified audio and provenance persist locally as content-derived assets.</p>
+          <button type="button" id="refresh-generations">Refresh library</button>
+          <ul id="generation-list"></ul>
         </section>
       </aside>
       <section class="viewport" aria-label="Card viewport frame">
         <div class="viewport-chrome">
-          <span>Viewport</span>
           <div id="layer-switch" class="layer-switch" role="tablist" aria-label="Viewport layers">
-            <button type="button" data-layer="models" role="tab">Voice models</button>
-            <button type="button" data-layer="clips" role="tab">Audio clips</button>
-            <button type="button" data-layer="video" role="tab">Video</button>
-            <button type="button" data-layer="cube" role="tab">Cube</button>
           </div>
           <div class="slide-chrome" aria-live="polite">
-            <span id="slide-label">Slide 1/3</span>
-            <div id="slide-dots" class="slide-dots" role="tablist" aria-label="Viewport slides"></div>
+            <span id="slide-label"></span>
+            <div id="slide-dots" class="slide-dots" role="group" aria-label="Viewport slides"></div>
           </div>
-          <span>Live tiles</span>
         </div>
         <main id="board" class="board" aria-label="Card viewport"></main>
-        <p id="empty" class="empty" hidden>No cards in this viewport. Load the labeled example for engines, connectors, and readiness tiles.</p>
+        <p id="empty" class="empty" hidden>No cards in this viewport. Reopen the window to restore the release library.</p>
       </section>
     </div>
     
@@ -94,10 +149,9 @@
         <input id="fp-scrub" class="fp-scrub" type="range" min="0" max="1000" value="0" aria-label="Scrub playback" />
         <span id="fp-time" class="fp-time">0:00 / 0:00</span>
       </div>
+      <button type="button" id="fp-goto" class="fp-btn fp-icon" aria-label="Go to playing audio" title="Go to playing audio">↗</button>
+      <button type="button" id="fp-close" class="fp-btn fp-icon" aria-label="Stop audio and close player" title="Stop audio and close player">×</button>
     </div>
-    <footer class="foot">
-      PageUp/Down or Arrow Up/Down advance whole slides. Arrow Left/Right move cards. Agent is a persona; Voice is the TTS model. Drag a green engine into the side pane. Profile maps and cubes are labeled — not synthesized speech.
-    </footer>
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>

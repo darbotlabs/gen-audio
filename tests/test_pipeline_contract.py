@@ -13,12 +13,24 @@ from gen_audio.audio_io import write_wav
 from gen_audio.cube_layers import generator_sha256, library_cube
 from gen_audio.cube_revision import measure
 from gen_audio.identity import mint
-from gen_audio.pipeline import cube_document, run_pipeline
+from gen_audio.pipeline import cube_document, fit_duration, run_pipeline
 
 
 def test_wer_counts_edits():
     assert word_error_rate("the cat sat", "the cat sat") == 0
     assert word_error_rate("the cat sat", "the dog sat") == pytest.approx(1 / 3)
+
+
+@pytest.mark.parametrize("duration", [float("nan"), float("inf"), True, -1, 601])
+def test_fit_duration_refuses_invalid_or_excessive_padding(duration):
+    with pytest.raises(ValueError):
+        fit_duration(np.ones(2400, dtype=np.float32), 24000, duration)
+
+
+def test_fit_duration_checks_sample_ceiling_before_allocating(monkeypatch):
+    monkeypatch.setenv("GENAID_MAX_AUDIO_SAMPLES", "3000")
+    with pytest.raises(ValueError, match="sample or duration limit"):
+        fit_duration(np.ones(2400, dtype=np.float32), 24000, 10)
 
 
 def test_cube_duration_matches_the_buffer():
@@ -143,7 +155,7 @@ def test_asr_failure_keeps_the_synth(tmp_path, monkeypatch):
     rate = 24000
     audio = (0.4 * np.sin(2 * np.pi * 180 * np.arange(rate) / rate)).astype(np.float32)
     raw = tmp_path / "raw.wav"
-    write_wav(raw, audio, rate, subtype="FLOAT")
+    write_wav(raw, audio, rate, subtype="FLOAT", agent_names=["Alice", "Frank"])
     script = tmp_path / "script.txt"
     script.write_text("Speaker 1: hello\n", encoding="utf-8")
     script_asset = asset_object(script, kind="script", derived_from=[])
@@ -161,6 +173,9 @@ def test_asr_failure_keeps_the_synth(tmp_path, monkeypatch):
         script_asset=script_asset,
     )
     assert manifest["synthesizedSpeech"] is True
+    from gen_audio.audio_metadata import read_artist
+    assert manifest["metadata"] == {"artist":"Alice; Frank","artists":["Alice","Frank"],"agentNames":["Alice","Frank"]}
+    assert read_artist(tmp_path / "fitted.wav") == "Alice; Frank"
     assert manifest["assets"]["wav"]["uid"].startswith("ga:audio_clip:")
     assert (tmp_path / "fitted.wav").is_file()
     assert manifest["compare"]["measuredHere"] is False

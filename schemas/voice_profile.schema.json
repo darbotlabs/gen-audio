@@ -4,27 +4,747 @@
   "title": "VoiceProfile",
   "type": "object",
   "additionalProperties": false,
-  "required": ["agentName", "personaId", "voiceModel", "tone", "purpose", "domain", "accent", "traits", "refs", "spectrogram2d", "spectrogram3d", "notPodcast", "disclaimer"],
+  "required": [
+    "agentName",
+    "personaId",
+    "voiceModel",
+    "tone",
+    "purpose",
+    "domain",
+    "accent",
+    "traits",
+    "refs",
+    "spectrogram2d",
+    "spectrogram3d",
+    "notPodcast",
+    "disclaimer",
+    "profileVersion",
+    "engineManifests"
+  ],
   "properties": {
-    "agentName": { "type": "string", "minLength": 1, "maxLength": 40, "description": "Persona display name. Not a TTS model id and not a connector id." },
-    "personaId": { "type": "string", "description": "Persona id such as alice. Not af_heart." },
-    "voiceModel": { "type": "string", "description": "TTS or G2P model id such as kokoro_onnx. Pack ids such as af_heart are refs." },
-    "voiceLabel": { "type": "string" },
-    "tone": { "type": "string", "minLength": 1, "maxLength": 80 },
-    "purpose": { "type": "string", "minLength": 1, "maxLength": 160 },
-    "domain": { "type": "string", "minLength": 1, "maxLength": 160 },
-    "accent": { "type": "string", "minLength": 1, "maxLength": 80 },
-    "traits": { "type": "string", "minLength": 12, "maxLength": 400 },
+    "agentName": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 40,
+      "description": "Persona display name. Not a TTS model id and not a connector id."
+    },
+    "personaId": {
+      "enum": [
+        "anton",
+        "alice",
+        "khortana",
+        "rocky",
+        "optimus",
+        "frank",
+        "nova",
+        "ivo",
+        "sable"
+      ],
+      "description": "Persona id, never a model or voice pack."
+    },
+    "voiceModel": {
+      "enum": [
+        "kokoro_onnx",
+        "kokoro_dayour",
+        "misaki",
+        "vibevoice",
+        "magpie",
+        "pocket_tts",
+        "personaplex"
+      ],
+      "description": "Model selection, not evidence that its adapter, weights, or runtime are available."
+    },
+    "voiceLabel": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 80
+    },
+    "tone": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 80
+    },
+    "purpose": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 160
+    },
+    "domain": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 160
+    },
+    "accent": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 80
+    },
+    "traits": {
+      "type": "string",
+      "minLength": 12,
+      "maxLength": 400
+    },
     "refs": {
       "type": "array",
       "minItems": 1,
       "maxItems": 8,
-      "items": { "type": "string", "minLength": 1, "maxLength": 80 }
+      "items": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 80
+      }
     },
-    "spectrogram2d": { "const": "none" },
-    "spectrogram3d": { "enum": ["none"] },
-    "notPodcast": { "const": true },
-    "synthesizedSpeech": { "const": false },
-    "disclaimer": { "type": "string", "minLength": 12, "maxLength": 400 }
-  }
+    "spectrogram2d": {
+      "const": "none"
+    },
+    "spectrogram3d": {
+      "enum": [
+        "none"
+      ]
+    },
+    "notPodcast": {
+      "const": true
+    },
+    "synthesizedSpeech": {
+      "const": false
+    },
+    "disclaimer": {
+      "type": "string",
+      "minLength": 12,
+      "maxLength": 400,
+      "pattern": "[Nn][Oo][Tt]"
+    },
+    "profileVersion": {
+      "const": "2.0"
+    },
+    "engineManifests": {
+      "$ref": "#/$defs/engineManifests"
+    },
+    "tags": {
+      "type": "array",
+      "maxItems": 20,
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 64
+      }
+    },
+    "samples": {
+      "type": "array",
+      "maxItems": 32,
+      "items": {
+        "$ref": "#/$defs/profileSample"
+      }
+    },
+    "linkedProjects": {
+      "type": "array",
+      "maxItems": 32,
+      "items": {
+        "$ref": "#/$defs/linkedProject"
+      }
+    },
+    "metadata": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "artist"
+      ],
+      "properties": {
+        "artist": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        }
+      }
+    },
+    "adaptiveCard": {
+      "$ref": "#/$defs/agentAdaptiveCard"
+    }
+  },
+  "oneOf": [
+    {
+      "properties": {
+        "personaId": {
+          "const": "anton"
+        },
+        "agentName": {
+          "const": "Anton"
+        },
+        "metadata": {
+          "properties": {
+            "artist": {
+              "const": "Anton"
+            }
+          }
+        }
+      }
+    },
+    {
+      "properties": {
+        "personaId": {
+          "const": "alice"
+        },
+        "agentName": {
+          "const": "Alice"
+        },
+        "metadata": {
+          "properties": {
+            "artist": {
+              "const": "Alice"
+            }
+          }
+        }
+      }
+    },
+    {
+      "properties": {
+        "personaId": {
+          "const": "khortana"
+        },
+        "agentName": {
+          "const": "Khortana"
+        },
+        "metadata": {
+          "properties": {
+            "artist": {
+              "const": "Khortana"
+            }
+          }
+        }
+      }
+    },
+    {
+      "properties": {
+        "personaId": {
+          "const": "rocky"
+        },
+        "agentName": {
+          "const": "Rocky"
+        },
+        "metadata": {
+          "properties": {
+            "artist": {
+              "const": "Rocky"
+            }
+          }
+        }
+      }
+    },
+    {
+      "properties": {
+        "personaId": {
+          "const": "optimus"
+        },
+        "agentName": {
+          "const": "Optimus Timelarp"
+        },
+        "metadata": {
+          "properties": {
+            "artist": {
+              "const": "Optimus Timelarp"
+            }
+          }
+        }
+      }
+    },
+    {
+      "properties": {
+        "personaId": {
+          "const": "frank"
+        },
+        "agentName": {
+          "const": "Frank"
+        },
+        "metadata": {
+          "properties": {
+            "artist": {
+              "const": "Frank"
+            }
+          }
+        }
+      }
+    },
+    {
+      "properties": {
+        "personaId": {
+          "const": "nova"
+        },
+        "agentName": {
+          "const": "Nova"
+        },
+        "metadata": {
+          "properties": {
+            "artist": {
+              "const": "Nova"
+            }
+          }
+        }
+      }
+    },
+    {
+      "properties": {
+        "personaId": {
+          "const": "ivo"
+        },
+        "agentName": {
+          "const": "Ivo"
+        },
+        "metadata": {
+          "properties": {
+            "artist": {
+              "const": "Ivo"
+            }
+          }
+        }
+      }
+    },
+    {
+      "properties": {
+        "personaId": {
+          "const": "sable"
+        },
+        "agentName": {
+          "const": "Sable"
+        },
+        "metadata": {
+          "properties": {
+            "artist": {
+              "const": "Sable"
+            }
+          }
+        }
+      }
+    }
+  ],
+  "$defs": {
+    "engineManifest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "capability",
+        "adapter",
+        "mapping",
+        "language",
+        "requires"
+      ],
+      "properties": {
+        "capability": {
+          "enum": [
+            "script_tts",
+            "speech_to_speech",
+            "g2p"
+          ]
+        },
+        "adapter": {
+          "enum": [
+            "synth",
+            "model_generate",
+            "g2p",
+            "external"
+          ]
+        },
+        "mapping": {
+          "enum": [
+            "mapped",
+            "unmapped"
+          ]
+        },
+        "language": {
+          "type": "string",
+          "minLength": 2,
+          "maxLength": 16,
+          "pattern": "^[a-z]{2}(-[a-z]{2})?$"
+        },
+        "requires": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 12,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64,
+            "pattern": "^[a-z0-9_]+$"
+          }
+        },
+        "voiceId": {
+          "type": "string",
+          "maxLength": 80,
+          "pattern": "^[a-z]{2}_[a-z0-9_]+$"
+        },
+        "referenceId": {
+          "type": "string",
+          "maxLength": 80,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]+$"
+        },
+        "downstreamEngine": {
+          "const": "kokoro_onnx"
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "mapping": {
+                "const": "mapped"
+              }
+            }
+          },
+          "then": {
+            "oneOf": [
+              {
+                "required": [
+                  "voiceId"
+                ],
+                "not": {
+                  "required": [
+                    "referenceId"
+                  ]
+                }
+              },
+              {
+                "required": [
+                  "referenceId"
+                ],
+                "not": {
+                  "required": [
+                    "voiceId"
+                  ]
+                }
+              }
+            ]
+          },
+          "else": {
+            "not": {
+              "anyOf": [
+                {
+                  "required": [
+                    "voiceId"
+                  ]
+                },
+                {
+                  "required": [
+                    "referenceId"
+                  ]
+                },
+                {
+                  "required": [
+                    "downstreamEngine"
+                  ]
+                }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    "engineManifests": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kokoro_onnx",
+        "kokoro_dayour",
+        "misaki",
+        "vibevoice",
+        "personaplex",
+        "magpie",
+        "pocket_tts"
+      ],
+      "properties": {
+        "kokoro_onnx": {
+          "allOf": [
+            {
+              "$ref": "#/$defs/engineManifest"
+            },
+            {
+              "properties": {
+                "capability": {
+                  "const": "script_tts"
+                }
+              }
+            }
+          ]
+        },
+        "kokoro_dayour": {
+          "allOf": [
+            {
+              "$ref": "#/$defs/engineManifest"
+            },
+            {
+              "properties": {
+                "capability": {
+                  "const": "script_tts"
+                }
+              }
+            }
+          ]
+        },
+        "misaki": {
+          "allOf": [
+            {
+              "$ref": "#/$defs/engineManifest"
+            },
+            {
+              "properties": {
+                "capability": {
+                  "const": "g2p"
+                }
+              }
+            }
+          ]
+        },
+        "vibevoice": {
+          "allOf": [
+            {
+              "$ref": "#/$defs/engineManifest"
+            },
+            {
+              "properties": {
+                "capability": {
+                  "const": "script_tts"
+                }
+              }
+            }
+          ]
+        },
+        "personaplex": {
+          "allOf": [
+            {
+              "$ref": "#/$defs/engineManifest"
+            },
+            {
+              "properties": {
+                "capability": {
+                  "const": "speech_to_speech"
+                }
+              }
+            }
+          ]
+        },
+        "magpie": {
+          "allOf": [
+            {
+              "$ref": "#/$defs/engineManifest"
+            },
+            {
+              "properties": {
+                "capability": {
+                  "const": "script_tts"
+                }
+              }
+            }
+          ]
+        },
+        "pocket_tts": {
+          "allOf": [
+            {
+              "$ref": "#/$defs/engineManifest"
+            },
+            {
+              "properties": {
+                "capability": {
+                  "const": "script_tts"
+                }
+              }
+            }
+          ]
+        }
+      }
+    },
+    "profileSample": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "referenceId",
+        "label",
+        "kind"
+      ],
+      "properties": {
+        "referenceId": {
+          "type": "string",
+          "maxLength": 80,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]+$"
+        },
+        "label": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "kind": {
+          "const": "acoustic_reference"
+        }
+      }
+    },
+    "linkedProject": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "name",
+        "path",
+        "slide"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "maxLength": 80,
+          "pattern": "^[a-z0-9][a-z0-9_-]+$"
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "path": {
+          "type": "string",
+          "maxLength": 240,
+          "pattern": "^[a-zA-Z0-9_-]+(/[a-zA-Z0-9_-][a-zA-Z0-9_.-]*)*$"
+        },
+        "slide": {
+          "enum": [
+            "studio",
+            "library",
+            "models",
+            "profiles",
+            "spatial"
+          ]
+        }
+      }
+    },
+    "agentAdaptiveCard": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "type",
+        "version",
+        "body",
+        "actions"
+      ],
+      "properties": {
+        "$schema": {
+          "const": "https://adaptivecards.io/schemas/adaptive-card.json"
+        },
+        "type": {
+          "const": "AdaptiveCard"
+        },
+        "version": {
+          "const": "1.5"
+        },
+        "body": {
+          "type": "array",
+          "maxItems": 64,
+          "items": {
+            "oneOf": [
+              {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "type",
+                  "text"
+                ],
+                "properties": {
+                  "type": {
+                    "const": "TextBlock"
+                  },
+                  "text": {
+                    "type": "string",
+                    "maxLength": 4000
+                  },
+                  "wrap": {
+                    "type": "boolean"
+                  },
+                  "weight": {
+                    "enum": [
+                      "Bolder",
+                      "Default"
+                    ]
+                  }
+                }
+              },
+              {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "type",
+                  "facts"
+                ],
+                "properties": {
+                  "type": {
+                    "const": "FactSet"
+                  },
+                  "facts": {
+                    "type": "array",
+                    "maxItems": 32,
+                    "items": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "required": [
+                        "title",
+                        "value"
+                      ],
+                      "properties": {
+                        "title": {
+                          "type": "string",
+                          "maxLength": 160
+                        },
+                        "value": {
+                          "type": "string",
+                          "maxLength": 4000
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            ]
+          },
+          "minItems": 1
+        },
+        "actions": {
+          "type": "array",
+          "maxItems": 32,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "type",
+              "title",
+              "data"
+            ],
+            "properties": {
+              "type": {
+                "const": "Action.Submit"
+              },
+              "title": {
+                "type": "string",
+                "maxLength": 160
+              },
+              "data": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "tool",
+                  "arguments"
+                ],
+                "properties": {
+                  "tool": {
+                    "enum": [
+                      "ui_set_sidepane",
+                      "ui_navigate",
+                      "voice_reference_prepare"
+                    ]
+                  },
+                  "arguments": {
+                    "type": "object"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "description": "Profile v2: one persona identity with all engine-specific mappings. Mapping and adapter support are distinct from loaded-model readiness and generated speech."
 }

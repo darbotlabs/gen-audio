@@ -1,0 +1,17 @@
+# Separate Python 3.12 environment; do not combine with VibeVoice or the app.
+# py -3.12 -m venv .venv-personaplex
+# .\.venv-personaplex\Scripts\python -m pip install -r runtimes\requirements-personaplex.txt
+# $env:PYTHONPATH=(Resolve-Path src)
+# .\.venv-personaplex\Scripts\python -m gen_audio.model_workers --help
+# CPU FP32 requires much more RAM than a 7B BF16 checkpoint's on-disk size.
+# Only raw mono 24 kHz PCM16 voice WAVs are accepted; no .pt unpickling.
+--extra-index-url https://download.pytorch.org/whl/cpu
+torch==2.4.1+cpu
+numpy==1.26.4
+safetensors==0.4.5
+huggingface-hub==0.24.7
+sentencepiece==0.2.0
+sphn==0.1.4
+pyloudnorm==0.1.1
+scipy==1.15.2
+moshi-personaplex @ git+https://github.com/NVIDIA/personaplex.git@3428dfd95309a7f3c84fd93259ded0f810d1ff91#subdirectory=moshi

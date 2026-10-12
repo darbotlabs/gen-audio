@@ -1,363 +1,51 @@
-// main.ts used to be checked by matching source text, so an early return above
-// the calls still passed. This loads the module and runs the three paths.
-import { test } from "node:test";
+import test from "node:test";
 import assert from "node:assert/strict";
-import { createServer, type ViteDevServer } from "vite";
+import { McpClient, controlNeedsResync, toolBody } from "../src/mcp-client.ts";
+import { snapshotFaces } from "../src/viewport-source.ts";
+import { seekReportControl, userPlayControl } from "../src/play-control.ts";
 
-type El = {
-  tagName: string;
-  id: string;
-  className: string;
-  textContent: string;
-  value: string;
-  type: string;
-  hidden: boolean;
-  disabled: boolean;
-  dataset: Record<string, string>;
-  style: { setProperty: (name: string, value: string) => void };
-  children: El[];
-  parent: El | null;
-  classList: { add: () => void; remove: () => void; toggle: () => boolean; contains: () => boolean };
-  append: (...nodes: El[]) => void;
-  appendChild: (node: El) => El;
-  prepend: (...nodes: El[]) => void;
-  replaceChildren: (...nodes: El[]) => void;
-  setAttribute: (key: string, value: string) => void;
-  getAttribute: (key: string) => string | null;
-  addEventListener: () => void;
-  removeEventListener: () => void;
-  querySelector: (sel: string) => El | null;
-  querySelectorAll: (sel: string) => El[];
-  closest: (sel: string) => El | null;
-  setPointerCapture: () => void;
-  focus: () => void;
-  matches: (sel: string) => boolean;
-};
+const config = { addr: "127.0.0.1:19847", token: "a1".repeat(32) };
+const json = (value: unknown) => new Response(JSON.stringify(value), { headers: { "content-type": "application/json" } });
+const event = (seq: number) => ({ seq, op: "focus", args: { uid: "lib-kokoro" } });
 
-function matches(el: El, sel: string): boolean {
-  const attr = /^\[data-([A-Za-z0-9-]+)(?:="([^"]*)")?\]$/.exec(sel);
-  if (attr) {
-    const value = el.dataset[attr[1]];
-    return attr[2] === undefined ? value !== undefined : value === attr[2];
-  }
-  if (sel.startsWith("#") && !sel.includes(" ") && !sel.includes(".")) return el.id === sel.slice(1);
-  if (sel.startsWith(".")) return el.className.split(/\s+/).includes(sel.slice(1));
-  return el.tagName.toLowerCase() === sel.toLowerCase();
-}
+test("ring gaps, skipped frames and listener restarts require a snapshot, not partial replay", () => {
+  assert.equal(controlNeedsResync({ cursor: 3, gap: false, events: [event(2), event(3)] }, 1), false);
+  assert.equal(controlNeedsResync({ cursor: 1, gap: false, events: [] }, 1), false);
+  assert.equal(controlNeedsResync({ cursor: 10, gap: true, events: [event(9), event(10)] }, 1), true);
+  assert.equal(controlNeedsResync({ cursor: 3, gap: false, events: [event(3)] }, 1), true);
+  assert.equal(controlNeedsResync({ cursor: 3, gap: false, events: [event(2)] }, 1), true);
+  assert.equal(controlNeedsResync({ cursor: 0, gap: false, events: [] }, 100), true);
+});
 
-function walk(el: El, visit: (node: El) => void): void {
-  visit(el);
-  for (const child of el.children) walk(child, visit);
-}
+test("snapshot face ids preserve third and later faces instead of collapsing to back", () => {
+  assert.deepEqual(snapshotFaces({
+    faces: { "view:clip": { face_id: "spectrogram", face_index: 3, face_count: 5 } },
+    flipped: { "view:clip": { face: "back" }, "view:legacy": { face: "front" } },
+  }), [
+    { tileId: "clip", faceId: "spectrogram", flipped: true },
+    { tileId: "legacy", faceId: null, flipped: false },
+  ]);
+});
 
-function queryAll(root: El, sel: string): El[] {
-  const parts = sel.trim().split(/\s+/);
-  let current = [root];
-  for (const part of parts) {
-    const next: El[] = [];
-    for (const node of current) {
-      const pool: El[] = [];
-      walk(node, (item) => {
-        if (item !== node) pool.push(item);
-      });
-      for (const item of pool) if (matches(item, part)) next.push(item);
-    }
-    current = next;
-  }
-  return current;
-}
-
-function query(root: El, sel: string): El | null {
-  if (sel.startsWith("#") && !sel.includes(" ") && !sel.includes("[") && !sel.includes(".")) {
-    let found: El | null = null;
-    walk(root, (node) => {
-      if (node.id === sel.slice(1)) found = node;
-    });
-    return found;
-  }
-  return queryAll(root, sel)[0] ?? null;
-}
-
-function makeEl(tag = "div"): El {
-  const style: Record<string, string> = {};
-  const el = {
-    tagName: tag.toUpperCase(),
-    id: "",
-    className: "",
-    textContent: "",
-    value: "",
-    type: "",
-    hidden: false,
-    disabled: false,
-    selected: false,
-    dataset: {} as Record<string, string>,
-    style: {
-      setProperty(name: string, value: string) {
-        style[name] = value;
-      },
-    },
-    children: [] as El[],
-    parent: null as El | null,
-    classList: {
-      add() {},
-      remove() {},
-      toggle() {
-        return false;
-      },
-      contains() {
-        return false;
-      },
-    },
-    append(...nodes: El[]) {
-      for (const node of nodes) {
-        node.parent = el as El;
-        el.children.push(node);
-      }
-    },
-    appendChild(node: El) {
-      el.append(node);
-      return node;
-    },
-    prepend(...nodes: El[]) {
-      el.children.unshift(...nodes);
-    },
-    replaceChildren(...nodes: El[]) {
-      el.children = [];
-      el.append(...nodes);
-    },
-    setAttribute() {},
-    getAttribute() {
-      return null;
-    },
-    addEventListener() {},
-    removeEventListener() {},
-    querySelector(sel: string) {
-      return query(el as El, sel);
-    },
-    querySelectorAll(sel: string) {
-      return queryAll(el as El, sel);
-    },
-    closest(sel: string) {
-      let node: El | null = el as El;
-      while (node) {
-        if (matches(node, sel)) return node;
-        node = node.parent;
-      }
-      return null;
-    },
-    setPointerCapture() {},
-    focus() {},
-    matches(sel: string) {
-      return matches(el as El, sel);
-    },
-  };
-  return new Proxy(el, {
-    get(target, key, receiver) {
-      if (Reflect.has(target, key)) return Reflect.get(target, key, receiver);
-      return () => receiver;
-    },
-  }) as El;
-}
-
-function installDom(): { root: El; byId: Map<string, El>; timers: number[] } {
-  const byId = new Map<string, El>();
-  const timers: number[] = [];
-  const body = makeEl("body");
-  const root = makeEl("html");
-  root.append(body);
-  const ids = [
-    "board",
-    "empty",
-    "status",
-    "model-drop",
-    "loaded-model",
-    "loaded-model-id",
-    "prompt",
-    "source-files",
-    "file-list",
-    "voice",
-    "agents",
-    "add-agent",
-    "duration",
-    "generate-podcast",
-    "show-empty",
-    "layer-switch",
-    "floating-playback",
-  ];
-  for (const id of ids) {
-    const tag = id === "voice" || id === "duration" ? "select" : id === "prompt" ? "textarea" : id === "source-files" ? "input" : "div";
-    const el = makeEl(tag);
-    el.id = id;
-    byId.set(id, el);
-    body.append(el);
-  }
-  const documentMock = {
-    documentElement: root,
-    body,
-    querySelector(sel: string) {
-      if (sel.startsWith("#") && !sel.includes(" ")) return byId.get(sel.slice(1)) ?? query(body, sel);
-      return query(body, sel);
-    },
-    querySelectorAll(sel: string) {
-      return queryAll(body, sel);
-    },
-    createElement: (tag: string) => makeEl(tag),
-    createElementNS: (_ns: string, tag: string) => makeEl(tag),
-    addEventListener() {},
-  };
-  const windowMock = {
-    document: documentMock,
-    addEventListener() {},
-    requestAnimationFrame() {
-      return 1;
-    },
-    cancelAnimationFrame() {},
-    setTimeout(fn: () => void, ms?: number) {
-      timers.push(ms ?? 0);
-      void fn;
-      return 0;
-    },
-    clearTimeout,
-    setInterval() {
-      return 0;
-    },
-    clearInterval() {},
-    matchMedia: () => ({ matches: false, addEventListener() {}, addListener() {} }),
-    devicePixelRatio: 1,
-    location: { href: "http://127.0.0.1/" },
-  };
-  Object.assign(globalThis, {
-    document: documentMock,
-    window: windowMock,
-    CSS: { escape: (value: string) => value },
-    requestAnimationFrame() {
-      return 1;
-    },
-    cancelAnimationFrame() {},
+test("authenticated control polling and seek ACK use the same negotiated client", async () => {
+  const calls: Array<{ name: string; arguments: Record<string, unknown> }> = [];
+  const client = new McpClient(config, async (url, init) => {
+    assert.equal(new Headers(init?.headers).get("authorization"), `Bearer ${config.token}`);
+    assert.ok(!String(url).includes(config.token));
+    if (String(url).includes("/control?")) return json({ cursor: 8, gap: true, oldest: 7, events: [event(7), event(8)] });
+    const rpc = JSON.parse(String(init?.body));
+    calls.push(rpc.params);
+    return json({ jsonrpc: "2.0", id: rpc.id, result: { content: [{ text: JSON.stringify({ ok: true, cursor: 8, ui: { clock: { source: "lib-kokoro", t: 4 } } }) }] } });
   });
-  return { root, byId, timers };
-}
-
-test("main.ts counts a failed lookup, a failed library fetch, and a dropped resolve", async () => {
-  const { root, byId, timers } = installDom();
-  const calls: string[] = [];
-  globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
-    const url = String(input);
-    calls.push(`${init?.method ?? "GET"} ${url}`);
-    if ((init?.method ?? "GET") === "POST") {
-      const body = JSON.stringify({ ok: false, error: "missing uid" });
-      return new Response(JSON.stringify({ result: { content: [{ text: body }] } }), {
-        status: 200,
-        headers: { "content-type": "application/json" },
-      });
-    }
-    return new Response("no", { status: 404 });
-  }) as typeof fetch;
-
-  let server: ViteDevServer | undefined;
-  try {
-    server = await createServer({
-      root: new URL("..", import.meta.url).pathname,
-      configFile: new URL("../vite.config.ts", import.meta.url).pathname,
-      server: { middlewareMode: true },
-      appType: "custom",
-      logLevel: "error",
-    });
-    const main = (await server.ssrLoadModule("/src/main.ts")) as {
-      discoverMcp: () => Promise<string>;
-      mediaBlob: (urlPath: string) => Promise<string | null>;
-      insertGeneratedTile: (uid: string, args: Record<string, unknown>) => Promise<void>;
-      presentLibraryCatalog: (work: Promise<null>) => void;
-      acceptControlFrame: (data: string) => void;
-      connectControl: () => void;
-      setControlResyncForTest: (work: (() => Promise<unknown>) | null) => void;
-    };
-    await new Promise((resolve) => setTimeout(resolve, 50));
-    const bootStatus = byId.get("status");
-    assert.equal(bootStatus?.dataset.control, "disconnected");
-    assert.match(bootStatus?.textContent ?? "", /disconnected/i);
-    assert.equal(timers[0], 250, "the first retry waits 250ms, not a fixed 50ms");
-    const booted = JSON.parse(root.dataset.mcpFailures ?? "{}") as Record<string, number>;
-    assert.equal(booted["mcp_status:TypeError"], 1, "boot lookup must count the tauri failure");
-
-    const origin = await main.discoverMcp();
-    assert.equal(origin, "http://127.0.0.1:8765");
-    assert.match(byId.get("status")?.textContent ?? "", /127\.0\.0\.1:8765/);
-    assert.match(byId.get("status")?.textContent ?? "", /TypeError/);
-
-    const blob = await main.mediaBlob("/library/x.wav");
-    assert.equal(blob, null);
-    const afterFetch = JSON.parse(root.dataset.mcpFailures ?? "{}") as Record<string, number>;
-    assert.equal(afterFetch["library_media:http_404"], 1);
-    assert.ok(calls.some((line) => line.includes("/library/x.wav")), calls.join("\n"));
-
-    const uid = "ga:audio_clip:abc";
-    await main.insertGeneratedTile(uid, {});
-    const slide = byId.get("board")?.querySelector('[data-slide="library"]');
-    const tile = slide?.querySelector(`[data-uid="${uid}"]`);
-    assert.ok(tile, "a failed resolve still paints a tile");
-    assert.equal(tile?.dataset.resolve, "failed");
-    const error = tile?.querySelector(".resolve-error");
-    assert.match(error?.textContent ?? "", new RegExp(uid));
-    assert.match(error?.textContent ?? "", /missing uid/);
-    const afterResolve = JSON.parse(root.dataset.mcpFailures ?? "{}") as Record<string, number>;
-    assert.equal(afterResolve["asset_resolve:ok_false"], 1);
-
-    const warnings: string[] = [];
-    const originalWarn = console.warn;
-    console.warn = (message?: unknown) => {
-      warnings.push(String(message));
-    };
-    try {
-      main.presentLibraryCatalog(Promise.reject(new TypeError("offline")));
-      await new Promise((resolve) => setTimeout(resolve, 0));
-      assert.equal(byId.get("status")?.textContent, "library catalog: TypeError: offline");
-      assert.deepEqual(warnings, ["gen-audio: library catalog: TypeError: offline"]);
-
-      main.acceptControlFrame("{");
-      const malformed = JSON.parse(root.dataset.mcpFailures ?? "{}") as Record<string, number>;
-      assert.equal(malformed["control_stream:malformed"], 1);
-      assert.match(byId.get("status")?.textContent ?? "", /^control event: SyntaxError: /);
-
-      // The gap listener is the resync step. A rejecting resync must be logged
-      // and must reject; dropping the listener, the log, or the rethrow fails.
-      class FakeEventSource {
-        static last: FakeEventSource | undefined;
-        url: string;
-        onopen: (() => void) | null = null;
-        onerror: (() => void) | null = null;
-        listeners = new Map<string, Array<(event?: { data?: string }) => unknown>>();
-        constructor(url: string) {
-          this.url = url;
-          FakeEventSource.last = this;
-        }
-        addEventListener(type: string, listener: (event?: { data?: string }) => unknown): void {
-          const list = this.listeners.get(type) ?? [];
-          list.push(listener);
-          this.listeners.set(type, list);
-        }
-        close(): void {}
-      }
-      const previousSource = globalThis.EventSource;
-      globalThis.EventSource = FakeEventSource as unknown as typeof EventSource;
-      try {
-        main.setControlResyncForTest(() => Promise.reject(new TypeError("offline")));
-        main.connectControl();
-        await new Promise((resolve) => setTimeout(resolve, 0));
-        const gap = FakeEventSource.last?.listeners.get("gap")?.[0];
-        assert.equal(typeof gap, "function", "the control stream registers a gap listener");
-        warnings.length = 0;
-        const offline = (error: unknown) => error instanceof TypeError && error.message === "offline";
-        await assert.rejects(() => Promise.resolve(gap!()), offline);
-        assert.deepEqual(warnings, ["gen-audio: viewport: TypeError: offline"]);
-      } finally {
-        main.setControlResyncForTest(null);
-        globalThis.EventSource = previousSource;
-      }
-    } finally {
-      console.warn = originalWarn;
-    }
-  } finally {
-    await server?.close();
-  }
+  const delta = await client.controls(1);
+  assert.equal(controlNeedsResync(delta, 1), true);
+  const snapshot = toolBody(await client.call("viewport_get", {}));
+  assert.equal(snapshot.cursor, 8);
+  const play = userPlayControl("lib-kokoro");
+  await client.call(play.name, play.args);
+  const ack = seekReportControl(9, 4, { ok: false, actual: 0, status: "seek failed" });
+  await client.call(ack.name, ack.args);
+  assert.deepEqual(calls.map(call => call.name), ["viewport_get", "ui_playback", "ui_seek_report"]);
+  assert.equal(calls[1].arguments.origin, "user");
+  assert.deepEqual(calls[2].arguments, { seq: 9, requested_t: 4, landed_t: 0, ok: false, reason: "seek failed" });
 });

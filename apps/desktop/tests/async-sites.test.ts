@@ -237,29 +237,10 @@ const sites: Array<[string, () => Promise<void>]> = [
       }
     },
   ],
-  [
-    "dev assets",
-    () =>
-      withFetch(
-        async () =>
-          new Response(JSON.stringify({ assets: [] }), {
-            status: 200,
-            headers: { "content-type": "application/json" },
-          }),
-        async () => {
-          resetLibraryCatalogForTest();
-          try {
-            await loadLibraryCatalog(Promise.reject(new TypeError("offline")));
-          } finally {
-            resetLibraryCatalogForTest();
-          }
-        },
-      ),
-  ],
 ];
 
 test("each per-site rejection is logged under its exact label", async () => {
-  assert.equal(sites.length, 9);
+  assert.equal(sites.length, 8);
   for (const [label, drive] of sites) {
     const warnings: string[] = [];
     const original = console.warn;
@@ -273,4 +254,12 @@ test("each per-site rejection is logged under its exact label", async () => {
       console.warn = original;
     }
   }
+});
+
+test("dev asset rejection propagates to the catalog presenter instead of becoming an empty catalog", async () => {
+  await withFetch(async () => new Response("{}", { headers: { "content-type": "application/json" } }), async () => {
+    resetLibraryCatalogForTest();
+    try { await assert.rejects(loadLibraryCatalog(Promise.reject(new TypeError("offline"))), /offline/); }
+    finally { resetLibraryCatalogForTest(); }
+  });
 });

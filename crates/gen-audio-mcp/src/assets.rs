@@ -69,10 +69,10 @@ pub fn asset_list(args: &Value) -> Result<Value, (i32, String)> {
     };
     let limit = match args.get("limit") {
         None => LIST_DEFAULT,
-        Some(value) => value
-            .as_u64()
-            .ok_or((-32602, "limit must be an integer from 1 to 100".to_string()))?
-            as usize,
+        Some(value) => usize::try_from(value
+            .as_u64().filter(|n| (1..=100).contains(n))
+            .ok_or((-32602, "limit must be an integer from 1 to 100".to_string()))?)
+            .map_err(|_| (-32602, "limit out of range".to_string()))?,
     };
     let (items, next) = asset_catalog::list(kind, cursor, limit).map_err(CatalogError::rpc)?;
     Ok(json!({
@@ -100,11 +100,13 @@ mod tests {
 
     fn call(name: &str, arguments: Value) -> Value {
         let server = Server::isolated();
-        handle(
+        let result = handle(
             &server,
             json!({"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":name,"arguments":arguments}}),
         )
-        .unwrap()
+        .unwrap();
+        let _ = std::fs::remove_dir_all(&server.scratch.dir);
+        result
         .unwrap()
     }
 
@@ -114,10 +116,11 @@ mod tests {
 
     #[test]
     fn resolve_returns_library_urls_and_no_absolute_paths() {
-        let response = call("asset_resolve", json!({"uid": "ga:cube_ihdr:biaxxmnibxtcur7nxdu3ffvna4"}));
+        let uid = asset_catalog::uid_for_legacy("cube_ihdr", "lib-misaki-kokoro.cube").unwrap();
+        let response = call("asset_resolve", json!({"uid": uid}));
         assert_eq!(response["result"]["isError"], false);
         let body = payload(&response);
-        assert_eq!(body["glyph"], "\u{280a}\u{2801}");
+        assert_eq!(body["glyph"], asset_catalog::glyph_info(&uid).unwrap()["glyph"]);
         assert_eq!(body["hueClass"], "ga-kind-cube_ihdr");
         assert_eq!(body["tileId"], "lib-misaki-kokoro");
         assert_eq!(body["absolutePathsOmitted"], true);
@@ -140,8 +143,9 @@ mod tests {
         let missing = call("asset_resolve", json!({"uid": "ga:cube_ihdr:aaaaaaaaaaaaaaaaaaaaaaaaaa"}));
         assert_eq!(missing["result"]["isError"], true);
         assert_eq!(payload(&missing)["code"], "asset_not_found");
-        let prefix = call("asset_resolve", json!({"uid": "ga:cube_ihdr:biaxxmni"}));
-        assert_eq!(payload(&prefix)["uid"], "ga:cube_ihdr:biaxxmnibxtcur7nxdu3ffvna4");
+        let uid = asset_catalog::uid_for_legacy("cube_ihdr", "lib-misaki-kokoro.cube").unwrap();
+        let prefix = call("asset_resolve", json!({"uid": &uid[.."ga:cube_ihdr:".len() + 8]}));
+        assert_eq!(payload(&prefix)["uid"], uid);
     }
 
     #[test]
@@ -150,6 +154,7 @@ mod tests {
         assert!(page["count"].as_u64().unwrap_or(0) >= 5, "{page}");
         let misaki = asset_catalog::uid_for_legacy("audio_clip", "lib-misaki-kokoro").unwrap();
         assert!(page["assets"].as_array().unwrap().iter().any(|item| item["uid"] == misaki));
+        assert_eq!(page["count"], gen_audio_core::asset_catalog::assets().iter().filter(|asset|asset["kind"]=="audio_clip").count());
         assert!(page["nextCursor"].is_null());
         let first = payload(&call("asset_list", json!({"limit": 2})));
         assert_eq!(first["count"], 2);

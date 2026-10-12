@@ -1,101 +1,35 @@
-"""Multi-turn WAV synthesis through kokoro-onnx.
+"""Local Kokoro adapter; model downloads and fabricated checksum pins are forbidden.
 
-The optional extra is imported only when a synthesizer is constructed.
-Model files stay on disk; this module does not download them.
-
-Expected files from the kokoro-onnx v1 setup are typically ``kokoro-v1.0.onnx``
-and ``voices-v1.0.bin``. Point at whatever paths you actually have:
-
-* ``--model`` / ``--voices``
-* or ``GEN_AUDIO_KOKORO_MODEL`` and ``GEN_AUDIO_KOKORO_VOICES``
-
-The cast map engine field must be ``kokoro_onnx``. Example voices in
-``voices/cast_map.example.json`` are ``af_heart`` (Alice) and ``am_michael``
-(Frank). kokoro-onnx rejects a voice id that is not in the loaded voice pack.
+``GENAID_MODEL_SHA256_FILE`` (or model-adjacent ``SHA256SUMS``) is relative
+to the model's directory. It must cover both loaded files whenever present.
+``GENAID_REQUIRE_MODEL_CHECKSUM=1`` refuses unpinned models even without a
+``GENAID_MODEL_BASE``. Observed hashes alone are provenance, never trusted pins.
 """
 
 from __future__ import annotations
 
 import os
 import threading
-from dataclasses import dataclass, field
+import time
+from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
 
 import numpy as np
 
-from gen_audio.cast import CastMap, Turn, resolve_turn
+from gen_audio.cast import CastMap, Turn, VoiceAssignment
 from gen_audio.guards import (
-    local_files_only_enabled,
-    resolve_model_directory,
-    verify_model_checksums,
+    max_generation_seconds, sha256_file, verify_model_checksums,
 )
-from gen_audio.improve import improve, resample_audio
-from gen_audio.speakers import SpeechSegment, concatenate_turns, published_segments, remap_through_improve, roster
+from gen_audio.synthesis import (
+    DEFAULT_TURN_GAP_S, SynthResult, SynthTurn, synthesize_turns, validate_request,
+)
 
-# One generate at a time. Unload and disk IO stay off this lock's caller thread
-# by running through ``run_blocking`` in ``gen_audio.gateway``.
 _MODEL_LOCK = threading.Lock()
 
-DEFAULT_TURN_GAP_S = 0.35
-
-
-@dataclass(frozen=True)
-class SynthTurn:
-    """One synthesized turn, before the shared gap that follows it."""
-
-    speaker_id: str
-    name: str
-    voice: str
-    lang: str
-    speed: float
-    text: str
-    samples: int
-    sample_rate: int
-
-
-@dataclass(frozen=True)
-class SynthResult:
-    """Concatenated mono render plus a small manifest."""
-
-    audio: np.ndarray
-    sample_rate: int
-    turns: list[SynthTurn] = field(default_factory=list)
-    gap_s: float = DEFAULT_TURN_GAP_S
-    improved: bool = False
-    speakers: list[dict] = field(default_factory=list)
-    segments: list[SpeechSegment] = field(default_factory=list)
-
-    def manifest(self) -> dict:
-        return {
-            "engine": "kokoro_onnx",
-            "sample_rate": self.sample_rate,
-            "samples": int(self.audio.size),
-            "seconds": (float(self.audio.size) / float(self.sample_rate)) if self.sample_rate else 0.0,
-            "gap_s": self.gap_s,
-            "improved": self.improved,
-            "speakers": list(self.speakers),
-            "segments": published_segments(self.segments, self.sample_rate),
-            "turns": [
-                {
-                    "speaker_id": turn.speaker_id,
-                    "name": turn.name,
-                    "voice": turn.voice,
-                    "lang": turn.lang,
-                    "speed": turn.speed,
-                    "text": turn.text,
-                    "samples": turn.samples,
-                    "sample_rate": turn.sample_rate,
-                }
-                for turn in self.turns
-            ],
-        }
-
-
 def resolve_model_paths(
-    model: str | Path | None = None,
-    voices: str | Path | None = None,
+    model: str | Path | None = None, voices: str | Path | None = None,
 ) -> tuple[Path, Path]:
-    """Resolve model and voice-pack paths from arguments or the environment."""
+    """Resolve local files; confine both real paths when a model base is configured."""
     model_raw = model or os.environ.get("GEN_AUDIO_KOKORO_MODEL")
     voices_raw = voices or os.environ.get("GEN_AUDIO_KOKORO_VOICES")
     if not model_raw or not voices_raw:
@@ -103,136 +37,100 @@ def resolve_model_paths(
             "kokoro-onnx model paths are missing. Pass --model and --voices, or set "
             "GEN_AUDIO_KOKORO_MODEL and GEN_AUDIO_KOKORO_VOICES. This package does not download weights."
         )
-    model_path = Path(model_raw)
-    voices_path = Path(voices_raw)
-    if local_files_only_enabled():
-        for raw in (str(model_path), str(voices_path)):
-            lowered = raw.replace("\\", "/").lower()
-            if "://" in lowered or lowered.startswith("file:"):
-                raise ValueError("GENAID_LOCAL_FILES_ONLY rejects non-local model paths")
-    base = os.environ.get("GENAID_MODEL_BASE", "").strip()
-    if base:
-        model_dir = model_path if model_path.is_dir() else model_path.parent
-        confined = Path(resolve_model_directory(str(model_dir), base))
-        if not model_path.is_dir():
-            model_path = confined / model_path.name
-        verify_model_checksums(str(confined))
-    return model_path, voices_path
+    paths = []
+    base_raw = os.environ.get("GENAID_MODEL_BASE", "").strip()
+    base = Path(base_raw).resolve() if base_raw else None
+    for raw in (model_raw, voices_raw):
+        text = str(raw).replace("\\", "/").lower()
+        if "://" in text or text.startswith("file:") or "\x00" in text:
+            raise ValueError("model and voices must be local file paths")
+        path = Path(raw)
+        # Explicit relative paths retain the CLI's working-directory semantics.
+        path = path.resolve()
+        if base is not None and not path.is_relative_to(base):
+            raise ValueError("model and voices must stay inside GENAID_MODEL_BASE")
+        paths.append(path)
+    verify_model_checksums(str(paths[0].parent), required_files=tuple(paths))
+    return paths[0], paths[1]
+
+
+def _package_version(name: str) -> str | None:
+    try:
+        return version(name)
+    except PackageNotFoundError:
+        return None
 
 
 class KokoroOnnxSynthesizer:
-    """Lazy wrapper around ``kokoro_onnx.Kokoro``."""
+    """Kokoro implementation of EngineAdapter plus the backwards-compatible facade."""
+
+    engine_id = "kokoro_onnx"
 
     def __init__(self, model_path: str | Path, voices_path: str | Path) -> None:
-        model = Path(model_path)
-        voices = Path(voices_path)
-        if not model.is_file():
-            raise FileNotFoundError(f"kokoro-onnx model file not found: {model}")
-        if not voices.is_file():
-            raise FileNotFoundError(f"kokoro-onnx voices file not found: {voices}")
+        model, voices = resolve_model_paths(model_path, voices_path)
+        for path, label in ((model, "model"), (voices, "voices")):
+            if not path.is_file():
+                raise FileNotFoundError(f"kokoro-onnx {label} file not found: {path}")
+        pins = verify_model_checksums(str(model.parent), required_files=(model, voices))
+        identities = {
+            label: {"path": str(path), "bytes": path.stat().st_size, "sha256": sha256_file(path)}
+            for label, path in (("model", model), ("voices", voices))
+        }
         try:
             from kokoro_onnx import Kokoro
         except ImportError as exc:
-            raise ImportError(
-                "kokoro-onnx is not installed. Install the optional extra: "
-                "pip install 'gen-audio[kokoro]'"
-            ) from exc
+            raise ImportError("kokoro-onnx is not installed; install 'gen-audio[kokoro]'") from exc
         self._kokoro = Kokoro(str(model), str(voices))
+        for label, path in (("model", model), ("voices", voices)):
+            if sha256_file(path) != identities[label]["sha256"]:
+                raise ValueError(f"{label} changed during engine loading")
+        # Verify again so the provenance cannot label post-verification changes as pinned.
+        verify_model_checksums(str(model.parent), required_files=(model, voices))
+        self.provenance = {
+            "local_files_only": True,
+            "model": identities["model"],
+            "voices": identities["voices"],
+            "checksums": {
+                **pins,
+                "source": str(Path(os.environ.get("GENAID_MODEL_SHA256_FILE", "").strip() or model.parent / "SHA256SUMS").resolve())
+                if pins["verified"] else None,
+                "root": str(model.parent),
+            },
+            "packages": {name: _package_version(name) for name in ("kokoro-onnx", "onnxruntime")},
+        }
+
+    def validate_loaded_assets(self, model_path: Path, voices_path: Path) -> None:
+        model, voices = resolve_model_paths(model_path, voices_path)
+        for label, path in (("model", model), ("voices", voices)):
+            if not path.samefile(self.provenance[label]["path"]) or sha256_file(path) != self.provenance[label]["sha256"]:
+                raise ValueError("Loaded Kokoro assets differ from the configured request; unload and reload the engine")
+
+    def validate_assignment(self, assignment: VoiceAssignment) -> None:
+        if assignment.voice not in self._kokoro.voices:
+            raise ValueError(f"kokoro-onnx voice {assignment.voice!r} is not in the loaded voices pack")
+
+    def generate(self, text: str, assignment: VoiceAssignment) -> tuple[np.ndarray, int]:
+        try:
+            return self._kokoro.create(
+                text, voice=assignment.voice, speed=assignment.speed, lang=assignment.lang,
+            )
+        except AssertionError as exc:
+            raise ValueError(f"kokoro-onnx rejected voice {assignment.voice!r}: {exc}") from exc
 
     def synthesize_turns(
-        self,
-        turns: list[Turn],
-        cast: CastMap,
-        *,
-        gap_s: float = DEFAULT_TURN_GAP_S,
-        improve_publish: bool = False,
+        self, turns: list[Turn], cast: CastMap, *, gap_s: float = DEFAULT_TURN_GAP_S,
+        improve_publish: bool = False, max_duration_s: float | None = None,
+        generation_timeout_s: float | None = None,
     ) -> SynthResult:
-        """Synthesize each turn and concatenate with silence between turns.
-
-        ``improve_publish`` runs the 24 kHz publish chain on the concatenation.
-        It is off by default so a before/after spectrogram can use the raw render.
-        """
-        if cast.engine != "kokoro_onnx":
-            raise ValueError(
-                f"cast map engine is {cast.engine!r}; synth_kokoro_onnx requires 'kokoro_onnx'"
+        validate_request(turns, cast, self.engine_id, gap_s, max_duration_s)
+        timeout = max_generation_seconds(generation_timeout_s)
+        deadline = time.monotonic() + timeout
+        if not _MODEL_LOCK.acquire(timeout=timeout):
+            raise TimeoutError("speech generation timed out waiting for the model")
+        try:
+            return synthesize_turns(
+                self, turns, cast, gap_s=gap_s, improve_publish=improve_publish,
+                max_duration_s=max_duration_s, generation_timeout_s=timeout, deadline=deadline,
             )
-        if gap_s < 0.0:
-            raise ValueError("gap_s must be >= 0")
-        if not turns:
-            raise ValueError("no turns to synthesize")
-
-        with _MODEL_LOCK:
-            return self._synthesize_locked(turns, cast, gap_s=gap_s, improve_publish=improve_publish)
-
-    def _synthesize_locked(
-        self,
-        turns: list[Turn],
-        cast: CastMap,
-        *,
-        gap_s: float,
-        improve_publish: bool,
-    ) -> SynthResult:
-        speakers, index_of = roster(turns, cast)
-        pieces: list[tuple[int, np.ndarray]] = []
-        rendered: list[SynthTurn] = []
-        sample_rate: int | None = None
-        for turn in turns:
-            assignment = resolve_turn(turn, cast)
-            try:
-                raw_audio, raw_rate = self._kokoro.create(
-                    turn.text,
-                    voice=assignment.voice,
-                    speed=assignment.speed,
-                    lang=assignment.lang,
-                )
-            except AssertionError as exc:
-                raise ValueError(
-                    f"kokoro-onnx rejected speaker {turn.speaker_id} voice {assignment.voice!r}: {exc}"
-                ) from exc
-            audio = np.ascontiguousarray(np.asarray(raw_audio, dtype=np.float32))
-            rate = int(raw_rate)
-            if sample_rate is None:
-                sample_rate = rate
-            elif rate != sample_rate:
-                audio = resample_audio(audio, rate, sample_rate).astype(np.float32)
-                rate = sample_rate
-            if audio.ndim != 1:
-                raise ValueError(f"expected mono samples from kokoro-onnx, got shape {audio.shape}")
-            pieces.append((index_of[turn.speaker_id], audio))
-            rendered.append(
-                SynthTurn(
-                    speaker_id=turn.speaker_id,
-                    name=assignment.name,
-                    voice=assignment.voice,
-                    lang=assignment.lang,
-                    speed=assignment.speed,
-                    text=turn.text,
-                    samples=int(audio.size),
-                    sample_rate=rate,
-                )
-            )
-        if sample_rate is None or not pieces:
-            raise ValueError("kokoro-onnx produced no audio")
-        gap = np.zeros(int(round(sample_rate * gap_s)), dtype=np.float32) if gap_s > 0.0 else np.zeros(0, dtype=np.float32)
-        mixed, segments = concatenate_turns(pieces, sample_rate, gap)
-        improved_flag = False
-        if improve_publish:
-            published = improve(mixed, sample_rate)
-            segments = remap_through_improve(
-                segments,
-                trim_start=published.trim_start,
-                trimmed_len=published.trimmed_samples,
-                published_len=int(published.audio.size),
-            )
-            mixed = published.audio
-            sample_rate = published.sample_rate
-            improved_flag = True
-        return SynthResult(
-            audio=mixed,
-            sample_rate=sample_rate,
-            turns=rendered,
-            gap_s=float(gap_s),
-            improved=improved_flag,
-            speakers=speakers,
-            segments=segments,
-        )
+        finally:
+            _MODEL_LOCK.release()

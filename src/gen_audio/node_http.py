@@ -29,6 +29,13 @@ def dispatch(method: str, path: str, *, model_loaded: bool = False) -> tuple[int
 
 def serve_loopback(host: str = "127.0.0.1", port: int = 8002) -> ThreadingHTTPServer:
     """Bind a loopback listener. The caller starts ``serve_forever``."""
+    import ipaddress
+    if host != "localhost":
+        try:
+            if not ipaddress.ip_address(host).is_loopback:
+                raise ValueError("serve_loopback requires a loopback bind host")
+        except ValueError as exc:
+            raise ValueError("serve_loopback requires a loopback bind host") from exc
 
     class Handler(BaseHTTPRequestHandler):
         def do_GET(self) -> None:  # noqa: N802

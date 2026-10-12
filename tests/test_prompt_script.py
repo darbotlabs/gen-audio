@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import pytest
+
 from gen_audio.prompt_script import PromptError, prepare_prompt, voice_for
 
 
@@ -61,3 +63,15 @@ def test_authored_speaker_script_keeps_the_user_text():
     assert "Alpha beta." in prepared.script_text
     assert "Gamma." in prepared.script_text
     assert prepared.spoken_text == "Alpha beta. Gamma."
+
+
+@pytest.mark.parametrize("duration", [float("nan"), float("inf"), True, 0, 601, 1800])
+def test_prompt_duration_obeys_shared_ceiling(duration):
+    with pytest.raises(PromptError, match="duration"):
+        prepare_prompt("Hello.", ["alice"], "kokoro_onnx", duration)
+
+
+def test_prompt_text_obeys_shared_limits(monkeypatch):
+    monkeypatch.setenv("GENAID_MAX_PROMPT_CHARS", "5")
+    with pytest.raises(ValueError, match="characters"):
+        prepare_prompt("Hello.", ["alice"], "kokoro_onnx", 1)

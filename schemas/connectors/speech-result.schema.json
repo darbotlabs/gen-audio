@@ -1,0 +1,110 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/darbotlabs/gen-audio/schemas/connectors/speech-result.schema.json",
+  "title": "VerifiedKokoroSpeechResult",
+  "description": "MCP payload after independently verifying the child receipt, WAV and manifest. Artifact names are scratch-relative, not library URLs.",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "ok",
+    "synthesizedSpeech",
+    "engine",
+    "wav",
+    "output",
+    "manifest",
+    "sample_rate",
+    "samples",
+    "duration_s",
+    "sha256",
+    "turns"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "1.0"
+    },
+    "ok": {
+      "const": true
+    },
+    "synthesizedSpeech": {
+      "const": true
+    },
+    "engine": {
+      "const": "kokoro_onnx"
+    },
+    "wav": {
+      "type": "string",
+      "maxLength": 180,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]*\\.wav$"
+    },
+    "output": {
+      "type": "string",
+      "maxLength": 180,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]*\\.wav$"
+    },
+    "manifest": {
+      "type": "string",
+      "maxLength": 180,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]*\\.json$"
+    },
+    "sample_rate": {
+      "const": 24000
+    },
+    "samples": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "duration_s": {
+      "type": "number",
+      "exclusiveMinimum": 0
+    },
+    "sha256": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "turns": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 128
+    },
+    "phase": {
+      "const": "ok"
+    },
+    "progress": {
+      "type": "object"
+    },
+    "metadata": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "artist",
+        "artists",
+        "agentNames"
+      ],
+      "properties": {
+        "artist": {
+          "type": "string",
+          "maxLength": 4095
+        },
+        "artists": {
+          "type": "array",
+          "maxItems": 8,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          }
+        },
+        "agentNames": {
+          "type": "array",
+          "maxItems": 8,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          }
+        }
+      }
+    }
+  },
+  "additionalProperties": false
+}

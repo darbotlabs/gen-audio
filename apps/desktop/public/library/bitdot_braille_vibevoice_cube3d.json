@@ -1,0 +1,62 @@
+{
+  "duration_s": 247.06666666666666,
+  "sample_rate": 24000,
+  "rms": 0.04965915346972228,
+  "peak": 0.74365234375,
+  "layers": {
+    "signal": {
+      "mean": 0.08884477615356445,
+      "p50": 0.017054392024874687,
+      "p90": 0.2711089551448822,
+      "p99": 0.8580946326255798,
+      "active_frac_gt_0.2": 0.13922881815869043,
+      "active_frac_gt_0.5": 0.03894873680625458
+    },
+    "tonality": {
+      "mean": 0.16051141917705536,
+      "p50": 0.0,
+      "p90": 0.5772971510887146,
+      "p99": 0.6852191090583801,
+      "active_frac_gt_0.2": 0.2770619843992305,
+      "active_frac_gt_0.5": 0.2769535907866776
+    },
+    "confidence": {
+      "mean": 0.27757853269577026,
+      "p50": 0.0,
+      "p90": 1.0,
+      "p99": 1.0,
+      "active_frac_gt_0.2": 0.3497712920022093,
+      "active_frac_gt_0.5": 0.298576265047293
+    },
+    "quality": {
+      "mean": 0.3006399869918823,
+      "p50": 0.2951991558074951,
+      "p90": 0.3960772454738617,
+      "p99": 0.4868614375591278,
+      "active_frac_gt_0.2": 0.9321140398425634,
+      "active_frac_gt_0.5": 0.008121357757915153
+    }
+  },
+  "inverse_hdr_score": 0.18686723709106445,
+  "wav": "audio/bitdot_braille_vibevoice.wav",
+  "png": "spectrograms/bitdot_braille/bitdot_braille_vibevoice_cube3d.png",
+  "html": "spectrograms/bitdot_braille/bitdot_braille_vibevoice_cube3d.html",
+  "ply": "spectrograms/bitdot_braille/bitdot_braille_vibevoice_cube3d.ply",
+  "n_points": 94667,
+  "cube_shape_f_t": [
+    102,
+    399
+  ],
+  "downsample_sf_st": [
+    5,
+    58
+  ],
+  "stft": {
+    "n_fft": 1024,
+    "hop": 256,
+    "mag_shape": [
+      513,
+      23163
+    ]
+  }
+}

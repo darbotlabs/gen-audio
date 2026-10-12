@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "gen-audio"
-version = "0.1.0"
+version = "1.0.3"
 description = "GenAID Audio toolkit: multi-speaker podcast synthesis, a 24 kHz publish chain, spectrograms, and a cube-revision sketch."
 readme = "README.md"
 requires-python = ">=3.14,<3.15"
@@ -48,6 +48,7 @@ gen-audio-spectrogram-strip = "gen_audio.cli.spectrogram_strip:main"
 gen-audio-compare = "gen_audio.cli.compare:main"
 gen-audio-generate = "gen_audio.cli.generate:main"
 gen-audio-release-gate = "gen_audio.cli.release_gate:main"
+gen-audio-model-worker = "gen_audio.model_workers.cli:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]

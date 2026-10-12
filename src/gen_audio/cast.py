@@ -14,11 +14,15 @@ Voice, language, and speed come from the cast map.
 from __future__ import annotations
 
 import json
+import math
 import re
 from dataclasses import dataclass
 from pathlib import Path
 
-from gen_audio.guards import RequestLimitError, enforce_text_limit, max_script_segments, max_total_script_chars
+from gen_audio.guards import (
+    HARD_MAX_TEXT_FILE_BYTES, RequestLimitError, enforce_text_limit,
+    max_script_segments, max_total_script_chars, read_bounded_text,
+)
 
 _HEADER = re.compile(
     r"^Speaker\s+(?P<id>\d+)\s*(?:\((?P<name>[^)]*)\))?\s*:\s*(?P<text>.*)$",
@@ -67,6 +71,10 @@ def parse_script(text: str) -> list[Turn]:
     Raises ``ValueError`` when a header has no text, a line sits outside a
     turn, or the file has no turns.
     """
+    if not isinstance(text, str) or len(text) > HARD_MAX_TEXT_FILE_BYTES:
+        raise RequestLimitError("script source exceeds the text-file limit")
+    if "\x00" in text:
+        raise ValueError("script contains a NUL byte")
     turns: list[Turn] = []
     speaker_id: str | None = None
     script_name: str | None = None
@@ -81,6 +89,9 @@ def parse_script(text: str) -> list[Turn]:
         body = " ".join(body.split())
         if not body:
             raise ValueError(f"Speaker {speaker_id} at line {start_line} has no text")
+        if len(turns) >= max_script_segments():
+            raise RequestLimitError(f"script exceeds {max_script_segments()} segments")
+        enforce_text_limit(body, "segment")
         turns.append(
             Turn(
                 speaker_id=speaker_id,
@@ -101,7 +112,7 @@ def parse_script(text: str) -> list[Turn]:
         match = _HEADER.match(line)
         if match:
             flush()
-            speaker_id = str(int(match.group("id")))
+            speaker_id = _normalize_speaker_id(match.group("id"))
             name = match.group("name")
             script_name = name.strip() if name and name.strip() else None
             start_line = lineno
@@ -114,17 +125,23 @@ def parse_script(text: str) -> list[Turn]:
     flush()
     if not turns:
         raise ValueError("script contains no Speaker turns")
-    _enforce_script_limits(turns)
+    validate_turns(turns)
     return turns
 
 
-def _enforce_script_limits(turns: list[Turn]) -> None:
+def validate_turns(turns: list[Turn]) -> None:
     """Apply the GenAID Audio ceilings to a parsed Speaker script."""
     segment_cap = max_script_segments()
+    if not turns:
+        raise ValueError("no turns to synthesize")
     if len(turns) > segment_cap:
         raise RequestLimitError(f"script exceeds {segment_cap} segments")
     total = 0
     for turn in turns:
+        if not isinstance(turn, Turn) or not isinstance(turn.text, str) or not turn.text.strip():
+            raise ValueError("each turn must contain text")
+        if not isinstance(turn.speaker_id, str) or not turn.speaker_id.isdecimal() or len(turn.speaker_id) > 128:
+            raise ValueError("invalid speaker id")
         enforce_text_limit(turn.text, "segment")
         total += len(turn.text)
     total_cap = max_total_script_chars()
@@ -134,7 +151,7 @@ def _enforce_script_limits(turns: list[Turn]) -> None:
 
 def read_script(path: Path | str) -> list[Turn]:
     """Read a UTF-8 script and parse it."""
-    text = Path(path).read_text(encoding="utf-8-sig")
+    text = read_bounded_text(path, encoding="utf-8-sig")
     return parse_script(text)
 
 
@@ -146,7 +163,7 @@ def load_cast_map(path: Path | str) -> CastMap:
     """
     source = Path(path)
     try:
-        payload = json.loads(source.read_text(encoding="utf-8"))
+        payload = json.loads(read_bounded_text(source))
     except json.JSONDecodeError as exc:
         raise ValueError(f"cast map is not valid JSON: {source}") from exc
     if not isinstance(payload, dict):
@@ -160,6 +177,8 @@ def load_cast_map(path: Path | str) -> CastMap:
     raw_speakers = payload.get("speakers")
     if not isinstance(raw_speakers, dict) or not raw_speakers:
         raise ValueError("cast map speakers must be a non-empty object")
+    if len(raw_speakers) > max_script_segments():
+        raise RequestLimitError("cast map has too many speakers")
 
     speakers: dict[str, VoiceAssignment] = {}
     for raw_id, raw_value in raw_speakers.items():
@@ -196,24 +215,32 @@ def resolve_turn(turn: Turn, cast: CastMap) -> VoiceAssignment:
     a speaker the map does not define.
     """
     try:
-        return cast.speakers[turn.speaker_id]
+        assignment = cast.speakers[turn.speaker_id]
     except KeyError:
         known = ", ".join(sorted(cast.speakers, key=int))
         raise KeyError(
             f"Speaker {turn.speaker_id} at line {turn.line} is not in the cast map; "
             f"known speakers: {known}"
         ) from None
+    _check_speed(assignment.speed, f"speaker {turn.speaker_id} speed")
+    for label, value in (("voice", assignment.voice), ("lang", assignment.lang), ("name", assignment.name)):
+        if not isinstance(value, str) or not value.strip() or "\x00" in value or len(value) > 256:
+            raise ValueError(f"invalid speaker {label}")
+    return assignment
 
 
 def _normalize_speaker_id(raw_id: object) -> str:
     text = str(raw_id).strip()
-    if not text.isdigit():
+    if not text.isdecimal() or len(text) > 128:
         raise ValueError(f"speaker id must be an integer, got {raw_id!r}")
     return str(int(text))
 
 
 def _check_speed(speed: float, label: str) -> None:
-    if speed < _KOKORO_SPEED_MIN or speed > _KOKORO_SPEED_MAX:
+    if (
+        isinstance(speed, bool) or not isinstance(speed, (int, float)) or not math.isfinite(speed)
+        or speed < _KOKORO_SPEED_MIN or speed > _KOKORO_SPEED_MAX
+    ):
         raise ValueError(
             f"{label} must be between {_KOKORO_SPEED_MIN} and {_KOKORO_SPEED_MAX} "
             f"to match kokoro-onnx, got {speed}"

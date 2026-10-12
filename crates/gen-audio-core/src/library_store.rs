@@ -39,6 +39,10 @@ pub fn user_library_dir() -> Result<PathBuf, String> {
         }
         PathBuf::from(raw)
     } else {
+        #[cfg(windows)]
+        let base = std::env::var_os("LOCALAPPDATA").map(PathBuf::from)
+            .ok_or("LOCALAPPDATA is unavailable")?;
+        #[cfg(not(windows))]
         let base = std::env::var_os("XDG_DATA_HOME")
             .map(PathBuf::from)
             .or_else(|| {
@@ -57,7 +61,11 @@ fn finish_library_dir(dir: PathBuf) -> Result<PathBuf, String> {
         .canonicalize()
         .map_err(|err| format!("library directory: {err}"))?;
     if let Some(repo) = find_repo_root() {
-        if dir.starts_with(&repo) || repo.starts_with(&dir) {
+        #[cfg(any(test, feature = "test-support"))]
+        let test_work = dir.starts_with(repo.join("target").join("gen-audio-work"));
+        #[cfg(not(any(test, feature = "test-support")))]
+        let test_work = false;
+        if !test_work && (dir.starts_with(&repo) || repo.starts_with(&dir)) {
             return Err("library directory must not contain or sit inside the repository".into());
         }
     }

@@ -1,0 +1,20 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://darbotlabs.dev/gen-audio/schemas/asset-catalog.schema.json",
+  "title": "Gen-Audio library asset catalog",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "uid_scheme", "assets", "legacy_index"],
+  "properties": {
+    "schema_version": { "$ref": "https://darbotlabs.dev/gen-audio/schemas/asset-object/v1.schema.json#/properties/schema_version" },
+    "uid_scheme": { "const": "ga1" },
+    "assets": {
+      "type": "array",
+      "items": { "$ref": "https://darbotlabs.dev/gen-audio/schemas/asset-object/v1.schema.json" }
+    },
+    "legacy_index": {
+      "type": "object",
+      "additionalProperties": { "$ref": "https://darbotlabs.dev/gen-audio/schemas/asset-object/v1.schema.json#/$defs/uid" }
+    }
+  }
+}

@@ -1,6 +1,7 @@
 // Play origin on the control bus (Optimus ruling on PR #5, C1). DOM-free so
 // node:test can import it. No focus or rebind decision lives in TS: the Rust
 // viewport reducer (PR #4) owns that.
+import { McpHttpError, type McpClient } from "./mcp-client";
 
 /**
  * Who started playback: "user" (a Play click, or a control-bus play that is
@@ -76,65 +77,20 @@ export class McpFailureCounter {
  * failure, and each JSON-RPC error payload, is counted in `failures`.
  */
 export async function postMcp(
-  fetchImpl: typeof fetch,
-  url: string,
+  client: Pick<McpClient, "call">,
   name: string,
   args: Record<string, unknown>,
   failures: McpFailureCounter,
 ): Promise<unknown | null> {
   try {
-    const response = await fetchImpl(url, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      // The exact body is the desktop half of the UI/agent contract
-      // (schemas/examples/control/*.json, tested from both sides).
-      body: JSON.stringify(mcpRequestBody(name, args)),
-    });
-    if (!response.ok) {
-      failures.note(name, `http_${response.status}`);
-      return null;
-    }
-    const payload: unknown = await response.json();
+    const payload: unknown = await client.call(name, args);
     const code = (payload as { error?: { code?: unknown } } | null)?.error?.code;
     if (code !== undefined) failures.note(name, `rpc_${String(code)}`);
     return payload;
   } catch (error) {
-    failures.note(name, error instanceof Error ? error.name : "error");
+    failures.note(name, error instanceof McpHttpError ? `http_${error.status}` : error instanceof Error ? error.name : "error");
     return null;
   }
-}
-
-export interface McpStatusReport {
-  addr?: string;
-  handshake_ok?: boolean;
-}
-
-/**
- * Address from `mcp_status`. A failed handshake keeps `fallback` (8765) but
- * is counted and named. A report with an address and a handshake that is not
- * explicitly false replaces the fallback and counts nothing.
- */
-export function mcpOriginFromStatus(
-  report: McpStatusReport | null | undefined,
-  fallback: string,
-  failures: McpFailureCounter,
-): { origin: string; notice: string | null } {
-  if (report?.addr && report.handshake_ok !== false) {
-    return { origin: `http://${report.addr}`, notice: null };
-  }
-  const kind = report?.handshake_ok === false ? "handshake" : "missing";
-  failures.note("mcp_status", kind);
-  return {
-    origin: fallback,
-    notice: `MCP address lookup failed (${kind}); using ${fallback}`,
-  };
-}
-
-/** The empty catch around the Tauri invoke. Count the error and name the fallback. */
-export function noteMcpLookupError(error: unknown, fallback: string, failures: McpFailureCounter): string {
-  const kind = error instanceof Error ? error.name : "error";
-  failures.note("mcp_status", kind);
-  return `MCP address lookup failed (${kind}); using ${fallback}`;
 }
 
 /**
@@ -142,21 +98,15 @@ export function noteMcpLookupError(error: unknown, fallback: string, failures: M
  * response or a thrown fetch is counted and returns null.
  */
 export async function fetchLibraryBlob(
-  fetchImpl: typeof fetch,
-  origin: string,
+  client: Pick<McpClient, "libraryBlob">,
   urlPath: string,
   failures: McpFailureCounter,
 ): Promise<Blob | null> {
   if (!urlPath.startsWith("/library/")) return null;
   try {
-    const response = await fetchImpl(`${origin}${urlPath}`);
-    if (!response.ok) {
-      failures.note("library_media", `http_${response.status}`);
-      return null;
-    }
-    return await response.blob();
+    return await client.libraryBlob(urlPath);
   } catch (error) {
-    failures.note("library_media", error instanceof Error ? error.name : "error");
+    failures.note("library_media", error instanceof McpHttpError ? `http_${error.status}` : error instanceof Error ? error.name : "error");
     return null;
   }
 }
@@ -237,8 +187,11 @@ export function setReportSink(sink: (message: string) => void): void {
  * Dropping the log leaves the warning empty. Dropping the rethrow resolves the promise.
  */
 export function reportAsync(work: Promise<unknown>, where: string): Promise<unknown> {
-  return work.catch((error: unknown) => {
+  const reported = work.catch((error: unknown) => {
     reportSink(surfaceUiError(error, where));
     throw error;
   });
+  // Event handlers may deliberately fire-and-forget; awaited callers still see the rejection.
+  void reported.catch(() => undefined);
+  return reported;
 }

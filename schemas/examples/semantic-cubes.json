@@ -1,0 +1,1535 @@
+[
+  {
+    "schema_version": "1.0.0",
+    "kind": "semantic_cube",
+    "id": "agent.session.example",
+    "title": "Agent sessions · example",
+    "domain": "agent.session",
+    "source": {
+      "kind": "example",
+      "label": "Authored schema example; replace with your observations"
+    },
+    "axes": {
+      "x": {
+        "label": "Elapsed time",
+        "unit": "s",
+        "minimum": 0,
+        "maximum": 60
+      },
+      "y": {
+        "label": "Agent index",
+        "unit": "index",
+        "minimum": 0,
+        "maximum": 4
+      }
+    },
+    "layers": [
+      {
+        "id": "latency_ms",
+        "label": "Latency",
+        "metric": "latency_ms",
+        "unit": "ms",
+        "minimum": 0,
+        "maximum": 2000,
+        "scale": "linear",
+        "outside": "reject",
+        "position": 0.0,
+        "color": "#248BFF",
+        "opacity": 1,
+        "gain": 1,
+        "blend": "normal",
+        "enabled": true
+      },
+      {
+        "id": "tokens",
+        "label": "Tokens",
+        "metric": "tokens",
+        "unit": "count",
+        "minimum": 0,
+        "maximum": 4096,
+        "scale": "linear",
+        "outside": "reject",
+        "position": 0.3333333333333333,
+        "color": "#29DE5C",
+        "opacity": 1,
+        "gain": 1,
+        "blend": "normal",
+        "enabled": true
+      },
+      {
+        "id": "cost_usd",
+        "label": "Cost",
+        "metric": "cost_usd",
+        "unit": "USD",
+        "minimum": 0,
+        "maximum": 1,
+        "scale": "linear",
+        "outside": "reject",
+        "position": 0.6666666666666666,
+        "color": "#FFBF1F",
+        "opacity": 1,
+        "gain": 1,
+        "blend": "normal",
+        "enabled": true
+      },
+      {
+        "id": "confidence",
+        "label": "Confidence",
+        "metric": "confidence",
+        "unit": "ratio",
+        "minimum": 0,
+        "maximum": 1,
+        "scale": "linear",
+        "outside": "reject",
+        "position": 1.0,
+        "color": "#F0458F",
+        "opacity": 1,
+        "gain": 1,
+        "blend": "normal",
+        "enabled": true
+      }
+    ],
+    "records": [
+      {
+        "id": "observation-1",
+        "x": 0.0,
+        "y": 0,
+        "metrics": {
+          "latency_ms": 153.84615384615384,
+          "tokens": 315,
+          "cost_usd": 0.07692307692307693,
+          "confidence": 0.07692307692307693
+        },
+        "context": {
+          "session_id": "example-session",
+          "agent_name": "Alice",
+          "state": "running"
+        }
+      },
+      {
+        "id": "observation-2",
+        "x": 5.0,
+        "y": 1,
+        "metrics": {
+          "latency_ms": 307.6923076923077,
+          "tokens": 630,
+          "cost_usd": 0.15384615384615385,
+          "confidence": 0.15384615384615385
+        },
+        "context": {
+          "session_id": "example-session",
+          "agent_name": "Alice",
+          "state": "running"
+        }
+      },
+      {
+        "id": "observation-3",
+        "x": 10.0,
+        "y": 2,
+        "metrics": {
+          "latency_ms": 461.53846153846155,
+          "tokens": 945,
+          "cost_usd": 0.23076923076923078,
+          "confidence": 0.23076923076923078
+        },
+        "context": {
+          "session_id": "example-session",
+          "agent_name": "Alice",
+          "state": "running"
+        }
+      },
+      {
+        "id": "observation-4",
+        "x": 15.0,
+        "y": 0,
+        "metrics": {
+          "latency_ms": 615.3846153846154,
+          "tokens": 1260,
+          "cost_usd": 0.3076923076923077,
+          "confidence": 0.3076923076923077
+        },
+        "context": {
+          "session_id": "example-session",
+          "agent_name": "Alice",
+          "state": "running"
+        }
+      },
+      {
+        "id": "observation-5",
+        "x": 20.0,
+        "y": 1,
+        "metrics": {
+          "latency_ms": 769.2307692307693,
+          "tokens": 1575,
+          "cost_usd": 0.38461538461538464,
+          "confidence": 0.38461538461538464
+        },
+        "context": {
+          "session_id": "example-session",
+          "agent_name": "Alice",
+          "state": "running"
+        }
+      },
+      {
+        "id": "observation-6",
+        "x": 25.0,
+        "y": 2,
+        "metrics": {
+          "latency_ms": 923.0769230769231,
+          "tokens": 1890,
+          "cost_usd": 0.46153846153846156,
+          "confidence": 0.46153846153846156
+        },
+        "context": {
+          "session_id": "example-session",
+          "agent_name": "Alice",
+          "state": "running"
+        }
+      },
+      {
+        "id": "observation-7",
+        "x": 30.0,
+        "y": 0,
+        "metrics": {
+          "latency_ms": 1076.923076923077,
+          "tokens": 2206,
+          "cost_usd": 0.5384615384615384,
+          "confidence": 0.5384615384615384
+        },
+        "context": {
+          "session_id": "example-session",
+          "agent_name": "Alice",
+          "state": "running"
+        }
+      },
+      {
+        "id": "observation-8",
+        "x": 35.0,
+        "y": 1,
+        "metrics": {
+          "latency_ms": 1230.7692307692307,
+          "tokens": 2521,
+          "cost_usd": 0.6153846153846154,
+          "confidence": 0.6153846153846154
+        },
+        "context": {
+          "session_id": "example-session",
+          "agent_name": "Alice",
+          "state": "running"
+        }
+      },
+      {
+        "id": "observation-9",
+        "x": 40.0,
+        "y": 2,
+        "metrics": {
+          "latency_ms": 1384.6153846153845,
+          "tokens": 2836,
+          "cost_usd": 0.6923076923076923,
+          "confidence": 0.6923076923076923
+        },
+        "context": {
+          "session_id": "example-session",
+          "agent_name": "Alice",
+          "state": "running"
+        }
+      },
+      {
+        "id": "observation-10",
+        "x": 45.0,
+        "y": 0,
+        "metrics": {
+          "latency_ms": 1538.4615384615386,
+          "tokens": 3151,
+          "cost_usd": 0.7692307692307693,
+          "confidence": 0.7692307692307693
+        },
+        "context": {
+          "session_id": "example-session",
+          "agent_name": "Alice",
+          "state": "running"
+        }
+      },
+      {
+        "id": "observation-11",
+        "x": 50.0,
+        "y": 1,
+        "metrics": {
+          "latency_ms": 1692.3076923076924,
+          "tokens": 3466,
+          "cost_usd": 0.8461538461538461,
+          "confidence": 0.8461538461538461
+        },
+        "context": {
+          "session_id": "example-session",
+          "agent_name": "Alice",
+          "state": "running"
+        }
+      },
+      {
+        "id": "observation-12",
+        "x": 55.0,
+        "y": 2,
+        "metrics": {
+          "latency_ms": 1846.1538461538462,
+          "tokens": 3781,
+          "cost_usd": 0.9230769230769231,
+          "confidence": 0.9230769230769231
+        },
+        "context": {
+          "session_id": "example-session",
+          "agent_name": "Alice",
+          "state": "running"
+        }
+      }
+    ]
+  },
+  {
+    "schema_version": "1.0.0",
+    "kind": "semantic_cube",
+    "id": "storyline.example",
+    "title": "Storyline · example",
+    "domain": "storyline",
+    "source": {
+      "kind": "example",
+      "label": "Authored schema example; replace with your observations"
+    },
+    "axes": {
+      "x": {
+        "label": "Story time",
+        "unit": "s",
+        "minimum": 0,
+        "maximum": 120
+      },
+      "y": {
+        "label": "Scene index",
+        "unit": "index",
+        "minimum": 0,
+        "maximum": 8
+      }
+    },
+    "layers": [
+      {
+        "id": "tension",
+        "label": "Tension",
+        "metric": "tension",
+        "unit": "ratio",
+        "minimum": 0,
+        "maximum": 1,
+        "scale": "linear",
+        "outside": "reject",
+        "position": 0.0,
+        "color": "#248BFF",
+        "opacity": 1,
+        "gain": 1,
+        "blend": "normal",
+        "enabled": true
+      },
+      {
+        "id": "pace",
+        "label": "Pace",
+        "metric": "pace",
+        "unit": "ratio",
+        "minimum": 0,
+        "maximum": 1,
+        "scale": "linear",
+        "outside": "reject",
+        "position": 0.5,
+        "color": "#29DE5C",
+        "opacity": 1,
+        "gain": 1,
+        "blend": "normal",
+        "enabled": true
+      },
+      {
+        "id": "sentiment",
+        "label": "Sentiment",
+        "metric": "sentiment",
+        "unit": "score",
+        "minimum": -1,
+        "maximum": 1,
+        "scale": "linear",
+        "outside": "reject",
+        "position": 1.0,
+        "color": "#FFBF1F",
+        "opacity": 1,
+        "gain": 1,
+        "blend": "normal",
+        "enabled": true
+      }
+    ],
+    "records": [
+      {
+        "id": "observation-1",
+        "x": 0.0,
+        "y": 0,
+        "metrics": {
+          "tension": 0.07692307692307693,
+          "pace": 0.07692307692307693,
+          "sentiment": -0.8461538461538461
+        },
+        "context": {
+          "story_id": "example-story",
+          "scene_id": "scene-1",
+          "beat": "Opening"
+        }
+      },
+      {
+        "id": "observation-2",
+        "x": 10.0,
+        "y": 1,
+        "metrics": {
+          "tension": 0.15384615384615385,
+          "pace": 0.15384615384615385,
+          "sentiment": -0.6923076923076923
+        },
+        "context": {
+          "story_id": "example-story",
+          "scene_id": "scene-1",
+          "beat": "Opening"
+        }
+      },
+      {
+        "id": "observation-3",
+        "x": 20.0,
+        "y": 2,
+        "metrics": {
+          "tension": 0.23076923076923078,
+          "pace": 0.23076923076923078,
+          "sentiment": -0.5384615384615384
+        },
+        "context": {
+          "story_id": "example-story",
+          "scene_id": "scene-1",
+          "beat": "Opening"
+        }
+      },
+      {
+        "id": "observation-4",
+        "x": 30.0,
+        "y": 0,
+        "metrics": {
+          "tension": 0.3076923076923077,
+          "pace": 0.3076923076923077,
+          "sentiment": -0.3846153846153846
+        },
+        "context": {
+          "story_id": "example-story",
+          "scene_id": "scene-1",
+          "beat": "Opening"
+        }
+      },
+      {
+        "id": "observation-5",
+        "x": 40.0,
+        "y": 1,
+        "metrics": {
+          "tension": 0.38461538461538464,
+          "pace": 0.38461538461538464,
+          "sentiment": -0.23076923076923073
+        },
+        "context": {
+          "story_id": "example-story",
+          "scene_id": "scene-1",
+          "beat": "Opening"
+        }
+      },
+      {
+        "id": "observation-6",
+        "x": 50.0,
+        "y": 2,
+        "metrics": {
+          "tension": 0.46153846153846156,
+          "pace": 0.46153846153846156,
+          "sentiment": -0.07692307692307687
+        },
+        "context": {
+          "story_id": "example-story",
+          "scene_id": "scene-1",
+          "beat": "Opening"
+        }
+      },
+      {
+        "id": "observation-7",
+        "x": 60.0,
+        "y": 0,
+        "metrics": {
+          "tension": 0.5384615384615384,
+          "pace": 0.5384615384615384,
+          "sentiment": 0.07692307692307687
+        },
+        "context": {
+          "story_id": "example-story",
+          "scene_id": "scene-1",
+          "beat": "Opening"
+        }
+      },
+      {
+        "id": "observation-8",
+        "x": 70.0,
+        "y": 1,
+        "metrics": {
+          "tension": 0.6153846153846154,
+          "pace": 0.6153846153846154,
+          "sentiment": 0.23076923076923084
+        },
+        "context": {
+          "story_id": "example-story",
+          "scene_id": "scene-1",
+          "beat": "Opening"
+        }
+      },
+      {
+        "id": "observation-9",
+        "x": 80.0,
+        "y": 2,
+        "metrics": {
+          "tension": 0.6923076923076923,
+          "pace": 0.6923076923076923,
+          "sentiment": 0.3846153846153846
+        },
+        "context": {
+          "story_id": "example-story",
+          "scene_id": "scene-1",
+          "beat": "Opening"
+        }
+      },
+      {
+        "id": "observation-10",
+        "x": 90.0,
+        "y": 0,
+        "metrics": {
+          "tension": 0.7692307692307693,
+          "pace": 0.7692307692307693,
+          "sentiment": 0.5384615384615385
+        },
+        "context": {
+          "story_id": "example-story",
+          "scene_id": "scene-1",
+          "beat": "Opening"
+        }
+      },
+      {
+        "id": "observation-11",
+        "x": 100.0,
+        "y": 1,
+        "metrics": {
+          "tension": 0.8461538461538461,
+          "pace": 0.8461538461538461,
+          "sentiment": 0.6923076923076923
+        },
+        "context": {
+          "story_id": "example-story",
+          "scene_id": "scene-1",
+          "beat": "Opening"
+        }
+      },
+      {
+        "id": "observation-12",
+        "x": 110.0,
+        "y": 2,
+        "metrics": {
+          "tension": 0.9230769230769231,
+          "pace": 0.9230769230769231,
+          "sentiment": 0.8461538461538463
+        },
+        "context": {
+          "story_id": "example-story",
+          "scene_id": "scene-1",
+          "beat": "Opening"
+        }
+      }
+    ]
+  },
+  {
+    "schema_version": "1.0.0",
+    "kind": "semantic_cube",
+    "id": "camera.example",
+    "title": "Camera angles · example",
+    "domain": "camera",
+    "source": {
+      "kind": "example",
+      "label": "Authored schema example; replace with your observations"
+    },
+    "axes": {
+      "x": {
+        "label": "Shot time",
+        "unit": "s",
+        "minimum": 0,
+        "maximum": 30
+      },
+      "y": {
+        "label": "Camera index",
+        "unit": "index",
+        "minimum": 0,
+        "maximum": 4
+      }
+    },
+    "layers": [
+      {
+        "id": "yaw_deg",
+        "label": "Yaw",
+        "metric": "yaw_deg",
+        "unit": "deg",
+        "minimum": -180,
+        "maximum": 180,
+        "scale": "linear",
+        "outside": "reject",
+        "position": 0.0,
+        "color": "#248BFF",
+        "opacity": 1,
+        "gain": 1,
+        "blend": "normal",
+        "enabled": true
+      },
+      {
+        "id": "pitch_deg",
+        "label": "Pitch",
+        "metric": "pitch_deg",
+        "unit": "deg",
+        "minimum": -90,
+        "maximum": 90,
+        "scale": "linear",
+        "outside": "reject",
+        "position": 0.3333333333333333,
+        "color": "#29DE5C",
+        "opacity": 1,
+        "gain": 1,
+        "blend": "normal",
+        "enabled": true
+      },
+      {
+        "id": "roll_deg",
+        "label": "Roll",
+        "metric": "roll_deg",
+        "unit": "deg",
+        "minimum": -180,
+        "maximum": 180,
+        "scale": "linear",
+        "outside": "reject",
+        "position": 0.6666666666666666,
+        "color": "#FFBF1F",
+        "opacity": 1,
+        "gain": 1,
+        "blend": "normal",
+        "enabled": true
+      },
+      {
+        "id": "fov_deg",
+        "label": "Field of view",
+        "metric": "fov_deg",
+        "unit": "deg",
+        "minimum": 1,
+        "maximum": 179,
+        "scale": "linear",
+        "outside": "reject",
+        "position": 1.0,
+        "color": "#F0458F",
+        "opacity": 1,
+        "gain": 1,
+        "blend": "normal",
+        "enabled": true
+      }
+    ],
+    "records": [
+      {
+        "id": "observation-1",
+        "x": 0.0,
+        "y": 0,
+        "metrics": {
+          "yaw_deg": -152.30769230769232,
+          "pitch_deg": -76.15384615384616,
+          "roll_deg": -152.30769230769232,
+          "fov_deg": 14.692307692307692
+        },
+        "context": {
+          "shot_id": "shot-1",
+          "camera_id": "camera-a",
+          "coordinate_system": "right-handed-y-up"
+        }
+      },
+      {
+        "id": "observation-2",
+        "x": 2.5,
+        "y": 1,
+        "metrics": {
+          "yaw_deg": -124.61538461538461,
+          "pitch_deg": -62.30769230769231,
+          "roll_deg": -124.61538461538461,
+          "fov_deg": 28.384615384615383
+        },
+        "context": {
+          "shot_id": "shot-1",
+          "camera_id": "camera-a",
+          "coordinate_system": "right-handed-y-up"
+        }
+      },
+      {
+        "id": "observation-3",
+        "x": 5.0,
+        "y": 2,
+        "metrics": {
+          "yaw_deg": -96.92307692307692,
+          "pitch_deg": -48.46153846153846,
+          "roll_deg": -96.92307692307692,
+          "fov_deg": 42.07692307692308
+        },
+        "context": {
+          "shot_id": "shot-1",
+          "camera_id": "camera-a",
+          "coordinate_system": "right-handed-y-up"
+        }
+      },
+      {
+        "id": "observation-4",
+        "x": 7.5,
+        "y": 0,
+        "metrics": {
+          "yaw_deg": -69.23076923076923,
+          "pitch_deg": -34.61538461538461,
+          "roll_deg": -69.23076923076923,
+          "fov_deg": 55.76923076923077
+        },
+        "context": {
+          "shot_id": "shot-1",
+          "camera_id": "camera-a",
+          "coordinate_system": "right-handed-y-up"
+        }
+      },
+      {
+        "id": "observation-5",
+        "x": 10.0,
+        "y": 1,
+        "metrics": {
+          "yaw_deg": -41.53846153846155,
+          "pitch_deg": -20.769230769230774,
+          "roll_deg": -41.53846153846155,
+          "fov_deg": 69.46153846153847
+        },
+        "context": {
+          "shot_id": "shot-1",
+          "camera_id": "camera-a",
+          "coordinate_system": "right-handed-y-up"
+        }
+      },
+      {
+        "id": "observation-6",
+        "x": 12.5,
+        "y": 2,
+        "metrics": {
+          "yaw_deg": -13.84615384615384,
+          "pitch_deg": -6.92307692307692,
+          "roll_deg": -13.84615384615384,
+          "fov_deg": 83.15384615384616
+        },
+        "context": {
+          "shot_id": "shot-1",
+          "camera_id": "camera-a",
+          "coordinate_system": "right-handed-y-up"
+        }
+      },
+      {
+        "id": "observation-7",
+        "x": 15.0,
+        "y": 0,
+        "metrics": {
+          "yaw_deg": 13.84615384615384,
+          "pitch_deg": 6.92307692307692,
+          "roll_deg": 13.84615384615384,
+          "fov_deg": 96.84615384615384
+        },
+        "context": {
+          "shot_id": "shot-1",
+          "camera_id": "camera-a",
+          "coordinate_system": "right-handed-y-up"
+        }
+      },
+      {
+        "id": "observation-8",
+        "x": 17.5,
+        "y": 1,
+        "metrics": {
+          "yaw_deg": 41.53846153846155,
+          "pitch_deg": 20.769230769230774,
+          "roll_deg": 41.53846153846155,
+          "fov_deg": 110.53846153846153
+        },
+        "context": {
+          "shot_id": "shot-1",
+          "camera_id": "camera-a",
+          "coordinate_system": "right-handed-y-up"
+        }
+      },
+      {
+        "id": "observation-9",
+        "x": 20.0,
+        "y": 2,
+        "metrics": {
+          "yaw_deg": 69.23076923076923,
+          "pitch_deg": 34.61538461538461,
+          "roll_deg": 69.23076923076923,
+          "fov_deg": 124.23076923076923
+        },
+        "context": {
+          "shot_id": "shot-1",
+          "camera_id": "camera-a",
+          "coordinate_system": "right-handed-y-up"
+        }
+      },
+      {
+        "id": "observation-10",
+        "x": 22.5,
+        "y": 0,
+        "metrics": {
+          "yaw_deg": 96.9230769230769,
+          "pitch_deg": 48.46153846153845,
+          "roll_deg": 96.9230769230769,
+          "fov_deg": 137.92307692307693
+        },
+        "context": {
+          "shot_id": "shot-1",
+          "camera_id": "camera-a",
+          "coordinate_system": "right-handed-y-up"
+        }
+      },
+      {
+        "id": "observation-11",
+        "x": 25.0,
+        "y": 1,
+        "metrics": {
+          "yaw_deg": 124.61538461538464,
+          "pitch_deg": 62.30769230769232,
+          "roll_deg": 124.61538461538464,
+          "fov_deg": 151.6153846153846
+        },
+        "context": {
+          "shot_id": "shot-1",
+          "camera_id": "camera-a",
+          "coordinate_system": "right-handed-y-up"
+        }
+      },
+      {
+        "id": "observation-12",
+        "x": 27.5,
+        "y": 2,
+        "metrics": {
+          "yaw_deg": 152.30769230769232,
+          "pitch_deg": 76.15384615384616,
+          "roll_deg": 152.30769230769232,
+          "fov_deg": 165.30769230769232
+        },
+        "context": {
+          "shot_id": "shot-1",
+          "camera_id": "camera-a",
+          "coordinate_system": "right-handed-y-up"
+        }
+      }
+    ]
+  },
+  {
+    "schema_version": "1.0.0",
+    "kind": "semantic_cube",
+    "id": "market.stock.example",
+    "title": "Stock observations · example",
+    "domain": "market.stock",
+    "source": {
+      "kind": "example",
+      "label": "Authored schema example; replace with your observations"
+    },
+    "axes": {
+      "x": {
+        "label": "Unix time",
+        "unit": "unix_s",
+        "minimum": 1700000000,
+        "maximum": 1700000300
+      },
+      "y": {
+        "label": "Instrument index",
+        "unit": "index",
+        "minimum": 0,
+        "maximum": 4
+      }
+    },
+    "layers": [
+      {
+        "id": "open",
+        "label": "Open",
+        "metric": "open",
+        "unit": "quote",
+        "minimum": 0,
+        "maximum": 200,
+        "scale": "linear",
+        "outside": "reject",
+        "position": 0.0,
+        "color": "#248BFF",
+        "opacity": 1,
+        "gain": 1,
+        "blend": "normal",
+        "enabled": true
+      },
+      {
+        "id": "high",
+        "label": "High",
+        "metric": "high",
+        "unit": "quote",
+        "minimum": 0,
+        "maximum": 200,
+        "scale": "linear",
+        "outside": "reject",
+        "position": 0.2,
+        "color": "#29DE5C",
+        "opacity": 1,
+        "gain": 1,
+        "blend": "normal",
+        "enabled": true
+      },
+      {
+        "id": "low",
+        "label": "Low",
+        "metric": "low",
+        "unit": "quote",
+        "minimum": 0,
+        "maximum": 200,
+        "scale": "linear",
+        "outside": "reject",
+        "position": 0.4,
+        "color": "#FFBF1F",
+        "opacity": 1,
+        "gain": 1,
+        "blend": "normal",
+        "enabled": true
+      },
+      {
+        "id": "close",
+        "label": "Close",
+        "metric": "close",
+        "unit": "quote",
+        "minimum": 0,
+        "maximum": 200,
+        "scale": "linear",
+        "outside": "reject",
+        "position": 0.6,
+        "color": "#F0458F",
+        "opacity": 1,
+        "gain": 1,
+        "blend": "normal",
+        "enabled": true
+      },
+      {
+        "id": "volume",
+        "label": "Volume",
+        "metric": "volume",
+        "unit": "base",
+        "minimum": 0,
+        "maximum": 10000,
+        "scale": "linear",
+        "outside": "reject",
+        "position": 0.8,
+        "color": "#AB8AFF",
+        "opacity": 1,
+        "gain": 1,
+        "blend": "normal",
+        "enabled": true
+      },
+      {
+        "id": "change_pct",
+        "label": "Change",
+        "metric": "change_pct",
+        "unit": "%",
+        "minimum": -100,
+        "maximum": 100,
+        "scale": "linear",
+        "outside": "reject",
+        "position": 1.0,
+        "color": "#35D7D0",
+        "opacity": 1,
+        "gain": 1,
+        "blend": "normal",
+        "enabled": true
+      }
+    ],
+    "records": [
+      {
+        "id": "observation-1",
+        "x": 1700000000.0,
+        "y": 0,
+        "metrics": {
+          "open": 100,
+          "high": 104,
+          "low": 98,
+          "close": 102,
+          "volume": 500,
+          "change_pct": 2
+        },
+        "context": {
+          "symbol": "EXAMPLE",
+          "venue": "EXAMPLE",
+          "currency": "USD",
+          "timestamp": "2023-11-14T22:13:20Z"
+        }
+      },
+      {
+        "id": "observation-2",
+        "x": 1700000025.0,
+        "y": 1,
+        "metrics": {
+          "open": 101,
+          "high": 105,
+          "low": 99,
+          "close": 103,
+          "volume": 600,
+          "change_pct": 2
+        },
+        "context": {
+          "symbol": "EXAMPLE",
+          "venue": "EXAMPLE",
+          "currency": "USD",
+          "timestamp": "2023-11-14T22:13:45Z"
+        }
+      },
+      {
+        "id": "observation-3",
+        "x": 1700000050.0,
+        "y": 2,
+        "metrics": {
+          "open": 102,
+          "high": 106,
+          "low": 100,
+          "close": 104,
+          "volume": 700,
+          "change_pct": 2
+        },
+        "context": {
+          "symbol": "EXAMPLE",
+          "venue": "EXAMPLE",
+          "currency": "USD",
+          "timestamp": "2023-11-14T22:14:10Z"
+        }
+      },
+      {
+        "id": "observation-4",
+        "x": 1700000075.0,
+        "y": 0,
+        "metrics": {
+          "open": 103,
+          "high": 107,
+          "low": 101,
+          "close": 105,
+          "volume": 800,
+          "change_pct": 2
+        },
+        "context": {
+          "symbol": "EXAMPLE",
+          "venue": "EXAMPLE",
+          "currency": "USD",
+          "timestamp": "2023-11-14T22:14:35Z"
+        }
+      },
+      {
+        "id": "observation-5",
+        "x": 1700000100.0,
+        "y": 1,
+        "metrics": {
+          "open": 104,
+          "high": 108,
+          "low": 102,
+          "close": 106,
+          "volume": 900,
+          "change_pct": 2
+        },
+        "context": {
+          "symbol": "EXAMPLE",
+          "venue": "EXAMPLE",
+          "currency": "USD",
+          "timestamp": "2023-11-14T22:15:00Z"
+        }
+      },
+      {
+        "id": "observation-6",
+        "x": 1700000125.0,
+        "y": 2,
+        "metrics": {
+          "open": 105,
+          "high": 109,
+          "low": 103,
+          "close": 107,
+          "volume": 1000,
+          "change_pct": 2
+        },
+        "context": {
+          "symbol": "EXAMPLE",
+          "venue": "EXAMPLE",
+          "currency": "USD",
+          "timestamp": "2023-11-14T22:15:25Z"
+        }
+      },
+      {
+        "id": "observation-7",
+        "x": 1700000150.0,
+        "y": 0,
+        "metrics": {
+          "open": 106,
+          "high": 110,
+          "low": 104,
+          "close": 108,
+          "volume": 1100,
+          "change_pct": 2
+        },
+        "context": {
+          "symbol": "EXAMPLE",
+          "venue": "EXAMPLE",
+          "currency": "USD",
+          "timestamp": "2023-11-14T22:15:50Z"
+        }
+      },
+      {
+        "id": "observation-8",
+        "x": 1700000175.0,
+        "y": 1,
+        "metrics": {
+          "open": 107,
+          "high": 111,
+          "low": 105,
+          "close": 109,
+          "volume": 1200,
+          "change_pct": 2
+        },
+        "context": {
+          "symbol": "EXAMPLE",
+          "venue": "EXAMPLE",
+          "currency": "USD",
+          "timestamp": "2023-11-14T22:16:15Z"
+        }
+      },
+      {
+        "id": "observation-9",
+        "x": 1700000200.0,
+        "y": 2,
+        "metrics": {
+          "open": 108,
+          "high": 112,
+          "low": 106,
+          "close": 110,
+          "volume": 1300,
+          "change_pct": 2
+        },
+        "context": {
+          "symbol": "EXAMPLE",
+          "venue": "EXAMPLE",
+          "currency": "USD",
+          "timestamp": "2023-11-14T22:16:40Z"
+        }
+      },
+      {
+        "id": "observation-10",
+        "x": 1700000225.0,
+        "y": 0,
+        "metrics": {
+          "open": 109,
+          "high": 113,
+          "low": 107,
+          "close": 111,
+          "volume": 1400,
+          "change_pct": 2
+        },
+        "context": {
+          "symbol": "EXAMPLE",
+          "venue": "EXAMPLE",
+          "currency": "USD",
+          "timestamp": "2023-11-14T22:17:05Z"
+        }
+      },
+      {
+        "id": "observation-11",
+        "x": 1700000250.0,
+        "y": 1,
+        "metrics": {
+          "open": 110,
+          "high": 114,
+          "low": 108,
+          "close": 112,
+          "volume": 1500,
+          "change_pct": 2
+        },
+        "context": {
+          "symbol": "EXAMPLE",
+          "venue": "EXAMPLE",
+          "currency": "USD",
+          "timestamp": "2023-11-14T22:17:30Z"
+        }
+      },
+      {
+        "id": "observation-12",
+        "x": 1700000275.0,
+        "y": 2,
+        "metrics": {
+          "open": 111,
+          "high": 115,
+          "low": 109,
+          "close": 113,
+          "volume": 1600,
+          "change_pct": 2
+        },
+        "context": {
+          "symbol": "EXAMPLE",
+          "venue": "EXAMPLE",
+          "currency": "USD",
+          "timestamp": "2023-11-14T22:17:55Z"
+        }
+      }
+    ]
+  },
+  {
+    "schema_version": "1.0.0",
+    "kind": "semantic_cube",
+    "id": "market.crypto.example",
+    "title": "Crypto observations · example",
+    "domain": "market.crypto",
+    "source": {
+      "kind": "example",
+      "label": "Authored schema example; replace with your observations"
+    },
+    "axes": {
+      "x": {
+        "label": "Unix time",
+        "unit": "unix_s",
+        "minimum": 1700000000,
+        "maximum": 1700000300
+      },
+      "y": {
+        "label": "Instrument index",
+        "unit": "index",
+        "minimum": 0,
+        "maximum": 4
+      }
+    },
+    "layers": [
+      {
+        "id": "open",
+        "label": "Open",
+        "metric": "open",
+        "unit": "quote",
+        "minimum": 0,
+        "maximum": 200,
+        "scale": "linear",
+        "outside": "reject",
+        "position": 0.0,
+        "color": "#248BFF",
+        "opacity": 1,
+        "gain": 1,
+        "blend": "normal",
+        "enabled": true
+      },
+      {
+        "id": "high",
+        "label": "High",
+        "metric": "high",
+        "unit": "quote",
+        "minimum": 0,
+        "maximum": 200,
+        "scale": "linear",
+        "outside": "reject",
+        "position": 0.2,
+        "color": "#29DE5C",
+        "opacity": 1,
+        "gain": 1,
+        "blend": "normal",
+        "enabled": true
+      },
+      {
+        "id": "low",
+        "label": "Low",
+        "metric": "low",
+        "unit": "quote",
+        "minimum": 0,
+        "maximum": 200,
+        "scale": "linear",
+        "outside": "reject",
+        "position": 0.4,
+        "color": "#FFBF1F",
+        "opacity": 1,
+        "gain": 1,
+        "blend": "normal",
+        "enabled": true
+      },
+      {
+        "id": "close",
+        "label": "Close",
+        "metric": "close",
+        "unit": "quote",
+        "minimum": 0,
+        "maximum": 200,
+        "scale": "linear",
+        "outside": "reject",
+        "position": 0.6,
+        "color": "#F0458F",
+        "opacity": 1,
+        "gain": 1,
+        "blend": "normal",
+        "enabled": true
+      },
+      {
+        "id": "volume",
+        "label": "Volume",
+        "metric": "volume",
+        "unit": "base",
+        "minimum": 0,
+        "maximum": 10000,
+        "scale": "linear",
+        "outside": "reject",
+        "position": 0.8,
+        "color": "#AB8AFF",
+        "opacity": 1,
+        "gain": 1,
+        "blend": "normal",
+        "enabled": true
+      },
+      {
+        "id": "change_pct",
+        "label": "Change",
+        "metric": "change_pct",
+        "unit": "%",
+        "minimum": -100,
+        "maximum": 100,
+        "scale": "linear",
+        "outside": "reject",
+        "position": 1.0,
+        "color": "#35D7D0",
+        "opacity": 1,
+        "gain": 1,
+        "blend": "normal",
+        "enabled": true
+      }
+    ],
+    "records": [
+      {
+        "id": "observation-1",
+        "x": 1700000000.0,
+        "y": 0,
+        "metrics": {
+          "open": 100,
+          "high": 104,
+          "low": 98,
+          "close": 102,
+          "volume": 500,
+          "change_pct": 2
+        },
+        "context": {
+          "base_asset": "EXAMPLE",
+          "quote_asset": "USD",
+          "venue": "EXAMPLE",
+          "timestamp": "2023-11-14T22:13:20Z"
+        }
+      },
+      {
+        "id": "observation-2",
+        "x": 1700000025.0,
+        "y": 1,
+        "metrics": {
+          "open": 101,
+          "high": 105,
+          "low": 99,
+          "close": 103,
+          "volume": 600,
+          "change_pct": 2
+        },
+        "context": {
+          "base_asset": "EXAMPLE",
+          "quote_asset": "USD",
+          "venue": "EXAMPLE",
+          "timestamp": "2023-11-14T22:13:45Z"
+        }
+      },
+      {
+        "id": "observation-3",
+        "x": 1700000050.0,
+        "y": 2,
+        "metrics": {
+          "open": 102,
+          "high": 106,
+          "low": 100,
+          "close": 104,
+          "volume": 700,
+          "change_pct": 2
+        },
+        "context": {
+          "base_asset": "EXAMPLE",
+          "quote_asset": "USD",
+          "venue": "EXAMPLE",
+          "timestamp": "2023-11-14T22:14:10Z"
+        }
+      },
+      {
+        "id": "observation-4",
+        "x": 1700000075.0,
+        "y": 0,
+        "metrics": {
+          "open": 103,
+          "high": 107,
+          "low": 101,
+          "close": 105,
+          "volume": 800,
+          "change_pct": 2
+        },
+        "context": {
+          "base_asset": "EXAMPLE",
+          "quote_asset": "USD",
+          "venue": "EXAMPLE",
+          "timestamp": "2023-11-14T22:14:35Z"
+        }
+      },
+      {
+        "id": "observation-5",
+        "x": 1700000100.0,
+        "y": 1,
+        "metrics": {
+          "open": 104,
+          "high": 108,
+          "low": 102,
+          "close": 106,
+          "volume": 900,
+          "change_pct": 2
+        },
+        "context": {
+          "base_asset": "EXAMPLE",
+          "quote_asset": "USD",
+          "venue": "EXAMPLE",
+          "timestamp": "2023-11-14T22:15:00Z"
+        }
+      },
+      {
+        "id": "observation-6",
+        "x": 1700000125.0,
+        "y": 2,
+        "metrics": {
+          "open": 105,
+          "high": 109,
+          "low": 103,
+          "close": 107,
+          "volume": 1000,
+          "change_pct": 2
+        },
+        "context": {
+          "base_asset": "EXAMPLE",
+          "quote_asset": "USD",
+          "venue": "EXAMPLE",
+          "timestamp": "2023-11-14T22:15:25Z"
+        }
+      },
+      {
+        "id": "observation-7",
+        "x": 1700000150.0,
+        "y": 0,
+        "metrics": {
+          "open": 106,
+          "high": 110,
+          "low": 104,
+          "close": 108,
+          "volume": 1100,
+          "change_pct": 2
+        },
+        "context": {
+          "base_asset": "EXAMPLE",
+          "quote_asset": "USD",
+          "venue": "EXAMPLE",
+          "timestamp": "2023-11-14T22:15:50Z"
+        }
+      },
+      {
+        "id": "observation-8",
+        "x": 1700000175.0,
+        "y": 1,
+        "metrics": {
+          "open": 107,
+          "high": 111,
+          "low": 105,
+          "close": 109,
+          "volume": 1200,
+          "change_pct": 2
+        },
+        "context": {
+          "base_asset": "EXAMPLE",
+          "quote_asset": "USD",
+          "venue": "EXAMPLE",
+          "timestamp": "2023-11-14T22:16:15Z"
+        }
+      },
+      {
+        "id": "observation-9",
+        "x": 1700000200.0,
+        "y": 2,
+        "metrics": {
+          "open": 108,
+          "high": 112,
+          "low": 106,
+          "close": 110,
+          "volume": 1300,
+          "change_pct": 2
+        },
+        "context": {
+          "base_asset": "EXAMPLE",
+          "quote_asset": "USD",
+          "venue": "EXAMPLE",
+          "timestamp": "2023-11-14T22:16:40Z"
+        }
+      },
+      {
+        "id": "observation-10",
+        "x": 1700000225.0,
+        "y": 0,
+        "metrics": {
+          "open": 109,
+          "high": 113,
+          "low": 107,
+          "close": 111,
+          "volume": 1400,
+          "change_pct": 2
+        },
+        "context": {
+          "base_asset": "EXAMPLE",
+          "quote_asset": "USD",
+          "venue": "EXAMPLE",
+          "timestamp": "2023-11-14T22:17:05Z"
+        }
+      },
+      {
+        "id": "observation-11",
+        "x": 1700000250.0,
+        "y": 1,
+        "metrics": {
+          "open": 110,
+          "high": 114,
+          "low": 108,
+          "close": 112,
+          "volume": 1500,
+          "change_pct": 2
+        },
+        "context": {
+          "base_asset": "EXAMPLE",
+          "quote_asset": "USD",
+          "venue": "EXAMPLE",
+          "timestamp": "2023-11-14T22:17:30Z"
+        }
+      },
+      {
+        "id": "observation-12",
+        "x": 1700000275.0,
+        "y": 2,
+        "metrics": {
+          "open": 111,
+          "high": 115,
+          "low": 109,
+          "close": 113,
+          "volume": 1600,
+          "change_pct": 2
+        },
+        "context": {
+          "base_asset": "EXAMPLE",
+          "quote_asset": "USD",
+          "venue": "EXAMPLE",
+          "timestamp": "2023-11-14T22:17:55Z"
+        }
+      }
+    ]
+  }
+]

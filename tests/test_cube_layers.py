@@ -22,10 +22,14 @@ from gen_audio.cube_layers import (
     REPO_ROOT,
     CubeParams,
     check_generator,
+    compute_layers,
+    cube_json_name,
+    cube_png_name,
     generator_sha256,
     library_cube,
+    pipeline_r2_stft,
 )
-from gen_audio.library_manifest import normalized_sha256, record_generator_commits
+from gen_audio.library_manifest import generator_commit_for, normalized_sha256, record_generator_commits
 from gen_audio.cube_revision import measure
 
 LIBRARY = Path(__file__).resolve().parents[1] / "apps" / "desktop" / "public" / "library"
@@ -67,6 +71,95 @@ def test_library_cube_is_deterministic():
     first, _ = library_cube(audio, 24000, stem="a", engine="e", source_sha256=SHA)
     second, _ = library_cube(audio.copy(), 24000, stem="a", engine="e", source_sha256=SHA)
     assert json.dumps(first) == json.dumps(second)
+
+
+def test_pipeline_r2_reproduces_archived_pr4_statistics():
+    doc, _ = library_cube(_speechish(), 24000, stem="tone", engine="fixture",
+                          source_sha256=SHA, method="pipeline_r2")
+    golden = {
+        "signal": [0.07769936901840238, 0.14810095425377648, 0.041461231175063576, 0.047991161636554605, 0.058823529411764705],
+        "tonality": [0.36317973976193213, 0.0023611153035942673, 0.36355081156938784, 0.3659553289829641, 1.0],
+        "confidence": [0.5194238779828132, 0.11192286081505017, 0.4888717837944977, 0.5254118540396466, 1.0],
+        "quality": [0.2204395543901673, 0.07406380961061054, 0.20243245185227643, 0.20597433867168702, 0.8762254901960784],
+    }
+    assert doc["cube_shape_f_t"] == [102, 8]
+    assert doc["downsample_sf_st"] == [5, 33]
+    assert doc["bin_seconds"] == 33 * 256 / 24000
+    assert doc["inv_hdr"] == measure(_speechish(), 24000).inv_hdr
+    assert doc["cube_revision"] == 2
+    assert doc["provenance"]["layer_method"] == "pipeline_r2"
+    assert doc["provenance"]["generator_sha256"] == generator_sha256()
+    assert doc["layer_method_source"].startswith("darbotlabs/gen-audio@204d0de")
+    for name, expected in golden.items():
+        got = doc["layers"][name]
+        assert got["shape"] == [102, 8]
+        assert [got[key] for key in ("mean", "std", "p50", "p90", "active_frac")] == pytest.approx(expected, rel=0, abs=1e-12)
+
+
+def test_pipeline_r2_formulas_and_default_method():
+    audio = _speechish(2)
+    mag = pipeline_r2_stft(audio)
+    layers = compute_layers(mag, 24000, 1024, method="pipeline_r2")
+    nf, nt = mag.shape[0] // 5, mag.shape[1] // 33
+    grid = mag[:nf * 5, :nt * 33].reshape(nf, 5, nt, 33).mean(axis=(1, 3))
+    np.testing.assert_array_equal(layers["signal"], grid / grid.max())
+    np.testing.assert_array_equal(layers["confidence"], grid / (grid + np.percentile(grid, 70) + 1e-12))
+    np.testing.assert_array_equal(layers["quality"], 0.5 * layers["signal"] + 0.5 * layers["tonality"])
+    default, _ = library_cube(audio, 24000, stem="x", engine="fixture", source_sha256=SHA)
+    explicit, _ = library_cube(audio, 24000, stem="x", engine="fixture", source_sha256=SHA, method="library_r3")
+    assert default == explicit
+    with pytest.raises(ValueError, match="unknown layer_method"):
+        library_cube(audio, 24000, stem="x", engine="fixture", source_sha256=SHA, method="unknown")
+    with pytest.raises(ValueError, match="too short"):
+        library_cube(audio[:2000], 24000, stem="x", engine="fixture", source_sha256=SHA, method="pipeline_r2")
+
+
+@pytest.mark.parametrize(("stem", "shape", "means"), [
+    ("genaid_full_misaki_kokoro", [102, 395],
+     [0.01915429562396228, 0.49622658792574514, 0.35640301962363075, 0.2576904417748537]),
+    ("bitdot_braille_vibevoice", [102, 701],
+     [0.02465064335400211, 0.5794847820936125, 0.29731470571381385, 0.30206771272380734]),
+])
+def test_pipeline_r2_matches_archived_library_wav_statistics(stem, shape, means):
+    wav = _need_wav(stem)
+    audio, rate = read_wav(wav)
+    doc, _ = library_cube(audio, rate, stem=stem, engine="fixture",
+                          source_sha256=hashlib.sha256(wav.read_bytes()).hexdigest(), method="pipeline_r2")
+    assert doc["cube_shape_f_t"] == shape
+    assert [doc["layers"][name]["mean"] for name in LAYER_NAMES] == pytest.approx(means, rel=0, abs=1e-12)
+
+
+def test_pipeline_r2_cli_and_names(tmp_path):
+    wav = write_wav(tmp_path / "tone.wav", _speechish(1), 24000)
+    out, png = tmp_path / "comparison.json", tmp_path / "comparison.png"
+    assert cube_main(["layers", str(wav), str(out), "--stem", "tone", "--engine", "fixture",
+                      "--method", "pipeline_r2", "--png", str(png)]) == 0
+    doc = json.loads(out.read_text(encoding="utf-8"))
+    assert doc["source_sha256"] == hashlib.sha256(wav.read_bytes()).hexdigest()
+    assert doc["layer_method"] == doc["provenance"]["layer_method"] == "pipeline_r2"
+    assert doc["compare_to"] == "/library/library_tone_cube3d.json"
+    assert doc["pngUrl"] == "/library/tone_pipeline_r2_cube3d.png"
+    assert cube_png_name("tone", "pipeline_r2") == "tone_pipeline_r2_cube3d.png"
+    assert cube_json_name("library_kokoro_onnx") == "library_kokoro_onnx_cube3d.json"
+    assert cube_json_name("tone", "pipeline_r2") == "library_tone_pipeline_r2_cube3d.json"
+    assert png.read_bytes().startswith(b"\x89PNG")
+    with pytest.raises(SystemExit):
+        cube_main(["layers", str(wav), str(out), "--stem", "tone", "--engine", "fixture", "--method", "unknown"])
+
+
+def test_manifest_discovery_does_not_replace_default_with_comparison(tmp_path):
+    from gen_audio.library_manifest import sync_manifest
+
+    for method in ("library_r3", "pipeline_r2"):
+        doc, _ = library_cube(_speechish(1), 24000, stem="tone", engine="fixture",
+                              source_sha256=SHA, method=method)
+        (tmp_path / cube_json_name("tone", method)).write_text(json.dumps(doc), encoding="utf-8")
+    manifest = tmp_path / "manifest.json"
+    manifest.write_text(json.dumps({"clips": [{"id": "tone", "status": "ok", "wavUrl": "/library/tone.wav"}]}))
+    sync_manifest(manifest)
+    clip = json.loads(manifest.read_text())["clips"][0]
+    assert clip["cube"]["jsonUrl"] == "/library/library_tone_cube3d.json"
+    assert clip["cube"]["cube_revision"] == 3
 
 
 def test_library_cube_rejects_empty_audio():
@@ -146,7 +239,14 @@ def _need_wav(stem: str) -> Path:
 
 
 def test_every_library_cube_json_is_listed_here():
-    assert sorted(path.name for path in LIBRARY.glob("*_cube3d.json")) == sorted(cube for _s, cube, _e, _l in GENERATED)
+    docs = [(path.name, json.loads(path.read_text(encoding="utf-8"))) for path in LIBRARY.glob("*_cube3d.json")]
+    generated = [name for name, doc in docs if (doc.get("provenance") or {}).get("generator") == GENERATOR_PATH]
+    manifest = json.loads((LIBRARY / "manifest.json").read_text(encoding="utf-8"))
+    comparisons = [
+        entry["jsonUrl"].rsplit("/", 1)[-1]
+        for clip in manifest["clips"] for entry in (clip.get("cube") or {}).get("compare", [])
+    ]
+    assert sorted(generated) == sorted([cube for _s, cube, _e, _l in GENERATED] + comparisons)
 
 
 @pytest.mark.parametrize(("stem", "cube", "engine", "label"), GENERATED)
@@ -196,6 +296,7 @@ def test_shipped_cubes_record_generator_commit_outside_the_uid(tmp_path):
     before the test existed.
     """
     manifest = json.loads((LIBRARY / "manifest.json").read_text(encoding="utf-8"))
+    historical = generator_commit_for(REPO_ROOT, GENERATOR_PATH, generator_sha256())
     seen = 0
     for clip in manifest["clips"]:
         block = clip.get("cube") or {}
@@ -208,7 +309,10 @@ def test_shipped_cubes_record_generator_commit_outside_the_uid(tmp_path):
         sha = doc["provenance"]["generator_sha256"]
         assert sha == generator_sha256(), clip["id"]
         commit = block.get("generator_commit")
-        assert isinstance(commit, str) and _generator_blob_sha(commit) == sha, clip["id"]
+        if historical is None:
+            assert commit is None, "uncommitted generator bytes must not claim an older commit"
+        else:
+            assert isinstance(commit, str) and _generator_blob_sha(commit) == sha, clip["id"]
         seen += 1
     assert seen == 5, seen
 
@@ -224,7 +328,7 @@ def test_shipped_cubes_record_generator_commit_outside_the_uid(tmp_path):
     manifest_path = library / "manifest.json"
     manifest_path.write_text(json.dumps(stripped), encoding="utf-8")
     changed = record_generator_commits(manifest_path, REPO_ROOT, library)
-    assert len(changed) == 5, changed
+    assert len(changed) == (5 if historical is not None else 0), changed
     restored = json.loads(manifest_path.read_text(encoding="utf-8"))
     for clip in restored["clips"]:
         block = clip.get("cube") or {}
@@ -232,7 +336,10 @@ def test_shipped_cubes_record_generator_commit_outside_the_uid(tmp_path):
             continue
         name = block["jsonUrl"].rsplit("/", 1)[-1]
         doc = json.loads((library / name).read_text(encoding="utf-8"))
-        assert _generator_blob_sha(block["generator_commit"]) == doc["provenance"]["generator_sha256"], clip["id"]
+        if historical is None:
+            assert "generator_commit" not in block
+        else:
+            assert _generator_blob_sha(block["generator_commit"]) == doc["provenance"]["generator_sha256"], clip["id"]
     for path in LIBRARY.glob("*_cube3d.json"):
         assert (library / path.name).read_bytes() == path.read_bytes(), path.name
 
@@ -285,7 +392,7 @@ def test_committed_manifest_mirrors_every_generated_cube(tmp_path):
     from gen_audio.library_manifest import sync_manifest
 
     copy = tmp_path / "manifest.json"
-    copy.write_text((LIBRARY / "manifest.json").read_text(encoding="utf-8"), encoding="utf-8")
+    copy.write_bytes((LIBRARY / "manifest.json").read_bytes())
     assert sync_manifest(copy, LIBRARY) == [], "run: python scripts/cube_revision.py manifest"
     assert copy.read_bytes() == (LIBRARY / "manifest.json").read_bytes()
 

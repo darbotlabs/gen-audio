@@ -633,7 +633,8 @@ mod tests {
         log.write_line("after recovery").unwrap();
         assert_eq!(log.dropped(), 0, "the marker reported them");
         let current = fs::read_to_string(log_path(&dir, 0)).unwrap();
-        let marker = current.lines().find(|line| line.contains("sidecar log dropped 3 line(s)")).unwrap_or_else(|| panic!("no drop marker in {current:?}"));
+        let all_logs = log_text(&dir);
+        let marker = all_logs.lines().find(|line| line.contains("sidecar log dropped 3 line(s)")).unwrap_or_else(|| panic!("no drop marker in {all_logs:?}"));
         assert!(marker.contains("rotate failed"), "{marker}");
         assert!(current.ends_with("after recovery\n"), "{current:?}");
         let _ = fs::remove_dir_all(&dir);
@@ -888,7 +889,7 @@ mod tests {
         if std::env::var("GEN_AUDIO_STAND_IN_SIDECAR").is_err() {
             return;
         }
-        let bound = gen_audio_mcp::http::spawn_loopback("127.0.0.1:0").unwrap();
+        let bound = gen_audio_mcp::http::spawn_loopback("127.0.0.1:0", &"a".repeat(64)).unwrap();
         println!("SIDECAR_ADDR={bound}");
         std::io::stdout().flush().unwrap();
         let _ = std::io::stdin().read(&mut [0u8; 1]);
@@ -917,6 +918,7 @@ mod tests {
             }
         };
         let mut stream = TcpStream::connect(&addr).unwrap();
+        let request = request.replace("Host: 127.0.0.1\r\n", &format!("Host: {addr}\r\n"));
         stream.write_all(request.as_bytes()).unwrap();
         let mut response = String::new();
         let _ = stream.read_to_string(&mut response);
@@ -951,7 +953,7 @@ mod tests {
             body.len()
         );
         let (text, dir) = through_the_pipe("redact", &request);
-        assert!(text.contains("rejected POST /mcp?<redacted> 403"), "the rejection is still logged: {text:?}");
+        assert!(text.contains("rejected POST /mcp 403"), "the rejection is still logged without its query: {text:?}");
         for secret in [token, "tok_9f8e", bearer, "sk-ant", "Authorization", "body-marker-7", "tools/call"] {
             assert!(!text.contains(secret), "{secret:?} reached the log: {text:?}");
         }

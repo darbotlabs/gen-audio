@@ -19,7 +19,7 @@ from dataclasses import dataclass, field
 import numpy as np
 from scipy import signal
 
-from gen_audio.audio_io import as_mono
+from gen_audio.audio_io import as_mono, validate_frame_count, validate_sample_rate
 
 PUBLISH_SAMPLE_RATE = 24_000
 HIGHPASS_HZ = 70.0
@@ -58,6 +58,11 @@ def trim_bounds(
     ``(0, 0)``.
     """
     values = as_mono(audio)
+    validate_sample_rate(sample_rate)
+    if not math.isfinite(threshold_db) or threshold_db > 0:
+        raise ValueError("trim threshold must be finite and <= 0 dB")
+    if not math.isfinite(pad_ms) or not 0 <= pad_ms <= 60_000:
+        raise ValueError("trim pad must be finite and in 0..60000 ms")
     if values.size == 0:
         return 0, 0
     peak = float(np.max(np.abs(values)))
@@ -107,10 +112,13 @@ def highpass(
     rumble before the peak stage measures headroom.
     """
     values = as_mono(audio)
+    validate_sample_rate(sample_rate)
     cutoff = float(cutoff_hz)
     nyquist = float(sample_rate) / 2.0
-    if cutoff <= 0.0 or cutoff >= nyquist * 0.95:
+    if not math.isfinite(cutoff) or cutoff <= 0.0 or cutoff >= nyquist * 0.95:
         raise ValueError(f"high-pass cutoff {cutoff} Hz is outside the usable band at {sample_rate} Hz")
+    if isinstance(order, bool) or not isinstance(order, int) or not 1 <= order <= 16:
+        raise ValueError("high-pass order must be an integer in 1..16")
     sos = signal.butter(int(order), cutoff, btype="highpass", fs=int(sample_rate), output="sos")
     try:
         filtered = signal.sosfiltfilt(sos, values)
@@ -125,7 +133,7 @@ def peak_normalize(audio: np.ndarray, target: float = PEAK_TARGET) -> np.ndarray
     Silence is returned unchanged. ``target`` is linear amplitude, not dBFS.
     0.89 linear is about -1.0 dBFS.
     """
-    if target <= 0.0 or target > 1.0:
+    if not math.isfinite(target) or target <= 0.0 or target > 1.0:
         raise ValueError(f"peak target must be in (0, 1], got {target}")
     values = as_mono(audio)
     peak = float(np.max(np.abs(values))) if values.size else 0.0
@@ -137,10 +145,11 @@ def peak_normalize(audio: np.ndarray, target: float = PEAK_TARGET) -> np.ndarray
 def resample_audio(audio: np.ndarray, orig_sr: int, target_sr: int = PUBLISH_SAMPLE_RATE) -> np.ndarray:
     """Resample with ``scipy.signal.resample_poly``."""
     values = as_mono(audio)
-    orig = int(orig_sr)
-    target = int(target_sr)
-    if orig <= 0 or target <= 0:
-        raise ValueError("sample rates must be positive")
+    orig = validate_sample_rate(orig_sr)
+    target = validate_sample_rate(target_sr)
+    if values.size:
+        validate_frame_count(values.size, orig)
+        validate_frame_count((values.size * target + orig - 1) // orig, target)
     if orig == target or values.size == 0:
         return values
     divisor = math.gcd(orig, target)
@@ -161,12 +170,10 @@ def improve(
     pad_ms: float = TRIM_PAD_MS,
 ) -> ImproveResult:
     """Run the publish chain and return 24 kHz mono float32 audio by default."""
-    source_rate = int(sample_rate)
-    if source_rate <= 0:
-        raise ValueError("sample rate must be positive")
+    source_rate = validate_sample_rate(sample_rate)
+    target_sr = validate_sample_rate(target_sr)
     original = as_mono(audio)
-    if original.size == 0:
-        raise ValueError("audio is empty")
+    validate_frame_count(original.size, source_rate)
     input_seconds = float(original.size) / float(source_rate)
 
     trim_start, trim_end = trim_bounds(original, source_rate, threshold_db=threshold_db, pad_ms=pad_ms)
@@ -177,6 +184,9 @@ def improve(
     normalized = peak_normalize(filtered, target=peak_target)
     published = resample_audio(normalized, source_rate, target_sr)
     final = np.ascontiguousarray(published, dtype=np.float32)
+    validate_frame_count(final.size, target_sr)
+    if not np.isfinite(final).all():
+        raise ValueError("publish chain produced nonfinite samples")
     output_seconds = float(final.size) / float(target_sr) if target_sr else 0.0
     peak = float(np.max(np.abs(final))) if final.size else 0.0
     return ImproveResult(

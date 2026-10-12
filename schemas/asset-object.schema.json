@@ -962,7 +962,7 @@
         },
         "layer_method": {
           "type": "string",
-          "pattern": "^library_r[0-9]+$",
+          "pattern": "^(library_r[0-9]+|pipeline_r2)$",
           "description": "Cube layer method; library_r3 is gen_audio.cube_layers revision 3."
         },
         "params": {
@@ -1292,7 +1292,7 @@
         },
         "layer_method": {
           "type": "string",
-          "pattern": "^library_r[0-9]+$",
+          "pattern": "^(library_r[0-9]+|pipeline_r2)$",
           "description": "Cube layer method; library_r3 is gen_audio.cube_layers revision 3."
         }
       }
@@ -1549,12 +1549,7 @@
           }
         },
         "wav_url": {
-          "type": "string",
-          "pattern": "^/library/[A-Za-z0-9_-][A-Za-z0-9_.-]{0,127}(/[A-Za-z0-9_-][A-Za-z0-9_.-]{0,127}){0,3}$",
-          "description": "/library/ + a media_path (same segment rules, up to 4 segments, no '..').",
-          "not": {
-            "pattern": "\\.\\."
-          }
+          "$ref": "https://github.com/darbotlabs/gen-audio/schemas/card-viewport.schema.json#/$defs/libraryUrl"
         },
         "n_words": {
           "type": "integer"
@@ -1611,12 +1606,10 @@
           "maxItems": 2
         },
         "json_url": {
-          "type": "string",
-          "pattern": "^/library/[A-Za-z0-9_.-]+$"
+          "$ref": "https://github.com/darbotlabs/gen-audio/schemas/card-viewport.schema.json#/$defs/libraryUrl"
         },
         "png_url": {
-          "type": "string",
-          "pattern": "^/library/[A-Za-z0-9_.-]+$"
+          "$ref": "https://github.com/darbotlabs/gen-audio/schemas/card-viewport.schema.json#/$defs/libraryUrl"
         }
       }
     },
@@ -1625,8 +1618,7 @@
       "additionalProperties": false,
       "properties": {
         "png_url": {
-          "type": "string",
-          "pattern": "^/library/[A-Za-z0-9_.-]+$"
+          "$ref": "https://github.com/darbotlabs/gen-audio/schemas/card-viewport.schema.json#/$defs/libraryUrl"
         },
         "seconds_per_px": {
           "type": "number"

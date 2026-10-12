@@ -7,7 +7,6 @@
 #[cfg(test)]
 use std::cell::RefCell;
 use std::collections::{BTreeMap, VecDeque};
-use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Condvar, Mutex, OnceLock};
@@ -336,14 +335,24 @@ pub fn resolve_slide(reference: &str) -> Result<(&str, bool), (i32, String)> {
         None => (reference, true),
     };
     if !catalog::SLIDES.contains(&slug) {
-        return Err((-32602, format!("unknown slide {reference:?}; valid slides: {}", valid_slides())));
+        return Err((
+            -32602,
+            format!(
+                "unknown slide {reference:?}; valid slides: {}",
+                valid_slides()
+            ),
+        ));
     }
     Ok((slug, deprecated))
 }
 
 /// Every valid `ui_navigate` slide id, `slide:<slug>`, comma-separated.
 fn valid_slides() -> String {
-    catalog::SLIDES.iter().map(|slug| format!("slide:{slug}")).collect::<Vec<_>>().join(", ")
+    catalog::SLIDES
+        .iter()
+        .map(|slug| format!("slide:{slug}"))
+        .collect::<Vec<_>>()
+        .join(", ")
 }
 
 pub fn ui_navigate(args: &Value) -> Result<Value, (i32, String)> {
@@ -351,7 +360,12 @@ pub fn ui_navigate(args: &Value) -> Result<Value, (i32, String)> {
     let reference = args
         .get("slide")
         .and_then(Value::as_str)
-        .ok_or_else(|| (-32602, format!("ui_navigate needs slide; valid slides: {}", valid_slides())))?
+        .ok_or_else(|| {
+            (
+                -32602,
+                format!("ui_navigate needs slide; valid slides: {}", valid_slides()),
+            )
+        })?
         .to_string();
     let (slug, deprecated) = resolve_slide(&reference)?;
     let slug = slug.to_string();
@@ -428,6 +442,12 @@ pub fn ui_playback(args: &Value) -> Result<Value, (i32, String)> {
     // Play click posts it) or "auto". Carried on the bus as-is; focus and
     // rebind are the viewport reducer's job (PR #4), not this tool's.
     let mut args = args.clone();
+    if let Some(value) = args.get("clientRequestId") {
+        if !value.as_str().is_some_and(|id| !id.is_empty() && id.len() <= 64
+            && id.bytes().all(|c| c.is_ascii_alphanumeric() || c == b'-')) {
+            return Err((-32602, "clientRequestId must be 1..64 ASCII letters, digits or hyphens".into()));
+        }
+    }
     if action == "play" {
         let origin = args.get("origin").map_or(Some("user"), Value::as_str);
         match origin {
@@ -446,7 +466,12 @@ pub fn ui_playback(args: &Value) -> Result<Value, (i32, String)> {
         }
         match raw.as_u64() {
             Some(ms) if ms <= SEEK_WAIT_MAX_MS => wait_ms = Some(ms),
-            _ => return Err((-32602, format!("waitMs must be an integer 0..={SEEK_WAIT_MAX_MS}"))),
+            _ => {
+                return Err((
+                    -32602,
+                    format!("waitMs must be an integer 0..={SEEK_WAIT_MAX_MS}"),
+                ))
+            }
         }
     }
     let args = &args;
@@ -511,15 +536,24 @@ pub fn ui_seek_report(args: &Value) -> Result<Value, (i32, String)> {
         .get("requested_t")
         .and_then(Value::as_f64)
         .ok_or((-32602, "ui_seek_report needs requested_t".to_string()))?;
-    let queued = queued_seek_seconds(seq).ok_or((-32602, format!("seq {seq} is not a queued seek")))?;
+    let queued =
+        queued_seek_seconds(seq).ok_or((-32602, format!("seq {seq} is not a queued seek")))?;
     if (queued - requested).abs() > 1e-9 {
-        return Err((-32602, format!("requested_t {requested} does not match seek {seq} ({queued})")));
+        return Err((
+            -32602,
+            format!("requested_t {requested} does not match seek {seq} ({queued})"),
+        ));
     }
     let landed = match args.get("landed_t") {
         None | Some(Value::Null) => None,
         Some(value) => match value.as_f64() {
             Some(t) if t.is_finite() && t >= 0.0 => Some(t),
-            _ => return Err((-32602, "landed_t must be a non-negative number or null".into())),
+            _ => {
+                return Err((
+                    -32602,
+                    "landed_t must be a non-negative number or null".into(),
+                ))
+            }
         },
     };
     let ok = args
@@ -534,7 +568,10 @@ pub fn ui_seek_report(args: &Value) -> Result<Value, (i32, String)> {
         .and_then(Value::as_str)
         .ok_or((-32602, "ui_seek_report needs reason".to_string()))?;
     if reason.chars().count() > SEEK_REASON_MAX {
-        return Err((-32602, format!("reason is over {SEEK_REASON_MAX} characters")));
+        return Err((
+            -32602,
+            format!("reason is over {SEEK_REASON_MAX} characters"),
+        ));
     }
     let report = json!({"requested_t": requested, "landed_t": landed, "ok": ok, "reason": reason});
     let bus = current_bus();
@@ -596,7 +633,9 @@ fn apply_playback(
     if let Some(events) = reduced.get("events").and_then(Value::as_array) {
         for event in events {
             let op = event.get("op").and_then(Value::as_str).unwrap_or("play");
-            publish(op, event);
+            let mut tagged = event.clone();
+            if let Some(id) = args.get("clientRequestId") { tagged["clientRequestId"] = id.clone(); }
+            publish(op, &tagged);
         }
     }
     Ok(())
@@ -642,7 +681,9 @@ pub fn ui_flip(args: &Value) -> Result<Value, (i32, String, Option<Value>)> {
         && !bare_section
         && !has_next
         && ((has_face && args.get("face").and_then(Value::as_str) == Some("back"))
-            || (!has_face && has_flipped && args.get("flipped").and_then(Value::as_bool) == Some(true)));
+            || (!has_face
+                && has_flipped
+                && args.get("flipped").and_then(Value::as_bool) == Some(true)));
     let (to, warning) = if bare_section || back_section {
         let section = section.unwrap();
         let face = face_for_deprecated_section(&view, section)?;
@@ -652,7 +693,9 @@ pub fn ui_flip(args: &Value) -> Result<Value, (i32, String, Option<Value>)> {
             "deprecated_back_section"
         };
         let detail = if bare_section {
-            format!("section \"{section}\" without a face is deprecated; it selects face \"{face}\"")
+            format!(
+                "section \"{section}\" without a face is deprecated; it selects face \"{face}\""
+            )
         } else {
             format!("back plus section \"{section}\" is deprecated; it selects face \"{face}\"")
         };
@@ -762,7 +805,18 @@ fn face_renders_section(face_id: &str, section: &str) -> bool {
     )
 }
 
+#[cfg(all(test, not(unix)))]
+thread_local! {
+    static TEST_STDERR: RefCell<String> = const { RefCell::new(String::new()) };
+}
+
 fn write_stderr_line(line: &str) {
+    #[cfg(all(test, not(unix)))]
+    TEST_STDERR.with(|output| {
+        output.borrow_mut().push_str(line);
+        output.borrow_mut().push('\n');
+    });
+    #[cfg(unix)]
     let text = format!("{line}\n");
     #[cfg(unix)]
     {
@@ -816,14 +870,9 @@ fn canonical_voice(voice: &str) -> String {
 }
 
 fn kokoro_weights_ready() -> bool {
-    std::env::var("GEN_AUDIO_KOKORO_MODEL")
-        .ok()
-        .filter(|value| !value.is_empty())
-        .is_some()
-        && std::env::var("GEN_AUDIO_KOKORO_VOICES")
-            .ok()
-            .filter(|value| !value.is_empty())
-            .is_some()
+    ["GEN_AUDIO_KOKORO_MODEL", "GEN_AUDIO_KOKORO_VOICES"]
+        .iter()
+        .all(|key| gen_audio_core::runtime_config::setting(key).is_some_and(|v| !v.is_empty()))
 }
 
 pub fn ui_generate(args: &Value) -> Result<Value, (i32, String)> {
@@ -1019,7 +1068,7 @@ fn begin_generate(
     personas: &[String],
     duration_s: f64,
     prompt: &str,
-) -> Result<(paths::TempWorkDir, std::process::Child), String> {
+) -> Result<(paths::TempWorkDir, bridge::PythonPlan<'static>), String> {
     let repo = paths::find_repo_root()
         .ok_or_else(|| "failed to start: repository root was not found".to_string())?;
     let work = paths::make_work_dir().map_err(|err| format!("failed to start: {err}"))?;
@@ -1029,8 +1078,7 @@ fn begin_generate(
         .map_err(|err| format!("failed to start: {err}"))?;
     let plan = bridge::plan_generate(&repo, &work, personas, voice, duration_s)
         .map_err(|err| format!("failed to start: {err}"))?;
-    let child = bridge::start_plan(&plan)?;
-    Ok((work, child))
+    Ok((work, plan))
 }
 
 fn start_generate(
@@ -1040,7 +1088,7 @@ fn start_generate(
     normalized: Value,
     side: Value,
     work: paths::TempWorkDir,
-    mut child: std::process::Child,
+    plan: bridge::PythonPlan<'static>,
     duration_s: f64,
 ) -> Result<Value, (i32, String)> {
     let flag = Arc::new(AtomicBool::new(false));
@@ -1060,8 +1108,6 @@ fn start_generate(
         Ok(body) => body,
         Err(err) => {
             CANCEL.lock().expect("cancel").remove(&job);
-            stop_child(&mut child);
-            let _ = child.wait();
             return Err((err.code, err.message));
         }
     };
@@ -1074,7 +1120,7 @@ fn start_generate(
     let voice_thread = voice.clone();
     if let Err(err) = std::thread::Builder::new()
         .name(format!("gen-{job}"))
-        .spawn(move || complete_generate(job_thread, voice_thread, work, child, flag, timeout))
+        .spawn(move || complete_generate(job_thread, voice_thread, work, plan, flag, timeout))
     {
         CANCEL.lock().expect("cancel").remove(&job);
         return finish_generate(
@@ -1111,23 +1157,35 @@ fn complete_generate(
     job: String,
     voice: String,
     work: paths::TempWorkDir,
-    child: std::process::Child,
+    plan: bridge::PythonPlan<'static>,
     cancel: Arc<AtomicBool>,
     timeout: Duration,
 ) {
-    let (timed_out, cancelled, stderr) = wait_child(child, &cancel, timeout);
+    let output = bridge::run_generate_plan(&plan, timeout, &cancel);
     CANCEL.lock().expect("cancel").remove(&job);
-    if cancelled {
+    if cancel.load(Ordering::Acquire) {
         refuse_running(&job, &voice, "cancelled");
         return;
     }
-    if timed_out {
-        refuse_running(&job, &voice, "generate timed out");
-        return;
-    }
-    let manifest: Value = std::fs::read_to_string(work.join("manifest.json"))
+    let output = match output {
+        Ok(output) if output.status.success() => output,
+        Ok(_) => {
+            refuse_running(
+                &job,
+                &voice,
+                "generation process failed; no verified speech",
+            );
+            return;
+        }
+        Err(error) => {
+            refuse_running(&job, &voice, &error);
+            return;
+        }
+    };
+    let stderr = gen_audio_core::redact::redact_secrets(&String::from_utf8_lossy(&output.stderr));
+    let manifest: Value = paths::read_bounded(&work.join("manifest.json"), 4 * 1024 * 1024)
         .ok()
-        .and_then(|text| serde_json::from_str(&text).ok())
+        .and_then(|bytes| serde_json::from_slice(&bytes).ok())
         .unwrap_or_else(|| json!({"ok": false, "synthesizedSpeech": false, "reason": stderr}));
     if manifest["synthesizedSpeech"] != true {
         let reason = manifest["reason"]
@@ -1167,20 +1225,25 @@ fn complete_generate(
     body["specUrl"] = json!(&imported.spec_url);
     body["cubeUrl"] = json!(&imported.cube_url);
     body["createdUid"] = json!(&imported.wav_uid);
+    body["specUid"] = json!(&imported.spec_uid);
+    body["cubeUid"] = json!(&imported.cube_uid);
     if let Some(video) = &imported.video_url {
         body["videoUrl"] = json!(video);
     }
     publish_job(&voice, body, true);
-    if let Ok(spec) = viewport::apply_global(Action::Job {
-        job: format!("{job}-spec"),
-        target: Some(format!("{}:spectrogram", imported.wav_uid)),
-        phase: "done".into(),
-        reason: None,
-        kind: Some("spectrogram".into()),
-        synthesized: true,
-        coverage: None,
-    }) {
-        publish_job(&voice, spec, true);
+    if !imported.spec_uid.is_empty() {
+        if let Ok(mut spec) = viewport::apply_global(Action::Job {
+            job: format!("{job}-spec"),
+            target: Some(imported.spec_uid.clone()),
+            phase: "done".into(),
+            reason: None,
+            kind: Some("spectrogram".into()),
+            synthesized: true,
+            coverage: None,
+        }) {
+            spec["clipUid"] = json!(&imported.wav_uid);
+            publish_job(&voice, spec, true);
+        }
     }
     let coverage = CoverageInput {
         selector_start: 0.0,
@@ -1190,21 +1253,24 @@ fn complete_generate(
         sec_per_bin: imported.sec_per_bin,
         clip_in_src: imported.clip_in_src,
     };
-    if let Ok(cube) = viewport::apply_global(Action::Job {
-        job: format!("{job}-cube"),
-        target: Some(format!("{}:cube", imported.wav_uid)),
-        phase: "done".into(),
-        reason: None,
-        kind: Some("cube".into()),
-        synthesized: true,
-        coverage: Some(coverage),
-    }) {
-        publish_job(&voice, cube, true);
+    if !imported.cube_uid.is_empty() {
+        if let Ok(mut cube) = viewport::apply_global(Action::Job {
+            job: format!("{job}-cube"),
+            target: Some(imported.cube_uid.clone()),
+            phase: "done".into(),
+            reason: None,
+            kind: Some("cube".into()),
+            synthesized: true,
+            coverage: Some(coverage),
+        }) {
+            cube["clipUid"] = json!(&imported.wav_uid);
+            publish_job(&voice, cube, true);
+        }
     }
     if imported.video_url.is_some() {
         if let Ok(mut video) = viewport::apply_global(Action::Job {
             job: format!("{job}-video"),
-            target: Some(format!("{}:video", imported.wav_uid)),
+            target: Some(imported.wav_uid.clone()),
             phase: "done".into(),
             reason: None,
             kind: Some("video".into()),
@@ -1259,74 +1325,6 @@ fn refuse_running(job: &str, voice: &str, reason: &str) {
     let _ = note_progress(voice, "refused", reason, false);
 }
 
-fn wait_child(
-    mut child: std::process::Child,
-    cancel: &AtomicBool,
-    timeout: Duration,
-) -> (bool, bool, String) {
-    let stdout = child.stdout.take();
-    let stderr = child.stderr.take();
-    let out = std::thread::spawn(move || read_pipe(stdout));
-    let err = std::thread::spawn(move || read_pipe(stderr));
-    let started = Instant::now();
-    let mut timed_out = false;
-    let mut cancelled = false;
-    loop {
-        if cancel.load(Ordering::SeqCst) {
-            cancelled = true;
-            stop_child(&mut child);
-            break;
-        }
-        if started.elapsed() > timeout {
-            timed_out = true;
-            stop_child(&mut child);
-            break;
-        }
-        match child.try_wait() {
-            Ok(Some(_)) => break,
-            Ok(None) => std::thread::sleep(Duration::from_millis(50)),
-            Err(_) => break,
-        }
-    }
-    let _ = child.wait();
-    let _ = out.join();
-    let stderr = err.join().unwrap_or_default();
-    (timed_out, cancelled, stderr)
-}
-
-/// Signal the generate child and its process group. The group leader is the
-/// python process started with `process_group(0)`; grandchildren stay in that
-/// group unless they call setpgid themselves.
-fn stop_child(child: &mut std::process::Child) {
-    #[cfg(unix)]
-    {
-        let pid = child.id();
-        if pid > 0 {
-            let _ = std::process::Command::new("kill")
-                .args(["-KILL", "--", &format!("-{pid}")])
-                .stdout(std::process::Stdio::null())
-                .stderr(std::process::Stdio::null())
-                .status();
-        }
-    }
-    let _ = child.kill();
-}
-
-fn read_pipe<R: Read>(pipe: Option<R>) -> String {
-    let mut buf = Vec::new();
-    if let Some(mut pipe) = pipe {
-        let _ = pipe.read_to_end(&mut buf);
-    }
-    let text = String::from_utf8_lossy(&buf);
-    text.chars()
-        .rev()
-        .take(400)
-        .collect::<String>()
-        .chars()
-        .rev()
-        .collect()
-}
-
 pub fn ui_compare(args: &Value) -> Result<Value, (i32, String)> {
     let uids = args
         .get("uids")
@@ -1367,6 +1365,119 @@ pub fn ui_compare(args: &Value) -> Result<Value, (i32, String)> {
         args.clone(),
         "Queued compare. Selecting a side is a user Play, so focus and the clock follow that side.",
     ))
+}
+
+pub const CUBE_MODES: &[&str] = &["single", "compare"];
+pub use gen_audio_core::viewport::{cube_state_value, CubeCompare};
+static CUBE_TRANSITION: Mutex<()> = Mutex::new(());
+
+fn cube_method(asset: &Value) -> &str {
+    viewport::layer_method_of(asset).unwrap_or("unknown")
+}
+
+fn sha256_field(asset: &Value) -> Option<&str> {
+    asset
+        .pointer("/fields/source_sha256")
+        .and_then(Value::as_str)
+        .filter(|sha| {
+            sha.len() == 64
+                && sha
+                    .bytes()
+                    .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
+        })
+}
+
+pub fn compare_pair(tile: &str, clip_uid: &str) -> Result<CubeCompare, String> {
+    let assets = asset_catalog::assets();
+    compare_pair_from_rows(tile, clip_uid, &assets)
+}
+
+fn compare_pair_from_rows(
+    tile: &str,
+    clip_uid: &str,
+    assets: &[Value],
+) -> Result<CubeCompare, String> {
+    let cubes: Vec<&Value> = assets
+        .iter()
+        .filter(|asset| asset["kind"] == "cube_ihdr")
+        .filter(|asset| {
+            asset["src"]
+                .as_array()
+                .is_some_and(|src| src.len() == 1 && src[0] == clip_uid)
+        })
+        .collect();
+    let library = cubes
+        .iter()
+        .find(|asset| cube_method(asset) == "library_r3")
+        .ok_or_else(|| {
+            format!("{tile} has no library_r3 cube in assets.json; Compare needs one")
+        })?;
+    let other = cubes
+        .iter()
+        .find(|asset| !["library_r3", "unknown"].contains(&cube_method(asset)))
+        .ok_or_else(|| format!("no comparison cube for {tile} in assets.json"))?;
+    match (sha256_field(library), sha256_field(other)) {
+        (Some(left), Some(right)) if left == right => {}
+        _ => {
+            return Err(format!(
+                "refusing Compare for {tile}: cubes must record the same source_sha256"
+            ))
+        }
+    }
+    let uid = |asset: &Value| asset["uid"].as_str().unwrap_or_default().to_owned();
+    Ok(CubeCompare {
+        tile_id: tile.into(),
+        clip_uid: clip_uid.into(),
+        left_method: "library_r3".into(),
+        right_method: cube_method(other).into(),
+        left_cube_uid: uid(library),
+        right_cube_uid: uid(other),
+    })
+}
+
+pub fn ui_cube(args: &Value) -> Result<Value, (i32, String)> {
+    let _transition = CUBE_TRANSITION
+        .lock()
+        .map_err(|_| (-32603, "cube transition lock".into()))?;
+    let mode = args["mode"]
+        .as_str()
+        .ok_or((-32602, "ui_cube needs mode (single or compare)".into()))?;
+    if !CUBE_MODES.contains(&mode) {
+        return Err((
+            -32602,
+            "unknown mode; mode must be single or compare".into(),
+        ));
+    }
+    let args = with_uid_tile(args)?;
+    let previous = viewport::snapshot_global();
+    let tile = args
+        .get("tileId")
+        .or_else(|| previous.pointer("/cube_compare/tileId"));
+    let pair = if mode == "single" {
+        if let Some(tile) = args.get("tileId") {
+            if !tile.as_str().is_some_and(id_ok) {
+                return Err((-32602, "tileId is invalid".into()));
+            }
+        }
+        None
+    } else {
+        let tile = tile
+            .and_then(Value::as_str)
+            .filter(|tile| id_ok(tile))
+            .ok_or((-32602, "compare needs a valid tileId or uid".into()))?;
+        let clip = asset_catalog::uid_for_legacy("audio_clip", tile).ok_or((
+            -32602,
+            format!("{tile} is not a library audio clip in assets.json"),
+        ))?;
+        Some(compare_pair(tile, &clip).map_err(|e| (-32602, e))?)
+    };
+    let state = cube_state_value(pair.as_ref());
+    let seq = publish("cube", &state);
+    viewport::apply_global(Action::Cube { compare: pair, seq }).map_err(|e| (e.code, e.message))?;
+    Ok(json!({
+        "ok":true,"synthesizedSpeech":false,"op":"cube","seq":seq,"args":state,
+        "stream":{"path":"/control/stream","transport":"sse","stateless":true}
+    }))
 }
 
 pub fn viewport_get() -> Value {
@@ -1748,6 +1859,8 @@ pub fn voice_profile_list() -> Value {
         "synthesizedSpeech": false,
         "maxAgentsPerTrack": MAX_AGENTS_PER_TRACK,
         "personas": catalog::personas(),
+        "profileVersion": "2.0",
+        "profiles": catalog::personas().iter().filter_map(|person|catalog::voice_profile_value(person.id)).collect::<Vec<_>>(),
         "voiceModels": catalog::voice_models(),
         "connectorsAreNotAgents": ["copilot", "claude", "gpt", "gemini"],
         "packIdsAreNotVoiceModels": ["af_heart", "am_michael"],
@@ -1770,6 +1883,65 @@ mod tests {
             .into_iter()
             .find(|event| event["seq"].as_u64() == Some(seq))
             .unwrap_or(Value::Null)
+    }
+
+    #[test]
+    fn cube_pairs_require_explicit_methods_and_identical_sources() {
+        let sha = "a".repeat(64);
+        let library = json!({"kind":"cube_ihdr","uid":"left","src":["clip"],
+            "provenance":{"layer_method":"library_r3"},"fields":{"source_sha256":sha}});
+        let other = json!({"kind":"cube_ihdr","uid":"right","src":["clip"],
+            "provenance":{"params":{"layer_method":"compare_spectral_v1"}},"fields":{"source_sha256":sha}});
+        let pair =
+            compare_pair_from_rows("tile", "clip", &[library.clone(), other.clone()]).unwrap();
+        assert_eq!(pair.left_cube_uid, "left");
+        assert_eq!(pair.right_cube_uid, "right");
+        assert_eq!(pair.right_method, "compare_spectral_v1");
+        let mut mismatched = other.clone();
+        mismatched["fields"]["source_sha256"] = json!("b".repeat(64));
+        assert!(
+            compare_pair_from_rows("tile", "clip", &[library.clone(), mismatched])
+                .unwrap_err()
+                .contains("same source_sha256")
+        );
+        let mut unknown = other.clone();
+        unknown["provenance"] = json!({});
+        assert!(compare_pair_from_rows("tile", "clip", &[library.clone(), unknown]).is_err());
+        let mut unrelated = other;
+        unrelated["src"] = json!(["other-clip"]);
+        assert!(compare_pair_from_rows("tile", "clip", &[library, unrelated]).is_err());
+    }
+
+    #[test]
+    fn cube_mode_is_viewport_state_without_changing_focus_or_clock() {
+        let _viewport = fresh_viewport();
+        ui_playback(&json!({"tileId":"lib-kokoro","action":"play","origin":"user"})).unwrap();
+        let before = viewport_get();
+        viewport::apply_global(Action::Cube {
+            compare: Some(CubeCompare {
+                tile_id: "lib-kokoro".into(),
+                clip_uid: "clip".into(),
+                left_method: "library_r3".into(),
+                right_method: "compare_spectral_v1".into(),
+                left_cube_uid: "left".into(),
+                right_cube_uid: "right".into(),
+            }),
+            seq: 17,
+        })
+        .unwrap();
+        let comparing = viewport_get();
+        assert_eq!(comparing["cube_mode"], "compare");
+        assert_eq!(comparing["cube_seq"], 17);
+        assert_eq!(comparing["ui"], before["ui"]);
+        assert!(ui_cube(&json!({"mode":"unknown"})).is_err());
+        let single = ui_cube(&json!({"mode":"single"})).unwrap();
+        let after = viewport_get();
+        assert_eq!(after["cube_mode"], "single");
+        assert!(after["cube_compare"].is_null());
+        assert_eq!(after["cube_seq"], single["seq"]);
+        assert_eq!(after["ui"], before["ui"]);
+        assert_eq!(bus_flip(single["seq"].as_u64().unwrap())["op"], "cube");
+        assert!(ui_cube(&json!({"mode":"compare","tileId":"unknown-tile"})).is_err());
     }
 
     #[test]
@@ -1810,26 +1982,51 @@ mod tests {
 
     #[test]
     fn unknown_or_missing_slide_lists_every_valid_slide_id() {
-        for args in [json!({"slide": "slide:nope"}), json!({"slide": "nope"}), json!({})] {
+        for args in [
+            json!({"slide": "slide:nope"}),
+            json!({"slide": "nope"}),
+            json!({}),
+        ] {
             let (code, message) = ui_navigate(&args).unwrap_err();
             assert_eq!(code, -32602, "{args}");
             for slug in catalog::SLIDES {
-                assert!(message.contains(&format!("slide:{slug}")), "{args}: {message} lacks slide:{slug}");
+                assert!(
+                    message.contains(&format!("slide:{slug}")),
+                    "{args}: {message} lacks slide:{slug}"
+                );
             }
         }
     }
 
     #[test]
     fn ui_playback_carries_play_origin_user_by_default() {
-        let user = ui_playback(&json!({"tileId": "lib-kokoro", "action": "play", "origin": "user"})).unwrap();
+        let user =
+            ui_playback(&json!({"tileId": "lib-kokoro", "action": "play", "origin": "user"}))
+                .unwrap();
         assert_eq!(user["args"]["origin"], "user");
         let default = ui_playback(&json!({"tileId": "lib-kokoro", "action": "play"})).unwrap();
         assert_eq!(default["args"]["origin"], "user");
-        let auto = ui_playback(&json!({"tileId": "lib-kokoro", "action": "play", "origin": "auto"})).unwrap();
+        let auto =
+            ui_playback(&json!({"tileId": "lib-kokoro", "action": "play", "origin": "auto"}))
+                .unwrap();
         assert_eq!(auto["args"]["origin"], "auto");
-        assert_eq!(ui_playback(&json!({"tileId": "lib-kokoro", "action": "play", "origin": "mcp"})).unwrap_err().0, -32602);
-        assert_eq!(ui_playback(&json!({"tileId": "lib-kokoro", "action": "pause", "origin": "user"})).unwrap_err().0, -32602);
-        assert!(ui_playback(&json!({"tileId": "lib-kokoro", "action": "pause"})).unwrap()["args"].get("origin").is_none());
+        assert_eq!(
+            ui_playback(&json!({"tileId": "lib-kokoro", "action": "play", "origin": "mcp"}))
+                .unwrap_err()
+                .0,
+            -32602
+        );
+        assert_eq!(
+            ui_playback(&json!({"tileId": "lib-kokoro", "action": "pause", "origin": "user"}))
+                .unwrap_err()
+                .0,
+            -32602
+        );
+        assert!(
+            ui_playback(&json!({"tileId": "lib-kokoro", "action": "pause"})).unwrap()["args"]
+                .get("origin")
+                .is_none()
+        );
     }
 
     #[test]
@@ -2088,16 +2285,14 @@ mod tests {
         assert_eq!(front_event["args"]["tileId"], "lib-misaki-kokoro");
         assert_eq!(front_event["args"]["face_index"], 0);
         assert_eq!(
-            front_event["args"]["flipped"],
-            false,
+            front_event["args"]["flipped"], false,
             "face front bus payload: {front_event}"
         );
         let explicit = ui_flip(&json!({"tileId": "lib-misaki-kokoro", "flipped": false})).unwrap();
         let explicit_event = bus_flip(explicit["seq"].as_u64().unwrap());
         assert_eq!(explicit_event["args"]["face_index"], 0);
         assert_eq!(
-            explicit_event["args"]["flipped"],
-            false,
+            explicit_event["args"]["flipped"], false,
             "flipped false bus payload: {explicit_event}"
         );
         ui_flip(&json!({"tileId": "lib-misaki-kokoro", "face": "relations"})).unwrap();
@@ -2106,14 +2301,16 @@ mod tests {
         assert_eq!(wrapped["args"]["face_index"], 0);
         let wrapped_event = bus_flip(wrapped["seq"].as_u64().unwrap());
         assert_eq!(
-            wrapped_event["args"]["flipped"],
-            false,
+            wrapped_event["args"]["flipped"], false,
             "next wrap bus payload: {wrapped_event}"
         );
         let back = ui_flip(&json!({"tileId": "lib-misaki-kokoro", "face": "back"})).unwrap();
         let back_event = bus_flip(back["seq"].as_u64().unwrap());
         assert_eq!(back_event["args"]["face_index"], 1);
-        assert_eq!(back_event["args"]["flipped"], true, "face back bus payload: {back_event}");
+        assert_eq!(
+            back_event["args"]["flipped"], true,
+            "face back bus payload: {back_event}"
+        );
     }
 
     #[test]
@@ -2148,22 +2345,38 @@ mod tests {
     }
 
     #[test]
+    fn local_playback_ids_correlate_both_reducer_and_transport_events() {
+        let _viewport = fresh_viewport();
+        let _bus = bind_fresh_bus();
+        let before = since(u64::MAX).cursor;
+        ui_playback(&json!({"tileId":"lib-kokoro","action":"play","clientRequestId":"local-123"})).unwrap();
+        let events = since(before).events;
+        assert!(events.iter().any(|e| e["op"] == "play"));
+        assert!(events.iter().any(|e| e["op"] == "playback"));
+        for event in events { assert_eq!(event["args"]["clientRequestId"], "local-123"); }
+        let pause = ui_playback(&json!({"tileId":"lib-kokoro","action":"pause","clientRequestId":"local-124"})).unwrap();
+        assert_eq!(pause["args"]["clientRequestId"], "local-124");
+        assert!(viewport_get()["ui"]["playing"].is_null());
+        for invalid in [json!(null), json!(7), json!(""), json!("unsafe\n"), json!("x".repeat(65))] {
+            assert_eq!(ui_playback(&json!({"tileId":"lib-kokoro","action":"play","clientRequestId":invalid})).unwrap_err().0, -32602);
+        }
+    }
+
+    #[test]
     fn user_play_publishes_focus_before_play() {
         let _viewport = fresh_viewport();
         let _bus = bind_fresh_bus();
         let before = since(u64::MAX).cursor;
-        let played = ui_playback(
-            &json!({"tileId": "lib-kokoro-onnx", "action": "play", "origin": "user"}),
-        )
-        .unwrap();
+        let played =
+            ui_playback(&json!({"tileId": "lib-kokoro-onnx", "action": "play", "origin": "user"}))
+                .unwrap();
         assert_eq!(played["args"]["origin"], "user");
         let seq = played["seq"].as_u64().unwrap();
         let delta = since(before);
         assert!(
             !delta.gap,
             "gap oldest={:?} cursor={}",
-            delta.oldest,
-            delta.cursor
+            delta.oldest, delta.cursor
         );
         let ops: Vec<_> = delta
             .events
@@ -2191,8 +2404,7 @@ mod tests {
         assert!(
             !after_auto.gap,
             "gap oldest={:?} cursor={}",
-            after_auto.oldest,
-            after_auto.cursor
+            after_auto.oldest, after_auto.cursor
         );
         let auto_ops: Vec<_> = after_auto
             .events
@@ -2222,10 +2434,7 @@ mod tests {
             stderr_lines(&bare_err)[0].contains("deprecated_bare_section"),
             "{bare_err}"
         );
-        assert!(
-            !bare_err.contains("deprecated_back_section"),
-            "{bare_err}"
-        );
+        assert!(!bare_err.contains("deprecated_back_section"), "{bare_err}");
         let warnings = bare["warnings"].as_array().expect(&bare.to_string());
         assert_eq!(warnings.len(), 1, "{warnings:?}");
         assert_eq!(warnings[0]["code"], "deprecated_bare_section");
@@ -2251,10 +2460,7 @@ mod tests {
             stderr_lines(&back_err)[0].contains("deprecated_back_section"),
             "{back_err}"
         );
-        assert!(
-            !back_err.contains("deprecated_bare_section"),
-            "{back_err}"
-        );
+        assert!(!back_err.contains("deprecated_bare_section"), "{back_err}");
         let back_warnings = backed["warnings"].as_array().expect(&backed.to_string());
         assert_eq!(back_warnings.len(), 1, "{back_warnings:?}");
         assert_eq!(back_warnings[0]["code"], "deprecated_back_section");
@@ -2279,29 +2485,54 @@ mod tests {
             ("profile-anton", "profile"),
         ];
         for (tile, face) in rows {
-            let (bare, bare_err) = stderr_during(|| {
-                ui_flip(&json!({"tileId": tile, "section": "honesty"}))
-            });
+            let (bare, bare_err) =
+                stderr_during(|| ui_flip(&json!({"tileId": tile, "section": "honesty"})));
             let bare = bare.unwrap_or_else(|err| panic!("{tile} bare honesty: {err:?}"));
             assert_eq!(bare["face_id"], face, "{tile} bare face");
-            assert_eq!(bare["warnings"].as_array().map(Vec::len), Some(1), "{tile} {bare}");
-            assert_eq!(bare["warnings"][0]["code"], "deprecated_bare_section", "{tile}");
+            assert_eq!(
+                bare["warnings"].as_array().map(Vec::len),
+                Some(1),
+                "{tile} {bare}"
+            );
+            assert_eq!(
+                bare["warnings"][0]["code"], "deprecated_bare_section",
+                "{tile}"
+            );
             let bare_lines = stderr_lines(&bare_err);
             assert_eq!(bare_lines.len(), 1, "{tile} bare stderr: {bare_err:?}");
-            assert!(bare_lines[0].contains("deprecated_bare_section"), "{tile} {bare_err}");
-            assert!(!bare_err.contains("deprecated_back_section"), "{tile} {bare_err}");
+            assert!(
+                bare_lines[0].contains("deprecated_bare_section"),
+                "{tile} {bare_err}"
+            );
+            assert!(
+                !bare_err.contains("deprecated_back_section"),
+                "{tile} {bare_err}"
+            );
 
             let (backed, back_err) = stderr_during(|| {
                 ui_flip(&json!({"tileId": tile, "face": "back", "section": "honesty"}))
             });
             let backed = backed.unwrap_or_else(|err| panic!("{tile} back+honesty: {err:?}"));
             assert_eq!(backed["face_id"], face, "{tile} back face");
-            assert_eq!(backed["warnings"].as_array().map(Vec::len), Some(1), "{tile} {backed}");
-            assert_eq!(backed["warnings"][0]["code"], "deprecated_back_section", "{tile}");
+            assert_eq!(
+                backed["warnings"].as_array().map(Vec::len),
+                Some(1),
+                "{tile} {backed}"
+            );
+            assert_eq!(
+                backed["warnings"][0]["code"], "deprecated_back_section",
+                "{tile}"
+            );
             let back_lines = stderr_lines(&back_err);
             assert_eq!(back_lines.len(), 1, "{tile} back stderr: {back_err:?}");
-            assert!(back_lines[0].contains("deprecated_back_section"), "{tile} {back_err}");
-            assert!(!back_err.contains("deprecated_bare_section"), "{tile} {back_err}");
+            assert!(
+                back_lines[0].contains("deprecated_back_section"),
+                "{tile} {back_err}"
+            );
+            assert!(
+                !back_err.contains("deprecated_bare_section"),
+                "{tile} {back_err}"
+            );
         }
     }
 
@@ -2309,6 +2540,14 @@ mod tests {
         text.lines().filter(|line| !line.is_empty()).collect()
     }
 
+    #[cfg(not(unix))]
+    fn stderr_during<T>(f: impl FnOnce() -> T) -> (T, String) {
+        TEST_STDERR.with(|output| output.borrow_mut().clear());
+        let value = f();
+        (value, TEST_STDERR.with(|output| output.take()))
+    }
+
+    #[cfg(unix)]
     fn stderr_during<T>(f: impl FnOnce() -> T) -> (T, String) {
         use std::sync::Mutex;
         static LOCK: Mutex<()> = Mutex::new(());

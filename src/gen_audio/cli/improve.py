@@ -8,6 +8,7 @@ from pathlib import Path
 
 from gen_audio.artifacts import publish_copy
 from gen_audio.audio_io import read_wav, write_wav
+from gen_audio.audio_metadata import read_artist
 from gen_audio.improve import HIGHPASS_HZ, PEAK_TARGET, PUBLISH_SAMPLE_RATE, TRIM_PAD_MS, TRIM_THRESHOLD_DB, improve
 
 
@@ -37,7 +38,8 @@ def main(argv: list[str] | None = None) -> int:
             threshold_db=args.threshold_db,
             pad_ms=args.pad_ms,
         )
-        write_wav(args.output, result.audio, result.sample_rate)
+        artist = read_artist(args.input)
+        write_wav(args.output, result.audio, result.sample_rate, agent_names=artist.split("; ") if artist else ())
         durable = publish_copy(args.output, args.artifact_dir)
     except (OSError, ValueError) as exc:
         print(f"error: {exc}", file=sys.stderr)

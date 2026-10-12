@@ -3,7 +3,12 @@
 Call one Gen-Audio MCP tool over HTTP JSON-RPC (tools/call) and print the result.
 
 .DESCRIPTION
-Finds the server the same way the desktop app binds it, then checks that the
+Requires GEN_AUDIO_MCP_TOKEN (64 hex digits) in the process environment, or
+-ConnectionFile / GEN_AUDIO_MCP_CONNECTION_FILE naming the desktop's private
+transient connection export (addr, token, handshake_ok). Never put the token
+in command arguments or a URL. A connection export pins discovery to its
+owned address. Otherwise finds the server the same way the desktop binds it,
+then checks that the
 port really is Gen-Audio (initialize, serverInfo.name = gen-audio):
   1. -Port, when given
   2. GEN_AUDIO_MCP_ADDR (host:port), the desktop app's preferred address
@@ -32,10 +37,13 @@ pwsh -NoProfile -File scripts/mcp-call.ps1 -Tool viewport_get -OutFile artifacts
 param(
     [Parameter(Mandatory = $true)][string]$Tool,
     [string]$ArgsJson = '{}',
+    [ValidateRange(0, 65535)]
     [int]$Port = 0,
+    [ValidateRange(1, 3600)]
     [int]$TimeoutSec = 15,
     # Write only the JSON-RPC response body here (UTF-8, no BOM); header and exit=<N> go to stderr.
-    [string]$OutFile = ''
+    [string]$OutFile = '',
+    [string]$ConnectionFile = $env:GEN_AUDIO_MCP_CONNECTION_FILE
 )
 
 $ErrorActionPreference = 'Stop'
@@ -44,7 +52,12 @@ Set-StrictMode -Version 2.0
 
 function Invoke-JsonRpc {
     param([Parameter(Mandatory = $true)][string]$Address, [Parameter(Mandatory = $true)][string]$Body, [int]$Timeout = 5)
-    $response = Invoke-WebRequest -Uri "http://$Address/mcp" -Method POST -ContentType 'application/json' -Body ([System.Text.Encoding]::UTF8.GetBytes($Body)) -UseBasicParsing -TimeoutSec $Timeout
+    try {
+        $response = Invoke-WebRequest -Uri "http://$Address/mcp" -Method POST -ContentType 'application/json' -Body ([System.Text.Encoding]::UTF8.GetBytes($Body)) -Headers $script:authHeaders -MaximumRedirection 0 -UseBasicParsing -TimeoutSec $Timeout -Verbose:$false
+    } catch {
+        # Do not echo an HTTP error body or headers that could contain auth.
+        throw "MCP HTTP request failed at $Address (check the owned connection and its authentication)"
+    }
     $text = $response.Content
     if ($text -is [byte[]]) { $text = [System.Text.Encoding]::UTF8.GetString($text) }
     return $text
@@ -56,12 +69,37 @@ function Test-GenAudioMcp {
     $init = '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-03-26","capabilities":{},"clientInfo":{"name":"mcp-call","version":"0.1.0"}}}'
     try {
         $reply = (Invoke-JsonRpc -Address $Address -Body $init -Timeout 3) | ConvertFrom-Json
-        return ($reply.result.serverInfo.name -eq 'gen-audio')
+        return ($reply.result.serverInfo.name -eq 'gen-audio' -and $reply.result.protocolVersion -eq '2025-03-26')
     } catch {
         Write-Verbose "no Gen-Audio MCP at ${Address}: $($_.Exception.Message)"
         return $false
     }
 }
+
+function Test-LoopbackAddress {
+    [OutputType([bool])]
+    param([string]$Address)
+    return ($Address -match '\A(?:127\.0\.0\.1|localhost|\[::1\]):([1-9][0-9]{0,4})\z' -and [int]$Matches[1] -le 65535)
+}
+
+$token = $env:GEN_AUDIO_MCP_TOKEN
+$ownedAddress = $null
+if ($ConnectionFile) {
+    try {
+        $file = Get-Item -LiteralPath $ConnectionFile
+        if ($file.Length -le 0 -or $file.Length -gt 65536) { throw 'invalid size' }
+        $connection = Get-Content -LiteralPath $file.FullName -Raw -Encoding UTF8 | ConvertFrom-Json
+        if ($connection.handshake_ok -isnot [bool] -or -not $connection.handshake_ok -or -not (Test-LoopbackAddress -Address $connection.addr)) { throw 'invalid connection' }
+        $token = [string]$connection.token
+        $ownedAddress = [string]$connection.addr
+    } catch {
+        throw 'the connection file must be a usable private desktop connection export'
+    }
+    if ($Port -gt 0 -and $ownedAddress -ne "127.0.0.1:$Port") { throw '-Port conflicts with the owned connection export; omit -Port' }
+}
+if ($token -notmatch '\A[0-9a-fA-F]{64}\z') { throw 'set GEN_AUDIO_MCP_TOKEN to the owned server bearer (64 hex digits), or supply -ConnectionFile; never pass credentials in a URL' }
+$script:authHeaders = @{ Authorization = "Bearer $token" }
+$token = $null
 
 try {
     $arguments = $ArgsJson | ConvertFrom-Json
@@ -73,10 +111,15 @@ if ($null -eq $arguments -or $arguments -is [array] -or $arguments -is [string] 
 }
 
 $candidates = New-Object System.Collections.Generic.List[string]
-if ($Port -gt 0) {
+if ($ownedAddress) {
+    $candidates.Add($ownedAddress)
+} elseif ($Port -gt 0) {
     $candidates.Add("127.0.0.1:$Port")
 } else {
-    if ($env:GEN_AUDIO_MCP_ADDR) { $candidates.Add($env:GEN_AUDIO_MCP_ADDR) }
+    if ($env:GEN_AUDIO_MCP_ADDR) {
+        if (-not (Test-LoopbackAddress -Address $env:GEN_AUDIO_MCP_ADDR)) { throw 'GEN_AUDIO_MCP_ADDR must be a loopback host:port without credentials, path or query' }
+        $candidates.Add($env:GEN_AUDIO_MCP_ADDR)
+    }
     $candidates.Add('127.0.0.1:8765')
     if ((Test-IsWindowsHost) -and (Get-Command Get-NetTCPConnection -ErrorAction SilentlyContinue)) {
         $owners = @(Get-Process -ErrorAction SilentlyContinue | Where-Object { $_.ProcessName -like 'gen-audio*' } | ForEach-Object { $_.Id })

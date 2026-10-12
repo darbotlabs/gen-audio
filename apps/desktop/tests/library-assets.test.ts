@@ -1,97 +1,98 @@
-// A catalog fetch used to resolve null with the error thrown away, which made
-// the window's catalog catch dead. An unsafe media path used to return false
-// with no log.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { loadLibraryCatalog, resetLibraryCatalogForTest } from "../src/library-assets.ts";
+import { readFileSync } from "node:fs";
+import { comparisonMethod, loadLibraryCatalog, parseLibraryCatalog, resetLibraryCatalogForTest, sourceSha256 } from "../src/library-assets.ts";
+import { envelopeIdentityUid, glyphFromUid } from "../src/asset.ts";
 
-const CUBE = "ga:cube_ihdr:biaxxmnibxtcur7nxdu3ffvna4";
-
-function envelope(path: string): unknown {
-  return {
-    uid: CUBE,
-    kind: "cube_ihdr",
-    status: "real",
-    fields: {},
-    media: [{ role: "cube_json", path, sha256: "ab", bytes: 1 }],
-    src: [],
-    display: { title: "Cube", glyph: "y" },
-  };
-}
+const document = JSON.parse(readFileSync(new URL("../public/library/assets.json", import.meta.url), "utf8"));
+const dev = JSON.parse(readFileSync(new URL("../../../schemas/asset-object/fixtures/assets.dev.json", import.meta.url), "utf8"));
 
 test("a failed library catalog fetch rejects and is tried again", async () => {
   resetLibraryCatalogForTest();
-  const warnings: string[] = [];
-  const original = console.warn;
-  console.warn = (message?: unknown) => {
-    warnings.push(String(message));
-  };
   let fetches = 0;
-  const originalFetch = globalThis.fetch;
-  globalThis.fetch = (async () => {
-    fetches += 1;
-    throw new TypeError("offline");
-  }) as typeof fetch;
+  const original = globalThis.fetch;
+  globalThis.fetch = async () => { fetches++; throw new TypeError("offline"); };
   try {
-    const offline = (error: unknown) => error instanceof TypeError && error.message === "offline";
-    await assert.rejects(loadLibraryCatalog(), offline);
-    await assert.rejects(loadLibraryCatalog(), offline);
-    assert.equal(fetches, 2, "a failed load must not stick in the cache");
-    assert.deepEqual(warnings, [], "the loader must not swallow the rejection");
+    await assert.rejects(loadLibraryCatalog(), /offline/);
+    await assert.rejects(loadLibraryCatalog(), /offline/);
+    assert.equal(fetches, 2);
   } finally {
-    console.warn = original;
-    globalThis.fetch = originalFetch;
+    globalThis.fetch = original;
     resetLibraryCatalogForTest();
   }
 });
 
-test("an unsafe library media path is dropped and logged", async () => {
+test("unsafe media rejects the complete catalog instead of showing partial data", () => {
+  const bad = structuredClone(document);
+  bad.assets.find((asset: any) => asset.media.length).media[0].path = "../secret.wav";
+  assert.throws(() => parseLibraryCatalog(bad), /Invalid library catalog/);
+  assert.equal(parseLibraryCatalog(document).assets.length, document.assets.length);
+});
+
+test("only explicit extra assets add the development deck", async () => {
   resetLibraryCatalogForTest();
-  const warnings: string[] = [];
-  const original = console.warn;
-  console.warn = (message?: unknown) => {
-    warnings.push(String(message));
-  };
-  const originalFetch = globalThis.fetch;
-  globalThis.fetch = (async () =>
-    new Response(JSON.stringify({ assets: [envelope("../secret.wav")] }), {
-      status: 200,
-      headers: { "content-type": "application/json" },
-    })) as typeof fetch;
+  const original = globalThis.fetch;
+  globalThis.fetch = async () => Response.json(document);
   try {
-    const catalog = await loadLibraryCatalog();
-    assert.equal(catalog?.assets.length, 0);
-    assert.deepEqual(warnings, [
-      'gen-audio: library asset: Error: media_path_dotdot: "../secret.wav" walks out of the library root',
-    ]);
+    const release = await loadLibraryCatalog();
+    assert.equal(release?.assets.length, document.assets.length);
+    resetLibraryCatalogForTest();
+    const expanded = await loadLibraryCatalog(Promise.resolve(dev.assets));
+    assert.equal(expanded?.assets.length, document.assets.length + dev.assets.length);
   } finally {
-    console.warn = original;
-    globalThis.fetch = originalFetch;
+    globalThis.fetch = original;
     resetLibraryCatalogForTest();
   }
 });
 
-test("a library media path inside the root is kept and not logged", async () => {
+test("dangling relationships and relationship cycles are rejected", () => {
+  const bad = structuredClone(document);
+  const card = bad.assets.find((asset: any) => asset.kind === "card");
+  card.relations = { bound_to: ["ga:card:aaaaaaaaaaaaaaaaaaaaaaaaaa"] };
+  assert.throws(() => parseLibraryCatalog(bad), /Missing library relation/);
+  card.relations = { bound_to: [card.uid] };
+  assert.throws(() => parseLibraryCatalog(bad), /Invalid library source graph/);
+});
+
+test("raw float tokens in identity are not silently coerced to integers", async () => {
   resetLibraryCatalogForTest();
-  const warnings: string[] = [];
-  const original = console.warn;
-  console.warn = (message?: unknown) => {
-    warnings.push(String(message));
-  };
-  const originalFetch = globalThis.fetch;
-  globalThis.fetch = (async () =>
-    new Response(JSON.stringify({ assets: [envelope("clip.wav")] }), {
-      status: 200,
-      headers: { "content-type": "application/json" },
-    })) as typeof fetch;
+  const original = globalThis.fetch;
+  const text = JSON.stringify(document).replace(/"duration_ms":(\d+)/, '"duration_ms":$1.0');
+  globalThis.fetch = async () => new Response(text);
   try {
-    const catalog = await loadLibraryCatalog();
-    assert.equal(catalog?.assets.length, 1);
-    assert.equal(catalog?.assets[0]?.uid, CUBE);
-    assert.deepEqual(warnings, []);
+    await assert.rejects(loadLibraryCatalog(), /float_in_identity/);
   } finally {
-    console.warn = original;
-    globalThis.fetch = originalFetch;
+    globalThis.fetch = original;
     resetLibraryCatalogForTest();
   }
+});
+
+test("comparison cubes never replace the primary cube or its model row", () => {
+  const doc = structuredClone(document);
+  const primary = doc.assets.find((asset: any) => asset.kind === "cube_ihdr" && asset.fields.layer_method === "library_r3");
+  const comparison = structuredClone(primary);
+  comparison.legacy_id = `${primary.legacy_id}.test-comparison`;
+  comparison.fields.layer_method = "pipeline_r2";
+  comparison.fields.cube_revision = 2;
+  comparison.provenance.layer_method = "pipeline_r2";
+  comparison.provenance.params.layer_method = "pipeline_r2";
+  comparison.uid = envelopeIdentityUid(comparison);
+  comparison.display.glyph = glyphFromUid(comparison.uid);
+  doc.assets.unshift(comparison);
+  doc.legacy_index[`cube_ihdr:${comparison.legacy_id}`] = comparison.uid;
+  const catalog = parseLibraryCatalog(doc);
+  assert.equal(catalog.derivedFrom(primary.src[0], "cube_ihdr")?.uid, primary.uid);
+  assert.ok(catalog.compareCubesFor(primary.src[0]).some((cube) => cube.uid === comparison.uid));
+  assert.equal(sourceSha256(comparison), sourceSha256(primary));
+  const clip = catalog.byUid.get(primary.src[0])!;
+  const model = catalog.byUid.get(String(clip.provenance?.voice_model))!;
+  const rows = catalog.modelCubes(model.legacy_id!);
+  assert.equal(rows.state, "cubes");
+  if (rows.state === "cubes") {
+    assert.ok(rows.rows.some((row) => row.cubeUid === primary.uid));
+    assert.ok(rows.rows.every((row) => row.cubeUid !== comparison.uid));
+  }
+  const nextPrimary = structuredClone(primary);
+  nextPrimary.fields.layer_method = "library_r4";
+  assert.equal(comparisonMethod(nextPrimary), null, "new primary revisions are not comparisons");
 });

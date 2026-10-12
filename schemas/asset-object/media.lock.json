@@ -1,44 +1,60 @@
 {
   "cubes": {
     "bitdot_braille_vibevoice_cube3d.png": {
-      "bytes": 1124509,
-      "sha256": "1ea85c43b0d04aa43bab466be3c5adb7e5fc8579da78cd7fd52f1dc2e01ec57c"
+      "bytes": 1069907,
+      "sha256": "1af37abf4ed2b4cf4caaf8f851909d41e7d0f3a34c80246283cba356648b3c7f"
+    },
+    "bitdot_braille_vibevoice_pipeline_r2_cube3d.png": {
+      "bytes": 876644,
+      "sha256": "be5cdaae21b4e677d3acdc3f8ef6ac00d0af3bc25fd63288a056e181bef0b009"
     },
     "genaid_full_misaki_kokoro_cube3d.png": {
-      "bytes": 1206082,
-      "sha256": "d21e741825dff7f955b49617246d6331ba0c4161af1e8b1b52fd94c459805533"
+      "bytes": 1173295,
+      "sha256": "affd4dd12852eda3756b8fc8681ba29de6ea2f917afe4dd2da03aefd516bc82d"
+    },
+    "genaid_full_misaki_kokoro_pipeline_r2_cube3d.png": {
+      "bytes": 1042829,
+      "sha256": "17630252c2574e55441a49d97cc45a526c8da8300a7b7cc7521921bf5da0827e"
     },
     "library_bitdot_braille_vibevoice_cube3d.json": {
       "bytes": 294618,
-      "sha256": "db383ad7a31dd2c34f7c72f546508c5d5fd3f899e1267806f1aced8ef676924e"
+      "sha256": "5f25aedc82fd492648b69c500968bba344be891cb1292ae413980997849b32b0"
+    },
+    "library_bitdot_braille_vibevoice_pipeline_r2_cube3d.json": {
+      "bytes": 294021,
+      "sha256": "f85bf675a78a6f2f9dac701ffd23d17446d5e55526ebac8000a6703a68d33270"
     },
     "library_cube_explainer_kokoro_onnx_cube3d.json": {
       "bytes": 295214,
-      "sha256": "2536728879d069d96fc14e7c3eac515631dfedcc5cba7ce2f789d3a2d35798d6"
+      "sha256": "1629ba8bc52efc4ed5716bc24f1a5b9f21dcf3858c85d287954b9146f67f7c75"
     },
     "library_cube_explainer_kokoro_onnx_cube3d.png": {
-      "bytes": 1232624,
-      "sha256": "b410800589bc706ef7c03af9ed14fac5d1f61403b53ba8e28261fcaa29e01d74"
+      "bytes": 1202498,
+      "sha256": "94357b4057b9ba0d651ae4763bfc05828dca8df176fdb60a831a383d12866707"
     },
     "library_genaid_full_misaki_kokoro_cube3d.json": {
       "bytes": 295385,
-      "sha256": "995ff66a4e251c912dc69c1068fbbbea613131c8bdfcaf46381f4a7f8b62ebec"
+      "sha256": "dfb841a50ac4c9ca6ce870eb7c358ff1dab1a34a9f82ae0d20eeb2c9b183fe2f"
+    },
+    "library_genaid_full_misaki_kokoro_pipeline_r2_cube3d.json": {
+      "bytes": 294909,
+      "sha256": "5e4d44961d27bb9f82fba0a1db566e9efe7d42ab0303a062fb5eaa8c853f6bab"
     },
     "library_kokoro_cube3d.json": {
       "bytes": 294733,
-      "sha256": "8fb7a7041c23b67f7a6cfa51e94886e59d44956b134e160fc104096774a6dcd1"
+      "sha256": "2db400795a55825f2b6a8df9cdaf1617862102ed8920e63f04c986f8dec7138f"
     },
     "library_kokoro_cube3d.png": {
-      "bytes": 1183578,
-      "sha256": "817f85e3075199a34c2c0b8f6f17bea95d8131d41607ef935641fc9a06d5f495"
+      "bytes": 1148156,
+      "sha256": "abb7bca7c2abdc4261d1f4c75a41fba31f11aec4a16a79f88e50201570f4b46c"
     },
     "library_kokoro_onnx_cube3d.json": {
       "bytes": 292987,
-      "sha256": "0ddf8f6cb7a3616202eb126a94106a23d03f170d558d8fe1ec4bc9d118216789"
+      "sha256": "f920d1cae9eaadae0ee069acd885e56a3a2bd45599f322eb22d2c47e53638262"
     },
     "library_kokoro_onnx_cube3d.png": {
-      "bytes": 1143876,
-      "sha256": "d423f12eadb42646b49e89e6b7430ca5ec667ae2b68dd50a2a6d592b34e0e926"
+      "bytes": 1108088,
+      "sha256": "40c32f3334a240cbf11fcbf21233b29f3146ee4d827c53585011a807c31b2f51"
     }
   },
   "media": {

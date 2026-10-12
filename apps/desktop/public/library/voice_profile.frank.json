@@ -1,0 +1,267 @@
+{
+  "accent": "General American",
+  "adaptiveCard": {
+    "$schema": "https://adaptivecards.io/schemas/adaptive-card.json",
+    "actions": [
+      {
+        "data": {
+          "arguments": {
+            "agents": [
+              "frank"
+            ]
+          },
+          "tool": "ui_set_sidepane"
+        },
+        "title": "Use Frank",
+        "type": "Action.Submit"
+      },
+      {
+        "data": {
+          "arguments": {
+            "slide": "slide:studio"
+          },
+          "tool": "ui_navigate"
+        },
+        "title": "Gen-Audio desktop studio",
+        "type": "Action.Submit"
+      },
+      {
+        "data": {
+          "arguments": {
+            "slide": "slide:library"
+          },
+          "tool": "ui_navigate"
+        },
+        "title": "Gen-Audio SDK and audio library",
+        "type": "Action.Submit"
+      },
+      {
+        "data": {
+          "arguments": {
+            "referenceId": "en-Frank_man"
+          },
+          "tool": "voice_reference_prepare"
+        },
+        "title": "Prepare Frank",
+        "type": "Action.Submit"
+      }
+    ],
+    "body": [
+      {
+        "text": "Frank",
+        "type": "TextBlock",
+        "weight": "Bolder",
+        "wrap": true
+      },
+      {
+        "facts": [
+          {
+            "title": "AgentName",
+            "value": "Frank"
+          },
+          {
+            "title": "Artist",
+            "value": "Frank"
+          },
+          {
+            "title": "Purpose",
+            "value": "Second chair on a briefing"
+          },
+          {
+            "title": "Domain",
+            "value": "Multi-speaker scripts"
+          },
+          {
+            "title": "Accent",
+            "value": "General American"
+          },
+          {
+            "title": "Traits",
+            "value": "Persona Frank is the agent name. Kokoro pack id am_michael is a reference, not the Voice selector."
+          }
+        ],
+        "type": "FactSet"
+      },
+      {
+        "text": "Engine bindings",
+        "type": "TextBlock",
+        "weight": "Bolder"
+      },
+      {
+        "facts": [
+          {
+            "title": "kokoro_onnx",
+            "value": "script_tts / mapped / am_michael"
+          },
+          {
+            "title": "kokoro_dayour",
+            "value": "script_tts / mapped / am_michael"
+          },
+          {
+            "title": "misaki",
+            "value": "g2p / mapped / am_michael"
+          },
+          {
+            "title": "vibevoice",
+            "value": "script_tts / mapped / en-Frank_man"
+          },
+          {
+            "title": "personaplex",
+            "value": "speech_to_speech / mapped / en-Frank_man"
+          },
+          {
+            "title": "magpie",
+            "value": "script_tts / unmapped / No binding assigned"
+          },
+          {
+            "title": "pocket_tts",
+            "value": "script_tts / unmapped / No binding assigned"
+          }
+        ],
+        "type": "FactSet"
+      },
+      {
+        "text": "Reference samples: Frank",
+        "type": "TextBlock",
+        "wrap": true
+      },
+      {
+        "text": "Projects: Gen-Audio desktop studio (apps/desktop); Gen-Audio SDK and audio library (src/gen_audio)",
+        "type": "TextBlock",
+        "wrap": true
+      }
+    ],
+    "type": "AdaptiveCard",
+    "version": "1.5"
+  },
+  "agentName": "Frank",
+  "disclaimer": "Persona config for Frank on voice model kokoro-onnx. No audio of this persona yet; not a podcast render.",
+  "domain": "Multi-speaker scripts",
+  "engineManifests": {
+    "kokoro_dayour": {
+      "adapter": "external",
+      "capability": "script_tts",
+      "language": "en-us",
+      "mapping": "mapped",
+      "requires": [
+        "external_runtime"
+      ],
+      "voiceId": "am_michael"
+    },
+    "kokoro_onnx": {
+      "adapter": "synth",
+      "capability": "script_tts",
+      "language": "en-us",
+      "mapping": "mapped",
+      "requires": [
+        "kokoro_model",
+        "kokoro_voice_pack"
+      ],
+      "voiceId": "am_michael"
+    },
+    "magpie": {
+      "adapter": "external",
+      "capability": "script_tts",
+      "language": "en",
+      "mapping": "unmapped",
+      "requires": [
+        "external_runtime",
+        "voice_mapping"
+      ]
+    },
+    "misaki": {
+      "adapter": "g2p",
+      "capability": "g2p",
+      "downstreamEngine": "kokoro_onnx",
+      "language": "en-us",
+      "mapping": "mapped",
+      "requires": [
+        "kokoro_waveform_engine"
+      ],
+      "voiceId": "am_michael"
+    },
+    "personaplex": {
+      "adapter": "model_generate",
+      "capability": "speech_to_speech",
+      "language": "en",
+      "mapping": "mapped",
+      "referenceId": "en-Frank_man",
+      "requires": [
+        "isolated_python312",
+        "personaplex_checkpoint",
+        "input_audio",
+        "persona_prompt",
+        "reference_wav"
+      ]
+    },
+    "pocket_tts": {
+      "adapter": "external",
+      "capability": "script_tts",
+      "language": "en",
+      "mapping": "unmapped",
+      "requires": [
+        "external_runtime",
+        "voice_mapping"
+      ]
+    },
+    "vibevoice": {
+      "adapter": "model_generate",
+      "capability": "script_tts",
+      "language": "en",
+      "mapping": "mapped",
+      "referenceId": "en-Frank_man",
+      "requires": [
+        "isolated_python312",
+        "vibevoice_checkpoint",
+        "local_tokenizer",
+        "reference_wav"
+      ]
+    }
+  },
+  "linkedProjects": [
+    {
+      "id": "gen-audio-desktop",
+      "name": "Gen-Audio desktop studio",
+      "path": "apps/desktop",
+      "slide": "studio"
+    },
+    {
+      "id": "gen-audio-sdk",
+      "name": "Gen-Audio SDK and audio library",
+      "path": "src/gen_audio",
+      "slide": "library"
+    }
+  ],
+  "metadata": {
+    "artist": "Frank"
+  },
+  "notPodcast": true,
+  "personaId": "frank",
+  "profileVersion": "2.0",
+  "purpose": "Second chair on a briefing",
+  "refs": [
+    "kokoro-pack:am_michael",
+    "persona:frank"
+  ],
+  "samples": [
+    {
+      "kind": "acoustic_reference",
+      "label": "Frank",
+      "referenceId": "en-Frank_man"
+    }
+  ],
+  "spectrogram2d": "none",
+  "spectrogram3d": "none",
+  "synthesizedSpeech": false,
+  "tags": [
+    "agent",
+    "frank",
+    "script_tts",
+    "g2p",
+    "speech_to_speech"
+  ],
+  "tone": "plain",
+  "traits": "Persona Frank is the agent name. Kokoro pack id am_michael is a reference, not the Voice selector.",
+  "voiceLabel": "kokoro-onnx",
+  "voiceModel": "kokoro_onnx"
+}

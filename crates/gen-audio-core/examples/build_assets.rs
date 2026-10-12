@@ -3,7 +3,7 @@
 //! cargo run -p gen-audio-core --example build_assets [-- --from-lock]
 //!
 //! Reads manifest.json, the catalog voice models, viewport.example.json,
-//! voice_profile.optimus.json, the cube JSON files and the spectrogram
+//! canonical profile-v2 bindings, primary/comparison cube JSON files and the spectrogram
 //! sidecars, hashes every referenced media file under
 //! apps/desktop/public/library, and writes the outputs below.
 //!
@@ -95,13 +95,24 @@ fn main() {
     let root = repo();
     let library = root.join("apps/desktop/public/library");
     let lock_path = root.join("schemas/asset-object/media.lock.json");
-    let lock_doc = if from_lock { read_json(&lock_path) } else { json!({}) };
+    let lock_doc = read_json(&lock_path);
     let lock: Map<String, Value> = lock_doc["media"].as_object().cloned().unwrap_or_default();
     let locked_cubes: Map<String, Value> = lock_doc["cubes"].as_object().cloned().unwrap_or_default();
     let manifest = read_json(&library.join("manifest.json"));
     let viewport_path = root.join("schemas/examples/viewport.example.json");
-    let viewport = read_json(&viewport_path);
-    let cards = viewport["cards"].as_array().cloned().unwrap_or_default();
+    let mut viewport = read_json(&viewport_path);
+    let mut cards = viewport["cards"].as_array().cloned().unwrap_or_default();
+    for persona in catalog::personas() {
+        let profile = catalog::voice_profile_value(persona.id).expect("unified profile");
+        if let Some(card) = cards.iter_mut().find(|card| card["kind"] == "VoiceProfile" && card["body"]["personaId"] == persona.id) {
+            card["body"] = profile;
+        } else {
+            cards.push(json!({
+                "id": format!("profile-{}", persona.id), "kind": "VoiceProfile",
+                "title": persona.name, "body": profile,
+            }));
+        }
+    }
 
     let mut media = Map::new();
     let mut missing: Vec<String> = Vec::new();
@@ -110,7 +121,7 @@ fn main() {
         let wav = path.ends_with(".wav");
         let Ok(bytes) = fs::read(&full) else {
             match lock.get(path) {
-                Some(locked) if wav => {
+                Some(locked) if wav && from_lock => {
                     media.insert(path.to_string(), locked.clone());
                 }
                 _ if wav && from_lock => missing.push(format!("{path} (not on disk and not in media.lock.json)")),
@@ -128,7 +139,7 @@ fn main() {
             }
             if let Some(locked) = lock.get(path) {
                 if locked != &info {
-                    missing.push(format!("{path} differs from media.lock.json; rerun build_assets without --from-lock"));
+                    missing.push(format!("{path} differs from the immutable WAV facts in media.lock.json"));
                 }
             }
         }
@@ -141,12 +152,16 @@ fn main() {
         if let Some(path) = clip["wavUrl"].as_str().and_then(|url| url.strip_prefix("/library/")) {
             hash(path);
         }
-        for key in ["jsonUrl", "pngUrl"] {
-            if let Some(path) = clip["cube"][key].as_str().and_then(|url| url.strip_prefix("/library/")) {
-                hash(path);
-                cube_files.push(path.to_string());
-                if key == "jsonUrl" {
-                    cube_docs.insert(path.to_string(), read_json(&library.join(path)));
+        let mut cubes = vec![clip["cube"].clone()];
+        cubes.extend(clip["cube"]["compare"].as_array().cloned().unwrap_or_default());
+        for cube in cubes {
+            for key in ["jsonUrl", "pngUrl"] {
+                if let Some(path) = cube[key].as_str().and_then(|url| url.strip_prefix("/library/")) {
+                    hash(path);
+                    cube_files.push(path.to_string());
+                    if key == "jsonUrl" {
+                        cube_docs.insert(path.to_string(), read_json(&library.join(path)));
+                    }
                 }
             }
         }
@@ -164,8 +179,18 @@ fn main() {
         }
     }
 
-    let optimus_path = "voice_profile.optimus.json";
-    hash(optimus_path);
+    let mut profiles = Vec::new();
+    for persona in catalog::personas() {
+        let profile = catalog::voice_profile_value(persona.id).expect("unified profile");
+        let path = format!("voice_profile.{}.json", persona.id);
+        let text = serde_json::to_string_pretty(&profile).unwrap() + "\n";
+        fs::write(library.join(&path), &text).expect("profile JSON");
+        if matches!(persona.id, "alice" | "optimus") {
+            fs::write(root.join("schemas/examples").join(&path), &text).expect("profile example");
+        }
+        hash(&path);
+        profiles.push(json!({"path": path, "profile": profile}));
+    }
     drop(hash);
     if !missing.is_empty() {
         fail(format!("missing or mismatched media:\n  {}", missing.join("\n  ")));
@@ -182,18 +207,20 @@ fn main() {
     // The cube regen check without WAVs: each cube JSON names the sha256 of
     // the WAV it was made from; it must be the WAV (or locked WAV) of its clip.
     for clip in manifest["clips"].as_array().cloned().unwrap_or_default() {
-        let (Some(wav), Some(cube)) = (
-            clip["wavUrl"].as_str().and_then(|url| url.strip_prefix("/library/")),
-            clip["cube"]["jsonUrl"].as_str().and_then(|url| url.strip_prefix("/library/")),
-        ) else {
+        let Some(wav) = clip["wavUrl"].as_str().and_then(|url| url.strip_prefix("/library/")) else {
             continue;
         };
         let want = media.get(wav).and_then(|info| info["sha256"].as_str()).unwrap_or_default();
-        match cube_docs.get(cube).and_then(|doc| doc["source_sha256"].as_str()) {
-            Some(got) if got == want => {}
-            Some(got) => fail(format!("{cube} was made from WAV sha256 {got}, but {wav} is {want}; regenerate the cube")),
-            None if from_lock => fail(format!("{cube} has no source_sha256, so CI cannot tie it to {wav}; regenerate it with cube_revision.py layers")),
-            None => {}
+        let mut cubes = vec![clip["cube"].clone()];
+        cubes.extend(clip["cube"]["compare"].as_array().cloned().unwrap_or_default());
+        for cube in cubes {
+            let Some(path) = cube["jsonUrl"].as_str().and_then(|url| url.strip_prefix("/library/")) else { continue };
+            match cube_docs.get(path).and_then(|doc| doc["source_sha256"].as_str()) {
+                Some(got) if got == want => {}
+                Some(got) => fail(format!("{path} was made from WAV sha256 {got}, but {wav} is {want}; regenerate the cube")),
+                None if from_lock => fail(format!("{path} has no source_sha256, so CI cannot tie it to {wav}; regenerate it with cube_revision.py layers")),
+                None => {}
+            }
         }
     }
     // Cube identity (item 2): a cube JSON names the CRLF-normalized sha256 of
@@ -210,13 +237,6 @@ fn main() {
             fail(format!("{name} was made by {generator} sha256 {recorded}, but it now hashes to {current} (CRLF->LF); regenerate cubes with cube_revision.py layers"));
         }
     }
-    let mut profiles = vec![json!({"path": optimus_path, "profile": read_json(&library.join(optimus_path))})];
-    for card in &cards {
-        if card["kind"] == "VoiceProfile" && card["body"]["personaId"] != "optimus" {
-            profiles.push(json!({"profile": card["body"]}));
-        }
-    }
-
     let bundle = json!({
         "manifest": manifest,
         "voice_models": serde_json::to_value(catalog::voice_models()).expect("voice models"),
@@ -265,26 +285,14 @@ fn main() {
     });
     fs::write(root.join("schemas/asset-object/vectors/fixtures_v1.json"), pretty(&fixtures)).expect("write fixtures");
 
-    // Card uid alongside id in viewport.example.json (line-level edit keeps the file's layout).
+    // Profiles and card uids are generated together, so every deck binds current profile bytes.
     let index = migrated["legacy_index"].as_object().cloned().unwrap_or_default();
-    let text = fs::read_to_string(&viewport_path).expect("viewport");
-    let mut out = String::new();
-    let mut lines = text.lines().peekable();
-    while let Some(line) = lines.next() {
-        if line.trim_start().starts_with("\"uid\": \"ga:card:") {
-            continue;
-        }
-        out.push_str(line);
-        out.push('\n');
-        let trimmed = line.trim_start();
-        if let Some(rest) = trimmed.strip_prefix("\"id\": \"") {
-            let id = rest.trim_end_matches(',').trim_end_matches('"');
-            if let Some(uid) = index.get(&format!("card:{id}")).and_then(Value::as_str) {
-                let indent = &line[..line.len() - trimmed.len()];
-                out.push_str(&format!("{indent}\"uid\": \"{uid}\",\n"));
-            }
-        }
+    for card in &mut cards {
+        let key = format!("card:{}", card["id"].as_str().expect("card id"));
+        card["uid"] = index.get(&key).expect("card uid").clone();
     }
+    viewport["cards"] = json!(cards);
+    let out = pretty(&viewport);
     fs::write(&viewport_path, &out).expect("write viewport");
 
     // The shipped deck: the example minus every card whose asset is a dev fixture.

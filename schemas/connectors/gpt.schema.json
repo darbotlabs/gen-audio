@@ -3,10 +3,12 @@
   "$id": "https://github.com/darbotlabs/gen-audio/schemas/connectors/gpt.schema.json",
   "title": "GptConnectorConfig",
   "type": "object",
+  "additionalProperties": false,
   "properties": {
-    "OPENAI_API_KEY": { "type": "string", "description": "Secret. Never commit it." },
-    "OPENAI_MODEL": { "type": "string", "default": "gpt-4o-mini" },
-    "OPENAI_BASE_URL": { "type": "string", "default": "https://api.openai.com/v1" },
+    "OPENAI_API_KEY": { "type": "string", "minLength": 1, "maxLength": 8192, "pattern": "^[^\\u0000-\\u001f\\u007f]+$", "description": "Secret. Never commit it." },
+    "OPENAI_MODEL": { "type": "string", "minLength": 1, "maxLength": 80, "pattern": "^(?!.*\\.\\.)[A-Za-z0-9._-]+$", "default": "gpt-4o-mini" },
+    "OPENAI_BASE_URL": { "type": "string", "minLength": 8, "maxLength": 300, "pattern": "^(https://|http://(127\\.0\\.0\\.1|localhost)(:[0-9]+)?(/|$))[^\\s@?#\\\\]*$", "default": "https://api.openai.com/v1", "description": "Runtime additionally validates port and resolved destination; no redirects." },
+    "GEN_AUDIO_CONNECTOR_ALLOW_PRIVATE": { "enum": ["0", "1"] },
     "GEN_AUDIO_CONNECTOR_LIVE": { "enum": ["0", "1"] }
   }
 }

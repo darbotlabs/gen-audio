@@ -11,6 +11,7 @@ object model v1); floats stay in ``params``. WAV input goes through
 from __future__ import annotations
 
 import json
+import math
 import struct
 import zlib
 from dataclasses import dataclass
@@ -18,6 +19,9 @@ from pathlib import Path
 
 import numpy as np
 
+from gen_audio.artifacts import staged_files
+from gen_audio.audio_io import as_mono, validate_frame_count, validate_sample_rate
+from gen_audio.guards import RequestLimitError
 from gen_audio.identity import ms_from_frames, read_wav
 
 # Fixed 5-anchor colormap ("ga-ember"): near-black -> indigo -> magenta -> orange -> pale yellow.
@@ -53,7 +57,11 @@ def colormap(values: np.ndarray) -> np.ndarray:
 
 
 def write_png(path: Path, rgb: np.ndarray) -> None:
+    if rgb.ndim != 3 or rgb.shape[2] != 3 or rgb.dtype != np.uint8:
+        raise ValueError("PNG must be an RGB uint8 array")
     height, width, _ = rgb.shape
+    if width < 1 or height < 1 or width * height > 4_000_000:
+        raise RequestLimitError("PNG dimensions exceed the pixel limit")
     raw = b"".join(b"\x00" + rgb[row].tobytes() for row in range(height))
 
     def chunk(tag: bytes, data: bytes) -> bytes:
@@ -65,8 +73,23 @@ def write_png(path: Path, rgb: np.ndarray) -> None:
 
 def strip(samples: np.ndarray, rate: int, n_fft: int, hop: int, n_bands: int, f_min: float, f_max: float, db_floor: int):
     """Scaled 0..1 band magnitudes, rows flipped (high frequencies on top), and the column count."""
-    samples = np.asarray(samples, dtype=np.float64)
+    rate = validate_sample_rate(rate)
+    samples = as_mono(samples)
+    validate_frame_count(samples.size, rate)
+    for label, value, ceiling in (("n_fft", n_fft, 16384), ("hop", hop, 14_400_000), ("bands", n_bands, 256)):
+        if isinstance(value, bool) or not isinstance(value, int) or not 1 <= value <= ceiling:
+            raise ValueError(f"{label} must be an integer in 1..{ceiling}")
+    if n_fft < 16:
+        raise ValueError("n_fft must be at least 16")
+    if not all(math.isfinite(value) for value in (f_min, f_max, db_floor)):
+        raise ValueError("strip frequency and dB bounds must be finite")
+    if not 0 < f_min < min(f_max, rate / 2) or not -240 <= db_floor < 0:
+        raise ValueError("invalid strip frequency or dB range")
     columns = len(samples) // hop
+    if columns < 1:
+        raise ValueError("audio is too short for a strip column")
+    if columns * n_bands > 1_000_000 or columns * n_fft > 64_000_000:
+        raise RequestLimitError("spectrogram exceeds the work or pixel limit")
     window = np.hanning(n_fft)
     padded = np.concatenate([np.zeros(n_fft // 2), samples, np.zeros(n_fft)])
     freqs = np.fft.rfftfreq(n_fft, 1.0 / rate)
@@ -98,11 +121,14 @@ def strip(samples: np.ndarray, rate: int, n_fft: int, hop: int, n_bands: int, f_
 def write_strip(wav: Path, clip_id: str, out_dir: Path, params: StripParams = StripParams()) -> dict:
     """Write ``library_<stem>_spec2d.png`` and its sidecar JSON; return a short summary."""
     samples, rate = read_wav(wav)
+    if type(params.columns_per_second) is not int or not 1 <= params.columns_per_second <= min(rate, 100):
+        raise ValueError("columns-per-second must be an integer in 1..100 and not exceed the sample rate")
+    if type(params.db_floor) is not int:
+        raise ValueError("db_floor identity must be an integer")
     hop = rate // params.columns_per_second
     scaled, columns = strip(samples, rate, params.n_fft, hop, params.bands, params.f_min, params.f_max, params.db_floor)
     png_name = f"library_{Path(wav).stem.removeprefix('library_')}_spec2d.png"
     out_dir.mkdir(parents=True, exist_ok=True)
-    write_png(out_dir / png_name, colormap(scaled))
     duration_ms = ms_from_frames(len(samples), rate)
     covers_ms = ms_from_frames(columns * hop, rate)
     sidecar = {
@@ -128,5 +154,8 @@ def write_strip(wav: Path, clip_id: str, out_dir: Path, params: StripParams = St
             "window": "hann",
         },
     }
-    (out_dir / png_name.replace(".png", ".json")).write_text(json.dumps(sidecar, indent=2) + "\n", encoding="utf-8")
+    paths = [out_dir / png_name, out_dir / png_name.replace(".png", ".json")]
+    with staged_files(paths) as staged:
+        write_png(staged[0], colormap(scaled))
+        staged[1].write_text(json.dumps(sidecar, indent=2, allow_nan=False) + "\n", encoding="utf-8")
     return {"png": png_name, "columns": columns, "duration_ms": duration_ms, "covers_ms": covers_ms}

@@ -7,11 +7,13 @@ prompt is an error. The example cast file is never opened.
 from __future__ import annotations
 
 import json
+import math
 import re
 from dataclasses import dataclass
 from pathlib import Path
 
 from gen_audio.cast import parse_script
+from gen_audio.guards import enforce_text_limit, max_audio_duration
 
 _SPEAKER_LINE = re.compile(r"(?i)^speaker\s+\d+\b")
 _CHARS_PER_SEC = 13.0
@@ -101,7 +103,7 @@ def prepare_prompt(
     duration_s: float,
 ) -> PreparedScript:
     """Build a script and cast from the user's text and the selected personas."""
-    text = prompt.replace("\r\n", "\n").replace("\r", "\n")
+    text = enforce_text_limit(prompt, "prompt").replace("\r\n", "\n").replace("\r", "\n")
     if not text.strip():
         raise PromptError("empty prompt; no sample script is used")
     if not personas:
@@ -112,8 +114,9 @@ def prepare_prompt(
         raise PromptError("duplicate persona")
     for persona_id in personas:
         voice_for(engine, persona_id)
-    if duration_s < 0.5 or duration_s > 1800:
-        raise PromptError("duration must be from 0.5 to 1800 seconds")
+    cap = max_audio_duration()
+    if isinstance(duration_s, bool) or not math.isfinite(duration_s) or not 0.5 <= duration_s <= cap:
+        raise PromptError(f"duration must be finite and from 0.5 to {cap:g} seconds")
 
     if _has_speaker_headers(text):
         turns = parse_script(text)

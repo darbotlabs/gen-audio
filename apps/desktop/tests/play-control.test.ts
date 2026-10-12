@@ -9,6 +9,7 @@ import { createServer, type IncomingMessage, type ServerResponse } from "node:ht
 import type { AddressInfo } from "node:net";
 import { controlBackoffMs, controlDisconnectedNotice, controlPlayOrigin, McpFailureCounter, mcpRequestBody, postMcp, reportAsync, seekReportControl, setReportSink, surfaceUiError, userPlayControl } from "../src/play-control.ts";
 import { Seeker } from "../src/seek.ts";
+import { McpClient } from "../src/mcp-client.ts";
 
 const repo = (path: string) => fileURLToPath(new URL(`../../../${path}`, import.meta.url));
 const load = (path: string) => JSON.parse(readFileSync(repo(path), "utf8"));
@@ -71,13 +72,11 @@ test("contract: the Play button's ui_playback body is schemas/examples/control/d
   assert.deepEqual(mcpRequestBody(request.name, request.args), fixture);
   // main.ts posts through these exact builders (Play click and Cube tab Play).
   const main = readFileSync(repo("apps/desktop/src/main.ts"), "utf8");
-  // mcpCall goes through postMcp on the discovered origin (8765–8770), which posts
-  // exactly mcpRequestBody (tested against a live listener below).
-  assert.match(main, /postMcp\(fetch, `\$\{origin\}\/mcp`, name, args, mcpFailures\)/);
-  assert.match(main, /const origin = await mcpReady/);
-  const control = readFileSync(repo("apps/desktop/src/play-control.ts"), "utf8");
-  assert.match(control, /body: JSON\.stringify\(mcpRequestBody\(name, args\)\)/);
-  assert.equal(main.match(/const request = userPlayControl\(/g)?.length, 2);
+  assert.match(main, /client\.call\(name, args\)/);
+  assert.match(main, /resolveMcpConfig/);
+  assert.doesNotMatch(main, /8765|new EventSource/);
+  assert.equal(main.match(/const request = userPlayControl\(/g)?.length, 1);
+  assert.match(main, /reportPlaybackIntent\(cubeClipId, "play"\)/);
 });
 
 test("contract: the window's seek report body is the seek-round-trip fixture", () => {
@@ -144,9 +143,10 @@ test("observability: a rejected POST increments the MCP failure counter and warn
   const snapshots: Array<Record<string, number>> = [];
   const failures = new McpFailureCounter((message) => warnings.push(message), (snapshot) => snapshots.push(snapshot));
   const report = seekReportControl(2, 60, { ok: true, actual: 60, status: "seeked to 1:00" });
+  const client = new McpClient({ addr: new URL(server.url).host, token: "ab".repeat(32) });
   try {
-    assert.equal(await postMcp(fetch, server.url, report.name, report.args, failures), null);
-    assert.equal(await postMcp(fetch, server.url, report.name, report.args, failures), null);
+    assert.equal(await postMcp(client, report.name, report.args, failures), null);
+    assert.equal(await postMcp(client, report.name, report.args, failures), null);
   } finally {
     await server.close();
   }
@@ -161,46 +161,38 @@ test("observability: a rejected POST increments the MCP failure counter and warn
 
 test("observability: network errors and JSON-RPC errors are counted too; success is not", async () => {
   const server = await listener((_req, body, res) => {
-    const name = JSON.parse(body).params.name;
+    const { id, params: { name } } = JSON.parse(body);
     const payload = name === "ui_navigate"
-      ? { jsonrpc: "2.0", id: 1, error: { code: -32602, message: "unknown slide" } }
-      : { jsonrpc: "2.0", id: 1, result: { content: [{ type: "text", text: "{}" }], isError: false } };
+      ? { jsonrpc: "2.0", id, error: { code: -32602, message: "unknown slide" } }
+      : { jsonrpc: "2.0", id, result: { content: [{ type: "text", text: "{}" }], isError: false } };
     res.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify(payload));
   });
   const failures = new McpFailureCounter(() => {});
-  let closedUrl = "";
+  const client = new McpClient({ addr: new URL(server.url).host, token: "ab".repeat(32) });
   try {
-    const rpc = await postMcp(fetch, server.url, "ui_navigate", { slide: "slide:nope" }, failures);
+    const rpc = await postMcp(client, "ui_navigate", { slide: "slide:nope" }, failures);
     assert.equal((rpc as { error: { code: number } }).error.code, -32602, "the payload still reaches the caller");
-    assert.notEqual(await postMcp(fetch, server.url, "library_rename", { clipId: "x" }, failures), null);
-    closedUrl = server.url;
+    assert.notEqual(await postMcp(client, "library_rename", { clipId: "x" }, failures), null);
   } finally {
     await server.close();
   }
-  assert.equal(await postMcp(fetch, closedUrl, "ui_generate", {}, failures), null);
-  assert.deepEqual(failures.snapshot(), { "ui_navigate:rpc_-32602": 1, "ui_generate:TypeError": 1 });
+  assert.equal(await postMcp(client, "ui_generate", {}, failures), null);
+  assert.deepEqual(failures.snapshot(), { "ui_navigate:rpc_-32602": 1, "ui_generate:Error": 1 });
   assert.equal(failures.total(), 2);
 });
 
-// CSP: the window may connect to itself, Tauri's IPC, and the loopback MCP it posts to. Nothing else, no wildcards.
-test("csp: connect-src is exactly self, Tauri IPC and the MCP origin mcpCall posts to", () => {
+test("csp: authenticated negotiated MCP stays loopback-only; scripts stay local", () => {
   const csp: string = load("apps/desktop/src-tauri/tauri.conf.json").app.security.csp;
   const directives = new Map(csp.split(";").map((part) => part.trim().split(/\s+/)).map(([name, ...values]) => [name, values]));
-  const ports = ["8765", "8766", "8767", "8768", "8769", "8770"];
-  assert.deepEqual(directives.get("connect-src"), [
-    "'self'",
-    "ipc:",
-    "http://ipc.localhost",
-    ...ports.map((port) => `http://127.0.0.1:${port}`),
-    ...ports.map((port) => `http://localhost:${port}`),
-  ]);
-  assert.ok(!csp.includes("*"), csp);
+  const allowed = directives.get("connect-src") ?? [];
+  assert.ok(allowed.includes("'self'"));
+  assert.ok(allowed.some(value => value.startsWith("http://127.0.0.1:")));
+  assert.ok(allowed.every(value => ["'self'", "blob:", "ipc:", "http://ipc.localhost"].includes(value)
+    || /^http:\/\/(?:127\.0\.0\.1|localhost|\[::1\]):(?:\d+|\*)$/.test(value)));
   const main = readFileSync(repo("apps/desktop/src/main.ts"), "utf8");
-  const control = readFileSync(repo("apps/desktop/src/play-control.ts"), "utf8");
-  assert.match(main, /postMcp\(fetch, `\$\{origin\}\/mcp`, name, args, mcpFailures\)/);
+  assert.match(main, /client\.call\(name, args\)/);
   assert.equal(main.match(/fetch\(/g)?.length ?? 0, 0, "main.ts does not open its own fetch");
-  assert.equal(main.match(/fetchLibraryBlob\(fetch,/g)?.length, 1, "library media is the only other fetch");
-  assert.equal(control.match(/fetchImpl\(/g)?.length, 2, "tool POST and library GET");
+  assert.match(main, /client\.libraryBlob\(urlPath\)/);
   // Only connect-src changed.
   assert.deepEqual(directives.get("default-src"), ["'self'"]);
   assert.deepEqual(directives.get("script-src"), ["'self'"]);

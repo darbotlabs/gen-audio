@@ -1,0 +1,41 @@
+{
+  "source": {
+    "url": "https://codeload.github.com/NVIDIA/personaplex/zip/3428dfd95309a7f3c84fd93259ded0f810d1ff91",
+    "sha256": "43aac4cf0145678c547a762a45a6faae000a19212a9d3c1432a6eaf09b2b4340",
+    "root": "personaplex-3428dfd95309a7f3c84fd93259ded0f810d1ff91/moshi",
+    "version": "0.1.0+genaudio.1",
+    "distribution": "moshi-personaplex",
+    "module": "moshi"
+  },
+  "patches_sha256": "830dac908e87feef566bb52668bcacebfe7c8a4ed4dc2d0d474f083bd7a2c69c",
+  "wheel": "moshi_personaplex-0.1.0+genaudio.1-py3-none-any.whl",
+  "wheel_sha256": "7e5603aaeab6131369c77dd7b6859007df61897524557c63128887c820ae7ac6",
+  "files": {
+    "moshi/__init__.py": "a923ef9978671fe43d16d71dd01c12da8efb201bbb75cd3bd9b98c1eaa9373e2",
+    "moshi/client_utils.py": "a8b762b7035adcc431c1d195c55d12bbdad0f18bae019aa78b967c8717b02506",
+    "moshi/offline.py": "b4a400667136618be7d3c9b4d8f4f1d8f7aaaf9e459c8bdf0d7ae5e91f59be39",
+    "moshi/server.py": "cdb9f68a326328308fa4acd43e7e75d79030d2214c43f828d186a0e03a13da99",
+    "moshi/models/__init__.py": "7dff98806bfd1761d5346a43bd25ce60e71fe834552295e479a3c07cb60102ba",
+    "moshi/models/compression.py": "7af4b2791d16fd0add4ef4f51d4322fc9fec159cc96604e569bbb53fe756b4ed",
+    "moshi/models/lm.py": "73d6da43ca59bb5162cfb97d8d05e71acaf214b89dd6705effa0c65da04c015b",
+    "moshi/models/loaders.py": "24d484efc2198c118f6d2b22877c765cd82e89887c52774c42aac5410b299148",
+    "moshi/modules/__init__.py": "aaecf539c3edaee447006a627975a5193d44e06e056226aec4dd7fd2dcc1faf9",
+    "moshi/modules/conv.py": "d4f9512cdc1343e959b0222dc2f18632f986ce8862d1cae5293542e0e282c51e",
+    "moshi/modules/gating.py": "008663b832e66088a087b1df4448e573f0dc94b01a9bbbb6a2206687abeb2f72",
+    "moshi/modules/resample.py": "136931781a9de1e43afd19c4ffc9817e462f20b695853d415695d34f912405d9",
+    "moshi/modules/rope.py": "10930a26f7241f53f1d6eb03ed04e8d2b94b49f23d225e206fdbddf8cf95b04f",
+    "moshi/modules/seanet.py": "1611e47987b635bb90b19944fc3deca91c4100270f2117bf9fd9cc70bf0da9cc",
+    "moshi/modules/streaming.py": "9fbdd77237d53ef6d95d1a08bce3b2438d661223ad8b795edfccc1b87eb4b81b",
+    "moshi/modules/transformer.py": "0eccf9b539ba738910d201a66809c68f5dad14f6b020fee862a592fd00e1de55",
+    "moshi/quantization/__init__.py": "bc96e5a7686f959e96950e431daaf45841800fb103424d8c80c92ac58a6b1b6f",
+    "moshi/quantization/base.py": "7f0e6071d56c3bd79a34a292af65e53179deb423e535515e466124e5aaf0e750",
+    "moshi/quantization/core_vq.py": "14a32264b0cd414cc045cc614d1f593a9fc39fca44276978bb7450815b8de10d",
+    "moshi/quantization/vq.py": "2c07f475a1cfc939fef0c93805f2a134ef3bf268d7ed5a0f9a461255d1464158",
+    "moshi/utils/__init__.py": "96cc00b7c48c73fbb8183ea5466081702f272628c044b9d73d71a83fc88b21c1",
+    "moshi/utils/autocast.py": "ebf8d30508b96f749d8a7fa4b125918bc17667f32ca9d5b8ce7fc5f95941c761",
+    "moshi/utils/compile.py": "cdf0bb28eff09caefcf91d0180faac350bc2b6b55e09f1419ad41cdb533db618",
+    "moshi/utils/connection.py": "ddaeda68482a4502092d95ecf86e8563b90f51d0a63cfbf2d0b09efb6d95ff3d",
+    "moshi/utils/logging.py": "ee331f7817016e9e40f60cc17d3b254f087c63365706ae88f184a907545ce28f",
+    "moshi/utils/sampling.py": "d929d020c0edcaa132a3c694d1e84ce4d109cbbe180907491955e766db39b75a"
+  }
+}

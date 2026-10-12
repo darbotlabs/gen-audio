@@ -7,6 +7,7 @@ fitted WAV's sample count divided by its sample rate.
 from __future__ import annotations
 
 import json
+import math
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -14,10 +15,11 @@ import numpy as np
 
 from gen_audio.asr_wer import AsrError, transcribe, word_error_rate
 from gen_audio.assets import asset_object, sha256_file
-from gen_audio.audio_io import read_wav, write_wav
+from gen_audio.audio_io import as_mono, read_wav, validate_frame_count, validate_sample_rate, write_wav
 from gen_audio.cube_layers import library_cube, write_cube_png
 from gen_audio.cube_revision import bandwidth_95, measure
 from gen_audio.identity import ms_from_frames, round_half_up
+from gen_audio.guards import max_audio_duration
 from gen_audio.improve import improve
 from gen_audio.speakers import (
     UNRESOLVED,
@@ -43,7 +45,13 @@ def fit_duration(audio: np.ndarray, sample_rate: int, target_s: float) -> tuple[
 
     Longer speech is kept, not trimmed. Padding never counts as an honoured duration.
     """
-    target = int(round(float(target_s) * int(sample_rate)))
+    sample_rate = validate_sample_rate(sample_rate)
+    audio = as_mono(audio)
+    validate_frame_count(audio.size, sample_rate)
+    if isinstance(target_s, bool) or not math.isfinite(target_s) or not 0 < target_s <= max_audio_duration():
+        raise ValueError("target duration must be finite, positive and within the audio duration limit")
+    target = int(round(float(target_s) * sample_rate))
+    validate_frame_count(max(target, audio.size), sample_rate)
     if audio.size < target:
         pad = np.zeros(target - audio.size, dtype=np.float32)
         return np.concatenate([audio.astype(np.float32), pad]), True
@@ -59,10 +67,17 @@ def run_pipeline(
     duration_target_s: float,
     script_asset: dict,
     speech: SpeechTimeline | None = None,
+    agent_names: list[str] | tuple[str, ...] = (),
 ) -> dict:
     """Run improve → spectrogram → cube → compare → video on one WAV."""
     out_dir.mkdir(parents=True, exist_ok=True)
     raw_audio, raw_sr = read_wav(raw_wav)
+    from gen_audio.audio_metadata import read_artist, agent_metadata
+    artist = read_artist(raw_wav)
+    artist_names = list(agent_names)
+    if not artist_names and artist:
+        artist_names = artist.split("; ")
+    metadata = agent_metadata(artist_names)
     raw_asset = asset_object(
         raw_wav,
         kind="wav",
@@ -79,7 +94,7 @@ def run_pipeline(
     fitted, padded = fit_duration(improved.audio, improved.sample_rate, duration_target_s)
     duration_s = duration_seconds(fitted, improved.sample_rate)
     fitted_path = out_dir / "fitted.wav"
-    write_wav(fitted_path, fitted, improved.sample_rate, subtype="PCM_16")
+    write_wav(fitted_path, fitted, improved.sample_rate, subtype="PCM_16", agent_names=artist_names)
     # Re-read so the stored duration matches the file on disk, including PCM rounding.
     written_len = int(fitted.size)
     fitted, fitted_sr = read_wav(fitted_path)
@@ -248,6 +263,7 @@ def run_pipeline(
 
     return {
         "ok": True,
+        "metadata": metadata,
         "synthesizedSpeech": True,
         "sha256": wav_asset["sha256"],
         "duration_s": duration_s,
@@ -407,4 +423,3 @@ def compare_clip(
         "duration_s": float(duration_s),
         "derived_from": list(derived_from),
     }
-

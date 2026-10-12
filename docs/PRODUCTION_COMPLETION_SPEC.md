@@ -1,6 +1,6 @@
 # Production completion
 
-Python stays `requires-python = ">=3.14,<3.15"` with the classifier `Programming Language :: Python :: 3.14` only. Length caps, path confinement, checksum pins, `/health` versus `/ready`, and TTS error classes are Gen-Audio code in `gen_audio.guards` (see `docs/genlm-audio/REVIEW-2026-10-06.md`). This file lists what is still open before a Windows install is the product.
+The base SDK stays `requires-python = ">=3.14,<3.15"` with the classifier `Programming Language :: Python :: 3.14` only. Isolated model workers use pinned Python 3.12 dependencies. Length caps, path confinement, checksum pins, `/health` versus `/ready`, and TTS error classes are Gen-Audio code in `gen_audio.guards` (see `docs/genlm-audio/REVIEW-2026-10-06.md`). This file records production acceptance criteria; [the 2026-10-08 migration record](MIGRATION-2026-10-08.md) tracks the implemented desktop workflow and remaining runtime validation.
 
 ## Blockers
 
@@ -8,12 +8,12 @@ Python stays `requires-python = ">=3.14,<3.15"` with the classifier `Programming
 
 Acceptance:
 
-- `scripts/build-tauri-windows.ps1` builds `gen-audio-mcp.exe`, runs an MCP `initialize` handshake on `127.0.0.1:8765`, stages `apps/desktop/src-tauri/binaries/gen-audio-mcp-<triple>.exe`, runs `npm ci` and `npm run build` in `apps/desktop`, and fails if `apps/desktop/dist/index.html` is missing. Only then does it invoke `tauri build --bundles nsis,msi`. It does not `cargo build` the desktop crate first. It fails unless an NSIS `*setup.exe` and an `.msi` exist. Launch the installer, not a pre-dist `gen-audio-desktop.exe` (that WebView is `http://localhost:1420`).
+- `scripts/build-tauri-windows.ps1` installs locked npm dependencies, builds `gen-audio-mcp.exe` with `--locked`, obtains its path from Cargo's artifact record, and runs that binary's `--smoke` in disposable scratch. No shared HTTP port is used. It stages `apps/desktop/src-tauri/binaries/gen-audio-mcp-<triple>.exe`, then invokes the pinned local Tauri CLI. The Tauri hook runs `npm run build` before embedding the frontend. Default output is NSIS + MSI, with newly produced installers required; `-NoBundle` builds only the embedded executable. It does not bare-Cargo-build the desktop, install it, or stop a running app.
 - The installer ships `gen-audio.exe` and `gen-audio-mcp.exe` side by side. Launch starts the sidecar, shows the window on the taskbar, and keeps a tray icon. If the sidecar binary is absent, the process falls back to the in-process listener. Closing the window hides it. Quit stops the sidecar.
-- The NSIS hook adds a Startup shortcut. A packaged sidecar start also writes `HKCU\...\Run\DarbotGenAudio` unless `GEN_AUDIO_AUTOSTART=0`.
-- `mcp_status` reports the bound address, `mode` (`sidecar`, `in-process`, `existing`, or `failed`), and whether `initialize` returned protocol `2025-03-26` and server name `gen-audio`.
+- The NSIS hook does not add a Startup shortcut. Login persistence is opt-in only with `GEN_AUDIO_AUTOSTART=1`; uninstall still cleans old shortcuts.
+- `mcp_status` reports the owned listener's bound address, transient bearer token, `mode` (`sidecar`, `in-process`, or `failed`), and authenticated handshake status. It is a privileged Tauri IPC response, not a public HTTP endpoint; never log the token.
 
-`scripts/build-tauri-windows.ps1` is the only build script; SMAX runs it. There is no Linux or macOS build script (the Linux `build-tauri.sh` was retired). CI's rust job checks the desktop crate on Linux with `cargo check -p gen-audio-desktop` and builds no installer.
+`scripts/build-tauri-windows.ps1` is the single supported build pipeline. Linux CI covers the native desktop crate but does not produce an installer. Quarantined scripts under `artifacts/anti-pattern` are preserved evidence, never build dependencies.
 
 ### GenAID Audio limits on the production path
 
@@ -51,7 +51,7 @@ No `TODO`, `FIXME`, `HACK`, `NYI`, `WIP`, `dummy`, or `fake` markers remain in p
 
 1. **Guards.** Done when `pytest tests/test_guards.py` passes on 3.14 and script parsing calls the same ceilings.
 2. **Node probes.** Done when `gen_audio.node_http.dispatch` returns 200 for `/genaid-audio/health` and `/genaid-audio/ready` with the model unloaded, and `gateway_ready(None)` is 503.
-3. **Desktop tray and MCP.** Done when `cargo check -p gen-audio-desktop` succeeds and the Windows script's handshake grep matches `protocolVersion` `2025-03-26`.
+3. **Desktop tray and MCP.** Done when `cargo check -p gen-audio-desktop` succeeds and the freshly built sidecar's `--smoke` succeeds, independently of a running desktop.
 4. **Installers.** Done when SMAX produces NSIS and MSI from `scripts/build-tauri-windows.ps1` and the tray icon is visible after launch.
 5. **Compare-list engines.** Open until an adapter exists. Do not mark VibeVoice, PersonaPlex, or Gradio implemented.
 
@@ -61,7 +61,7 @@ No `TODO`, `FIXME`, `HACK`, `NYI`, `WIP`, `dummy`, or `fake` markers remain in p
 
 - Embedded Tauri release uses `frontendDist` (`../dist`) with `custom-protocol`; launch the installer / `gen-audio.exe` from `tauri build`, not a bare `cargo build` that loads `devUrl` (`http://localhost:1420`).
 - Tray: close hides to tray; tray **Quit** stops the sidecar and `app.exit(0)`. `tauri-plugin-single-instance` focuses the existing window on second start (no dual tray). A second start with `--quit` invokes the same `request_quit` path.
-- Library slide: livetiles backed by real synth WAVs on disk (`artifacts/library/`, served via `apps/desktop/public/library/`). WAVs are gitignored; JSON/PNG thumbs and `manifest.json` may ship in-tree. Manifest marks `synthesizedSpeech: true` only for real clips; unavailable engines stay `unavailable` with reasons — no fake speech.
+- Library slide: curated WAVs under `apps/desktop/public/library/` are not ignored. The mandatory frontend prebuild gate checks every declared media hash/size and speech metadata. `artifacts/library/` remains scratch and is not an implicit clean-build dependency; one-off scripts remain quarantined.
 - Fixture / example viewport content is labeled as fixture theater in the UI (not podcast speech). Browser DFT / WebGL cube sketch is not the Python matplotlib spectrogram path.
 - Guards: `pytest tests/test_guards.py` → 14 passed on Python 3.14.
 

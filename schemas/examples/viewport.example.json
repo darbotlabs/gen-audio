@@ -1,115 +1,108 @@
 {
-  "version": "1.0",
-  "title": "Darbot Gen-Audio",
-  "columns": 3,
   "cards": [
     {
-      "id": "engine-kokoro",
-      "uid": "ga:card:wgi2proc543zzqzfa2ydlfbnl4",
-      "kind": "EngineStatus",
-      "title": "kokoro-onnx",
+      "adaptive": {
+        "$schema": "http://adaptivecards.io/schemas/adaptive-card.json",
+        "body": [
+          {
+            "text": "kokoro-onnx weights are not bundled.",
+            "type": "TextBlock",
+            "wrap": true
+          }
+        ],
+        "type": "AdaptiveCard",
+        "version": "1.5"
+      },
       "body": {
         "engineId": "kokoro_onnx",
         "status": "weights_absent",
         "summary": "The Python SDK can synthesize when GEN_AUDIO_KOKORO_MODEL and GEN_AUDIO_KOKORO_VOICES point at local files. Those weights are not in this repo."
       },
-      "adaptive": {
-        "type": "AdaptiveCard",
-        "version": "1.5",
-        "$schema": "http://adaptivecards.io/schemas/adaptive-card.json",
-        "body": [
-          {
-            "type": "TextBlock",
-            "text": "kokoro-onnx weights are not bundled.",
-            "wrap": true
-          }
-        ]
-      }
+      "id": "engine-kokoro",
+      "kind": "EngineStatus",
+      "title": "kokoro-onnx",
+      "uid": "ga:card:wgi2proc543zzqzfa2ydlfbnl4"
     },
     {
-      "id": "engine-vibevoice",
-      "uid": "ga:card:bvm7yk6rqz5ir4ms5oej62rhra",
-      "kind": "EngineStatus",
-      "title": "VibeVoice",
       "body": {
         "engineId": "vibevoice",
-        "status": "external",
-        "summary": "Compare slot for VibeVoice 1.5B (Alice/Frank in the 2026-10-06 notes). No adapter and no weights in this app."
-      }
+        "status": "implemented",
+        "summary": "Isolated VibeVoice CPU worker. Readiness depends on the configured checkpoint, tokenizer, reference voices and free RAM."
+      },
+      "id": "engine-vibevoice",
+      "kind": "EngineStatus",
+      "title": "VibeVoice",
+      "uid": "ga:card:bvm7yk6rqz5ir4ms5oej62rhra"
     },
     {
-      "id": "engine-magpie",
-      "uid": "ga:card:fijqhsk7xhpcgehxdeexal6jnm",
-      "kind": "EngineStatus",
-      "title": "Magpie",
       "body": {
         "engineId": "magpie",
         "status": "external",
         "summary": "Compare slot for Magpie TTS (Sofia/Jason in the 2026-10-06 notes). No adapter and no weights in this app."
-      }
+      },
+      "id": "engine-magpie",
+      "kind": "EngineStatus",
+      "title": "Magpie",
+      "uid": "ga:card:fijqhsk7xhpcgehxdeexal6jnm"
     },
     {
-      "id": "engine-pocket",
-      "uid": "ga:card:nmfqip53e5thxk43egqjzl27da",
-      "kind": "EngineStatus",
-      "title": "Pocket TTS",
       "body": {
         "engineId": "pocket_tts",
         "status": "external",
-        "summary": "Kyutai Pocket TTS, used in place of PersonaPlex when its weights are unavailable. No adapter in this app."
-      }
+        "summary": "Kyutai Pocket TTS is a separate model, not PersonaPlex. No adapter in this app."
+      },
+      "id": "engine-pocket",
+      "kind": "EngineStatus",
+      "title": "Pocket TTS",
+      "uid": "ga:card:nmfqip53e5thxk43egqjzl27da"
     },
     {
-      "id": "engine-kokoro-dayour",
-      "uid": "ga:card:zoap44kodcb55zvwsw5cld4qwm",
-      "kind": "EngineStatus",
-      "title": "dayour/kokoro",
       "body": {
         "engineId": "kokoro_dayour",
         "status": "library",
         "summary": "dayour/kokoro torch runtime. Its real Library WAV and rev 3 cube ship here. Not vendored; this repo has no synth adapter."
-      }
+      },
+      "id": "engine-kokoro-dayour",
+      "kind": "EngineStatus",
+      "title": "dayour/kokoro",
+      "uid": "ga:card:zoap44kodcb55zvwsw5cld4qwm"
     },
     {
-      "id": "engine-misaki",
-      "uid": "ga:card:axbliqbwn7uidcc4pjfbivmlli",
-      "kind": "EngineStatus",
-      "title": "misaki",
       "body": {
         "engineId": "misaki",
         "status": "library",
         "summary": "misaki is grapheme-to-phoneme for Kokoro. G2P only: it emits phonemes, not a waveform. Its audio is the misaki→kokoro clip."
-      }
+      },
+      "id": "engine-misaki",
+      "kind": "EngineStatus",
+      "title": "misaki",
+      "uid": "ga:card:axbliqbwn7uidcc4pjfbivmlli"
     },
     {
+      "body": {
+        "disclaimer": "Browser spectrogram of the selected voice profile, not a podcast render and not a Python spectrogram.",
+        "notPodcast": true,
+        "source": "fixture-tone"
+      },
       "id": "spec-fixture",
-      "uid": "ga:card:rt6iial7o6xf7oetud56lcmv54",
       "kind": "SpectrogramPanel",
+      "span": 2,
       "title": "Spectrogram panel",
-      "span": 2,
-      "body": {
-        "source": "fixture-tone",
-        "notPodcast": true,
-        "disclaimer": "Browser spectrogram of the selected voice profile, not a podcast render and not a Python spectrogram."
-      }
+      "uid": "ga:card:rt6iial7o6xf7oetud56lcmv54"
     },
     {
+      "body": {
+        "disclaimer": "WebGL point cloud of the same fixture tone. Not a measured podcast cube.",
+        "notPodcast": true,
+        "source": "fixture-tone"
+      },
       "id": "cube-fixture",
-      "uid": "ga:card:eclezl34uhr3fuj6pukt7r6wkm",
       "kind": "Cube3D",
-      "title": "Inverse-HDR cube",
       "span": 2,
-      "body": {
-        "source": "fixture-tone",
-        "notPodcast": true,
-        "disclaimer": "WebGL point cloud of the same fixture tone. Not a measured podcast cube."
-      }
+      "title": "Inverse-HDR cube",
+      "uid": "ga:card:eclezl34uhr3fuj6pukt7r6wkm"
     },
     {
-      "id": "cast-sample",
-      "uid": "ga:card:u73p3l6n7w2lelaz6kzpflydjy",
-      "kind": "PodcastCast",
-      "title": "Sample cast",
       "body": {
         "sampleScript": true,
         "speakers": [
@@ -124,290 +117,1195 @@
             "voice": "am_michael"
           }
         ]
-      }
+      },
+      "id": "cast-sample",
+      "kind": "PodcastCast",
+      "title": "Sample cast",
+      "uid": "ga:card:u73p3l6n7w2lelaz6kzpflydjy"
     },
     {
-      "id": "serve-node",
-      "uid": "ga:card:3kc35sblccksmpuwia6s5xobae",
-      "kind": "ServeHealth",
-      "title": "Node health",
       "body": {
-        "host": "<node>",
-        "port": 8002,
         "baseUrl": "http://<node>:8002/genaid-audio",
         "healthUrl": "http://<node>:8002/genaid-audio/health",
+        "host": "<node>",
+        "port": 8002,
         "probed": false,
         "role": "node"
-      }
+      },
+      "id": "serve-node",
+      "kind": "ServeHealth",
+      "title": "Node health",
+      "uid": "ga:card:3kc35sblccksmpuwia6s5xobae"
     },
     {
-      "id": "serve-gateway",
-      "uid": "ga:card:ayvizyvubrzigxewm2bjzjmvam",
-      "kind": "ServeHealth",
-      "title": "Shared gateway",
       "body": {
-        "host": "10.1.8.70",
-        "port": 8002,
         "baseUrl": "http://10.1.8.70:8002/genaid-audio",
         "healthUrl": "http://10.1.8.70:8002/genaid-audio/health",
+        "host": "10.1.8.70",
+        "port": 8002,
         "probed": false,
         "role": "shared-gateway"
-      }
+      },
+      "id": "serve-gateway",
+      "kind": "ServeHealth",
+      "title": "Shared gateway",
+      "uid": "ga:card:ayvizyvubrzigxewm2bjzjmvam"
     },
     {
-      "id": "bench-ref",
-      "uid": "ga:card:qngf7e45ixbikcdywhenhtoibe",
-      "kind": "BenchmarkCompare",
-      "title": "Compare notes",
-      "span": 3,
       "body": {
         "measuredHere": false,
-        "sourceNote": "Reference figures from the 2026-10-06 GenAID podcast compare notes. Not remeasured in this repository.",
         "rows": [
           {
             "engine": "pocket_tts",
             "metric": "teaser_wer",
-            "value": "22.22%",
+            "note": "Short teaser ASR in those notes.",
             "unit": "WER",
-            "note": "Short teaser ASR in those notes."
+            "value": "22.22%"
           },
           {
             "engine": "vibevoice",
             "metric": "teaser_wer",
-            "value": "30.00%",
+            "note": "Full improved WAV was the preferred publish in those notes.",
             "unit": "WER",
-            "note": "Full improved WAV was the preferred publish in those notes."
+            "value": "30.00%"
           },
           {
             "engine": "magpie",
             "metric": "teaser_wer",
-            "value": "42.22%",
+            "note": "Short teaser. Hypothesis was short of the reference.",
             "unit": "WER",
-            "note": "Short teaser. Hypothesis was short of the reference."
+            "value": "42.22%"
           },
           {
             "engine": "vibevoice",
             "metric": "bw95_hz",
-            "value": "2670.5",
+            "note": "Full improved final. Not a new measurement.",
             "unit": "Hz",
-            "note": "Full improved final. Not a new measurement."
+            "value": "2670.5"
           },
           {
             "engine": "kokoro_onnx",
             "metric": "bw95_hz_raw",
-            "value": "826.9",
+            "note": "Raw file in those notes. Do not rank publish on inv-HDR alone.",
             "unit": "Hz",
-            "note": "Raw file in those notes. Do not rank publish on inv-HDR alone."
+            "value": "826.9"
           }
-        ]
-      }
+        ],
+        "sourceNote": "Reference figures from the 2026-10-06 GenAID podcast compare notes. Not remeasured in this repository."
+      },
+      "id": "bench-ref",
+      "kind": "BenchmarkCompare",
+      "span": 3,
+      "title": "Compare notes",
+      "uid": "ga:card:qngf7e45ixbikcdywhenhtoibe"
     },
     {
+      "body": {
+        "authenticated": false,
+        "connectorId": "mcp",
+        "detail": "Stateless tool server. No vendor credential.",
+        "mode": "local"
+      },
       "id": "conn-mcp",
-      "uid": "ga:card:3hv5wsdt3mrcylczexvlnfk6li",
       "kind": "ConnectorStatus",
       "title": "MCP",
-      "body": {
-        "connectorId": "mcp",
-        "mode": "local",
-        "authenticated": false,
-        "detail": "Stateless tool server. No vendor credential."
-      }
+      "uid": "ga:card:3hv5wsdt3mrcylczexvlnfk6li"
     },
     {
+      "body": {
+        "authenticated": false,
+        "connectorId": "acp",
+        "detail": "ACP agent. sessionId exists because the protocol requires it.",
+        "mode": "local"
+      },
       "id": "conn-acp",
-      "uid": "ga:card:pwlbnygt4dzqdyvwc6fwj6basy",
       "kind": "ConnectorStatus",
       "title": "ACP",
-      "body": {
-        "connectorId": "acp",
-        "mode": "local",
-        "authenticated": false,
-        "detail": "ACP agent. sessionId exists because the protocol requires it."
-      }
+      "uid": "ga:card:pwlbnygt4dzqdyvwc6fwj6basy"
     },
     {
+      "body": {
+        "authenticated": false,
+        "connectorId": "harness",
+        "detail": "Plans tools and writes a JSONL trace. Does not invent speech.",
+        "mode": "local"
+      },
       "id": "conn-harness",
-      "uid": "ga:card:ihkozqfhv44hffgriz6cu2rqre",
       "kind": "ConnectorStatus",
       "title": "Harness",
-      "body": {
-        "connectorId": "harness",
-        "mode": "local",
-        "authenticated": false,
-        "detail": "Plans tools and writes a JSONL trace. Does not invent speech."
-      }
+      "uid": "ga:card:ihkozqfhv44hffgriz6cu2rqre"
     },
     {
+      "body": {
+        "authenticated": false,
+        "connectorId": "copilot",
+        "detail": "GitHub Models bridge. Mock until a token is set and GEN_AUDIO_CONNECTOR_LIVE=1.",
+        "mode": "mock"
+      },
       "id": "conn-copilot",
-      "uid": "ga:card:oxeufq3ckwj4dxcvnv2uyih7ce",
       "kind": "ConnectorStatus",
       "title": "Copilot",
-      "body": {
-        "connectorId": "copilot",
-        "mode": "mock",
-        "authenticated": false,
-        "detail": "GitHub Models bridge. Mock until a token is set and GEN_AUDIO_CONNECTOR_LIVE=1."
-      }
+      "uid": "ga:card:oxeufq3ckwj4dxcvnv2uyih7ce"
     },
     {
+      "body": {
+        "authenticated": false,
+        "connectorId": "claude",
+        "detail": "Anthropic Messages API. Claude Code CLI stays off unless GEN_AUDIO_CLAUDE_CODE_CLI=1.",
+        "mode": "mock"
+      },
       "id": "conn-claude",
-      "uid": "ga:card:tg4uitpjeeazn7rnuxtxyxag2m",
       "kind": "ConnectorStatus",
       "title": "Claude",
-      "body": {
-        "connectorId": "claude",
-        "mode": "mock",
-        "authenticated": false,
-        "detail": "Anthropic Messages API. Claude Code CLI stays off unless GEN_AUDIO_CLAUDE_CODE_CLI=1."
-      }
+      "uid": "ga:card:tg4uitpjeeazn7rnuxtxyxag2m"
     },
     {
+      "body": {
+        "authenticated": false,
+        "connectorId": "gpt",
+        "detail": "OpenAI chat completions. Mock without OPENAI_API_KEY.",
+        "mode": "mock"
+      },
       "id": "conn-gpt",
-      "uid": "ga:card:vyjhtyqvyqntcapxjbpgdhdd7i",
       "kind": "ConnectorStatus",
       "title": "GPT",
-      "body": {
-        "connectorId": "gpt",
-        "mode": "mock",
-        "authenticated": false,
-        "detail": "OpenAI chat completions. Mock without OPENAI_API_KEY."
-      }
+      "uid": "ga:card:vyjhtyqvyqntcapxjbpgdhdd7i"
     },
     {
+      "body": {
+        "authenticated": false,
+        "connectorId": "gemini",
+        "detail": "Gemini generateContent. Mock without an API key.",
+        "mode": "mock"
+      },
       "id": "conn-gemini",
-      "uid": "ga:card:yzvustpx2xm6tnm2skebvrr46i",
       "kind": "ConnectorStatus",
       "title": "Gemini",
-      "body": {
-        "connectorId": "gemini",
-        "mode": "mock",
-        "authenticated": false,
-        "detail": "Gemini generateContent. Mock without an API key."
-      }
+      "uid": "ga:card:yzvustpx2xm6tnm2skebvrr46i"
     },
     {
-      "id": "profile-anton",
-      "uid": "ga:card:tpwzqqirpudx6ovxgar7wts2dy",
-      "kind": "VoiceProfile",
-      "title": "Anton",
       "body": {
-        "agentName": "Anton",
-        "personaId": "anton",
-        "voiceModel": "kokoro_onnx",
-        "tone": "measured",
-        "purpose": "Host a Gen-Audio briefing",
-        "domain": "Desktop app and SDK layout",
         "accent": "General American",
-        "traits": "Low-mid pitch, even pace, short pauses. Not a connector model.",
+        "adaptiveCard": {
+          "$schema": "https://adaptivecards.io/schemas/adaptive-card.json",
+          "actions": [
+            {
+              "data": {
+                "arguments": {
+                  "agents": [
+                    "anton"
+                  ]
+                },
+                "tool": "ui_set_sidepane"
+              },
+              "title": "Use Anton",
+              "type": "Action.Submit"
+            },
+            {
+              "data": {
+                "arguments": {
+                  "slide": "slide:studio"
+                },
+                "tool": "ui_navigate"
+              },
+              "title": "Gen-Audio desktop studio",
+              "type": "Action.Submit"
+            },
+            {
+              "data": {
+                "arguments": {
+                  "slide": "slide:library"
+                },
+                "tool": "ui_navigate"
+              },
+              "title": "Gen-Audio SDK and audio library",
+              "type": "Action.Submit"
+            }
+          ],
+          "body": [
+            {
+              "text": "Anton",
+              "type": "TextBlock",
+              "weight": "Bolder",
+              "wrap": true
+            },
+            {
+              "facts": [
+                {
+                  "title": "AgentName",
+                  "value": "Anton"
+                },
+                {
+                  "title": "Artist",
+                  "value": "Anton"
+                },
+                {
+                  "title": "Purpose",
+                  "value": "Host a Gen-Audio briefing"
+                },
+                {
+                  "title": "Domain",
+                  "value": "Desktop app and SDK layout"
+                },
+                {
+                  "title": "Accent",
+                  "value": "General American"
+                },
+                {
+                  "title": "Traits",
+                  "value": "Low-mid pitch, even pace, short pauses. Not a connector model."
+                }
+              ],
+              "type": "FactSet"
+            },
+            {
+              "text": "Engine bindings",
+              "type": "TextBlock",
+              "weight": "Bolder"
+            },
+            {
+              "facts": [
+                {
+                  "title": "kokoro_onnx",
+                  "value": "script_tts / unmapped / No binding assigned"
+                },
+                {
+                  "title": "kokoro_dayour",
+                  "value": "script_tts / unmapped / No binding assigned"
+                },
+                {
+                  "title": "misaki",
+                  "value": "g2p / unmapped / No binding assigned"
+                },
+                {
+                  "title": "vibevoice",
+                  "value": "script_tts / unmapped / No binding assigned"
+                },
+                {
+                  "title": "personaplex",
+                  "value": "speech_to_speech / unmapped / No binding assigned"
+                },
+                {
+                  "title": "magpie",
+                  "value": "script_tts / unmapped / No binding assigned"
+                },
+                {
+                  "title": "pocket_tts",
+                  "value": "script_tts / unmapped / No binding assigned"
+                }
+              ],
+              "type": "FactSet"
+            },
+            {
+              "text": "Reference samples: No acoustic reference assigned.",
+              "type": "TextBlock",
+              "wrap": true
+            },
+            {
+              "text": "Projects: Gen-Audio desktop studio (apps/desktop); Gen-Audio SDK and audio library (src/gen_audio)",
+              "type": "TextBlock",
+              "wrap": true
+            }
+          ],
+          "type": "AdaptiveCard",
+          "version": "1.5"
+        },
+        "agentName": "Anton",
+        "disclaimer": "Persona config for Anton on voice model kokoro-onnx. No audio of this persona yet; not a podcast render.",
+        "domain": "Desktop app and SDK layout",
+        "engineManifests": {
+          "kokoro_dayour": {
+            "adapter": "external",
+            "capability": "script_tts",
+            "language": "en-us",
+            "mapping": "unmapped",
+            "requires": [
+              "external_runtime"
+            ]
+          },
+          "kokoro_onnx": {
+            "adapter": "synth",
+            "capability": "script_tts",
+            "language": "en-us",
+            "mapping": "unmapped",
+            "requires": [
+              "kokoro_model",
+              "kokoro_voice_pack"
+            ]
+          },
+          "magpie": {
+            "adapter": "external",
+            "capability": "script_tts",
+            "language": "en",
+            "mapping": "unmapped",
+            "requires": [
+              "external_runtime",
+              "voice_mapping"
+            ]
+          },
+          "misaki": {
+            "adapter": "g2p",
+            "capability": "g2p",
+            "language": "en-us",
+            "mapping": "unmapped",
+            "requires": [
+              "kokoro_waveform_engine"
+            ]
+          },
+          "personaplex": {
+            "adapter": "model_generate",
+            "capability": "speech_to_speech",
+            "language": "en",
+            "mapping": "unmapped",
+            "requires": [
+              "isolated_python312",
+              "personaplex_checkpoint",
+              "input_audio",
+              "persona_prompt",
+              "reference_wav"
+            ]
+          },
+          "pocket_tts": {
+            "adapter": "external",
+            "capability": "script_tts",
+            "language": "en",
+            "mapping": "unmapped",
+            "requires": [
+              "external_runtime",
+              "voice_mapping"
+            ]
+          },
+          "vibevoice": {
+            "adapter": "model_generate",
+            "capability": "script_tts",
+            "language": "en",
+            "mapping": "unmapped",
+            "requires": [
+              "isolated_python312",
+              "vibevoice_checkpoint",
+              "local_tokenizer",
+              "reference_wav"
+            ]
+          }
+        },
+        "linkedProjects": [
+          {
+            "id": "gen-audio-desktop",
+            "name": "Gen-Audio desktop studio",
+            "path": "apps/desktop",
+            "slide": "studio"
+          },
+          {
+            "id": "gen-audio-sdk",
+            "name": "Gen-Audio SDK and audio library",
+            "path": "src/gen_audio",
+            "slide": "library"
+          }
+        ],
+        "metadata": {
+          "artist": "Anton"
+        },
+        "notPodcast": true,
+        "personaId": "anton",
+        "profileVersion": "2.0",
+        "purpose": "Host a Gen-Audio briefing",
         "refs": [
           "persona:anton"
         ],
+        "samples": [],
         "spectrogram2d": "none",
         "spectrogram3d": "none",
-        "notPodcast": true,
-        "disclaimer": "Persona config for Anton on voice model kokoro-onnx. No audio of this persona yet; not a podcast render."
-      }
+        "synthesizedSpeech": false,
+        "tags": [
+          "agent",
+          "anton"
+        ],
+        "tone": "measured",
+        "traits": "Low-mid pitch, even pace, short pauses. Not a connector model.",
+        "voiceLabel": "kokoro-onnx",
+        "voiceModel": "kokoro_onnx"
+      },
+      "id": "profile-anton",
+      "kind": "VoiceProfile",
+      "title": "Anton",
+      "uid": "ga:card:tpwzqqirpudx6ovxgar7wts2dy"
     },
     {
-      "id": "profile-alice",
-      "uid": "ga:card:qulz3iikyxho672tdit55u6zeu",
-      "kind": "VoiceProfile",
-      "title": "Alice",
       "body": {
-        "agentName": "Alice",
-        "personaId": "alice",
-        "voiceModel": "kokoro_onnx",
-        "tone": "warm",
-        "purpose": "Walk through a labeled example",
-        "domain": "SDK onboarding",
         "accent": "General American",
-        "traits": "Persona Alice is the agent name. Kokoro pack id af_heart is a reference on this profile, not the Voice selector.",
+        "adaptiveCard": {
+          "$schema": "https://adaptivecards.io/schemas/adaptive-card.json",
+          "actions": [
+            {
+              "data": {
+                "arguments": {
+                  "agents": [
+                    "alice"
+                  ]
+                },
+                "tool": "ui_set_sidepane"
+              },
+              "title": "Use Alice",
+              "type": "Action.Submit"
+            },
+            {
+              "data": {
+                "arguments": {
+                  "slide": "slide:studio"
+                },
+                "tool": "ui_navigate"
+              },
+              "title": "Gen-Audio desktop studio",
+              "type": "Action.Submit"
+            },
+            {
+              "data": {
+                "arguments": {
+                  "slide": "slide:library"
+                },
+                "tool": "ui_navigate"
+              },
+              "title": "Gen-Audio SDK and audio library",
+              "type": "Action.Submit"
+            },
+            {
+              "data": {
+                "arguments": {
+                  "referenceId": "en-Alice_woman"
+                },
+                "tool": "voice_reference_prepare"
+              },
+              "title": "Prepare Alice",
+              "type": "Action.Submit"
+            }
+          ],
+          "body": [
+            {
+              "text": "Alice",
+              "type": "TextBlock",
+              "weight": "Bolder",
+              "wrap": true
+            },
+            {
+              "facts": [
+                {
+                  "title": "AgentName",
+                  "value": "Alice"
+                },
+                {
+                  "title": "Artist",
+                  "value": "Alice"
+                },
+                {
+                  "title": "Purpose",
+                  "value": "Walk through a labeled example"
+                },
+                {
+                  "title": "Domain",
+                  "value": "SDK onboarding"
+                },
+                {
+                  "title": "Accent",
+                  "value": "General American"
+                },
+                {
+                  "title": "Traits",
+                  "value": "Persona Alice is the agent name. Kokoro pack id af_heart is a reference on this profile, not the Voice selector."
+                }
+              ],
+              "type": "FactSet"
+            },
+            {
+              "text": "Engine bindings",
+              "type": "TextBlock",
+              "weight": "Bolder"
+            },
+            {
+              "facts": [
+                {
+                  "title": "kokoro_onnx",
+                  "value": "script_tts / mapped / af_heart"
+                },
+                {
+                  "title": "kokoro_dayour",
+                  "value": "script_tts / mapped / af_heart"
+                },
+                {
+                  "title": "misaki",
+                  "value": "g2p / mapped / af_heart"
+                },
+                {
+                  "title": "vibevoice",
+                  "value": "script_tts / mapped / en-Alice_woman"
+                },
+                {
+                  "title": "personaplex",
+                  "value": "speech_to_speech / mapped / en-Alice_woman"
+                },
+                {
+                  "title": "magpie",
+                  "value": "script_tts / unmapped / No binding assigned"
+                },
+                {
+                  "title": "pocket_tts",
+                  "value": "script_tts / unmapped / No binding assigned"
+                }
+              ],
+              "type": "FactSet"
+            },
+            {
+              "text": "Reference samples: Alice",
+              "type": "TextBlock",
+              "wrap": true
+            },
+            {
+              "text": "Projects: Gen-Audio desktop studio (apps/desktop); Gen-Audio SDK and audio library (src/gen_audio)",
+              "type": "TextBlock",
+              "wrap": true
+            }
+          ],
+          "type": "AdaptiveCard",
+          "version": "1.5"
+        },
+        "agentName": "Alice",
+        "disclaimer": "Persona config for Alice on voice model kokoro-onnx. No audio of this persona yet; not a podcast render.",
+        "domain": "SDK onboarding",
+        "engineManifests": {
+          "kokoro_dayour": {
+            "adapter": "external",
+            "capability": "script_tts",
+            "language": "en-us",
+            "mapping": "mapped",
+            "requires": [
+              "external_runtime"
+            ],
+            "voiceId": "af_heart"
+          },
+          "kokoro_onnx": {
+            "adapter": "synth",
+            "capability": "script_tts",
+            "language": "en-us",
+            "mapping": "mapped",
+            "requires": [
+              "kokoro_model",
+              "kokoro_voice_pack"
+            ],
+            "voiceId": "af_heart"
+          },
+          "magpie": {
+            "adapter": "external",
+            "capability": "script_tts",
+            "language": "en",
+            "mapping": "unmapped",
+            "requires": [
+              "external_runtime",
+              "voice_mapping"
+            ]
+          },
+          "misaki": {
+            "adapter": "g2p",
+            "capability": "g2p",
+            "downstreamEngine": "kokoro_onnx",
+            "language": "en-us",
+            "mapping": "mapped",
+            "requires": [
+              "kokoro_waveform_engine"
+            ],
+            "voiceId": "af_heart"
+          },
+          "personaplex": {
+            "adapter": "model_generate",
+            "capability": "speech_to_speech",
+            "language": "en",
+            "mapping": "mapped",
+            "referenceId": "en-Alice_woman",
+            "requires": [
+              "isolated_python312",
+              "personaplex_checkpoint",
+              "input_audio",
+              "persona_prompt",
+              "reference_wav"
+            ]
+          },
+          "pocket_tts": {
+            "adapter": "external",
+            "capability": "script_tts",
+            "language": "en",
+            "mapping": "unmapped",
+            "requires": [
+              "external_runtime",
+              "voice_mapping"
+            ]
+          },
+          "vibevoice": {
+            "adapter": "model_generate",
+            "capability": "script_tts",
+            "language": "en",
+            "mapping": "mapped",
+            "referenceId": "en-Alice_woman",
+            "requires": [
+              "isolated_python312",
+              "vibevoice_checkpoint",
+              "local_tokenizer",
+              "reference_wav"
+            ]
+          }
+        },
+        "linkedProjects": [
+          {
+            "id": "gen-audio-desktop",
+            "name": "Gen-Audio desktop studio",
+            "path": "apps/desktop",
+            "slide": "studio"
+          },
+          {
+            "id": "gen-audio-sdk",
+            "name": "Gen-Audio SDK and audio library",
+            "path": "src/gen_audio",
+            "slide": "library"
+          }
+        ],
+        "metadata": {
+          "artist": "Alice"
+        },
+        "notPodcast": true,
+        "personaId": "alice",
+        "profileVersion": "2.0",
+        "purpose": "Walk through a labeled example",
         "refs": [
           "kokoro-pack:af_heart",
           "persona:alice"
         ],
+        "samples": [
+          {
+            "kind": "acoustic_reference",
+            "label": "Alice",
+            "referenceId": "en-Alice_woman"
+          }
+        ],
         "spectrogram2d": "none",
         "spectrogram3d": "none",
-        "notPodcast": true,
-        "disclaimer": "Persona config for Alice on voice model kokoro-onnx. No audio of this persona yet; not a podcast render."
-      }
+        "synthesizedSpeech": false,
+        "tags": [
+          "agent",
+          "alice",
+          "script_tts",
+          "g2p",
+          "speech_to_speech"
+        ],
+        "tone": "warm",
+        "traits": "Persona Alice is the agent name. Kokoro pack id af_heart is a reference on this profile, not the Voice selector.",
+        "voiceLabel": "kokoro-onnx",
+        "voiceModel": "kokoro_onnx"
+      },
+      "id": "profile-alice",
+      "kind": "VoiceProfile",
+      "title": "Alice",
+      "uid": "ga:card:qulz3iikyxho672tdit55u6zeu"
     },
     {
-      "id": "profile-khortana",
-      "uid": "ga:card:f34lg4dv277pdlfsede7sr7ulm",
-      "kind": "VoiceProfile",
-      "title": "Khortana",
       "body": {
-        "agentName": "Khortana",
-        "personaId": "khortana",
-        "voiceModel": "kokoro_onnx",
-        "tone": "bright",
-        "purpose": "Offer a contrasting take",
-        "domain": "Product critique",
         "accent": "General American",
-        "traits": "Higher placement and a quicker glide. Not a TTS model id.",
+        "adaptiveCard": {
+          "$schema": "https://adaptivecards.io/schemas/adaptive-card.json",
+          "actions": [
+            {
+              "data": {
+                "arguments": {
+                  "agents": [
+                    "khortana"
+                  ]
+                },
+                "tool": "ui_set_sidepane"
+              },
+              "title": "Use Khortana",
+              "type": "Action.Submit"
+            },
+            {
+              "data": {
+                "arguments": {
+                  "slide": "slide:studio"
+                },
+                "tool": "ui_navigate"
+              },
+              "title": "Gen-Audio desktop studio",
+              "type": "Action.Submit"
+            },
+            {
+              "data": {
+                "arguments": {
+                  "slide": "slide:library"
+                },
+                "tool": "ui_navigate"
+              },
+              "title": "Gen-Audio SDK and audio library",
+              "type": "Action.Submit"
+            }
+          ],
+          "body": [
+            {
+              "text": "Khortana",
+              "type": "TextBlock",
+              "weight": "Bolder",
+              "wrap": true
+            },
+            {
+              "facts": [
+                {
+                  "title": "AgentName",
+                  "value": "Khortana"
+                },
+                {
+                  "title": "Artist",
+                  "value": "Khortana"
+                },
+                {
+                  "title": "Purpose",
+                  "value": "Offer a contrasting take"
+                },
+                {
+                  "title": "Domain",
+                  "value": "Product critique"
+                },
+                {
+                  "title": "Accent",
+                  "value": "General American"
+                },
+                {
+                  "title": "Traits",
+                  "value": "Higher placement and a quicker glide. Not a TTS model id."
+                }
+              ],
+              "type": "FactSet"
+            },
+            {
+              "text": "Engine bindings",
+              "type": "TextBlock",
+              "weight": "Bolder"
+            },
+            {
+              "facts": [
+                {
+                  "title": "kokoro_onnx",
+                  "value": "script_tts / unmapped / No binding assigned"
+                },
+                {
+                  "title": "kokoro_dayour",
+                  "value": "script_tts / unmapped / No binding assigned"
+                },
+                {
+                  "title": "misaki",
+                  "value": "g2p / unmapped / No binding assigned"
+                },
+                {
+                  "title": "vibevoice",
+                  "value": "script_tts / unmapped / No binding assigned"
+                },
+                {
+                  "title": "personaplex",
+                  "value": "speech_to_speech / unmapped / No binding assigned"
+                },
+                {
+                  "title": "magpie",
+                  "value": "script_tts / unmapped / No binding assigned"
+                },
+                {
+                  "title": "pocket_tts",
+                  "value": "script_tts / unmapped / No binding assigned"
+                }
+              ],
+              "type": "FactSet"
+            },
+            {
+              "text": "Reference samples: No acoustic reference assigned.",
+              "type": "TextBlock",
+              "wrap": true
+            },
+            {
+              "text": "Projects: Gen-Audio desktop studio (apps/desktop); Gen-Audio SDK and audio library (src/gen_audio)",
+              "type": "TextBlock",
+              "wrap": true
+            }
+          ],
+          "type": "AdaptiveCard",
+          "version": "1.5"
+        },
+        "agentName": "Khortana",
+        "disclaimer": "Persona config for Khortana on voice model kokoro-onnx. No audio of this persona yet; not a podcast render.",
+        "domain": "Product critique",
+        "engineManifests": {
+          "kokoro_dayour": {
+            "adapter": "external",
+            "capability": "script_tts",
+            "language": "en-us",
+            "mapping": "unmapped",
+            "requires": [
+              "external_runtime"
+            ]
+          },
+          "kokoro_onnx": {
+            "adapter": "synth",
+            "capability": "script_tts",
+            "language": "en-us",
+            "mapping": "unmapped",
+            "requires": [
+              "kokoro_model",
+              "kokoro_voice_pack"
+            ]
+          },
+          "magpie": {
+            "adapter": "external",
+            "capability": "script_tts",
+            "language": "en",
+            "mapping": "unmapped",
+            "requires": [
+              "external_runtime",
+              "voice_mapping"
+            ]
+          },
+          "misaki": {
+            "adapter": "g2p",
+            "capability": "g2p",
+            "language": "en-us",
+            "mapping": "unmapped",
+            "requires": [
+              "kokoro_waveform_engine"
+            ]
+          },
+          "personaplex": {
+            "adapter": "model_generate",
+            "capability": "speech_to_speech",
+            "language": "en",
+            "mapping": "unmapped",
+            "requires": [
+              "isolated_python312",
+              "personaplex_checkpoint",
+              "input_audio",
+              "persona_prompt",
+              "reference_wav"
+            ]
+          },
+          "pocket_tts": {
+            "adapter": "external",
+            "capability": "script_tts",
+            "language": "en",
+            "mapping": "unmapped",
+            "requires": [
+              "external_runtime",
+              "voice_mapping"
+            ]
+          },
+          "vibevoice": {
+            "adapter": "model_generate",
+            "capability": "script_tts",
+            "language": "en",
+            "mapping": "unmapped",
+            "requires": [
+              "isolated_python312",
+              "vibevoice_checkpoint",
+              "local_tokenizer",
+              "reference_wav"
+            ]
+          }
+        },
+        "linkedProjects": [
+          {
+            "id": "gen-audio-desktop",
+            "name": "Gen-Audio desktop studio",
+            "path": "apps/desktop",
+            "slide": "studio"
+          },
+          {
+            "id": "gen-audio-sdk",
+            "name": "Gen-Audio SDK and audio library",
+            "path": "src/gen_audio",
+            "slide": "library"
+          }
+        ],
+        "metadata": {
+          "artist": "Khortana"
+        },
+        "notPodcast": true,
+        "personaId": "khortana",
+        "profileVersion": "2.0",
+        "purpose": "Offer a contrasting take",
         "refs": [
           "persona:khortana"
         ],
+        "samples": [],
         "spectrogram2d": "none",
         "spectrogram3d": "none",
-        "notPodcast": true,
-        "disclaimer": "Persona config for Khortana on voice model kokoro-onnx. No audio of this persona yet; not a podcast render."
-      }
+        "synthesizedSpeech": false,
+        "tags": [
+          "agent",
+          "khortana"
+        ],
+        "tone": "bright",
+        "traits": "Higher placement and a quicker glide. Not a TTS model id.",
+        "voiceLabel": "kokoro-onnx",
+        "voiceModel": "kokoro_onnx"
+      },
+      "id": "profile-khortana",
+      "kind": "VoiceProfile",
+      "title": "Khortana",
+      "uid": "ga:card:f34lg4dv277pdlfsede7sr7ulm"
     },
     {
-      "id": "profile-rocky",
-      "uid": "ga:card:pj4ogcnj42gzli7ql2daqz53em",
-      "kind": "VoiceProfile",
-      "title": "Rocky",
       "body": {
-        "agentName": "Rocky",
-        "personaId": "rocky",
-        "voiceModel": "kokoro_onnx",
-        "tone": "gravel",
-        "purpose": "Short reactions between turns",
-        "domain": "Studio banter",
         "accent": "General American",
-        "traits": "Low pitch and a narrow band. Not a TTS model id.",
+        "adaptiveCard": {
+          "$schema": "https://adaptivecards.io/schemas/adaptive-card.json",
+          "actions": [
+            {
+              "data": {
+                "arguments": {
+                  "agents": [
+                    "rocky"
+                  ]
+                },
+                "tool": "ui_set_sidepane"
+              },
+              "title": "Use Rocky",
+              "type": "Action.Submit"
+            },
+            {
+              "data": {
+                "arguments": {
+                  "slide": "slide:studio"
+                },
+                "tool": "ui_navigate"
+              },
+              "title": "Gen-Audio desktop studio",
+              "type": "Action.Submit"
+            },
+            {
+              "data": {
+                "arguments": {
+                  "slide": "slide:library"
+                },
+                "tool": "ui_navigate"
+              },
+              "title": "Gen-Audio SDK and audio library",
+              "type": "Action.Submit"
+            }
+          ],
+          "body": [
+            {
+              "text": "Rocky",
+              "type": "TextBlock",
+              "weight": "Bolder",
+              "wrap": true
+            },
+            {
+              "facts": [
+                {
+                  "title": "AgentName",
+                  "value": "Rocky"
+                },
+                {
+                  "title": "Artist",
+                  "value": "Rocky"
+                },
+                {
+                  "title": "Purpose",
+                  "value": "Short reactions between turns"
+                },
+                {
+                  "title": "Domain",
+                  "value": "Studio banter"
+                },
+                {
+                  "title": "Accent",
+                  "value": "General American"
+                },
+                {
+                  "title": "Traits",
+                  "value": "Low pitch and a narrow band. Not a TTS model id."
+                }
+              ],
+              "type": "FactSet"
+            },
+            {
+              "text": "Engine bindings",
+              "type": "TextBlock",
+              "weight": "Bolder"
+            },
+            {
+              "facts": [
+                {
+                  "title": "kokoro_onnx",
+                  "value": "script_tts / unmapped / No binding assigned"
+                },
+                {
+                  "title": "kokoro_dayour",
+                  "value": "script_tts / unmapped / No binding assigned"
+                },
+                {
+                  "title": "misaki",
+                  "value": "g2p / unmapped / No binding assigned"
+                },
+                {
+                  "title": "vibevoice",
+                  "value": "script_tts / unmapped / No binding assigned"
+                },
+                {
+                  "title": "personaplex",
+                  "value": "speech_to_speech / unmapped / No binding assigned"
+                },
+                {
+                  "title": "magpie",
+                  "value": "script_tts / unmapped / No binding assigned"
+                },
+                {
+                  "title": "pocket_tts",
+                  "value": "script_tts / unmapped / No binding assigned"
+                }
+              ],
+              "type": "FactSet"
+            },
+            {
+              "text": "Reference samples: No acoustic reference assigned.",
+              "type": "TextBlock",
+              "wrap": true
+            },
+            {
+              "text": "Projects: Gen-Audio desktop studio (apps/desktop); Gen-Audio SDK and audio library (src/gen_audio)",
+              "type": "TextBlock",
+              "wrap": true
+            }
+          ],
+          "type": "AdaptiveCard",
+          "version": "1.5"
+        },
+        "agentName": "Rocky",
+        "disclaimer": "Persona config for Rocky on voice model kokoro-onnx. No audio of this persona yet; not a podcast render.",
+        "domain": "Studio banter",
+        "engineManifests": {
+          "kokoro_dayour": {
+            "adapter": "external",
+            "capability": "script_tts",
+            "language": "en-us",
+            "mapping": "unmapped",
+            "requires": [
+              "external_runtime"
+            ]
+          },
+          "kokoro_onnx": {
+            "adapter": "synth",
+            "capability": "script_tts",
+            "language": "en-us",
+            "mapping": "unmapped",
+            "requires": [
+              "kokoro_model",
+              "kokoro_voice_pack"
+            ]
+          },
+          "magpie": {
+            "adapter": "external",
+            "capability": "script_tts",
+            "language": "en",
+            "mapping": "unmapped",
+            "requires": [
+              "external_runtime",
+              "voice_mapping"
+            ]
+          },
+          "misaki": {
+            "adapter": "g2p",
+            "capability": "g2p",
+            "language": "en-us",
+            "mapping": "unmapped",
+            "requires": [
+              "kokoro_waveform_engine"
+            ]
+          },
+          "personaplex": {
+            "adapter": "model_generate",
+            "capability": "speech_to_speech",
+            "language": "en",
+            "mapping": "unmapped",
+            "requires": [
+              "isolated_python312",
+              "personaplex_checkpoint",
+              "input_audio",
+              "persona_prompt",
+              "reference_wav"
+            ]
+          },
+          "pocket_tts": {
+            "adapter": "external",
+            "capability": "script_tts",
+            "language": "en",
+            "mapping": "unmapped",
+            "requires": [
+              "external_runtime",
+              "voice_mapping"
+            ]
+          },
+          "vibevoice": {
+            "adapter": "model_generate",
+            "capability": "script_tts",
+            "language": "en",
+            "mapping": "unmapped",
+            "requires": [
+              "isolated_python312",
+              "vibevoice_checkpoint",
+              "local_tokenizer",
+              "reference_wav"
+            ]
+          }
+        },
+        "linkedProjects": [
+          {
+            "id": "gen-audio-desktop",
+            "name": "Gen-Audio desktop studio",
+            "path": "apps/desktop",
+            "slide": "studio"
+          },
+          {
+            "id": "gen-audio-sdk",
+            "name": "Gen-Audio SDK and audio library",
+            "path": "src/gen_audio",
+            "slide": "library"
+          }
+        ],
+        "metadata": {
+          "artist": "Rocky"
+        },
+        "notPodcast": true,
+        "personaId": "rocky",
+        "profileVersion": "2.0",
+        "purpose": "Short reactions between turns",
         "refs": [
           "persona:rocky"
         ],
+        "samples": [],
         "spectrogram2d": "none",
         "spectrogram3d": "none",
-        "notPodcast": true,
-        "disclaimer": "Persona config for Rocky on voice model kokoro-onnx. No audio of this persona yet; not a podcast render."
-      }
+        "synthesizedSpeech": false,
+        "tags": [
+          "agent",
+          "rocky"
+        ],
+        "tone": "gravel",
+        "traits": "Low pitch and a narrow band. Not a TTS model id.",
+        "voiceLabel": "kokoro-onnx",
+        "voiceModel": "kokoro_onnx"
+      },
+      "id": "profile-rocky",
+      "kind": "VoiceProfile",
+      "title": "Rocky",
+      "uid": "ga:card:pj4ogcnj42gzli7ql2daqz53em"
     },
     {
-      "id": "lib-kokoro-onnx",
-      "uid": "ga:card:mkkpjlcv232f4yyyzkolrvw3yu",
-      "kind": "LibraryClip",
-      "title": "kokoro-onnx",
-      "body": {
-        "engineId": "kokoro_onnx",
-        "status": "ok",
-        "synthesizedSpeech": true,
-        "wavUrl": "/library/library_kokoro_onnx.wav",
-        "duration_s": 374.766,
-        "sample_rate": 24000,
-        "summary": "Real 6.2 min Gen-Audio briefing @ 24 kHz. 18 turns, 816 words. Not a fixture.",
-        "cubePngUrl": "/library/library_kokoro_onnx_cube3d.png",
-        "cubeJsonUrl": "/library/library_kokoro_onnx_cube3d.json",
-        "sidecarUrl": "/library/library_kokoro_onnx.synth.json",
-        "inv_hdr": 0.09737
-      },
       "adaptive": {
-        "type": "AdaptiveCard",
-        "version": "1.5",
         "body": [
           {
-            "type": "TextBlock",
             "text": "Real synth: kokoro-onnx · 374.8s · cube attached",
+            "type": "TextBlock",
             "wrap": true
           },
           {
-            "type": "FactSet",
             "facts": [
               {
                 "title": "Duration",
@@ -421,39 +1319,40 @@
                 "title": "inv-HDR",
                 "value": "0.097"
               }
-            ]
+            ],
+            "type": "FactSet"
           }
-        ]
-      }
+        ],
+        "type": "AdaptiveCard",
+        "version": "1.5"
+      },
+      "body": {
+        "cubeJsonUrl": "/library/library_kokoro_onnx_cube3d.json",
+        "cubePngUrl": "/library/library_kokoro_onnx_cube3d.png",
+        "duration_s": 374.766,
+        "engineId": "kokoro_onnx",
+        "inv_hdr": 0.09737,
+        "sample_rate": 24000,
+        "sidecarUrl": "/library/library_kokoro_onnx.synth.json",
+        "status": "ok",
+        "summary": "Real 6.2 min Gen-Audio briefing @ 24 kHz. 18 turns, 816 words. Not a fixture.",
+        "synthesizedSpeech": true,
+        "wavUrl": "/library/library_kokoro_onnx.wav"
+      },
+      "id": "lib-kokoro-onnx",
+      "kind": "LibraryClip",
+      "title": "kokoro-onnx",
+      "uid": "ga:card:mkkpjlcv232f4yyyzkolrvw3yu"
     },
     {
-      "id": "lib-kokoro",
-      "uid": "ga:card:a2ti6pijkx6p2qp46yrsaxvwve",
-      "kind": "LibraryClip",
-      "title": "dayour/kokoro",
-      "body": {
-        "engineId": "kokoro_dayour",
-        "status": "ok",
-        "synthesizedSpeech": true,
-        "wavUrl": "/library/library_kokoro.wav",
-        "duration_s": 375.625,
-        "sample_rate": 24000,
-        "summary": "Real dayour/kokoro torch synth — 375.6s Gen-Audio briefing. Inverse-HDR cube attached. Not a fixture.",
-        "cubePngUrl": "/library/library_kokoro_cube3d.png",
-        "cubeJsonUrl": "/library/library_kokoro_cube3d.json",
-        "inv_hdr": 0.06455033665251082
-      },
       "adaptive": {
-        "type": "AdaptiveCard",
-        "version": "1.5",
         "body": [
           {
-            "type": "TextBlock",
             "text": "Real synth: dayour/kokoro · 375.6s · cube attached",
+            "type": "TextBlock",
             "wrap": true
           },
           {
-            "type": "FactSet",
             "facts": [
               {
                 "title": "Duration",
@@ -475,39 +1374,39 @@
                 "title": "Cube",
                 "value": "rev 3 · 395 time bins · 0:00–6:15"
               }
-            ]
+            ],
+            "type": "FactSet"
           }
-        ]
-      }
+        ],
+        "type": "AdaptiveCard",
+        "version": "1.5"
+      },
+      "body": {
+        "cubeJsonUrl": "/library/library_kokoro_cube3d.json",
+        "cubePngUrl": "/library/library_kokoro_cube3d.png",
+        "duration_s": 375.625,
+        "engineId": "kokoro_dayour",
+        "inv_hdr": 0.06455033665251082,
+        "sample_rate": 24000,
+        "status": "ok",
+        "summary": "Real dayour/kokoro torch synth — 375.6s Gen-Audio briefing. Inverse-HDR cube attached. Not a fixture.",
+        "synthesizedSpeech": true,
+        "wavUrl": "/library/library_kokoro.wav"
+      },
+      "id": "lib-kokoro",
+      "kind": "LibraryClip",
+      "title": "dayour/kokoro",
+      "uid": "ga:card:a2ti6pijkx6p2qp46yrsaxvwve"
     },
     {
-      "id": "lib-misaki-kokoro",
-      "uid": "ga:card:n7xzajd6l6oxupq4n5yeh5v4h4",
-      "kind": "LibraryClip",
-      "title": "misaki→kokoro",
-      "body": {
-        "engineId": "misaki_kokoro",
-        "status": "ok",
-        "synthesizedSpeech": true,
-        "wavUrl": "/library/genaid_full_misaki_kokoro.wav",
-        "duration_s": 139.375,
-        "sample_rate": 24000,
-        "summary": "Real misaki→kokoro WAV · genaid_full_misaki_kokoro @ 24 kHz. Inverse-HDR cube attached. Not a fixture.",
-        "cubePngUrl": "/library/genaid_full_misaki_kokoro_cube3d.png",
-        "cubeJsonUrl": "/library/library_genaid_full_misaki_kokoro_cube3d.json",
-        "inv_hdr": 0.07021075781225594
-      },
       "adaptive": {
-        "type": "AdaptiveCard",
-        "version": "1.5",
         "body": [
           {
-            "type": "TextBlock",
             "text": "Real synth: misaki→kokoro · 139.4s · cube attached",
+            "type": "TextBlock",
             "wrap": true
           },
           {
-            "type": "FactSet",
             "facts": [
               {
                 "title": "Duration",
@@ -529,39 +1428,39 @@
                 "title": "Cube",
                 "value": "rev 3 · 395 time bins · 0:00–2:19"
               }
-            ]
+            ],
+            "type": "FactSet"
           }
-        ]
-      }
+        ],
+        "type": "AdaptiveCard",
+        "version": "1.5"
+      },
+      "body": {
+        "cubeJsonUrl": "/library/library_genaid_full_misaki_kokoro_cube3d.json",
+        "cubePngUrl": "/library/genaid_full_misaki_kokoro_cube3d.png",
+        "duration_s": 139.375,
+        "engineId": "misaki_kokoro",
+        "inv_hdr": 0.07021075781225594,
+        "sample_rate": 24000,
+        "status": "ok",
+        "summary": "Real misaki→kokoro WAV · genaid_full_misaki_kokoro @ 24 kHz. Inverse-HDR cube attached. Not a fixture.",
+        "synthesizedSpeech": true,
+        "wavUrl": "/library/genaid_full_misaki_kokoro.wav"
+      },
+      "id": "lib-misaki-kokoro",
+      "kind": "LibraryClip",
+      "title": "misaki→kokoro",
+      "uid": "ga:card:n7xzajd6l6oxupq4n5yeh5v4h4"
     },
     {
-      "id": "lib-bitdot-braille-vibevoice",
-      "uid": "ga:card:hf2ojkdfxizvznvyckuzxrgzay",
-      "kind": "LibraryClip",
-      "title": "Bitdot braille (VibeVoice-1.5B)",
-      "body": {
-        "engineId": "vibevoice",
-        "status": "ok",
-        "synthesizedSpeech": true,
-        "wavUrl": "/library/bitdot_braille_vibevoice.wav",
-        "duration_s": 247.0667,
-        "sample_rate": 24000,
-        "summary": "Real VibeVoice-1.5B podcast · Alice + Frank · bitdot braille @ 24 kHz. Inverse-HDR cube attached. Not a fixture.",
-        "cubePngUrl": "/library/bitdot_braille_vibevoice_cube3d.png",
-        "cubeJsonUrl": "/library/library_bitdot_braille_vibevoice_cube3d.json",
-        "inv_hdr": 0.0667773777452339
-      },
       "adaptive": {
-        "type": "AdaptiveCard",
-        "version": "1.5",
         "body": [
           {
-            "type": "TextBlock",
             "text": "Real synth: VibeVoice-1.5B · Alice + Frank · 247.1s · cube attached",
+            "type": "TextBlock",
             "wrap": true
           },
           {
-            "type": "FactSet",
             "facts": [
               {
                 "title": "Duration",
@@ -587,106 +1486,325 @@
                 "title": "Cube",
                 "value": "rev 3 · 399 time bins · 0.619 s/bin · 0:00–4:06"
               }
-            ]
+            ],
+            "type": "FactSet"
           }
-        ]
-      }
+        ],
+        "type": "AdaptiveCard",
+        "version": "1.5"
+      },
+      "body": {
+        "cubeJsonUrl": "/library/library_bitdot_braille_vibevoice_cube3d.json",
+        "cubePngUrl": "/library/bitdot_braille_vibevoice_cube3d.png",
+        "duration_s": 247.0667,
+        "engineId": "vibevoice",
+        "inv_hdr": 0.0667773777452339,
+        "sample_rate": 24000,
+        "status": "ok",
+        "summary": "Real VibeVoice-1.5B podcast · Alice + Frank · bitdot braille @ 24 kHz. Inverse-HDR cube attached. Not a fixture.",
+        "synthesizedSpeech": true,
+        "wavUrl": "/library/bitdot_braille_vibevoice.wav"
+      },
+      "id": "lib-bitdot-braille-vibevoice",
+      "kind": "LibraryClip",
+      "title": "Bitdot braille (VibeVoice-1.5B)",
+      "uid": "ga:card:hf2ojkdfxizvznvyckuzxrgzay"
     },
     {
-      "id": "lib-magpie",
-      "uid": "ga:card:z2ghwc3rentj2grxbsbp5najzy",
-      "kind": "LibraryClip",
-      "title": "Magpie",
       "body": {
         "engineId": "magpie",
         "status": "unavailable",
-        "synthesizedSpeech": false,
-        "summary": "GGUF weights exist on box; magpie-tts.cpp not built. No fake audio."
-      }
+        "summary": "GGUF weights exist on box; magpie-tts.cpp not built. No fake audio.",
+        "synthesizedSpeech": false
+      },
+      "id": "lib-magpie",
+      "kind": "LibraryClip",
+      "title": "Magpie",
+      "uid": "ga:card:z2ghwc3rentj2grxbsbp5najzy"
     },
     {
-      "id": "lib-vibevoice",
-      "uid": "ga:card:hyvutp3odbc2myw6ej22ov2a2e",
-      "kind": "LibraryClip",
-      "title": "VibeVoice",
       "body": {
         "engineId": "vibevoice",
         "status": "unavailable",
-        "synthesizedSpeech": false,
-        "summary": "1.5B safetensors present but no verified runnable synth harness this pass."
-      }
+        "summary": "No new VibeVoice worker render is attached to this row. The archived Bitdot clip is separate; generation requires a passing readiness check.",
+        "synthesizedSpeech": false
+      },
+      "id": "lib-vibevoice",
+      "kind": "LibraryClip",
+      "title": "VibeVoice",
+      "uid": "ga:card:hyvutp3odbc2myw6ej22ov2a2e"
     },
     {
-      "id": "lib-pocket",
-      "uid": "ga:card:w4o2cnrusd3h5rqtjv7hs6jd5q",
-      "kind": "LibraryClip",
-      "title": "Pocket TTS",
       "body": {
         "engineId": "pocket_tts",
         "status": "unavailable",
-        "synthesizedSpeech": false,
-        "summary": "pocket_tts not installed. Prior wrong-topic teaser not reused."
-      }
+        "summary": "pocket_tts not installed. Prior wrong-topic teaser not reused.",
+        "synthesizedSpeech": false
+      },
+      "id": "lib-pocket",
+      "kind": "LibraryClip",
+      "title": "Pocket TTS",
+      "uid": "ga:card:w4o2cnrusd3h5rqtjv7hs6jd5q"
     },
     {
-      "id": "profile-optimus",
-      "uid": "ga:card:4qprunbbtl3h3teawtaq5agmc4",
-      "kind": "VoiceProfile",
-      "title": "Optimus Timelarp",
       "body": {
-        "agentName": "Optimus Timelarp",
-        "personaId": "optimus",
-        "voiceModel": "kokoro_onnx",
-        "tone": "assertive",
-        "purpose": "Gate and harden product stamps",
-        "domain": "Product / A-E stamps",
         "accent": "General American",
-        "traits": "Decisive, honest, screenshot-proof. AP-7 hard kill. Not a TTS model id.",
+        "adaptiveCard": {
+          "$schema": "https://adaptivecards.io/schemas/adaptive-card.json",
+          "actions": [
+            {
+              "data": {
+                "arguments": {
+                  "agents": [
+                    "optimus"
+                  ]
+                },
+                "tool": "ui_set_sidepane"
+              },
+              "title": "Use Optimus Timelarp",
+              "type": "Action.Submit"
+            },
+            {
+              "data": {
+                "arguments": {
+                  "slide": "slide:studio"
+                },
+                "tool": "ui_navigate"
+              },
+              "title": "Gen-Audio desktop studio",
+              "type": "Action.Submit"
+            },
+            {
+              "data": {
+                "arguments": {
+                  "slide": "slide:library"
+                },
+                "tool": "ui_navigate"
+              },
+              "title": "Gen-Audio SDK and audio library",
+              "type": "Action.Submit"
+            }
+          ],
+          "body": [
+            {
+              "text": "Optimus Timelarp",
+              "type": "TextBlock",
+              "weight": "Bolder",
+              "wrap": true
+            },
+            {
+              "facts": [
+                {
+                  "title": "AgentName",
+                  "value": "Optimus Timelarp"
+                },
+                {
+                  "title": "Artist",
+                  "value": "Optimus Timelarp"
+                },
+                {
+                  "title": "Purpose",
+                  "value": "Gate and harden product stamps"
+                },
+                {
+                  "title": "Domain",
+                  "value": "Product / A-E stamps"
+                },
+                {
+                  "title": "Accent",
+                  "value": "General American"
+                },
+                {
+                  "title": "Traits",
+                  "value": "Decisive, honest, screenshot-proof. AP-7 hard kill. Not a TTS model id."
+                }
+              ],
+              "type": "FactSet"
+            },
+            {
+              "text": "Engine bindings",
+              "type": "TextBlock",
+              "weight": "Bolder"
+            },
+            {
+              "facts": [
+                {
+                  "title": "kokoro_onnx",
+                  "value": "script_tts / unmapped / No binding assigned"
+                },
+                {
+                  "title": "kokoro_dayour",
+                  "value": "script_tts / unmapped / No binding assigned"
+                },
+                {
+                  "title": "misaki",
+                  "value": "g2p / unmapped / No binding assigned"
+                },
+                {
+                  "title": "vibevoice",
+                  "value": "script_tts / unmapped / No binding assigned"
+                },
+                {
+                  "title": "personaplex",
+                  "value": "speech_to_speech / unmapped / No binding assigned"
+                },
+                {
+                  "title": "magpie",
+                  "value": "script_tts / unmapped / No binding assigned"
+                },
+                {
+                  "title": "pocket_tts",
+                  "value": "script_tts / unmapped / No binding assigned"
+                }
+              ],
+              "type": "FactSet"
+            },
+            {
+              "text": "Reference samples: No acoustic reference assigned.",
+              "type": "TextBlock",
+              "wrap": true
+            },
+            {
+              "text": "Projects: Gen-Audio desktop studio (apps/desktop); Gen-Audio SDK and audio library (src/gen_audio)",
+              "type": "TextBlock",
+              "wrap": true
+            }
+          ],
+          "type": "AdaptiveCard",
+          "version": "1.5"
+        },
+        "agentName": "Optimus Timelarp",
+        "disclaimer": "Persona config for Optimus Timelarp on voice model kokoro-onnx. No audio of this persona yet; not a podcast render.",
+        "domain": "Product / A-E stamps",
+        "engineManifests": {
+          "kokoro_dayour": {
+            "adapter": "external",
+            "capability": "script_tts",
+            "language": "en-us",
+            "mapping": "unmapped",
+            "requires": [
+              "external_runtime"
+            ]
+          },
+          "kokoro_onnx": {
+            "adapter": "synth",
+            "capability": "script_tts",
+            "language": "en-us",
+            "mapping": "unmapped",
+            "requires": [
+              "kokoro_model",
+              "kokoro_voice_pack"
+            ]
+          },
+          "magpie": {
+            "adapter": "external",
+            "capability": "script_tts",
+            "language": "en",
+            "mapping": "unmapped",
+            "requires": [
+              "external_runtime",
+              "voice_mapping"
+            ]
+          },
+          "misaki": {
+            "adapter": "g2p",
+            "capability": "g2p",
+            "language": "en-us",
+            "mapping": "unmapped",
+            "requires": [
+              "kokoro_waveform_engine"
+            ]
+          },
+          "personaplex": {
+            "adapter": "model_generate",
+            "capability": "speech_to_speech",
+            "language": "en",
+            "mapping": "unmapped",
+            "requires": [
+              "isolated_python312",
+              "personaplex_checkpoint",
+              "input_audio",
+              "persona_prompt",
+              "reference_wav"
+            ]
+          },
+          "pocket_tts": {
+            "adapter": "external",
+            "capability": "script_tts",
+            "language": "en",
+            "mapping": "unmapped",
+            "requires": [
+              "external_runtime",
+              "voice_mapping"
+            ]
+          },
+          "vibevoice": {
+            "adapter": "model_generate",
+            "capability": "script_tts",
+            "language": "en",
+            "mapping": "unmapped",
+            "requires": [
+              "isolated_python312",
+              "vibevoice_checkpoint",
+              "local_tokenizer",
+              "reference_wav"
+            ]
+          }
+        },
+        "linkedProjects": [
+          {
+            "id": "gen-audio-desktop",
+            "name": "Gen-Audio desktop studio",
+            "path": "apps/desktop",
+            "slide": "studio"
+          },
+          {
+            "id": "gen-audio-sdk",
+            "name": "Gen-Audio SDK and audio library",
+            "path": "src/gen_audio",
+            "slide": "library"
+          }
+        ],
+        "metadata": {
+          "artist": "Optimus Timelarp"
+        },
+        "notPodcast": true,
+        "personaId": "optimus",
+        "profileVersion": "2.0",
+        "purpose": "Gate and harden product stamps",
         "refs": [
           "persona:optimus",
           "tts:kokoro_onnx",
           "cube:library_cube_explainer",
           "clip:lib-cube-explainer"
         ],
+        "samples": [],
         "spectrogram2d": "none",
         "spectrogram3d": "none",
-        "notPodcast": true,
         "synthesizedSpeech": false,
-        "disclaimer": "Persona config for Optimus Timelarp on voice model kokoro-onnx. No audio of this persona yet; not a podcast render."
-      }
+        "tags": [
+          "agent",
+          "optimus"
+        ],
+        "tone": "assertive",
+        "traits": "Decisive, honest, screenshot-proof. AP-7 hard kill. Not a TTS model id.",
+        "voiceLabel": "kokoro-onnx",
+        "voiceModel": "kokoro_onnx"
+      },
+      "id": "profile-optimus",
+      "kind": "VoiceProfile",
+      "title": "Optimus Timelarp",
+      "uid": "ga:card:4qprunbbtl3h3teawtaq5agmc4"
     },
     {
-      "id": "lib-cube-explainer",
-      "uid": "ga:card:72pxivh23dgi6hruzry7hzykbu",
-      "kind": "LibraryClip",
-      "title": "Cube explainer",
-      "body": {
-        "engineId": "kokoro_onnx",
-        "status": "ok",
-        "synthesizedSpeech": true,
-        "wavUrl": "/library/library_cube_explainer_kokoro_onnx.wav",
-        "duration_s": 157.134,
-        "sample_rate": 24000,
-        "summary": "Real kokoro-onnx podcast explaining spectrogram cubes in Gen-Audio. Not a fixture.",
-        "cubePngUrl": "/library/library_cube_explainer_kokoro_onnx_cube3d.png",
-        "cubeJsonUrl": "/library/library_cube_explainer_kokoro_onnx_cube3d.json",
-        "sidecarUrl": "/library/library_cube_explainer_kokoro_onnx.synth.json",
-        "inv_hdr": 0.06963625142871165,
-        "title": "Cube explainer (kokoro-onnx)",
-        "semanticName": "Spectrogram cube explainer · Optimus AgentVoice",
-        "faceName": "Cube explainer"
-      },
       "adaptive": {
-        "type": "AdaptiveCard",
-        "version": "1.5",
         "body": [
           {
-            "type": "TextBlock",
             "text": "Real synth: kokoro-onnx · 157.1s · cube attached",
+            "type": "TextBlock",
             "wrap": true
           },
           {
-            "type": "FactSet",
             "facts": [
               {
                 "title": "Duration",
@@ -700,10 +1818,1050 @@
                 "title": "inv-HDR",
                 "value": "0.070"
               }
+            ],
+            "type": "FactSet"
+          }
+        ],
+        "type": "AdaptiveCard",
+        "version": "1.5"
+      },
+      "body": {
+        "cubeJsonUrl": "/library/library_cube_explainer_kokoro_onnx_cube3d.json",
+        "cubePngUrl": "/library/library_cube_explainer_kokoro_onnx_cube3d.png",
+        "duration_s": 157.134,
+        "engineId": "kokoro_onnx",
+        "faceName": "Cube explainer",
+        "inv_hdr": 0.06963625142871165,
+        "sample_rate": 24000,
+        "semanticName": "Spectrogram cube explainer · Optimus AgentVoice",
+        "sidecarUrl": "/library/library_cube_explainer_kokoro_onnx.synth.json",
+        "status": "ok",
+        "summary": "Real kokoro-onnx podcast explaining spectrogram cubes in Gen-Audio. Not a fixture.",
+        "synthesizedSpeech": true,
+        "title": "Cube explainer (kokoro-onnx)",
+        "wavUrl": "/library/library_cube_explainer_kokoro_onnx.wav"
+      },
+      "id": "lib-cube-explainer",
+      "kind": "LibraryClip",
+      "title": "Cube explainer",
+      "uid": "ga:card:72pxivh23dgi6hruzry7hzykbu"
+    },
+    {
+      "body": {
+        "accent": "General American",
+        "adaptiveCard": {
+          "$schema": "https://adaptivecards.io/schemas/adaptive-card.json",
+          "actions": [
+            {
+              "data": {
+                "arguments": {
+                  "agents": [
+                    "frank"
+                  ]
+                },
+                "tool": "ui_set_sidepane"
+              },
+              "title": "Use Frank",
+              "type": "Action.Submit"
+            },
+            {
+              "data": {
+                "arguments": {
+                  "slide": "slide:studio"
+                },
+                "tool": "ui_navigate"
+              },
+              "title": "Gen-Audio desktop studio",
+              "type": "Action.Submit"
+            },
+            {
+              "data": {
+                "arguments": {
+                  "slide": "slide:library"
+                },
+                "tool": "ui_navigate"
+              },
+              "title": "Gen-Audio SDK and audio library",
+              "type": "Action.Submit"
+            },
+            {
+              "data": {
+                "arguments": {
+                  "referenceId": "en-Frank_man"
+                },
+                "tool": "voice_reference_prepare"
+              },
+              "title": "Prepare Frank",
+              "type": "Action.Submit"
+            }
+          ],
+          "body": [
+            {
+              "text": "Frank",
+              "type": "TextBlock",
+              "weight": "Bolder",
+              "wrap": true
+            },
+            {
+              "facts": [
+                {
+                  "title": "AgentName",
+                  "value": "Frank"
+                },
+                {
+                  "title": "Artist",
+                  "value": "Frank"
+                },
+                {
+                  "title": "Purpose",
+                  "value": "Second chair on a briefing"
+                },
+                {
+                  "title": "Domain",
+                  "value": "Multi-speaker scripts"
+                },
+                {
+                  "title": "Accent",
+                  "value": "General American"
+                },
+                {
+                  "title": "Traits",
+                  "value": "Persona Frank is the agent name. Kokoro pack id am_michael is a reference, not the Voice selector."
+                }
+              ],
+              "type": "FactSet"
+            },
+            {
+              "text": "Engine bindings",
+              "type": "TextBlock",
+              "weight": "Bolder"
+            },
+            {
+              "facts": [
+                {
+                  "title": "kokoro_onnx",
+                  "value": "script_tts / mapped / am_michael"
+                },
+                {
+                  "title": "kokoro_dayour",
+                  "value": "script_tts / mapped / am_michael"
+                },
+                {
+                  "title": "misaki",
+                  "value": "g2p / mapped / am_michael"
+                },
+                {
+                  "title": "vibevoice",
+                  "value": "script_tts / mapped / en-Frank_man"
+                },
+                {
+                  "title": "personaplex",
+                  "value": "speech_to_speech / mapped / en-Frank_man"
+                },
+                {
+                  "title": "magpie",
+                  "value": "script_tts / unmapped / No binding assigned"
+                },
+                {
+                  "title": "pocket_tts",
+                  "value": "script_tts / unmapped / No binding assigned"
+                }
+              ],
+              "type": "FactSet"
+            },
+            {
+              "text": "Reference samples: Frank",
+              "type": "TextBlock",
+              "wrap": true
+            },
+            {
+              "text": "Projects: Gen-Audio desktop studio (apps/desktop); Gen-Audio SDK and audio library (src/gen_audio)",
+              "type": "TextBlock",
+              "wrap": true
+            }
+          ],
+          "type": "AdaptiveCard",
+          "version": "1.5"
+        },
+        "agentName": "Frank",
+        "disclaimer": "Persona config for Frank on voice model kokoro-onnx. No audio of this persona yet; not a podcast render.",
+        "domain": "Multi-speaker scripts",
+        "engineManifests": {
+          "kokoro_dayour": {
+            "adapter": "external",
+            "capability": "script_tts",
+            "language": "en-us",
+            "mapping": "mapped",
+            "requires": [
+              "external_runtime"
+            ],
+            "voiceId": "am_michael"
+          },
+          "kokoro_onnx": {
+            "adapter": "synth",
+            "capability": "script_tts",
+            "language": "en-us",
+            "mapping": "mapped",
+            "requires": [
+              "kokoro_model",
+              "kokoro_voice_pack"
+            ],
+            "voiceId": "am_michael"
+          },
+          "magpie": {
+            "adapter": "external",
+            "capability": "script_tts",
+            "language": "en",
+            "mapping": "unmapped",
+            "requires": [
+              "external_runtime",
+              "voice_mapping"
+            ]
+          },
+          "misaki": {
+            "adapter": "g2p",
+            "capability": "g2p",
+            "downstreamEngine": "kokoro_onnx",
+            "language": "en-us",
+            "mapping": "mapped",
+            "requires": [
+              "kokoro_waveform_engine"
+            ],
+            "voiceId": "am_michael"
+          },
+          "personaplex": {
+            "adapter": "model_generate",
+            "capability": "speech_to_speech",
+            "language": "en",
+            "mapping": "mapped",
+            "referenceId": "en-Frank_man",
+            "requires": [
+              "isolated_python312",
+              "personaplex_checkpoint",
+              "input_audio",
+              "persona_prompt",
+              "reference_wav"
+            ]
+          },
+          "pocket_tts": {
+            "adapter": "external",
+            "capability": "script_tts",
+            "language": "en",
+            "mapping": "unmapped",
+            "requires": [
+              "external_runtime",
+              "voice_mapping"
+            ]
+          },
+          "vibevoice": {
+            "adapter": "model_generate",
+            "capability": "script_tts",
+            "language": "en",
+            "mapping": "mapped",
+            "referenceId": "en-Frank_man",
+            "requires": [
+              "isolated_python312",
+              "vibevoice_checkpoint",
+              "local_tokenizer",
+              "reference_wav"
             ]
           }
-        ]
-      }
+        },
+        "linkedProjects": [
+          {
+            "id": "gen-audio-desktop",
+            "name": "Gen-Audio desktop studio",
+            "path": "apps/desktop",
+            "slide": "studio"
+          },
+          {
+            "id": "gen-audio-sdk",
+            "name": "Gen-Audio SDK and audio library",
+            "path": "src/gen_audio",
+            "slide": "library"
+          }
+        ],
+        "metadata": {
+          "artist": "Frank"
+        },
+        "notPodcast": true,
+        "personaId": "frank",
+        "profileVersion": "2.0",
+        "purpose": "Second chair on a briefing",
+        "refs": [
+          "kokoro-pack:am_michael",
+          "persona:frank"
+        ],
+        "samples": [
+          {
+            "kind": "acoustic_reference",
+            "label": "Frank",
+            "referenceId": "en-Frank_man"
+          }
+        ],
+        "spectrogram2d": "none",
+        "spectrogram3d": "none",
+        "synthesizedSpeech": false,
+        "tags": [
+          "agent",
+          "frank",
+          "script_tts",
+          "g2p",
+          "speech_to_speech"
+        ],
+        "tone": "plain",
+        "traits": "Persona Frank is the agent name. Kokoro pack id am_michael is a reference, not the Voice selector.",
+        "voiceLabel": "kokoro-onnx",
+        "voiceModel": "kokoro_onnx"
+      },
+      "id": "profile-frank",
+      "kind": "VoiceProfile",
+      "title": "Frank",
+      "uid": "ga:card:myxuo6gblq4rsevkyhvdtxn3be"
+    },
+    {
+      "body": {
+        "accent": "General American",
+        "adaptiveCard": {
+          "$schema": "https://adaptivecards.io/schemas/adaptive-card.json",
+          "actions": [
+            {
+              "data": {
+                "arguments": {
+                  "agents": [
+                    "nova"
+                  ]
+                },
+                "tool": "ui_set_sidepane"
+              },
+              "title": "Use Nova",
+              "type": "Action.Submit"
+            },
+            {
+              "data": {
+                "arguments": {
+                  "slide": "slide:studio"
+                },
+                "tool": "ui_navigate"
+              },
+              "title": "Gen-Audio desktop studio",
+              "type": "Action.Submit"
+            },
+            {
+              "data": {
+                "arguments": {
+                  "slide": "slide:library"
+                },
+                "tool": "ui_navigate"
+              },
+              "title": "Gen-Audio SDK and audio library",
+              "type": "Action.Submit"
+            }
+          ],
+          "body": [
+            {
+              "text": "Nova",
+              "type": "TextBlock",
+              "weight": "Bolder",
+              "wrap": true
+            },
+            {
+              "facts": [
+                {
+                  "title": "AgentName",
+                  "value": "Nova"
+                },
+                {
+                  "title": "Artist",
+                  "value": "Nova"
+                },
+                {
+                  "title": "Purpose",
+                  "value": "Read a status line"
+                },
+                {
+                  "title": "Domain",
+                  "value": "Readiness and health"
+                },
+                {
+                  "title": "Accent",
+                  "value": "General American"
+                },
+                {
+                  "title": "Traits",
+                  "value": "Mid pitch, little glide. Not a connector."
+                }
+              ],
+              "type": "FactSet"
+            },
+            {
+              "text": "Engine bindings",
+              "type": "TextBlock",
+              "weight": "Bolder"
+            },
+            {
+              "facts": [
+                {
+                  "title": "kokoro_onnx",
+                  "value": "script_tts / unmapped / No binding assigned"
+                },
+                {
+                  "title": "kokoro_dayour",
+                  "value": "script_tts / unmapped / No binding assigned"
+                },
+                {
+                  "title": "misaki",
+                  "value": "g2p / unmapped / No binding assigned"
+                },
+                {
+                  "title": "vibevoice",
+                  "value": "script_tts / unmapped / No binding assigned"
+                },
+                {
+                  "title": "personaplex",
+                  "value": "speech_to_speech / unmapped / No binding assigned"
+                },
+                {
+                  "title": "magpie",
+                  "value": "script_tts / unmapped / No binding assigned"
+                },
+                {
+                  "title": "pocket_tts",
+                  "value": "script_tts / unmapped / No binding assigned"
+                }
+              ],
+              "type": "FactSet"
+            },
+            {
+              "text": "Reference samples: No acoustic reference assigned.",
+              "type": "TextBlock",
+              "wrap": true
+            },
+            {
+              "text": "Projects: Gen-Audio desktop studio (apps/desktop); Gen-Audio SDK and audio library (src/gen_audio)",
+              "type": "TextBlock",
+              "wrap": true
+            }
+          ],
+          "type": "AdaptiveCard",
+          "version": "1.5"
+        },
+        "agentName": "Nova",
+        "disclaimer": "Persona config for Nova on voice model kokoro-onnx. No audio of this persona yet; not a podcast render.",
+        "domain": "Readiness and health",
+        "engineManifests": {
+          "kokoro_dayour": {
+            "adapter": "external",
+            "capability": "script_tts",
+            "language": "en-us",
+            "mapping": "unmapped",
+            "requires": [
+              "external_runtime"
+            ]
+          },
+          "kokoro_onnx": {
+            "adapter": "synth",
+            "capability": "script_tts",
+            "language": "en-us",
+            "mapping": "unmapped",
+            "requires": [
+              "kokoro_model",
+              "kokoro_voice_pack"
+            ]
+          },
+          "magpie": {
+            "adapter": "external",
+            "capability": "script_tts",
+            "language": "en",
+            "mapping": "unmapped",
+            "requires": [
+              "external_runtime",
+              "voice_mapping"
+            ]
+          },
+          "misaki": {
+            "adapter": "g2p",
+            "capability": "g2p",
+            "language": "en-us",
+            "mapping": "unmapped",
+            "requires": [
+              "kokoro_waveform_engine"
+            ]
+          },
+          "personaplex": {
+            "adapter": "model_generate",
+            "capability": "speech_to_speech",
+            "language": "en",
+            "mapping": "unmapped",
+            "requires": [
+              "isolated_python312",
+              "personaplex_checkpoint",
+              "input_audio",
+              "persona_prompt",
+              "reference_wav"
+            ]
+          },
+          "pocket_tts": {
+            "adapter": "external",
+            "capability": "script_tts",
+            "language": "en",
+            "mapping": "unmapped",
+            "requires": [
+              "external_runtime",
+              "voice_mapping"
+            ]
+          },
+          "vibevoice": {
+            "adapter": "model_generate",
+            "capability": "script_tts",
+            "language": "en",
+            "mapping": "unmapped",
+            "requires": [
+              "isolated_python312",
+              "vibevoice_checkpoint",
+              "local_tokenizer",
+              "reference_wav"
+            ]
+          }
+        },
+        "linkedProjects": [
+          {
+            "id": "gen-audio-desktop",
+            "name": "Gen-Audio desktop studio",
+            "path": "apps/desktop",
+            "slide": "studio"
+          },
+          {
+            "id": "gen-audio-sdk",
+            "name": "Gen-Audio SDK and audio library",
+            "path": "src/gen_audio",
+            "slide": "library"
+          }
+        ],
+        "metadata": {
+          "artist": "Nova"
+        },
+        "notPodcast": true,
+        "personaId": "nova",
+        "profileVersion": "2.0",
+        "purpose": "Read a status line",
+        "refs": [
+          "persona:nova"
+        ],
+        "samples": [],
+        "spectrogram2d": "none",
+        "spectrogram3d": "none",
+        "synthesizedSpeech": false,
+        "tags": [
+          "agent",
+          "nova"
+        ],
+        "tone": "clear",
+        "traits": "Mid pitch, little glide. Not a connector.",
+        "voiceLabel": "kokoro-onnx",
+        "voiceModel": "kokoro_onnx"
+      },
+      "id": "profile-nova",
+      "kind": "VoiceProfile",
+      "title": "Nova",
+      "uid": "ga:card:rcxaehz3fptozaybcqxl3l4yui"
+    },
+    {
+      "body": {
+        "accent": "General American",
+        "adaptiveCard": {
+          "$schema": "https://adaptivecards.io/schemas/adaptive-card.json",
+          "actions": [
+            {
+              "data": {
+                "arguments": {
+                  "agents": [
+                    "ivo"
+                  ]
+                },
+                "tool": "ui_set_sidepane"
+              },
+              "title": "Use Ivo",
+              "type": "Action.Submit"
+            },
+            {
+              "data": {
+                "arguments": {
+                  "slide": "slide:studio"
+                },
+                "tool": "ui_navigate"
+              },
+              "title": "Gen-Audio desktop studio",
+              "type": "Action.Submit"
+            },
+            {
+              "data": {
+                "arguments": {
+                  "slide": "slide:library"
+                },
+                "tool": "ui_navigate"
+              },
+              "title": "Gen-Audio SDK and audio library",
+              "type": "Action.Submit"
+            }
+          ],
+          "body": [
+            {
+              "text": "Ivo",
+              "type": "TextBlock",
+              "weight": "Bolder",
+              "wrap": true
+            },
+            {
+              "facts": [
+                {
+                  "title": "AgentName",
+                  "value": "Ivo"
+                },
+                {
+                  "title": "Artist",
+                  "value": "Ivo"
+                },
+                {
+                  "title": "Purpose",
+                  "value": "Name what is stubbed"
+                },
+                {
+                  "title": "Domain",
+                  "value": "Engine honesty"
+                },
+                {
+                  "title": "Accent",
+                  "value": "General American"
+                },
+                {
+                  "title": "Traits",
+                  "value": "Flat delivery. Persona selection never implies that a model, its weights, or its runtime are ready."
+                }
+              ],
+              "type": "FactSet"
+            },
+            {
+              "text": "Engine bindings",
+              "type": "TextBlock",
+              "weight": "Bolder"
+            },
+            {
+              "facts": [
+                {
+                  "title": "kokoro_onnx",
+                  "value": "script_tts / unmapped / No binding assigned"
+                },
+                {
+                  "title": "kokoro_dayour",
+                  "value": "script_tts / unmapped / No binding assigned"
+                },
+                {
+                  "title": "misaki",
+                  "value": "g2p / unmapped / No binding assigned"
+                },
+                {
+                  "title": "vibevoice",
+                  "value": "script_tts / unmapped / No binding assigned"
+                },
+                {
+                  "title": "personaplex",
+                  "value": "speech_to_speech / unmapped / No binding assigned"
+                },
+                {
+                  "title": "magpie",
+                  "value": "script_tts / unmapped / No binding assigned"
+                },
+                {
+                  "title": "pocket_tts",
+                  "value": "script_tts / unmapped / No binding assigned"
+                }
+              ],
+              "type": "FactSet"
+            },
+            {
+              "text": "Reference samples: No acoustic reference assigned.",
+              "type": "TextBlock",
+              "wrap": true
+            },
+            {
+              "text": "Projects: Gen-Audio desktop studio (apps/desktop); Gen-Audio SDK and audio library (src/gen_audio)",
+              "type": "TextBlock",
+              "wrap": true
+            }
+          ],
+          "type": "AdaptiveCard",
+          "version": "1.5"
+        },
+        "agentName": "Ivo",
+        "disclaimer": "Persona config for Ivo on voice model kokoro-onnx. No audio of this persona yet; not a podcast render.",
+        "domain": "Engine honesty",
+        "engineManifests": {
+          "kokoro_dayour": {
+            "adapter": "external",
+            "capability": "script_tts",
+            "language": "en-us",
+            "mapping": "unmapped",
+            "requires": [
+              "external_runtime"
+            ]
+          },
+          "kokoro_onnx": {
+            "adapter": "synth",
+            "capability": "script_tts",
+            "language": "en-us",
+            "mapping": "unmapped",
+            "requires": [
+              "kokoro_model",
+              "kokoro_voice_pack"
+            ]
+          },
+          "magpie": {
+            "adapter": "external",
+            "capability": "script_tts",
+            "language": "en",
+            "mapping": "unmapped",
+            "requires": [
+              "external_runtime",
+              "voice_mapping"
+            ]
+          },
+          "misaki": {
+            "adapter": "g2p",
+            "capability": "g2p",
+            "language": "en-us",
+            "mapping": "unmapped",
+            "requires": [
+              "kokoro_waveform_engine"
+            ]
+          },
+          "personaplex": {
+            "adapter": "model_generate",
+            "capability": "speech_to_speech",
+            "language": "en",
+            "mapping": "unmapped",
+            "requires": [
+              "isolated_python312",
+              "personaplex_checkpoint",
+              "input_audio",
+              "persona_prompt",
+              "reference_wav"
+            ]
+          },
+          "pocket_tts": {
+            "adapter": "external",
+            "capability": "script_tts",
+            "language": "en",
+            "mapping": "unmapped",
+            "requires": [
+              "external_runtime",
+              "voice_mapping"
+            ]
+          },
+          "vibevoice": {
+            "adapter": "model_generate",
+            "capability": "script_tts",
+            "language": "en",
+            "mapping": "unmapped",
+            "requires": [
+              "isolated_python312",
+              "vibevoice_checkpoint",
+              "local_tokenizer",
+              "reference_wav"
+            ]
+          }
+        },
+        "linkedProjects": [
+          {
+            "id": "gen-audio-desktop",
+            "name": "Gen-Audio desktop studio",
+            "path": "apps/desktop",
+            "slide": "studio"
+          },
+          {
+            "id": "gen-audio-sdk",
+            "name": "Gen-Audio SDK and audio library",
+            "path": "src/gen_audio",
+            "slide": "library"
+          }
+        ],
+        "metadata": {
+          "artist": "Ivo"
+        },
+        "notPodcast": true,
+        "personaId": "ivo",
+        "profileVersion": "2.0",
+        "purpose": "Name what is stubbed",
+        "refs": [
+          "persona:ivo"
+        ],
+        "samples": [],
+        "spectrogram2d": "none",
+        "spectrogram3d": "none",
+        "synthesizedSpeech": false,
+        "tags": [
+          "agent",
+          "ivo"
+        ],
+        "tone": "dry",
+        "traits": "Flat delivery. Persona selection never implies that a model, its weights, or its runtime are ready.",
+        "voiceLabel": "kokoro-onnx",
+        "voiceModel": "kokoro_onnx"
+      },
+      "id": "profile-ivo",
+      "kind": "VoiceProfile",
+      "title": "Ivo",
+      "uid": "ga:card:yleopdpjmsahuye3qdo6z25mx4"
+    },
+    {
+      "body": {
+        "accent": "General American",
+        "adaptiveCard": {
+          "$schema": "https://adaptivecards.io/schemas/adaptive-card.json",
+          "actions": [
+            {
+              "data": {
+                "arguments": {
+                  "agents": [
+                    "sable"
+                  ]
+                },
+                "tool": "ui_set_sidepane"
+              },
+              "title": "Use Sable",
+              "type": "Action.Submit"
+            },
+            {
+              "data": {
+                "arguments": {
+                  "slide": "slide:studio"
+                },
+                "tool": "ui_navigate"
+              },
+              "title": "Gen-Audio desktop studio",
+              "type": "Action.Submit"
+            },
+            {
+              "data": {
+                "arguments": {
+                  "slide": "slide:library"
+                },
+                "tool": "ui_navigate"
+              },
+              "title": "Gen-Audio SDK and audio library",
+              "type": "Action.Submit"
+            }
+          ],
+          "body": [
+            {
+              "text": "Sable",
+              "type": "TextBlock",
+              "weight": "Bolder",
+              "wrap": true
+            },
+            {
+              "facts": [
+                {
+                  "title": "AgentName",
+                  "value": "Sable"
+                },
+                {
+                  "title": "Artist",
+                  "value": "Sable"
+                },
+                {
+                  "title": "Purpose",
+                  "value": "Close a segment"
+                },
+                {
+                  "title": "Domain",
+                  "value": "Clip outros"
+                },
+                {
+                  "title": "Accent",
+                  "value": "General American"
+                },
+                {
+                  "title": "Traits",
+                  "value": "Softer high end. Does not imply a video track."
+                }
+              ],
+              "type": "FactSet"
+            },
+            {
+              "text": "Engine bindings",
+              "type": "TextBlock",
+              "weight": "Bolder"
+            },
+            {
+              "facts": [
+                {
+                  "title": "kokoro_onnx",
+                  "value": "script_tts / unmapped / No binding assigned"
+                },
+                {
+                  "title": "kokoro_dayour",
+                  "value": "script_tts / unmapped / No binding assigned"
+                },
+                {
+                  "title": "misaki",
+                  "value": "g2p / unmapped / No binding assigned"
+                },
+                {
+                  "title": "vibevoice",
+                  "value": "script_tts / unmapped / No binding assigned"
+                },
+                {
+                  "title": "personaplex",
+                  "value": "speech_to_speech / unmapped / No binding assigned"
+                },
+                {
+                  "title": "magpie",
+                  "value": "script_tts / unmapped / No binding assigned"
+                },
+                {
+                  "title": "pocket_tts",
+                  "value": "script_tts / unmapped / No binding assigned"
+                }
+              ],
+              "type": "FactSet"
+            },
+            {
+              "text": "Reference samples: No acoustic reference assigned.",
+              "type": "TextBlock",
+              "wrap": true
+            },
+            {
+              "text": "Projects: Gen-Audio desktop studio (apps/desktop); Gen-Audio SDK and audio library (src/gen_audio)",
+              "type": "TextBlock",
+              "wrap": true
+            }
+          ],
+          "type": "AdaptiveCard",
+          "version": "1.5"
+        },
+        "agentName": "Sable",
+        "disclaimer": "Persona config for Sable on voice model kokoro-onnx. No audio of this persona yet; not a podcast render.",
+        "domain": "Clip outros",
+        "engineManifests": {
+          "kokoro_dayour": {
+            "adapter": "external",
+            "capability": "script_tts",
+            "language": "en-us",
+            "mapping": "unmapped",
+            "requires": [
+              "external_runtime"
+            ]
+          },
+          "kokoro_onnx": {
+            "adapter": "synth",
+            "capability": "script_tts",
+            "language": "en-us",
+            "mapping": "unmapped",
+            "requires": [
+              "kokoro_model",
+              "kokoro_voice_pack"
+            ]
+          },
+          "magpie": {
+            "adapter": "external",
+            "capability": "script_tts",
+            "language": "en",
+            "mapping": "unmapped",
+            "requires": [
+              "external_runtime",
+              "voice_mapping"
+            ]
+          },
+          "misaki": {
+            "adapter": "g2p",
+            "capability": "g2p",
+            "language": "en-us",
+            "mapping": "unmapped",
+            "requires": [
+              "kokoro_waveform_engine"
+            ]
+          },
+          "personaplex": {
+            "adapter": "model_generate",
+            "capability": "speech_to_speech",
+            "language": "en",
+            "mapping": "unmapped",
+            "requires": [
+              "isolated_python312",
+              "personaplex_checkpoint",
+              "input_audio",
+              "persona_prompt",
+              "reference_wav"
+            ]
+          },
+          "pocket_tts": {
+            "adapter": "external",
+            "capability": "script_tts",
+            "language": "en",
+            "mapping": "unmapped",
+            "requires": [
+              "external_runtime",
+              "voice_mapping"
+            ]
+          },
+          "vibevoice": {
+            "adapter": "model_generate",
+            "capability": "script_tts",
+            "language": "en",
+            "mapping": "unmapped",
+            "requires": [
+              "isolated_python312",
+              "vibevoice_checkpoint",
+              "local_tokenizer",
+              "reference_wav"
+            ]
+          }
+        },
+        "linkedProjects": [
+          {
+            "id": "gen-audio-desktop",
+            "name": "Gen-Audio desktop studio",
+            "path": "apps/desktop",
+            "slide": "studio"
+          },
+          {
+            "id": "gen-audio-sdk",
+            "name": "Gen-Audio SDK and audio library",
+            "path": "src/gen_audio",
+            "slide": "library"
+          }
+        ],
+        "metadata": {
+          "artist": "Sable"
+        },
+        "notPodcast": true,
+        "personaId": "sable",
+        "profileVersion": "2.0",
+        "purpose": "Close a segment",
+        "refs": [
+          "persona:sable"
+        ],
+        "samples": [],
+        "spectrogram2d": "none",
+        "spectrogram3d": "none",
+        "synthesizedSpeech": false,
+        "tags": [
+          "agent",
+          "sable"
+        ],
+        "tone": "soft",
+        "traits": "Softer high end. Does not imply a video track.",
+        "voiceLabel": "kokoro-onnx",
+        "voiceModel": "kokoro_onnx"
+      },
+      "id": "profile-sable",
+      "kind": "VoiceProfile",
+      "title": "Sable",
+      "uid": "ga:card:zfuam4da2ctoumu73x24rqqpn4"
     }
-  ]
+  ],
+  "columns": 3,
+  "title": "Darbot Gen-Audio",
+  "version": "1.0"
 }

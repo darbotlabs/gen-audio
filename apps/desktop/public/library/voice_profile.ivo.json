@@ -1,0 +1,241 @@
+{
+  "accent": "General American",
+  "adaptiveCard": {
+    "$schema": "https://adaptivecards.io/schemas/adaptive-card.json",
+    "actions": [
+      {
+        "data": {
+          "arguments": {
+            "agents": [
+              "ivo"
+            ]
+          },
+          "tool": "ui_set_sidepane"
+        },
+        "title": "Use Ivo",
+        "type": "Action.Submit"
+      },
+      {
+        "data": {
+          "arguments": {
+            "slide": "slide:studio"
+          },
+          "tool": "ui_navigate"
+        },
+        "title": "Gen-Audio desktop studio",
+        "type": "Action.Submit"
+      },
+      {
+        "data": {
+          "arguments": {
+            "slide": "slide:library"
+          },
+          "tool": "ui_navigate"
+        },
+        "title": "Gen-Audio SDK and audio library",
+        "type": "Action.Submit"
+      }
+    ],
+    "body": [
+      {
+        "text": "Ivo",
+        "type": "TextBlock",
+        "weight": "Bolder",
+        "wrap": true
+      },
+      {
+        "facts": [
+          {
+            "title": "AgentName",
+            "value": "Ivo"
+          },
+          {
+            "title": "Artist",
+            "value": "Ivo"
+          },
+          {
+            "title": "Purpose",
+            "value": "Name what is stubbed"
+          },
+          {
+            "title": "Domain",
+            "value": "Engine honesty"
+          },
+          {
+            "title": "Accent",
+            "value": "General American"
+          },
+          {
+            "title": "Traits",
+            "value": "Flat delivery. Persona selection never implies that a model, its weights, or its runtime are ready."
+          }
+        ],
+        "type": "FactSet"
+      },
+      {
+        "text": "Engine bindings",
+        "type": "TextBlock",
+        "weight": "Bolder"
+      },
+      {
+        "facts": [
+          {
+            "title": "kokoro_onnx",
+            "value": "script_tts / unmapped / No binding assigned"
+          },
+          {
+            "title": "kokoro_dayour",
+            "value": "script_tts / unmapped / No binding assigned"
+          },
+          {
+            "title": "misaki",
+            "value": "g2p / unmapped / No binding assigned"
+          },
+          {
+            "title": "vibevoice",
+            "value": "script_tts / unmapped / No binding assigned"
+          },
+          {
+            "title": "personaplex",
+            "value": "speech_to_speech / unmapped / No binding assigned"
+          },
+          {
+            "title": "magpie",
+            "value": "script_tts / unmapped / No binding assigned"
+          },
+          {
+            "title": "pocket_tts",
+            "value": "script_tts / unmapped / No binding assigned"
+          }
+        ],
+        "type": "FactSet"
+      },
+      {
+        "text": "Reference samples: No acoustic reference assigned.",
+        "type": "TextBlock",
+        "wrap": true
+      },
+      {
+        "text": "Projects: Gen-Audio desktop studio (apps/desktop); Gen-Audio SDK and audio library (src/gen_audio)",
+        "type": "TextBlock",
+        "wrap": true
+      }
+    ],
+    "type": "AdaptiveCard",
+    "version": "1.5"
+  },
+  "agentName": "Ivo",
+  "disclaimer": "Persona config for Ivo on voice model kokoro-onnx. No audio of this persona yet; not a podcast render.",
+  "domain": "Engine honesty",
+  "engineManifests": {
+    "kokoro_dayour": {
+      "adapter": "external",
+      "capability": "script_tts",
+      "language": "en-us",
+      "mapping": "unmapped",
+      "requires": [
+        "external_runtime"
+      ]
+    },
+    "kokoro_onnx": {
+      "adapter": "synth",
+      "capability": "script_tts",
+      "language": "en-us",
+      "mapping": "unmapped",
+      "requires": [
+        "kokoro_model",
+        "kokoro_voice_pack"
+      ]
+    },
+    "magpie": {
+      "adapter": "external",
+      "capability": "script_tts",
+      "language": "en",
+      "mapping": "unmapped",
+      "requires": [
+        "external_runtime",
+        "voice_mapping"
+      ]
+    },
+    "misaki": {
+      "adapter": "g2p",
+      "capability": "g2p",
+      "language": "en-us",
+      "mapping": "unmapped",
+      "requires": [
+        "kokoro_waveform_engine"
+      ]
+    },
+    "personaplex": {
+      "adapter": "model_generate",
+      "capability": "speech_to_speech",
+      "language": "en",
+      "mapping": "unmapped",
+      "requires": [
+        "isolated_python312",
+        "personaplex_checkpoint",
+        "input_audio",
+        "persona_prompt",
+        "reference_wav"
+      ]
+    },
+    "pocket_tts": {
+      "adapter": "external",
+      "capability": "script_tts",
+      "language": "en",
+      "mapping": "unmapped",
+      "requires": [
+        "external_runtime",
+        "voice_mapping"
+      ]
+    },
+    "vibevoice": {
+      "adapter": "model_generate",
+      "capability": "script_tts",
+      "language": "en",
+      "mapping": "unmapped",
+      "requires": [
+        "isolated_python312",
+        "vibevoice_checkpoint",
+        "local_tokenizer",
+        "reference_wav"
+      ]
+    }
+  },
+  "linkedProjects": [
+    {
+      "id": "gen-audio-desktop",
+      "name": "Gen-Audio desktop studio",
+      "path": "apps/desktop",
+      "slide": "studio"
+    },
+    {
+      "id": "gen-audio-sdk",
+      "name": "Gen-Audio SDK and audio library",
+      "path": "src/gen_audio",
+      "slide": "library"
+    }
+  ],
+  "metadata": {
+    "artist": "Ivo"
+  },
+  "notPodcast": true,
+  "personaId": "ivo",
+  "profileVersion": "2.0",
+  "purpose": "Name what is stubbed",
+  "refs": [
+    "persona:ivo"
+  ],
+  "samples": [],
+  "spectrogram2d": "none",
+  "spectrogram3d": "none",
+  "synthesizedSpeech": false,
+  "tags": [
+    "agent",
+    "ivo"
+  ],
+  "tone": "dry",
+  "traits": "Flat delivery. Persona selection never implies that a model, its weights, or its runtime are ready.",
+  "voiceLabel": "kokoro-onnx",
+  "voiceModel": "kokoro_onnx"
+}

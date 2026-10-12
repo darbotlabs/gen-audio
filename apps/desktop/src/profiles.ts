@@ -1,5 +1,20 @@
 import { personaById, voiceById, type Persona } from "./catalog";
 import { previewImprove, type FixtureBuffer } from "./signal";
+import voiceLibrary from "../../../voices/manifest.json";
+
+export function engineManifest(personaId: string, engineId: string): Record<string, unknown> | undefined {
+  const profile = Object.entries(voiceLibrary.profiles).find(([id]) => id === personaId)?.[1];
+  return profile && Object.entries(profile.engineManifests).find(([id]) => id === engineId)?.[1];
+}
+
+export const managedVoiceReferences = voiceLibrary.references;
+
+export function profileMatches(profile: Record<string, unknown>, query: string, engine: string): boolean {
+  const manifests = profile.engineManifests as Record<string, { mapping?: string }> | undefined;
+  if (engine && manifests?.[engine]?.mapping !== "mapped") return false;
+  const text = JSON.stringify(profile).toLocaleLowerCase();
+  return query.trim().toLocaleLowerCase().split(/\s+/).every(term => text.includes(term));
+}
 
 /** Side-pane selection that picks a browser voice-profile spectrogram. */
 export interface VoiceSelection {
@@ -18,6 +33,22 @@ export interface ProfilePreview {
   afterTitle: string;
   heading: string;
   caption: string;
+}
+
+/** Descriptive profile only; selecting an external engine never claims speech. */
+export function voiceProfileForModel(personaId: string, modelId: string): Record<string, unknown> | undefined {
+  const person = personaById(personaId);
+  const model = voiceById(modelId);
+  if (!person || !model) return undefined;
+  return {
+    ...Object.entries(voiceLibrary.profiles).find(([id]) => id === personaId)?.[1],
+    agentName: person.name, personaId: person.id, voiceModel: model.id, voiceLabel: model.label,
+    tone: person.tone, purpose: person.purpose, domain: person.domain, accent: person.accent,
+    traits: person.traits, refs: [...person.refs], spectrogram2d: "none",
+    spectrogram3d: "none",
+    notPodcast: true, synthesizedSpeech: false,
+    disclaimer: `Persona config for ${person.name} on voice model ${model.label}. No audio of this persona yet; not a podcast render.`,
+  };
 }
 
 interface Layer {

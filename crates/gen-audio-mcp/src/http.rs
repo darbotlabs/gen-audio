@@ -1,8 +1,15 @@
-//! Optional loopback HTTP transport. One JSON-RPC request per POST. No session id.
+//! Authenticated, loopback-only HTTP. Scratch capabilities survive requests, not restarts.
+//! CLI HTTP clients must supply GEN_AUDIO_MCP_TOKEN (64 cryptographically random hex digits).
+//! Remote binds are disabled even with the old override; use an authenticated TLS proxy.
 
-use std::io::{Read, Write};
+use std::collections::HashMap;
+use std::io::{self, Read, Seek, SeekFrom, Write};
 use std::net::{SocketAddr, TcpListener, TcpStream};
-use std::time::Duration;
+use std::sync::{
+    atomic::{AtomicUsize, Ordering},
+    Arc,
+};
+use std::time::{Duration, Instant};
 
 use serde_json::Value;
 
@@ -26,78 +33,15 @@ pub const ALLOWED_ORIGINS: &[&str] = &[
     "http://127.0.0.1:1420",
 ];
 
-pub fn serve(addr: &str) -> std::io::Result<()> {
-    gen_audio_core::paths::reap_stale_mcp_addr();
-    let listener = bind_listener(addr)?;
-    if let Ok(bound) = listener.local_addr() {
-        let _ = gen_audio_core::paths::publish_mcp_addr(&bound.to_string());
-    }
-    accept_loop(listener);
-    Ok(())
-}
-
-/// Bind the loopback MCP listener and accept on a background thread.
-pub fn spawn_loopback(addr: &str) -> std::io::Result<SocketAddr> {
-    let listener = bind_listener(addr)?;
-    let bound = listener.local_addr()?;
-    std::thread::Builder::new()
-        .name("gen-audio-mcp".into())
-        .spawn(move || accept_loop(listener))
-        .map_err(std::io::Error::other)?;
-    Ok(bound)
-}
-
-pub fn initialize_handshake(addr: &str) -> Result<Value, String> {
-    let payload = serde_json::json!({
-        "jsonrpc": "2.0",
-        "id": 1,
-        "method": "initialize",
-        "params": {
-            "protocolVersion": "2025-03-26",
-            "capabilities": {},
-            "clientInfo": {"name": "gen-audio-desktop", "version": "0.1.0"}
-        }
-    });
-    let body = serde_json::to_vec(&payload).map_err(|err| err.to_string())?;
-    let mut stream = TcpStream::connect(addr).map_err(|err| err.to_string())?;
-    stream
-        .set_read_timeout(Some(Duration::from_secs(5)))
-        .map_err(|err| err.to_string())?;
-    let header = format!(
-        "POST /mcp HTTP/1.1\r\nHost: {addr}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
-        body.len()
-    );
-    stream
-        .write_all(header.as_bytes())
-        .map_err(|err| err.to_string())?;
-    stream.write_all(&body).map_err(|err| err.to_string())?;
-    let mut buf = Vec::new();
-    stream
-        .read_to_end(&mut buf)
-        .map_err(|err| err.to_string())?;
-    let text = String::from_utf8_lossy(&buf);
-    let Some((_, rest)) = text.split_once("\r\n\r\n") else {
-        return Err("handshake response had no body".into());
-    };
-    let value: Value = serde_json::from_str(rest.trim()).map_err(|err| err.to_string())?;
-    if value["result"]["protocolVersion"].as_str() != Some("2025-03-26") {
-        return Err("handshake protocolVersion".into());
-    }
-    if value["result"]["serverInfo"]["name"].as_str() != Some("gen-audio") {
-        return Err("handshake serverInfo.name".into());
-    }
-    Ok(value)
-}
-
 /// POST one `tools/call` to a running desktop listener and return the tool JSON.
-pub fn tools_call(addr: &str, name: &str, args: &Value) -> Result<Value, String> {
+pub fn tools_call(addr: &str, token: &str, name: &str, args: &Value) -> Result<Value, String> {
     let payload = serde_json::json!({
         "jsonrpc": "2.0",
         "id": 1,
         "method": "tools/call",
         "params": {"name": name, "arguments": args}
     });
-    let response = post_mcp(addr, &payload)?;
+    let response = client_request(addr, token, "/mcp", Some(&payload))?;
     if let Some(message) = response["error"]["message"].as_str() {
         return Err(message.to_string());
     }
@@ -107,96 +51,61 @@ pub fn tools_call(addr: &str, name: &str, args: &Value) -> Result<Value, String>
     serde_json::from_str(text).map_err(|err| err.to_string())
 }
 
-pub fn get_control(addr: &str, after: u64) -> Result<Value, String> {
-    let mut stream = TcpStream::connect(addr).map_err(|err| err.to_string())?;
-    stream
-        .set_read_timeout(Some(Duration::from_secs(5)))
-        .map_err(|err| err.to_string())?;
-    let req =
-        format!("GET /control?after={after} HTTP/1.1\r\nHost: {addr}\r\nConnection: close\r\n\r\n");
-    stream
-        .write_all(req.as_bytes())
-        .map_err(|err| err.to_string())?;
-    let mut buf = Vec::new();
-    stream
-        .read_to_end(&mut buf)
-        .map_err(|err| err.to_string())?;
-    let text = String::from_utf8_lossy(&buf);
-    let Some((_, rest)) = text.split_once("\r\n\r\n") else {
-        return Err("control response had no body".into());
-    };
-    serde_json::from_str(rest.trim()).map_err(|err| err.to_string())
+pub fn get_control(addr: &str, token: &str, after: u64) -> Result<Value, String> {
+    client_request(addr, token, &format!("/control?after={after}"), None)
 }
 
-fn post_mcp(addr: &str, payload: &Value) -> Result<Value, String> {
-    let body = serde_json::to_vec(payload).map_err(|err| err.to_string())?;
-    let mut stream = TcpStream::connect(addr).map_err(|err| err.to_string())?;
-    stream
-        .set_read_timeout(Some(Duration::from_secs(5)))
-        .map_err(|err| err.to_string())?;
+fn client_request(addr: &str, token: &str, path: &str, payload: Option<&Value>) -> Result<Value, String> {
+    ensure_bind_allowed(addr).map_err(|err| err.to_string())?;
+    validate_token(token).map_err(|err| err.to_string())?;
+    let addr: SocketAddr = addr.parse().map_err(|_| "invalid listener address")?;
+    let body = payload.map(serde_json::to_vec).transpose().map_err(|err| err.to_string())?.unwrap_or_default();
+    let method = if payload.is_some() { "POST" } else { "GET" };
+    let mut stream = TcpStream::connect_timeout(&addr, Duration::from_secs(2)).map_err(|err| err.to_string())?;
+    let deadline = Instant::now() + Duration::from_secs(15);
     let header = format!(
-        "POST /mcp HTTP/1.1\r\nHost: {addr}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+        "{method} {path} HTTP/1.1\r\nHost: {addr}\r\nAuthorization: Bearer {token}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
         body.len()
     );
-    stream
-        .write_all(header.as_bytes())
-        .map_err(|err| err.to_string())?;
-    stream.write_all(&body).map_err(|err| err.to_string())?;
+    write_deadline(&mut stream, header.as_bytes(), deadline).map_err(|err| err.to_string())?;
+    write_deadline(&mut stream, &body, deadline).map_err(|err| err.to_string())?;
     let mut buf = Vec::new();
-    stream
-        .read_to_end(&mut buf)
-        .map_err(|err| err.to_string())?;
+    let mut chunk = [0; 4096];
+    loop {
+        let n = read_deadline(&mut stream, &mut chunk, deadline).map_err(|err| err.to_string())?;
+        if n == 0 { break; }
+        buf.extend_from_slice(&chunk[..n]);
+        if buf.len() > 4 * 1024 * 1024 { return Err("MCP response exceeds limit".into()); }
+    }
     let text = String::from_utf8_lossy(&buf);
-    let Some((_, rest)) = text.split_once("\r\n\r\n") else {
+    let Some((head, rest)) = text.split_once("\r\n\r\n") else {
         return Err("mcp response had no body".into());
     };
+    if !head.starts_with("HTTP/1.1 200 ") { return Err("authenticated MCP request refused".into()); }
     serde_json::from_str(rest.trim()).map_err(|err| err.to_string())
 }
 
-fn bind_listener(addr: &str) -> std::io::Result<TcpListener> {
-    ensure_bind_allowed(addr)?;
-    TcpListener::bind(addr)
+const HEADER_LIMIT: usize = 8192;
+const BODY_LIMIT: usize = 1024 * 1024;
+const MAX_WORKERS: usize = 8;
+const REQUEST_TIMEOUT: Duration = Duration::from_secs(10);
+const WRITE_TIMEOUT: Duration = Duration::from_secs(10);
+const TRUSTED_ORIGINS: &[&str] = ALLOWED_ORIGINS;
+type HttpError = (u16, &'static str);
+
+/// Never print or persist this credential. The desktop passes it through child env and IPC.
+pub fn generate_token() -> io::Result<String> {
+    let mut bytes = [0u8; 32];
+    getrandom::getrandom(&mut bytes)
+        .map_err(|_| io::Error::other("secure randomness unavailable"))?;
+    Ok(bytes.iter().map(|byte| format!("{byte:02x}")).collect())
 }
 
-fn accept_loop(listener: TcpListener) {
-    let remote = listener
-        .local_addr()
-        .map(|socket| !socket.ip().is_loopback())
-        .unwrap_or(true);
-    let shared = std::sync::Arc::new(Server::boot());
-    for stream in listener.incoming() {
-        let Ok(stream) = stream else { continue };
-        if remote {
-            let rejections = std::sync::Arc::clone(&shared.rejections);
-            std::thread::spawn(move || {
-                // Fresh scratch per remote request, but one set of rejection counts per listener.
-                let mut isolated = Server::isolated();
-                isolated.rejections = rejections;
-                let dir = isolated.scratch.dir.clone();
-                let _ = handle_connection(&isolated, stream);
-                let _ = std::fs::remove_dir_all(dir);
-            });
-        } else {
-            let shared = std::sync::Arc::clone(&shared);
-            std::thread::spawn(move || {
-                let _ = handle_connection(&shared, stream);
-            });
-        }
-    }
-}
-
-pub fn ensure_bind_allowed(addr: &str) -> std::io::Result<()> {
-    let socket: SocketAddr = addr.parse().map_err(|err| {
-        std::io::Error::new(std::io::ErrorKind::InvalidInput, format!("addr: {err}"))
-    })?;
-    let remote_ok = std::env::var("GEN_AUDIO_MCP_HTTP_ALLOW_REMOTE")
-        .ok()
-        .as_deref()
-        == Some("1");
-    if !socket.ip().is_loopback() && !remote_ok {
-        return Err(std::io::Error::new(
-            std::io::ErrorKind::PermissionDenied,
-            "refusing non-loopback bind; set GEN_AUDIO_MCP_HTTP_ALLOW_REMOTE=1 to override",
+fn validate_token(token: &str) -> io::Result<()> {
+    if token.len() != 64 || !token.bytes().all(|b| b.is_ascii_hexdigit()) {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "HTTP requires GEN_AUDIO_MCP_TOKEN containing 64 cryptographically random hex digits",
         ));
     }
     Ok(())
@@ -220,213 +129,6 @@ fn note_handled_server(server: &Server, stream: &TcpStream) {
     }
 }
 
-pub fn handle_connection(server: &Server, mut stream: TcpStream) -> std::io::Result<()> {
-    #[cfg(test)]
-    note_handled_server(server, &stream);
-    stream.set_read_timeout(Some(Duration::from_secs(5)))?;
-    let (head, body) = match read_request(&mut stream) {
-        Ok(parts) => parts,
-        Err((status, body, line)) => {
-            let mut parts = line.split_whitespace();
-            let (method, path) = (parts.next().unwrap_or(""), parts.next().unwrap_or(""));
-            return reject(&server.rejections, &mut stream, method, path, status, body, "", "read");
-        }
-    };
-    let mut lines = head.lines();
-    let request = lines.next().unwrap_or("");
-    let mut parts = request.split_whitespace();
-    let method = parts.next().unwrap_or("");
-    let path = parts.next().unwrap_or("");
-    // DNS rebinding: a page on evil.example:<port> that resolves to 127.0.0.1
-    // sends Host evil.example:<port>. Only the listener's own address passes.
-    if !host_allowed(header(&head, "host"), stream.local_addr().ok()) {
-        return reject(&server.rejections, &mut stream, method, path, 403, br#"{"error":"host not allowed"}"#, "", "host");
-    }
-    let cors = match header(&head, "origin") {
-        None => String::new(),
-        Some(origin) if ALLOWED_ORIGINS.contains(&origin) => cors_headers(&stream, origin),
-        Some(_) => return reject(&server.rejections, &mut stream, method, path, 403, br#"{"error":"origin not allowed"}"#, "", "origin"),
-    };
-    if method == "OPTIONS" {
-        return write_response(&mut stream, 204, b"", &cors);
-    }
-    if method == "GET" && path == "/health" {
-        let (rejected, last_rejected) = server.rejections.snapshot();
-        let body = serde_json::to_vec(&serde_json::json!({
-            "status": "ok",
-            "service": "gen-audio-mcp",
-            "role": "mcp",
-            "stateless": true,
-            "genaidAudioProbed": false,
-            "rejected": rejected,
-            "last_rejected": last_rejected
-        }))
-        .unwrap_or_else(|_| b"{}".to_vec());
-        return write_response(&mut stream, 200, &body, &cors);
-    }
-    if method == "GET" && path == "/ready" {
-        let body = br#"{"ready":true,"service":"gen-audio-mcp","role":"mcp","stateless":true,"speech":false,"modelsLoaded":false,"note":"Listener is up. This is not genaid-audio /ready and not a loaded TTS model."}"#;
-        return write_response(&mut stream, 200, body, &cors);
-    }
-    if method == "GET" && (path == "/control/stream" || path.starts_with("/control/stream?")) {
-        return write_control_stream(&mut stream, path, &cors);
-    }
-    if method == "GET" && (path == "/control" || path.starts_with("/control?")) {
-        let after = query_u64(path, "after").unwrap_or(0);
-        let delta = crate::control::since(after);
-        let body = serde_json::to_vec(&serde_json::json!({
-            "stateless": true,
-            "speech": false,
-            "cursor": delta.cursor,
-            "gap": delta.gap,
-            "oldest": delta.oldest,
-            "resync": "viewport_get",
-            "events": delta.events
-        }))
-        .unwrap_or_else(|_| b"{}".to_vec());
-        return write_response(&mut stream, 200, &body, &cors);
-    }
-    if method == "GET" {
-        if let Some(rel) = library_rel(path) {
-            return write_library(&server.rejections, &mut stream, method, path, rel, &cors);
-        }
-    }
-    if method != "POST" || path != "/mcp" {
-        return reject(&server.rejections, &mut stream, method, path, 404, br#"{"error":"not found"}"#, &cors, "route");
-    }
-    // A text/plain (or untyped) POST is a CORS "simple request": a page can
-    // send it with no preflight. JSON-RPC here is application/json only.
-    if !is_json_content_type(header(&head, "content-type")) {
-        return reject(&server.rejections, &mut stream, method, path, 415, br#"{"error":"content-type must be application/json"}"#, &cors, "content-type");
-    }
-    if head.to_ascii_lowercase().contains("transfer-encoding:") {
-        return reject(&server.rejections, &mut stream, method, path, 400, br#"{"error":"chunked bodies are not accepted"}"#, &cors, "chunked");
-    }
-    let Some(length) = content_length(&head) else {
-        return reject(&server.rejections, &mut stream, method, path, 411, br#"{"error":"content-length required"}"#, &cors, "length");
-    };
-    if body.len() != length {
-        return reject(&server.rejections, &mut stream, method, path, 400, br#"{"error":"incomplete body"}"#, &cors, "body");
-    }
-    let message: Value = match serde_json::from_slice(&body) {
-        Ok(value) => value,
-        Err(_) => return reject(&server.rejections, &mut stream, method, path, 400, br#"{"error":"invalid json"}"#, &cors, "json"),
-    };
-    let rpc_method = message.get("method").and_then(Value::as_str).unwrap_or("").to_string();
-    let tool = message.pointer("/params/name").and_then(Value::as_str).unwrap_or("").to_string();
-    match handle(server, message) {
-        Ok(Some(response)) => {
-            if let Some(code) = response.pointer("/error/code") {
-                // A JSON-RPC rejection: name the tool (or the RPC method).
-                let target = if tool.is_empty() { rpc_method.clone() } else { format!("{rpc_method} {tool}") };
-                log_rejection(&stream, method, &target, &code.to_string(), "rpc");
-            }
-            let bytes = serde_json::to_vec(&response).unwrap_or_else(|_| b"{}".to_vec());
-            write_response(&mut stream, 200, &bytes, &cors)
-        }
-        Ok(None) => write_response(&mut stream, 202, b"{}", &cors),
-        Err(err) => {
-            let payload = serde_json::to_vec(&serde_json::json!({"error": err})).unwrap_or_else(|_| b"{}".to_vec());
-            reject(&server.rejections, &mut stream, method, path, 500, &payload, &cors, "handler")
-        }
-    }
-}
-
-/// First value of a header (case-insensitive name), trimmed.
-fn header<'a>(head: &'a str, name: &str) -> Option<&'a str> {
-    head.lines().skip(1).find_map(|line| {
-        let (key, value) = line.split_once(':')?;
-        key.trim().eq_ignore_ascii_case(name).then(|| value.trim())
-    })
-}
-
-/// Host must name this listener: 127.0.0.1, localhost or [::1] (or the bound
-/// IP) with the listener's port. Missing Host is refused too.
-fn host_allowed(host: Option<&str>, local: Option<SocketAddr>) -> bool {
-    let (Some(host), Some(local)) = (host, local) else { return false };
-    let port = local.port();
-    let ip = match local.ip() {
-        std::net::IpAddr::V6(v6) => format!("[{v6}]"),
-        std::net::IpAddr::V4(v4) => v4.to_string(),
-    };
-    [format!("127.0.0.1:{port}"), format!("localhost:{port}"), format!("[::1]:{port}"), format!("{ip}:{port}")]
-        .iter()
-        .any(|allowed| host.eq_ignore_ascii_case(allowed))
-}
-
-fn is_json_content_type(value: Option<&str>) -> bool {
-    value
-        .and_then(|value| value.split(';').next())
-        .is_some_and(|media| media.trim().eq_ignore_ascii_case("application/json"))
-}
-
-fn read_request(stream: &mut TcpStream) -> Result<(String, Vec<u8>), (u16, &'static [u8], String)> {
-    let mut buf = Vec::new();
-    let mut tmp = [0u8; 4096];
-    let header_end = loop {
-        if buf.len() > 1024 * 1024 + 8192 {
-            return Err((413, br#"{"error":"body too large"}"#, first_line(&buf)));
-        }
-        match stream.read(&mut tmp) {
-            Ok(0) => break None,
-            Ok(n) => {
-                buf.extend_from_slice(&tmp[..n]);
-                if let Some(pos) = buf.windows(4).position(|w| w == b"\r\n\r\n") {
-                    break Some(pos);
-                }
-            }
-            Err(err)
-                if err.kind() == std::io::ErrorKind::WouldBlock
-                    || err.kind() == std::io::ErrorKind::TimedOut =>
-            {
-                break None;
-            }
-            Err(_) => return Err((400, br#"{"error":"bad request"}"#, first_line(&buf))),
-        }
-    };
-    let Some(pos) = header_end else {
-        return Err((400, br#"{"error":"bad request"}"#, first_line(&buf)));
-    };
-    let head = String::from_utf8_lossy(&buf[..pos]).into_owned();
-    if head.to_ascii_lowercase().contains("transfer-encoding:") {
-        return Err((400, br#"{"error":"chunked bodies are not accepted"}"#, first_line(&buf)));
-    }
-    let mut body = buf[pos + 4..].to_vec();
-    let Some(length) = content_length(&head) else {
-        // GET and OPTIONS carry no body. Chromium's CORS preflight sends no
-        // Content-Length, so OPTIONS must pass here or every window POST dies.
-        let request_line = head.lines().next().unwrap_or("");
-        if body.is_empty() && (request_line.starts_with("GET ") || request_line.starts_with("OPTIONS ")) {
-            return Ok((head, body));
-        }
-        return Err((411, br#"{"error":"content-length required"}"#, first_line(&buf)));
-    };
-    if length > 1024 * 1024 {
-        return Err((413, br#"{"error":"body too large"}"#, first_line(&buf)));
-    }
-    while body.len() < length {
-        match stream.read(&mut tmp) {
-            Ok(0) => break,
-            Ok(n) => {
-                let need = length - body.len();
-                body.extend_from_slice(&tmp[..n.min(need)]);
-            }
-            Err(err) if err.kind() == std::io::ErrorKind::WouldBlock || err.kind() == std::io::ErrorKind::TimedOut => break,
-            Err(_) => return Err((400, br#"{"error":"bad request"}"#, first_line(&buf))),
-        }
-    }
-    if body.len() != length {
-        return Err((400, br#"{"error":"incomplete body"}"#, first_line(&buf)));
-    }
-    Ok((head, body))
-}
-
-/// The request line of whatever was read (for the rejection log).
-fn first_line(buf: &[u8]) -> String {
-    let end = buf.iter().position(|&byte| byte == b'\r' || byte == b'\n').unwrap_or(buf.len()).min(200);
-    String::from_utf8_lossy(&buf[..end]).into_owned()
-}
-
 /// Recent rejection log lines (the same lines go to stderr), newest last.
 static REJECTIONS: std::sync::Mutex<std::collections::VecDeque<String>> = std::sync::Mutex::new(std::collections::VecDeque::new());
 
@@ -442,8 +144,9 @@ thread_local! {
 /// and peer. Kept in a small ring so tests (and a future status read) can see it.
 fn log_rejection(stream: &TcpStream, method: &str, target: &str, code: &str, reason: &str) {
     let peer = stream.peer_addr().map(|addr| addr.to_string()).unwrap_or_else(|_| "?".into());
-    let method = if method.is_empty() { "-" } else { method };
-    let target = if target.is_empty() { "-" } else { target };
+    let method: String = method.chars().filter(|c| c.is_ascii_alphanumeric() || *c == '-').take(20).collect();
+    let target = target.split('?').next().unwrap_or("-");
+    let target: String = target.chars().filter(|c| !c.is_control()).take(200).collect();
     let line = format!("gen-audio-mcp http: rejected {method} {target} {code} {reason} peer={peer}");
     eprintln!("{line}");
     #[cfg(test)]
@@ -467,7 +170,7 @@ pub struct RejectionStats {
 
 impl RejectionStats {
     /// The statuses /health always lists, zero or not.
-    const BASELINE: [u16; 4] = [400, 403, 411, 415];
+    const BASELINE: [u16; 5] = [400, 401, 403, 411, 415];
 
     fn note(&self, method: &str, target: &str, status: u16) {
         let path: String = target.split('?').next().unwrap_or("").chars().take(200).collect();
@@ -499,82 +202,11 @@ pub fn recent_rejections() -> Vec<String> {
     REJECTIONS.lock().map(|ring| ring.iter().cloned().collect()).unwrap_or_default()
 }
 
-fn reject(stats: &RejectionStats, stream: &mut TcpStream, method: &str, target: &str, status: u16, body: &[u8], cors: &str, reason: &str) -> std::io::Result<()> {
-    log_rejection(stream, method, target, &status.to_string(), reason);
-    stats.note(method, target, status);
-    write_response(stream, status, body, cors)
-}
-
-fn content_length(head: &str) -> Option<usize> {
-    head.lines().find_map(|line| {
-        let (name, value) = line.split_once(':')?;
-        if name.eq_ignore_ascii_case("content-length") {
-            value.trim().parse().ok()
-        } else {
-            None
-        }
-    })
-}
-
-fn query_u64(path: &str, key: &str) -> Option<u64> {
-    let query = path.split_once('?')?.1;
-    for pair in query.split('&') {
-        let (name, value) = pair.split_once('=')?;
-        if name == key {
-            return value.parse().ok();
-        }
-    }
-    None
-}
-
-fn write_control_stream(stream: &mut TcpStream, path: &str, cors: &str) -> std::io::Result<()> {
-    let wait_ms = query_u64(path, "wait").unwrap_or(0).min(2_000);
-    let after = query_u64(path, "after").unwrap_or(0);
-    let started = std::time::Instant::now();
-    let mut sent = after;
-    let header = format!(
-        "HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nCache-Control: no-cache\r\nConnection: close\r\nX-Gen-Audio-Stateless: 1\r\n{cors}\r\n"
-    );
-    stream.write_all(header.as_bytes())?;
-    loop {
-        let delta = crate::control::since(sent);
-        if delta.gap {
-            let data = serde_json::json!({
-                "gap": true,
-                "after": sent,
-                "oldest": delta.oldest,
-                "cursor": delta.cursor,
-                "resync": "viewport_get"
-            });
-            stream.write_all(format!("event: gap\ndata: {data}\n\n").as_bytes())?;
-            break;
-        }
-        for event in delta.events {
-            let seq = event
-                .get("seq")
-                .and_then(|value| value.as_u64())
-                .unwrap_or(sent);
-            sent = sent.max(seq);
-            let data = serde_json::to_string(&event).unwrap_or_else(|_| "{}".into());
-            stream.write_all(format!("id: {seq}\nevent: control\ndata: {data}\n\n").as_bytes())?;
-        }
-        if wait_ms == 0 || started.elapsed() >= std::time::Duration::from_millis(wait_ms) {
-            break;
-        }
-        std::thread::sleep(std::time::Duration::from_millis(50));
-    }
-    stream.write_all(b"event: end\ndata: {\"stateless\":true,\"speech\":false}\n\n")?;
-    Ok(())
-}
-
-/// CORS headers for an allowlisted origin: the origin itself, never `*`.
-fn cors_headers(stream: &TcpStream, origin: &str) -> String {
-    let loopback = stream.local_addr().map(|addr| addr.ip().is_loopback()).unwrap_or(false);
-    if loopback {
-        format!("Access-Control-Allow-Origin: {origin}\r\nVary: Origin\r\nAccess-Control-Allow-Methods: GET, POST, OPTIONS\r\nAccess-Control-Allow-Headers: content-type\r\n")
-    } else {
-        String::new()
-    }
+fn reject(server: &Server, stream: &mut TcpStream, request: Option<&Request>, err: HttpError, origin: Option<&str>) -> io::Result<()> {
+    let (method, target) = request.map(|r| (r.method.as_str(), r.path.as_str())).unwrap_or(("-", "-"));
+    log_rejection(stream, method, target, &err.0.to_string(), err.1);
+    server.rejections.note(method, target, err.0);
+    error_response(stream, err, origin)
 }
 
 fn library_rel(path: &str) -> Option<&str> {
@@ -586,85 +218,1048 @@ fn library_rel(path: &str) -> Option<&str> {
     Some(rel)
 }
 
-fn write_library(stats: &RejectionStats, stream: &mut TcpStream, method: &str, path: &str, rel: &str, cors: &str) -> std::io::Result<()> {
-    const CAP: u64 = 64 * 1024 * 1024;
-    match gen_audio_core::library_store::open_library_media(rel) {
-        Ok((file, mime)) => {
-            let meta = std::fs::metadata(&file).map_err(|_| std::io::Error::other("library media"))?;
-            if meta.len() > CAP {
-                return reject(stats, stream, method, path, 413, br#"{"error":"library media is too large"}"#, cors, "library");
-            }
-            let body = std::fs::read(&file).map_err(|_| std::io::Error::other("library media"))?;
-            write_typed(stream, 200, mime, &body, cors)
+fn write_library(server: &Server, stream: &mut TcpStream, request: &Request, rel: &str) -> io::Result<()> {
+    let origin = request.header("origin");
+    let Ok((path, mime)) = gen_audio_core::library_store::open_library_media(rel) else {
+        return reject(server, stream, Some(request), (404, "library media not found"), origin);
+    };
+    let mut file = std::fs::File::open(path)?;
+    let size = file.metadata()?.len();
+    if size > 192 * 1024 * 1024 {
+        return reject(server, stream, Some(request), (413, "library media too large"), origin);
+    }
+    stream_file(stream, &mut file, size, mime, request)
+}
+
+pub fn serve(addr: &str) -> io::Result<()> {
+    let token = std::env::var("GEN_AUDIO_MCP_TOKEN").unwrap_or_default();
+    validate_token(&token)?;
+    gen_audio_core::paths::reap_stale_mcp_addr();
+    let listener = bind_listener(addr)?;
+    let _ = gen_audio_core::paths::publish_mcp_addr(&listener.local_addr()?.to_string());
+    accept_loop(listener, token);
+    Ok(())
+}
+
+/// Bind our own listener; never attach to a process already listening on this address.
+pub fn spawn_loopback(addr: &str, token: &str) -> io::Result<SocketAddr> {
+    validate_token(token)?;
+    let listener = bind_listener(addr)?;
+    let bound = listener.local_addr()?;
+    let token = token.to_owned();
+    std::thread::Builder::new()
+        .name("gen-audio-mcp".into())
+        .spawn(move || accept_loop(listener, token))?;
+    Ok(bound)
+}
+
+pub fn initialize_handshake(addr: &str, token: &str) -> Result<Value, String> {
+    handshake(addr, token, None)
+}
+
+/// The boot nonce is passed only in the owned child's environment, never in the
+/// request. A stale/foreign service cannot pass by ignoring Authorization.
+pub fn initialize_owned_handshake(
+    addr: &str,
+    token: &str,
+    boot_nonce: &str,
+) -> Result<Value, String> {
+    validate_token(boot_nonce).map_err(|err| err.to_string())?;
+    handshake(addr, token, Some(boot_nonce))
+}
+
+fn handshake(addr: &str, token: &str, boot_nonce: Option<&str>) -> Result<Value, String> {
+    ensure_bind_allowed(addr).map_err(|err| err.to_string())?;
+    validate_token(token).map_err(|err| err.to_string())?;
+    let addr: SocketAddr = addr.parse().map_err(|_| "invalid listener address")?;
+    let body = serde_json::to_vec(&serde_json::json!({
+        "jsonrpc": "2.0", "id": 1, "method": "initialize",
+        "params": {"protocolVersion": "2025-03-26", "capabilities": {},
+            "clientInfo": {"name": "gen-audio-desktop", "version": env!("CARGO_PKG_VERSION")}}
+    }))
+    .map_err(|err| err.to_string())?;
+    let mut stream =
+        TcpStream::connect_timeout(&addr, Duration::from_secs(2)).map_err(|err| err.to_string())?;
+    let deadline = Instant::now() + Duration::from_secs(5);
+    let header = format!(
+        "POST /mcp HTTP/1.1\r\nHost: {addr}\r\nAuthorization: Bearer {token}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n", body.len());
+    write_deadline(&mut stream, header.as_bytes(), deadline).map_err(|e| e.to_string())?;
+    write_deadline(&mut stream, &body, deadline).map_err(|e| e.to_string())?;
+    let mut response = Vec::new();
+    let mut chunk = [0; 4096];
+    loop {
+        let n = read_deadline(&mut stream, &mut chunk, deadline).map_err(|e| e.to_string())?;
+        if n == 0 {
+            break;
         }
-        Err(_) => reject(stats, stream, method, path, 404, br#"{"error":"not found"}"#, cors, "library"),
+        response.extend_from_slice(&chunk[..n]);
+        if response.len() > 64 * 1024 {
+            return Err("handshake response exceeds limit".into());
+        }
+    }
+    let text = std::str::from_utf8(&response).map_err(|_| "invalid handshake response")?;
+    let (head, rest) = text
+        .split_once("\r\n\r\n")
+        .ok_or("handshake response had no body")?;
+    if !head.starts_with("HTTP/1.1 200 ") {
+        return Err("authenticated handshake refused".into());
+    }
+    if let Some(expected) = boot_nonce {
+        let actual = head
+            .split("\r\n")
+            .filter_map(|line| line.split_once(':'))
+            .find(|(name, _)| name.eq_ignore_ascii_case("x-gen-audio-boot-nonce"))
+            .map(|(_, value)| value.trim());
+        if actual != Some(expected) {
+            return Err("listener did not prove owned sidecar startup".into());
+        }
+    }
+    let value: Value = serde_json::from_str(rest).map_err(|_| "invalid handshake JSON")?;
+    if value["result"]["protocolVersion"] != "2025-03-26"
+        || value["result"]["serverInfo"]["name"] != "gen-audio"
+    {
+        return Err("unexpected handshake protocol or server".into());
+    }
+    Ok(value)
+}
+
+fn bind_listener(addr: &str) -> io::Result<TcpListener> {
+    ensure_bind_allowed(addr)?;
+    TcpListener::bind(addr)
+}
+
+pub fn ensure_bind_allowed(addr: &str) -> io::Result<()> {
+    let socket: SocketAddr = addr
+        .parse()
+        .map_err(|_| io::Error::new(io::ErrorKind::InvalidInput, "invalid socket address"))?;
+    if !socket.ip().is_loopback() {
+        return Err(io::Error::new(
+            io::ErrorKind::PermissionDenied,
+            "remote HTTP is disabled; use an authenticated TLS proxy to the loopback listener",
+        ));
+    }
+    Ok(())
+}
+
+struct WorkerPermit(Arc<AtomicUsize>);
+impl WorkerPermit {
+    fn acquire(active: &Arc<AtomicUsize>) -> Option<Self> {
+        active
+            .fetch_update(Ordering::AcqRel, Ordering::Relaxed, |n| {
+                (n < MAX_WORKERS).then_some(n + 1)
+            })
+            .ok()?;
+        Some(Self(Arc::clone(active)))
+    }
+}
+impl Drop for WorkerPermit {
+    fn drop(&mut self) {
+        self.0.fetch_sub(1, Ordering::Release);
     }
 }
 
-fn write_response(stream: &mut TcpStream, status: u16, body: &[u8], cors: &str) -> std::io::Result<()> {
-    write_typed(stream, status, "application/json", body, cors)
+fn accept_loop(listener: TcpListener, token: String) {
+    let shared = Arc::new(Server::boot());
+    let token = Arc::new(token);
+    let active = Arc::new(AtomicUsize::new(0));
+    for stream in listener.incoming() {
+        let Ok(stream) = stream else { continue };
+        let deadline = Instant::now() + REQUEST_TIMEOUT;
+        // Do not block the accept thread writing a rejection to an unresponsive peer.
+        let Some(permit) = WorkerPermit::acquire(&active) else {
+            drop(stream);
+            continue;
+        };
+        let shared = Arc::clone(&shared);
+        let token = Arc::clone(&token);
+        let _ = std::thread::Builder::new()
+            .name("mcp-http-worker".into())
+            .spawn(move || {
+                let _permit = permit;
+                let _ = handle_until(&shared, stream, &token, deadline);
+            });
+    }
 }
 
-fn write_typed(
+struct Request {
+    method: String,
+    path: String,
+    headers: HashMap<String, String>,
+    length: usize,
+}
+impl Request {
+    fn header(&self, name: &str) -> Option<&str> {
+        self.headers.get(name).map(String::as_str)
+    }
+}
+
+fn header_token(value: &str) -> bool {
+    !value.is_empty()
+        && value
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || b"!#$%&'*+-.^_`|~".contains(&b))
+}
+
+fn parse_head(head: &[u8]) -> Result<Request, HttpError> {
+    let head = std::str::from_utf8(head).map_err(|_| (400, "invalid header encoding"))?;
+    let mut lines = head.split("\r\n");
+    let first = lines.next().ok_or((400, "missing request line"))?;
+    let parts: Vec<_> = first.split(' ').collect();
+    if parts.len() != 3
+        || !header_token(parts[0])
+        || parts[2] != "HTTP/1.1"
+        || !parts[1].starts_with('/')
+        || parts[1].starts_with("//")
+        || !parts[1].bytes().all(|b| b.is_ascii_graphic() && b != b'#')
+    {
+        return Err((400, "invalid request line"));
+    }
+    let mut headers = HashMap::new();
+    for line in lines {
+        let (name, value) = line.split_once(':').ok_or((400, "invalid header"))?;
+        if !header_token(name) || !value.bytes().all(|b| b == b'\t' || (32..127).contains(&b)) {
+            return Err((400, "invalid header"));
+        }
+        if headers
+            .insert(name.to_ascii_lowercase(), value.trim().to_owned())
+            .is_some()
+        {
+            return Err((400, "duplicate header"));
+        }
+    }
+    if headers.contains_key("transfer-encoding") {
+        return Err((400, "transfer-encoding is not supported"));
+    }
+    if headers.contains_key("expect") {
+        return Err((417, "expect is not supported"));
+    }
+    let length = match headers.get("content-length") {
+        Some(raw) if !raw.is_empty() && raw.bytes().all(|b| b.is_ascii_digit()) => {
+            raw.parse::<usize>().map_err(|_| (413, "body too large"))?
+        }
+        Some(_) => return Err((400, "invalid content-length")),
+        None if parts[0] == "POST" => return Err((411, "content-length required")),
+        None => 0,
+    };
+    if length > BODY_LIMIT {
+        return Err((413, "body too large"));
+    }
+    if parts[0] != "POST" && length != 0 {
+        return Err((400, "unexpected request body"));
+    }
+    Ok(Request {
+        method: parts[0].into(),
+        path: parts[1].into(),
+        headers,
+        length,
+    })
+}
+
+fn remaining(deadline: Instant) -> io::Result<Duration> {
+    deadline
+        .checked_duration_since(Instant::now())
+        .filter(|d| !d.is_zero())
+        .ok_or_else(|| io::Error::new(io::ErrorKind::TimedOut, "HTTP deadline exceeded"))
+}
+fn read_deadline(stream: &mut TcpStream, buf: &mut [u8], deadline: Instant) -> io::Result<usize> {
+    stream.set_read_timeout(Some(remaining(deadline)?))?;
+    stream.read(buf)
+}
+fn write_deadline(stream: &mut TcpStream, mut buf: &[u8], deadline: Instant) -> io::Result<()> {
+    while !buf.is_empty() {
+        stream.set_write_timeout(Some(remaining(deadline)?))?;
+        let n = stream.write(buf)?;
+        if n == 0 {
+            return Err(io::Error::new(
+                io::ErrorKind::WriteZero,
+                "HTTP write closed",
+            ));
+        }
+        buf = &buf[n..];
+    }
+    Ok(())
+}
+fn read_error(err: io::Error) -> HttpError {
+    if matches!(
+        err.kind(),
+        io::ErrorKind::TimedOut | io::ErrorKind::WouldBlock
+    ) {
+        (408, "request deadline exceeded")
+    } else {
+        (400, "incomplete request")
+    }
+}
+fn read_head(stream: &mut TcpStream, deadline: Instant) -> Result<(Request, Vec<u8>), (HttpError, String)> {
+    let mut buf = Vec::new();
+    let mut chunk = [0; 4096];
+    let failure = |error, bytes: &[u8]| {
+        let line = bytes.split(|byte| *byte == b'\r' || *byte == b'\n').next().unwrap_or_default();
+        (error, String::from_utf8_lossy(&line[..line.len().min(200)]).into_owned())
+    };
+    loop {
+        let n = read_deadline(stream, &mut chunk, deadline).map_err(|e| failure(read_error(e), &buf))?;
+        if n == 0 {
+            return Err(failure((400, "incomplete headers"), &buf));
+        }
+        buf.extend_from_slice(&chunk[..n]);
+        if let Some(end) = buf.windows(4).position(|w| w == b"\r\n\r\n") {
+            if end + 4 > HEADER_LIMIT {
+                return Err(failure((431, "headers too large"), &buf));
+            }
+            let request = parse_head(&buf[..end]).map_err(|e| failure(e, &buf))?;
+            let body = buf[end + 4..].to_vec();
+            if body.len() > request.length {
+                return Err(failure((400, "unexpected trailing bytes"), &buf));
+            }
+            return Ok((request, body));
+        }
+        if buf.len() >= HEADER_LIMIT {
+            return Err(failure((431, "headers too large"), &buf));
+        }
+    }
+}
+
+fn authorize_boundary(request: &Request, local: SocketAddr) -> Result<(), HttpError> {
+    let host = request.header("host").ok_or((400, "host required"))?;
+    if host != local.to_string() && host != format!("localhost:{}", local.port()) {
+        return Err((403, "untrusted host"));
+    }
+    if request
+        .header("origin")
+        .is_some_and(|origin| !TRUSTED_ORIGINS.contains(&origin))
+    {
+        return Err((403, "untrusted origin"));
+    }
+    Ok(())
+}
+fn authorized(request: &Request, token: &str) -> bool {
+    let Some(given) = request
+        .header("authorization")
+        .and_then(|v| v.strip_prefix("Bearer "))
+    else {
+        return false;
+    };
+    if given.len() != token.len() {
+        return false;
+    }
+    given
+        .bytes()
+        .zip(token.bytes())
+        .fold(0u8, |diff, (a, b)| diff | (a ^ b))
+        == 0
+}
+fn route_method(path: &str) -> Option<&'static str> {
+    match path.split('?').next()? {
+        "/mcp" if path == "/mcp" => Some("POST"),
+        "/health" | "/ready" | "/control" | "/control/stream" => Some("GET"),
+        p if p.starts_with("/artifacts/") || p.starts_with("/library/") => Some("GET"),
+        _ => None,
+    }
+}
+fn preflight(request: &Request) -> Result<(), HttpError> {
+    if request.header("origin").is_none() {
+        return Err((403, "preflight requires trusted origin"));
+    }
+    let method = request
+        .header("access-control-request-method")
+        .ok_or((400, "preflight method required"))?;
+    if route_method(&request.path) != Some(method) {
+        return Err((405, "preflight method not allowed"));
+    }
+    let headers: Vec<_> = request
+        .header("access-control-request-headers")
+        .unwrap_or("")
+        .split(',')
+        .map(|s| s.trim().to_ascii_lowercase())
+        .collect();
+    if !headers.iter().any(|s| s == "authorization")
+        || headers
+            .iter()
+            .any(|s| !matches!(s.as_str(), "authorization" | "content-type" | "range"))
+    {
+        return Err((403, "preflight headers not allowed"));
+    }
+    Ok(())
+}
+fn json_content_type(value: Option<&str>) -> bool {
+    let mut parts = value.unwrap_or("").split(';').map(str::trim);
+    parts
+        .next()
+        .is_some_and(|v| v.eq_ignore_ascii_case("application/json"))
+        && parts.all(|p| p.eq_ignore_ascii_case("charset=utf-8"))
+}
+
+pub fn handle_connection(server: &Server, stream: TcpStream, token: &str) -> io::Result<()> {
+    handle_until(server, stream, token, Instant::now() + REQUEST_TIMEOUT)
+}
+fn handle_until(
+    server: &Server,
+    mut stream: TcpStream,
+    token: &str,
+    deadline: Instant,
+) -> io::Result<()> {
+    validate_token(token)?;
+    #[cfg(test)]
+    note_handled_server(server, &stream);
+    let (request, mut body) = match read_head(&mut stream, deadline) {
+        Ok(parts) => parts,
+        Err((err, line)) => {
+            let mut parts = line.split_whitespace();
+            let method = parts.next().unwrap_or("-");
+            let target = parts.next().unwrap_or("-");
+            log_rejection(&stream, method, target, &err.0.to_string(), "read");
+            server.rejections.note(method, target, err.0);
+            return error_response(&mut stream, err, None);
+        },
+    };
+    if let Err(err) = authorize_boundary(&request, stream.local_addr()?) {
+        return reject(server, &mut stream, Some(&request), err, None);
+    }
+    let origin = request.header("origin");
+    if request.method == "OPTIONS" {
+        return match preflight(&request) {
+            Ok(()) => response(&mut stream, 204, b"", origin),
+            Err(err) => reject(server, &mut stream, Some(&request), err, origin),
+        };
+    }
+    // Origin is a browser boundary, never a native credential. Every route needs a token.
+    if !authorized(&request, token) {
+        return reject(server, &mut stream, Some(&request), (401, "bearer token required"), origin);
+    }
+    if route_method(&request.path) != Some(request.method.as_str()) {
+        return reject(server, &mut stream, Some(&request), (404, "route not found"), origin);
+    }
+    if request.method == "POST" && !json_content_type(request.header("content-type")) {
+        return reject(server, &mut stream, Some(&request), (415, "application/json required"), origin);
+    }
+    let mut chunk = [0; 4096];
+    while body.len() < request.length {
+        let n = match read_deadline(&mut stream, &mut chunk, deadline) {
+            Ok(0) => return reject(server, &mut stream, Some(&request), (400, "incomplete body"), origin),
+            Ok(n) => n,
+            Err(err) => return reject(server, &mut stream, Some(&request), read_error(err), origin),
+        };
+        if n > request.length - body.len() {
+            return reject(server, &mut stream, Some(&request), (400, "unexpected trailing bytes"), origin);
+        }
+        body.extend_from_slice(&chunk[..n]);
+    }
+    if remaining(deadline).is_err() {
+        return reject(server, &mut stream, Some(&request), (408, "request deadline exceeded"), origin);
+    }
+    match request.path.split('?').next().unwrap_or("") {
+        "/health" => {
+            let (rejected, last_rejected) = server.rejections.snapshot();
+            let body = serde_json::to_vec(&serde_json::json!({
+                "status":"ok","service":"gen-audio-mcp","role":"mcp","stateless":true,
+                "genaidAudioProbed":false,"rejected":rejected,"last_rejected":last_rejected
+            }))?;
+            response(&mut stream, 200, &body, origin)
+        },
+        "/ready" => response(&mut stream, 200, br#"{"ready":true,"service":"gen-audio-mcp","stateless":true,"speech":false,"modelsLoaded":false,"note":"Listener readiness only; not loaded TTS readiness."}"#, origin),
+        "/control" => {
+            let delta = crate::control::since(query_u64(&request.path, "after").unwrap_or(0));
+            let bytes = serde_json::to_vec(&serde_json::json!({
+                "stateless":true,"speech":false,"cursor":delta.cursor,"events":delta.events,
+                "gap":delta.gap,"oldest":delta.oldest,"resync":"viewport_get"
+            }))?;
+            response(&mut stream, 200, &bytes, origin)
+        }
+        "/control/stream" => write_control_stream(&mut stream, &request),
+        path if path.starts_with("/artifacts/") => artifact(&mut stream, server, &request),
+        path if library_rel(path).is_some() => write_library(server, &mut stream, &request, library_rel(path).unwrap()),
+        "/mcp" => {
+            let message: Value = match serde_json::from_slice(&body) {
+                Ok(value) => value,
+                Err(_) => return reject(server, &mut stream, Some(&request), (400, "invalid JSON"), origin),
+            };
+            let method = message["method"].as_str().unwrap_or("").to_owned();
+            let tool = message.pointer("/params/name").and_then(Value::as_str).unwrap_or("").to_owned();
+            match handle(server, message) {
+                Ok(Some(value)) => {
+                    if let Some(code) = value.pointer("/error/code") {
+                        log_rejection(&stream, &request.method, &format!("{method} {tool}"), &code.to_string(), "rpc");
+                    }
+                    response(&mut stream, 200, &serde_json::to_vec(&value)?, origin)
+                },
+                Ok(None) => response(&mut stream, 202, b"{}", origin),
+                Err(_) => reject(server, &mut stream, Some(&request), (500, "tool dispatch failed"), origin),
+            }
+        }
+        _ => reject(server, &mut stream, Some(&request), (404, "not found"), origin),
+    }
+}
+
+fn query_u64(path: &str, key: &str) -> Option<u64> {
+    path.split_once('?')?.1.split('&').find_map(|pair| {
+        let (name, value) = pair.split_once('=')?;
+        (name == key).then(|| value.parse().ok()).flatten()
+    })
+}
+fn write_control_stream(stream: &mut TcpStream, request: &Request) -> io::Result<()> {
+    let after = query_u64(&request.path, "after").unwrap_or(0);
+    let wait = query_u64(&request.path, "wait").unwrap_or(0).min(2000);
+    let started = Instant::now();
+    let delta = loop {
+        let delta = crate::control::since(after);
+        if delta.gap || !delta.events.is_empty() || started.elapsed() >= Duration::from_millis(wait) {
+            break delta;
+        }
+        std::thread::sleep(Duration::from_millis(100));
+    };
+    let mut body = String::new();
+    if delta.gap {
+        let data = serde_json::json!({"gap":true,"after":after,"oldest":delta.oldest,"cursor":delta.cursor,"resync":"viewport_get"});
+        body.push_str(&format!("event: gap\ndata: {data}\n\n"));
+    }
+    for event in delta.events.into_iter().filter(|_| !delta.gap) {
+        let seq = event["seq"].as_u64().unwrap_or(after);
+        body.push_str(&format!("id: {seq}\nevent: control\ndata: {event}\n\n"));
+    }
+    body.push_str("event: end\ndata: {\"stateless\":true,\"speech\":false}\n\n");
+    let deadline = Instant::now() + WRITE_TIMEOUT;
+    write_header(
+        stream,
+        200,
+        body.len() as u64,
+        "text/event-stream",
+        request.header("origin"),
+        "",
+        deadline,
+    )?;
+    write_deadline(stream, body.as_bytes(), deadline)
+}
+
+fn byte_range(value: Option<&str>, size: u64) -> Result<(u64, u64, bool), ()> {
+    let Some(value) = value else {
+        return Ok((0, size, false));
+    };
+    let (start, end) = value
+        .strip_prefix("bytes=")
+        .ok_or(())?
+        .split_once('-')
+        .ok_or(())?;
+    let number = |s: &str| -> Result<u64, ()> {
+        if s.is_empty() || !s.bytes().all(|b| b.is_ascii_digit()) {
+            return Err(());
+        }
+        s.parse().map_err(|_| ())
+    };
+    if size == 0 {
+        return Err(());
+    }
+    if start.is_empty() {
+        let length = number(end)?.min(size);
+        if length == 0 {
+            return Err(());
+        }
+        return Ok((size - length, length, true));
+    }
+    let start = number(start)?;
+    let end = if end.is_empty() {
+        size - 1
+    } else {
+        number(end)?.min(size - 1)
+    };
+    if start >= size || end < start {
+        return Err(());
+    }
+    Ok((start, end - start + 1, true))
+}
+fn artifact(stream: &mut TcpStream, server: &Server, request: &Request) -> io::Result<()> {
+    let origin = request.header("origin");
+    let name = request.path.strip_prefix("/artifacts/").unwrap_or("");
+    if name.is_empty()
+        || name.len() > 255
+        || !name
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || b"-_.".contains(&b))
+        || !(name.ends_with(".wav") || name.ends_with(".json"))
+    {
+        return error_response(stream, (404, "artifact not found"), origin);
+    }
+    let file = server
+        .scratch
+        .open_input(name)
+        .ok()
+        .and_then(|path| std::fs::File::open(path).ok());
+    let Some(mut file) = file else {
+        return error_response(stream, (404, "artifact not found"), origin);
+    };
+    let meta = file.metadata()?;
+    let size = meta.len();
+    let wav = name.ends_with(".wav");
+    if !meta.is_file()
+        || size
+            > if wav {
+                128 * 1024 * 1024
+            } else {
+                BODY_LIMIT as u64
+            }
+    {
+        return error_response(stream, (413, "artifact exceeds download limit"), origin);
+    }
+    stream_file(stream, &mut file, size, if wav { "audio/wav" } else { "application/json" }, request)
+}
+
+fn stream_file(stream: &mut TcpStream, file: &mut std::fs::File, size: u64, mime: &str, request: &Request) -> io::Result<()> {
+    let origin = request.header("origin");
+    let (start, length, partial) = match byte_range(request.header("range"), size) {
+        Ok(range) => range,
+        Err(()) => {
+            return write_header(
+                stream,
+                416,
+                0,
+                "application/json",
+                origin,
+                &format!("Content-Range: bytes */{size}\r\n"),
+                Instant::now() + WRITE_TIMEOUT,
+            )
+        }
+    };
+    let mut extra = "Accept-Ranges: bytes\r\n".to_owned();
+    if partial {
+        extra.push_str(&format!(
+            "Content-Range: bytes {start}-{}/{size}\r\n",
+            start + length - 1
+        ));
+    }
+    let deadline = Instant::now() + WRITE_TIMEOUT;
+    write_header(
+        stream,
+        if partial { 206 } else { 200 },
+        length,
+        mime,
+        origin,
+        &extra,
+        deadline,
+    )?;
+    file.seek(SeekFrom::Start(start))?;
+    let mut left = length;
+    let mut buf = [0; 64 * 1024];
+    while left > 0 {
+        let take = left.min(buf.len() as u64) as usize;
+        let n = file.read(&mut buf[..take])?;
+        if n == 0 {
+            return Err(io::Error::new(
+                io::ErrorKind::UnexpectedEof,
+                "artifact truncated",
+            ));
+        }
+        write_deadline(stream, &buf[..n], deadline)?;
+        left -= n as u64;
+    }
+    Ok(())
+}
+
+fn error_response(
+    stream: &mut TcpStream,
+    (status, message): HttpError,
+    origin: Option<&str>,
+) -> io::Result<()> {
+    response(
+        stream,
+        status,
+        &serde_json::to_vec(&serde_json::json!({"error":message}))?,
+        origin,
+    )
+}
+fn response(
     stream: &mut TcpStream,
     status: u16,
-    content_type: &str,
     body: &[u8],
-    cors: &str,
-) -> std::io::Result<()> {
+    origin: Option<&str>,
+) -> io::Result<()> {
+    let deadline = Instant::now() + WRITE_TIMEOUT;
+    let mut extra = String::new();
+    if status == 200 {
+        if let Ok(nonce) = std::env::var("GEN_AUDIO_MCP_BOOT_NONCE") {
+            if validate_token(&nonce).is_ok() {
+                extra = format!("X-Gen-Audio-Boot-Nonce: {nonce}\r\n");
+            }
+        }
+    }
+    write_header(
+        stream,
+        status,
+        body.len() as u64,
+        "application/json",
+        origin,
+        &extra,
+        deadline,
+    )?;
+    write_deadline(stream, body, deadline)
+}
+fn write_header(
+    stream: &mut TcpStream,
+    status: u16,
+    length: u64,
+    mime: &str,
+    origin: Option<&str>,
+    extra: &str,
+    deadline: Instant,
+) -> io::Result<()> {
     let reason = match status {
         200 => "OK",
         202 => "Accepted",
         204 => "No Content",
+        206 => "Partial Content",
         400 => "Bad Request",
+        401 => "Unauthorized",
         403 => "Forbidden",
         404 => "Not Found",
+        405 => "Method Not Allowed",
+        408 => "Request Timeout",
         411 => "Length Required",
         413 => "Payload Too Large",
         415 => "Unsupported Media Type",
-        _ => "Error",
+        416 => "Range Not Satisfiable",
+        417 => "Expectation Failed",
+        431 => "Request Header Fields Too Large",
+        _ => "Internal Server Error",
     };
-    let header = format!(
-        "HTTP/1.1 {status} {reason}\r\nContent-Type: {content_type}\r\nContent-Length: {}\r\nConnection: close\r\nX-Gen-Audio-Stateless: 1\r\n{cors}\r\n",
-        body.len()
-    );
-    stream.write_all(header.as_bytes())?;
-    if status != 204 {
-        stream.write_all(body)?;
+    let mut cors = String::new();
+    if let Some(origin) = origin.filter(|o| TRUSTED_ORIGINS.contains(o)) {
+        cors = format!("Access-Control-Allow-Origin: {origin}\r\nAccess-Control-Allow-Methods: GET, POST, OPTIONS\r\nAccess-Control-Allow-Headers: authorization, content-type, range\r\nAccess-Control-Expose-Headers: Content-Range, Accept-Ranges\r\n");
     }
-    Ok(())
+    let auth = if status == 401 {
+        "WWW-Authenticate: Bearer\r\n"
+    } else {
+        ""
+    };
+    let head = format!("HTTP/1.1 {status} {reason}\r\nContent-Type: {mime}\r\nContent-Length: {length}\r\nConnection: close\r\nCache-Control: no-store\r\nVary: Origin\r\nX-Content-Type-Options: nosniff\r\nX-Gen-Audio-Stateless: 1\r\n{cors}{auth}{extra}\r\n");
+    write_deadline(stream, head.as_bytes(), deadline)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::io::Read;
+    use std::net::Shutdown;
+    const TOKEN: &str = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
 
-    #[test]
-    fn http_health_has_no_session_header() {
-        assert!(ensure_bind_allowed("0.0.0.0:8765").is_err());
+    fn exchange(server: Arc<Server>, build: impl FnOnce(SocketAddr) -> Vec<u8>) -> Vec<u8> {
         let listener = TcpListener::bind("127.0.0.1:0").unwrap();
         let addr = listener.local_addr().unwrap();
-        std::thread::spawn(move || {
+        let worker = std::thread::spawn(move || {
             let (stream, _) = listener.accept().unwrap();
-            handle_connection(&Server::boot(), stream).unwrap();
+            handle_connection(&server, stream, TOKEN).unwrap();
         });
         let mut stream = TcpStream::connect(addr).unwrap();
         stream
-            .write_all(format!("GET /health HTTP/1.1\r\nHost: {addr}\r\nConnection: close\r\n\r\n").as_bytes())
+            .set_read_timeout(Some(Duration::from_secs(3)))
             .unwrap();
-        let mut text = String::new();
-        stream.read_to_string(&mut text).unwrap();
-        assert!(text.contains("gen-audio-mcp"));
-        assert!(!text.to_ascii_lowercase().contains("mcp-session-id"));
-        assert!(text.contains("X-Gen-Audio-Stateless"));
+        stream.write_all(&build(addr)).unwrap();
+        stream.shutdown(Shutdown::Write).unwrap();
+        let mut bytes = Vec::new();
+        if let Err(err) = stream.read_to_end(&mut bytes) {
+            // Rejecting oversized headers may close with unread bytes on Windows.
+            assert_eq!(err.kind(), io::ErrorKind::ConnectionReset);
+        }
+        worker.join().unwrap();
+        bytes
+    }
+    fn server() -> Arc<Server> {
+        Arc::new(Server::isolated())
+    }
+    fn clean(server: Arc<Server>) {
+        std::fs::remove_dir_all(&server.scratch.dir).unwrap();
+    }
+    fn status(bytes: &[u8], code: u16) {
+        assert!(
+            bytes.starts_with(format!("HTTP/1.1 {code} ").as_bytes()),
+            "{}",
+            String::from_utf8_lossy(bytes)
+        );
+    }
+    fn get(server: &Arc<Server>, path: &str, extra: &str) -> Vec<u8> {
+        exchange(Arc::clone(server), |addr| {
+            format!("GET {path} HTTP/1.1\r\nHost: {addr}\r\nAuthorization: Bearer {TOKEN}\r\n{extra}\r\n").into_bytes()
+        })
+    }
+
+    #[test]
+    fn rejects_untrusted_requests_before_dispatch() {
+        let s = server();
+        let body = r#"{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"fixture_tone","arguments":{}}}"#;
+        for (host, origin, auth, mime, code) in [
+            ("evil.example", "", TOKEN, "application/json", 403),
+            ("127.0.0.1", "", TOKEN, "application/json", 403),
+            ("localhost.evil:8765", "", TOKEN, "application/json", 403),
+            ("@local", "null", TOKEN, "application/json", 403),
+            (
+                "@local",
+                "https://evil.example",
+                TOKEN,
+                "application/json",
+                403,
+            ),
+            (
+                "@local",
+                "http://localhost:1420.evil",
+                TOKEN,
+                "application/json",
+                403,
+            ),
+            (
+                "@local",
+                "http://localhost:1420/",
+                TOKEN,
+                "application/json",
+                403,
+            ),
+            ("@local", "", "", "application/json", 401),
+            (
+                "@local",
+                "http://localhost:1420",
+                "",
+                "application/json",
+                if cfg!(debug_assertions) { 401 } else { 403 },
+            ),
+            ("@local", "", "wrong", "application/json", 401),
+            ("@local", "", TOKEN, "text/plain", 415),
+            ("@local", "", TOKEN, "", 415),
+            (
+                "@local",
+                "",
+                TOKEN,
+                "application/x-www-form-urlencoded",
+                415,
+            ),
+        ] {
+            let bytes = exchange(Arc::clone(&s), |addr| {
+                let host = if host == "@local" {
+                    addr.to_string()
+                } else {
+                    host.into()
+                };
+                let origin = if origin.is_empty() {
+                    String::new()
+                } else {
+                    format!("Origin: {origin}\r\n")
+                };
+                format!("POST /mcp HTTP/1.1\r\nHost: {host}\r\n{origin}Authorization: Bearer {auth}\r\nContent-Type: {mime}\r\nContent-Length: {}\r\n\r\n{body}", body.len()).into_bytes()
+            });
+            status(&bytes, code);
+            assert!(!String::from_utf8_lossy(&bytes).contains("Allow-Origin: *"));
+            assert!(!s.scratch.dir.join("fixture-tone.wav").exists());
+        }
+        clean(s);
+    }
+    #[test]
+    fn malformed_framing_and_limits() {
+        let s = server();
+        for (headers, body, code) in [
+            ("Content-Length: 2\r\nContent-Length: 2\r\n", "{}", 400),
+            ("Content-Length: 2\r\ncontent-length: 3\r\n", "{}", 400),
+            (
+                "Content-Length: 2\r\nTransfer-Encoding: chunked\r\n",
+                "{}",
+                400,
+            ),
+            (
+                "Transfer-Encoding: chunked\r\nTransfer-Encoding: identity\r\n",
+                "",
+                400,
+            ),
+            ("Transfer-Encoding: identity\r\n", "", 400),
+            ("Content-Length : 2\r\n", "{}", 400),
+            ("Content-Length: +2\r\n", "{}", 400),
+            ("Content-Length: 2,2\r\n", "{}", 400),
+            ("Content-Length: 2\r\n", "{}extra", 400),
+            ("Content-Length: 5\r\n", "{}", 400),
+            ("Content-Length: 1048577\r\n", "", 413),
+            ("Content-Length: nope\r\n", "", 400),
+            ("", "", 411),
+            ("Content-Length: 0\r\nHost: second\r\n", "", 400),
+            (
+                "Content-Length: 0\r\nOrigin: null\r\nOrigin: http://localhost:1420\r\n",
+                "",
+                400,
+            ),
+            (
+                "Content-Length: 0\r\nAuthorization: Bearer duplicate\r\n",
+                "",
+                400,
+            ),
+            ("Content-Length: 1\r\n", "{", 400),
+        ] {
+            status(
+                &exchange(Arc::clone(&s), |addr| {
+                    format!("POST /mcp HTTP/1.1\r\nHost: {addr}\r\nAuthorization: Bearer {TOKEN}\r\nContent-Type: application/json\r\n{headers}\r\n{body}").into_bytes()
+                }),
+                code,
+            );
+        }
+        status(
+            &exchange(Arc::clone(&s), |addr| {
+                format!(
+                    "GET /health HTTP/1.1\r\nHost: {addr}\r\nX-Pad: {}\r\n\r\n",
+                    "x".repeat(HEADER_LIMIT)
+                )
+                .into_bytes()
+            }),
+            431,
+        );
+        assert!(parse_head(b"GET /health HTTP/1.0\r\nHost: localhost").is_err());
+        assert!(parse_head(b"GET http://localhost/health HTTP/1.1").is_err());
+        assert!(parse_head(b"GET /health HTTP/1.1\r\n Bad: fold").is_err());
+        status(
+            &exchange(Arc::clone(&s), |_| b"GET /health HTTP/1.1\r\n\r\n".to_vec()),
+            400,
+        );
+        clean(s);
+    }
+    #[test]
+    fn health_control_and_preflight_use_one_boundary() {
+        let s = server();
+        for path in [
+            "/health",
+            "/ready",
+            "/control",
+            "/control/stream?wait=0",
+            "/artifacts/test.wav",
+        ] {
+            status(
+                &exchange(Arc::clone(&s), |addr| {
+                    format!("GET {path} HTTP/1.1\r\nHost: {addr}\r\n\r\n").into_bytes()
+                }),
+                401,
+            );
+        }
+        status(&get(&s, "/health", ""), 200);
+        status(&get(&s, "/ready", ""), 200);
+        status(&get(&s, "/control", ""), 200);
+        status(&get(&s, "/control/stream?wait=0", ""), 200);
+        for origin in TRUSTED_ORIGINS {
+            let bytes = exchange(Arc::clone(&s), |addr| {
+                format!("OPTIONS /mcp HTTP/1.1\r\nHost: localhost:{}\r\nOrigin: {origin}\r\nAccess-Control-Request-Method: POST\r\nAccess-Control-Request-Headers: authorization,content-type\r\n\r\n", addr.port()).into_bytes()
+            });
+            status(&bytes, 204);
+            assert!(String::from_utf8_lossy(&bytes)
+                .contains(&format!("Access-Control-Allow-Origin: {origin}\r\n")));
+        }
+        status(
+            &exchange(Arc::clone(&s), |addr| {
+                format!("OPTIONS /mcp HTTP/1.1\r\nHost: {addr}\r\nOrigin: null\r\nAccess-Control-Request-Method: POST\r\n\r\n").into_bytes()
+            }),
+            403,
+        );
+        clean(s);
+    }
+    #[test]
+    fn authorized_tools_and_issued_artifacts_only() {
+        let s = server();
+        let body = r#"{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"fixture_tone","arguments":{}}}"#;
+        status(
+            &exchange(Arc::clone(&s), |addr| {
+                format!("POST /mcp HTTP/1.1\r\nHost: {addr}\r\nOrigin: http://tauri.localhost\r\nAuthorization: Bearer {TOKEN}\r\nContent-Type: application/json; charset=utf-8\r\nContent-Length: {}\r\n\r\n{body}", body.len()).into_bytes()
+            }),
+            200,
+        );
+        let bytes = get(&s, "/artifacts/fixture-tone.wav", "");
+        status(&bytes, 200);
+        let start = bytes.windows(4).position(|w| w == b"\r\n\r\n").unwrap() + 4;
+        assert!(bytes[start..].starts_with(b"RIFF"));
+        let slice = get(&s, "/artifacts/fixture-tone.wav", "Range: bytes=0-3\r\n");
+        status(&slice, 206);
+        assert!(slice.ends_with(b"RIFF"));
+        let size = (bytes.len() - start) as u64;
+        assert_eq!(byte_range(Some("bytes=-4"), size), Ok((size - 4, 4, true)));
+        status(
+            &get(
+                &s,
+                "/artifacts/fixture-tone.wav",
+                "Range: bytes=999999999-\r\n",
+            ),
+            416,
+        );
+        status(
+            &get(
+                &s,
+                "/artifacts/fixture-tone.wav",
+                "Range: bytes=0-1,2-3\r\n",
+            ),
+            416,
+        );
+        let private = s
+            .scratch
+            .write_private_input(b"private script", ".json")
+            .unwrap();
+        let private_name = private.file_name().unwrap().to_str().unwrap();
+        std::fs::write(s.scratch.dir.join("unissued.json"), b"{}").unwrap();
+        for name in [
+            private_name,
+            "unissued.json",
+            "../Cargo.toml",
+            "%2e%2e%2fsecret.json",
+            "image.png",
+        ] {
+            status(&get(&s, &format!("/artifacts/{name}"), ""), 404);
+        }
+        let manifest = s.scratch.prepare_output("issued.json").unwrap();
+        std::fs::write(manifest, b"{\"ok\":true}").unwrap();
+        status(&get(&s, "/artifacts/issued.json", ""), 200);
+        clean(s);
+    }
+    #[test]
+    fn tokens_and_remote_binding_fail_closed() {
+        assert!(ensure_bind_allowed("0.0.0.0:8765").is_err());
+        assert!(ensure_bind_allowed("[::]:8765").is_err());
+        assert!(spawn_loopback("127.0.0.1:0", "").is_err());
+        let a = generate_token().unwrap();
+        let b = generate_token().unwrap();
+        assert_ne!(a, b);
+        validate_token(&a).unwrap();
+        let addr = spawn_loopback("127.0.0.1:0", &a).unwrap();
+        assert!(initialize_handshake(&addr.to_string(), &b).is_err());
+        assert!(initialize_handshake(&addr.to_string(), &a).is_ok());
+        assert!(initialize_owned_handshake(&addr.to_string(), &a, &b).is_err());
+    }
+    #[test]
+    fn active_workers_are_bounded_and_released() {
+        let active = Arc::new(AtomicUsize::new(0));
+        let mut permits: Vec<_> = (0..MAX_WORKERS)
+            .map(|_| WorkerPermit::acquire(&active).unwrap())
+            .collect();
+        assert!(WorkerPermit::acquire(&active).is_none());
+        permits.pop();
+        assert!(WorkerPermit::acquire(&active).is_some());
+        drop(permits);
+        assert_eq!(active.load(Ordering::Relaxed), 0);
+    }
+    #[test]
+    fn slow_headers_hit_absolute_deadline() {
+        let s = server();
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let addr = listener.local_addr().unwrap();
+        let shared = Arc::clone(&s);
+        let worker = std::thread::spawn(move || {
+            let (stream, _) = listener.accept().unwrap();
+            handle_until(
+                &shared,
+                stream,
+                TOKEN,
+                Instant::now() + Duration::from_millis(100),
+            )
+            .unwrap();
+        });
+        let mut stream = TcpStream::connect(addr).unwrap();
+        stream.write_all(b"GET /health HTTP/1.1\r\nHost: ").unwrap();
+        let started = Instant::now();
+        let mut response = Vec::new();
+        stream.read_to_end(&mut response).unwrap();
+        status(&response, 408);
+        assert!(started.elapsed() < Duration::from_secs(2));
+        worker.join().unwrap();
+        clean(s);
     }
 
     /// GET /health on a listener that serves every connection with one shared Server.
     fn health_of(port: u16) -> Value {
         let mut stream = TcpStream::connect(("127.0.0.1", port)).unwrap();
         stream
-            .write_all(format!("GET /health HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\nConnection: close\r\n\r\n").as_bytes())
+            .write_all(format!("GET /health HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\nAuthorization: Bearer {TOKEN}\r\nConnection: close\r\n\r\n").as_bytes())
             .unwrap();
         let mut text = String::new();
         stream.read_to_string(&mut text).unwrap();
@@ -679,7 +1274,7 @@ mod tests {
         std::thread::spawn(move || {
             let server = std::sync::Arc::new(Server::boot());
             for stream in listener.incoming().take(5) {
-                let _ = handle_connection(&server, stream.unwrap());
+                let _ = handle_connection(&server, stream.unwrap(), TOKEN);
             }
         });
         let send = |request: String| {
@@ -690,7 +1285,7 @@ mod tests {
             text.split_whitespace().nth(1).and_then(|code| code.parse::<u16>().ok()).unwrap_or(0)
         };
         let before = health_of(port);
-        assert_eq!(before["rejected"], serde_json::json!({"400": 0, "403": 0, "411": 0, "415": 0}), "{before}");
+        assert_eq!(before["rejected"], serde_json::json!({"400": 0, "401": 0, "403": 0, "411": 0, "415": 0}), "{before}");
         assert!(before["last_rejected"].is_null(), "{before}");
 
         // A page on another origin: 403, and the tool does not run.
@@ -707,7 +1302,7 @@ mod tests {
         // A CORS simple request (text/plain): 415.
         assert_eq!(send(post(port, "Content-Type: text/plain\r\n", NAVIGATE)), 415);
         let after_415 = health_of(port);
-        assert_eq!(after_415["rejected"], serde_json::json!({"400": 0, "403": 1, "411": 0, "415": 1}), "{after_415}");
+        assert_eq!(after_415["rejected"], serde_json::json!({"400": 0, "401": 0, "403": 1, "411": 0, "415": 1}), "{after_415}");
         assert_eq!(after_415["last_rejected"]["status"], 415);
         assert_eq!(after_415["last_rejected"]["path"], "/mcp");
         let text = after_415.to_string();
@@ -718,12 +1313,10 @@ mod tests {
     }
 
     #[test]
-    fn remote_accept_loop_shares_rejection_stats_across_connections() {
-        // Bind the wildcard directly. accept_loop treats a non-loopback local
-        // address as remote, without GEN_AUDIO_MCP_HTTP_ALLOW_REMOTE.
-        let listener = TcpListener::bind("0.0.0.0:0").unwrap();
+    fn authenticated_accept_loop_shares_rejection_stats_across_connections() {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
         let port = listener.local_addr().unwrap().port();
-        std::thread::spawn(move || accept_loop(listener));
+        std::thread::spawn(move || accept_loop(listener, TOKEN.into()));
         let send = |request: String| {
             let mut stream = TcpStream::connect(("127.0.0.1", port)).unwrap();
             stream.write_all(request.as_bytes()).unwrap();
@@ -745,7 +1338,7 @@ mod tests {
         let listener = TcpListener::bind("127.0.0.1:0").unwrap();
         let port = listener.local_addr().unwrap().port();
         super::HANDLED_SERVERS.lock().unwrap().insert(port, Vec::new());
-        std::thread::spawn(move || accept_loop(listener));
+        std::thread::spawn(move || accept_loop(listener, TOKEN.into()));
         let _ = health_of(port);
         let _ = health_of(port);
         let ids = super::HANDLED_SERVERS.lock().unwrap().remove(&port).unwrap_or_default();
@@ -754,16 +1347,16 @@ mod tests {
     }
 
     #[test]
-    fn ready_is_listener_readiness_and_stream_is_stateless() {
+    fn readiness_and_control_stream_are_stateless() {
         let listener = TcpListener::bind("127.0.0.1:0").unwrap();
         let addr = listener.local_addr().unwrap();
         std::thread::spawn(move || {
             let (stream, _) = listener.accept().unwrap();
-            handle_connection(&Server::boot(), stream).unwrap();
+            handle_connection(&Server::boot(), stream, TOKEN).unwrap();
         });
         let mut stream = TcpStream::connect(addr).unwrap();
         stream
-            .write_all(format!("GET /ready HTTP/1.1\r\nHost: {addr}\r\nConnection: close\r\n\r\n").as_bytes())
+            .write_all(format!("GET /ready HTTP/1.1\r\nHost: {addr}\r\nAuthorization: Bearer {TOKEN}\r\nConnection: close\r\n\r\n").as_bytes())
             .unwrap();
         let mut text = String::new();
         stream.read_to_string(&mut text).unwrap();
@@ -783,11 +1376,11 @@ mod tests {
         std::thread::spawn(move || {
             let _bus = handler_bus.bind();
             let (stream, _) = listener.accept().unwrap();
-            handle_connection(&Server::boot(), stream).unwrap();
+            handle_connection(&Server::boot(), stream, TOKEN).unwrap();
         });
         let mut stream = TcpStream::connect(addr).unwrap();
         let req = format!(
-            "GET /control/stream?after={}&wait=0 HTTP/1.1\r\nHost: {addr}\r\nConnection: close\r\n\r\n",
+            "GET /control/stream?after={}&wait=0 HTTP/1.1\r\nHost: {addr}\r\nAuthorization: Bearer {TOKEN}\r\nConnection: close\r\n\r\n",
             seq.saturating_sub(1)
         );
         stream.write_all(req.as_bytes()).unwrap();
@@ -827,6 +1420,7 @@ mod tests {
             .arg("serve_logs_mcp_addr_write_failure")
             .arg("--test-threads=1")
             .env("GEN_AUDIO_MCP_ADDR_SERVE_FAIL", "1")
+            .env("GEN_AUDIO_MCP_TOKEN", TOKEN)
             .env("GEN_AUDIO_MCP_ADDR_FILE", &target)
             .env("GEN_AUDIO_WORK_DIR", &work_path)
             .stdin(std::process::Stdio::null())
@@ -910,10 +1504,38 @@ mod tests {
 
     #[test]
     fn spawned_listener_completes_initialize() {
-        let addr = spawn_loopback("127.0.0.1:0").unwrap();
-        let value = initialize_handshake(&addr.to_string()).unwrap();
+        let addr = spawn_loopback("127.0.0.1:0", TOKEN).unwrap();
+        let value = initialize_handshake(&addr.to_string(), TOKEN).unwrap();
         assert_eq!(value["result"]["protocolVersion"], "2025-03-26");
         assert_eq!(value["result"]["serverInfo"]["name"], "gen-audio");
+    }
+
+    #[test]
+    fn body_reads_and_writes_obey_absolute_deadlines() {
+        let s = server();
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let addr = listener.local_addr().unwrap();
+        let shared = Arc::clone(&s);
+        let worker = std::thread::spawn(move || {
+            let (stream, _) = listener.accept().unwrap();
+            handle_until(
+                &shared,
+                stream,
+                TOKEN,
+                Instant::now() + Duration::from_millis(100),
+            )
+            .unwrap();
+        });
+        let mut stream = TcpStream::connect(addr).unwrap();
+        stream.write_all(format!("POST /mcp HTTP/1.1\r\nHost: {addr}\r\nAuthorization: Bearer {TOKEN}\r\nContent-Type: application/json\r\nContent-Length: 200\r\n\r\n{{").as_bytes()).unwrap();
+        let mut response = Vec::new();
+        stream.read_to_end(&mut response).unwrap();
+        status(&response, 408);
+        worker.join().unwrap();
+        assert!(
+            write_deadline(&mut stream, b"x", Instant::now() - Duration::from_millis(1)).is_err()
+        );
+        clean(s);
     }
 
     // ---- AP-devbox2-8: a loopback server is not private ---------------------
@@ -942,7 +1564,7 @@ mod tests {
         let worker = std::thread::spawn(move || {
             prepare();
             let (stream, _) = listener.accept().unwrap();
-            let _ = handle_connection(&Server::boot(), stream);
+            let _ = handle_connection(&Server::boot(), stream, TOKEN);
             LOGGED_ON_THIS_THREAD.with(|lines| lines.take())
         });
         let mut stream = TcpStream::connect(("127.0.0.1", port)).unwrap();
@@ -974,7 +1596,7 @@ mod tests {
     }
 
     fn post(port: u16, headers: &str, body: &str) -> String {
-        format!("POST /mcp HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\n{headers}Content-Length: {}\r\nConnection: close\r\n\r\n{body}", body.len())
+        format!("POST /mcp HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\nAuthorization: Bearer {TOKEN}\r\n{headers}Content-Length: {}\r\nConnection: close\r\n\r\n{body}", body.len())
     }
 
     fn response_header<'a>(text: &'a str, name: &str) -> Option<&'a str> {
@@ -989,7 +1611,7 @@ mod tests {
     fn preflight_from_an_allowed_origin_echoes_that_origin_and_varies_on_it() {
         for origin in ALLOWED_ORIGINS {
             let (status, text) = roundtrip(|port| format!(
-                "OPTIONS /mcp HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\nOrigin: {origin}\r\nAccess-Control-Request-Method: POST\r\nAccess-Control-Request-Headers: content-type\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"
+                "OPTIONS /mcp HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\nOrigin: {origin}\r\nAccess-Control-Request-Method: POST\r\nAccess-Control-Request-Headers: authorization, content-type\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"
             ));
             assert!((200..300).contains(&status), "{origin}: {text}");
             assert_eq!(response_header(&text, "access-control-allow-origin"), Some(*origin), "{text}");
@@ -1060,7 +1682,7 @@ mod tests {
     #[test]
     fn chromium_preflight_without_content_length_is_2xx_with_cors() {
         let (status, text) = roundtrip(|port| format!(
-            "OPTIONS /mcp HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\nConnection: keep-alive\r\nAccept: */*\r\nAccess-Control-Request-Method: POST\r\nAccess-Control-Request-Headers: content-type\r\nOrigin: http://tauri.localhost\r\nUser-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/154.0.0.0 Safari/537.36 Edg/154.0.0.0\r\nSec-Fetch-Mode: cors\r\nSec-Fetch-Site: cross-site\r\nSec-Fetch-Dest: empty\r\nReferer: http://tauri.localhost/\r\nAccept-Encoding: gzip, deflate, br, zstd\r\nAccept-Language: en-US,en;q=0.9\r\n\r\n"
+            "OPTIONS /mcp HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\nConnection: keep-alive\r\nAccept: */*\r\nAccess-Control-Request-Method: POST\r\nAccess-Control-Request-Headers: authorization, content-type\r\nOrigin: http://tauri.localhost\r\nUser-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/154.0.0.0 Safari/537.36 Edg/154.0.0.0\r\nSec-Fetch-Mode: cors\r\nSec-Fetch-Site: cross-site\r\nSec-Fetch-Dest: empty\r\nReferer: http://tauri.localhost/\r\nAccept-Encoding: gzip, deflate, br, zstd\r\nAccept-Language: en-US,en;q=0.9\r\n\r\n"
         ));
         assert!((200..300).contains(&status), "{text}");
         assert_eq!(response_header(&text, "access-control-allow-origin"), Some("http://tauri.localhost"), "{text}");
@@ -1092,10 +1714,10 @@ mod tests {
     fn every_rejection_is_one_log_line_with_method_target_and_code() {
         let cases: Vec<(Box<dyn FnOnce(u16) -> String>, &str)> = vec![
             (Box::new(|port| format!("OPTIONS /mcp HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\nOrigin: https://evil.example\r\nConnection: close\r\n\r\n")),
-             "rejected OPTIONS /mcp 403 origin"),
-            (Box::new(|port| post(port, "Content-Type: text/plain\r\n", NAVIGATE)), "rejected POST /mcp 415 content-type"),
+             "rejected OPTIONS /mcp 403 untrusted origin"),
+            (Box::new(|port| post(port, "Content-Type: text/plain\r\n", NAVIGATE)), "rejected POST /mcp 415 application/json required"),
             (Box::new(|port| post(port, "Content-Type: application/json\r\n", NAVIGATE).replace(&format!("Host: 127.0.0.1:{port}"), "Host: evil.example")),
-             "rejected POST /mcp 403 host"),
+             "rejected POST /mcp 403 untrusted host"),
             (Box::new(|port| format!("POST /mcp HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\nContent-Type: application/json\r\nConnection: close\r\n\r\n")),
              "rejected POST /mcp 411 read"),
             (Box::new(|port| post(port, "Content-Type: application/json\r\n", r#"{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"ui_navigate","arguments":{"slide":"slide:nope"}}}"#)),
@@ -1117,7 +1739,7 @@ mod tests {
     #[test]
     fn library_404_and_413_are_one_rejection_line() {
         let (status, text, peer, served) = roundtrip_seeded(|port| {
-            format!("GET /library/missing.wav HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\nConnection: close\r\n\r\n")
+            format!("GET /library/missing.wav HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\nAuthorization: Bearer {TOKEN}\r\nConnection: close\r\n\r\n")
         }, |_| {});
         assert_eq!(status, 404, "{text}");
         let lines = rejection_lines(&peer, &served);
@@ -1145,11 +1767,11 @@ mod tests {
         let _remove = RemoveDir(dir.clone());
         std::fs::create_dir_all(&dir).unwrap();
         let wav = dir.join("big.wav");
-        std::fs::File::create(&wav).unwrap().set_len(64 * 1024 * 1024 + 1).unwrap();
+        std::fs::File::create(&wav).unwrap().set_len(192 * 1024 * 1024 + 1).unwrap();
         let library = dir.clone();
         let (status, text, peer, served) = roundtrip_on_worker(
             |port| {
-                format!("GET /library/big.wav HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\nConnection: close\r\n\r\n")
+                format!("GET /library/big.wav HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\nAuthorization: Bearer {TOKEN}\r\nConnection: close\r\n\r\n")
             },
             move || {
                 gen_audio_core::library_store::set_root_override_for_test(Some(library));
@@ -1182,10 +1804,10 @@ mod tests {
         std::thread::spawn(move || {
             let _bus = handler_bus.bind();
             let (stream, _) = listener.accept().unwrap();
-            handle_connection(&Server::boot(), stream).unwrap();
+            handle_connection(&Server::boot(), stream, TOKEN).unwrap();
         });
         let mut stream = TcpStream::connect(addr).unwrap();
-        let req = format!("GET /control/stream?after={anchor}&wait=0 HTTP/1.1\r\nHost: {addr}\r\nConnection: close\r\n\r\n");
+        let req = format!("GET /control/stream?after={anchor}&wait=0 HTTP/1.1\r\nHost: {addr}\r\nAuthorization: Bearer {TOKEN}\r\nConnection: close\r\n\r\n");
         stream.write_all(req.as_bytes()).unwrap();
         let mut text = String::new();
         stream.read_to_string(&mut text).unwrap();

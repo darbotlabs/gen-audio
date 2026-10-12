@@ -7,9 +7,12 @@ be unit-tested on CPU-only dev boxes (including Windows).
 from __future__ import annotations
 
 import hashlib
+import math
 import os
 import re
+import stat
 import tempfile
+from pathlib import Path
 from typing import Callable
 
 # Hard ceilings. Environment variables may tighten these, not raise them.
@@ -22,6 +25,12 @@ DEFAULT_MAX_SEGMENT_CHARS = 4_000
 DEFAULT_MAX_SCRIPT_SEGMENTS = 64
 DEFAULT_VLLM_TIMEOUT_S = 120.0
 MAX_VLLM_TIMEOUT_S = 600.0
+HARD_MAX_AUDIO_DURATION_S = 600.0
+HARD_MAX_AUDIO_SAMPLES = 14_400_000
+HARD_MAX_FILE_BYTES = 256 * 1024 * 1024
+HARD_MAX_TEXT_FILE_BYTES = 256 * 1024
+HARD_MAX_MODEL_FILE_BYTES = 2 * 1024 * 1024 * 1024
+HARD_MAX_GENERATION_SECONDS = 600.0
 
 _OUTPUT_FORMATS = {"wav", "mp3"}
 _VOICE_SUFFIXES = {".wav"}
@@ -39,11 +48,70 @@ def _positive_int(name: str, default: int, ceiling: int) -> int:
         return default
     try:
         value = int(raw)
-    except ValueError:
-        return default
+    except ValueError as exc:
+        raise ValueError(f"{name} must be a positive integer") from exc
     if value < 1:
-        return default
+        raise ValueError(f"{name} must be a positive integer")
     return min(value, ceiling)
+
+
+def max_audio_samples() -> int:
+    """14.4M mono samples maximum; GENAID_MAX_AUDIO_SAMPLES may only tighten."""
+    return _positive_int("GENAID_MAX_AUDIO_SAMPLES", HARD_MAX_AUDIO_SAMPLES, HARD_MAX_AUDIO_SAMPLES)
+
+
+def max_audio_file_bytes() -> int:
+    """256 MiB encoded audio maximum; GENAID_MAX_AUDIO_FILE_BYTES may tighten."""
+    return _positive_int("GENAID_MAX_AUDIO_FILE_BYTES", HARD_MAX_FILE_BYTES, HARD_MAX_FILE_BYTES)
+
+
+def max_audio_duration(requested: float | None = None) -> float:
+    """Ten minutes maximum, tightened by GENAID_MAX_AUDIO_DURATION_S and callers."""
+    configured = os.environ.get("GENAID_MAX_AUDIO_DURATION_S", "").strip()
+    cap = HARD_MAX_AUDIO_DURATION_S
+    for raw in (configured or None, requested):
+        if raw is not None:
+            value = float(raw)
+            if not math.isfinite(value) or value <= 0:
+                raise ValueError("maximum audio duration must be finite and positive")
+            cap = min(cap, value)
+    return cap
+
+
+def max_generation_seconds(requested: float | None = None) -> float:
+    """Cooperative inference deadline; subprocess hosts must enforce hard cancellation."""
+    cap = HARD_MAX_GENERATION_SECONDS
+    for raw in (os.environ.get("GENAID_MAX_GENERATION_SECONDS", "").strip() or None, requested):
+        if raw is not None:
+            value = float(raw)
+            if not math.isfinite(value) or value <= 0:
+                raise ValueError("generation timeout must be finite and positive")
+            cap = min(cap, value)
+    return cap
+
+
+def read_bounded_bytes(path: str | Path, limit: int) -> bytes:
+    """Read at most limit+1 bytes; refuse devices, pipes, and oversized files."""
+    if not stat.S_ISREG(Path(path).stat().st_mode):
+        raise ValueError("input must be a regular file")
+    with open(path, "rb") as handle:
+        metadata = os.fstat(handle.fileno())
+        if not stat.S_ISREG(metadata.st_mode):
+            raise ValueError("input must be a regular file")
+        if metadata.st_size > limit:
+            raise RequestLimitError(f"input file exceeds {limit} bytes")
+        data = handle.read(limit + 1)
+    if len(data) > limit:
+        raise RequestLimitError(f"input file exceeds {limit} bytes")
+    return data
+
+
+def read_bounded_text(path: str | Path, *, encoding: str = "utf-8", limit: int | None = None) -> str:
+    """UTF-8 input capped at 256 KiB, tighten with GENAID_MAX_TEXT_FILE_BYTES."""
+    cap = _positive_int(
+        "GENAID_MAX_TEXT_FILE_BYTES", HARD_MAX_TEXT_FILE_BYTES, HARD_MAX_TEXT_FILE_BYTES
+    )
+    return read_bounded_bytes(path, min(cap, limit) if limit is not None else cap).decode(encoding)
 
 
 def max_tts_text_chars() -> int:
@@ -183,7 +251,7 @@ def vllm_timeout_seconds() -> float:
         value = float(raw)
     except ValueError:
         return DEFAULT_VLLM_TIMEOUT_S
-    if value <= 0:
+    if not math.isfinite(value) or value <= 0:
         return DEFAULT_VLLM_TIMEOUT_S
     return min(value, MAX_VLLM_TIMEOUT_S)
 
@@ -205,6 +273,8 @@ def validate_script_segments(script: object) -> None:
             raise RequestLimitError(f"script[{index}].text must be a string")
         if not speaker or not text.strip():
             raise RequestLimitError(f"script[{index}] needs speaker and text")
+        if "\x00" in text:
+            raise RequestLimitError(f"script[{index}].text contains a NUL byte")
         if len(speaker) > 128 or "\x00" in speaker:
             raise RequestLimitError(f"script[{index}].speaker is invalid")
         if len(text) > per_segment:
@@ -255,13 +325,9 @@ def materialize_temp_audio(output_dir: str, suffix: str, write_fn: Callable[[str
     os.close(fd)
     try:
         write_fn(path)
-        with open(path, "rb") as handle:
-            return handle.read()
+        return read_bounded_bytes(path, max_audio_file_bytes())
     finally:
-        try:
-            os.unlink(path)
-        except OSError:
-            pass
+        Path(path).unlink(missing_ok=True)
 
 
 def write_bytes_exclusive(directory: str, filename: str, payload: bytes) -> str:
@@ -274,20 +340,11 @@ def write_bytes_exclusive(directory: str, filename: str, payload: bytes) -> str:
     destination = os.path.join(root, name)
     if not _is_within(destination, root):
         raise ValueError("output path escapes the output directory")
-    fd, temporary = tempfile.mkstemp(prefix=".partial-", dir=root)
-    try:
-        with os.fdopen(fd, "wb") as handle:
-            handle.write(payload)
-            handle.flush()
-            os.fsync(handle.fileno())
-        os.replace(temporary, destination)
-        temporary = ""
-    finally:
-        if temporary:
-            try:
-                os.unlink(temporary)
-            except OSError:
-                pass
+    if len(payload) > max_audio_file_bytes():
+        raise RequestLimitError("audio payload exceeds byte limit")
+    from gen_audio.artifacts import staged_files
+    with staged_files([Path(destination)]) as staged:
+        staged[0].write_bytes(payload)
     return os.path.realpath(destination)
 
 
@@ -297,24 +354,31 @@ def _checksum_file() -> str | None:
 
 
 def checksums_required() -> bool:
-    return os.environ.get("GENAID_REQUIRE_MODEL_CHECKSUM", "").strip().lower() in {"1", "true", "yes", "on"}
+    value = os.environ.get("GENAID_REQUIRE_MODEL_CHECKSUM", "").strip().lower()
+    if value not in {"", "0", "false", "no", "off", "1", "true", "yes", "on"}:
+        raise ValueError("GENAID_REQUIRE_MODEL_CHECKSUM must be a boolean")
+    return value in {"1", "true", "yes", "on"}
 
 
-def verify_model_checksums(model_dir: str) -> dict[str, int | bool]:
+def verify_model_checksums(
+    model_dir: str, *, required_files: tuple[str | Path, ...] = ()
+) -> dict[str, int | bool]:
     """Verify a SHA256SUMS pin when one is configured or required.
 
     With no pin file and ``GENAID_REQUIRE_MODEL_CHECKSUM`` unset, this is a
     no-op so existing staged models keep loading. When a pin is present, every
-    listed relative file must match. Filenames in the pin cannot escape the
-    model directory.
+    listed relative file must match. If supplied, every required_file must be
+    covered by that pin, even when the pin is optional. Observed hashes are
+    never used as trusted expected hashes. Filenames cannot escape model_dir.
     """
+    required = checksums_required()
     pin = _checksum_file()
     if pin is None:
         sibling = os.path.join(model_dir, "SHA256SUMS")
         if os.path.isfile(sibling):
             pin = sibling
     if pin is None:
-        if checksums_required():
+        if required:
             raise ValueError("GENAID_REQUIRE_MODEL_CHECKSUM is set but no SHA256SUMS pin was found")
         return {"verified": False, "skipped": True, "files": 0}
     if not os.path.isfile(pin):
@@ -326,41 +390,62 @@ def verify_model_checksums(model_dir: str) -> dict[str, int | bool]:
     if not lines:
         raise ValueError("model checksum pin is empty")
     checked = 0
+    covered: set[str] = set()
     for digest, relative in lines:
-        relative = relative.replace("\\", "/").lstrip("/")
-        if not relative or relative.startswith("../") or "/../" in f"/{relative}/":
+        relative = relative.replace("\\", "/")
+        if not relative or any(part in {"", ".", ".."} for part in relative.split("/")):
             raise ValueError("checksum pin contains an unsafe path")
-        if os.path.isabs(relative):
+        if os.path.isabs(relative) or ":" in relative:
             raise ValueError("checksum pin contains an absolute path")
         target = os.path.realpath(os.path.join(model_dir, *relative.split("/")))
         if not _is_within(target, model_dir) or not os.path.isfile(target):
             raise ValueError("checksum pin names a file outside the model directory")
-        if _sha256_file(target) != digest.lower():
+        key = os.path.normcase(target)
+        if key in covered:
+            raise ValueError("checksum pin contains a duplicate path")
+        if sha256_file(target) != digest.lower():
             raise ValueError(f"checksum mismatch for {relative}")
+        covered.add(key)
         checked += 1
+    if any(os.path.normcase(os.path.realpath(path)) not in covered for path in required_files):
+        raise ValueError("checksum pin must cover every loaded model and voices file")
     return {"verified": True, "skipped": False, "files": checked}
 
 
 def _read_pin_lines(path: str) -> list[tuple[str, str]]:
     entries: list[tuple[str, str]] = []
-    with open(path, "r", encoding="utf-8") as handle:
-        for raw in handle:
-            line = raw.strip()
-            if not line or line.startswith("#"):
-                continue
-            parts = line.split()
-            if len(parts) != 2 or not _SHA256_RE.fullmatch(parts[0]):
-                raise ValueError("checksum pin lines must be '<sha256> <relative-path>'")
-            filename = parts[1][1:] if parts[1].startswith("*") else parts[1]
-            entries.append((parts[0], filename))
+    for raw in read_bounded_text(path, limit=64 * 1024).splitlines():
+        line = raw.strip()
+        if not line or line.startswith("#"):
+            continue
+        parts = line.split(maxsplit=1)
+        if len(parts) != 2 or not _SHA256_RE.fullmatch(parts[0]):
+            raise ValueError("checksum pin lines must be '<sha256> <relative-path>'")
+        filename = parts[1][1:] if parts[1].startswith("*") else parts[1]
+        entries.append((parts[0], filename))
     return entries
 
 
-def _sha256_file(path: str) -> str:
+def sha256_file(path: str | Path, *, max_bytes: int = HARD_MAX_MODEL_FILE_BYTES) -> str:
+    """Hash a regular local file incrementally (also used for artifact provenance)."""
+    if not stat.S_ISREG(Path(path).stat().st_mode):
+        raise ValueError("hash input must be a regular file")
     hasher = hashlib.sha256()
     with open(path, "rb") as handle:
+        metadata = os.fstat(handle.fileno())
+        if not stat.S_ISREG(metadata.st_mode):
+            raise ValueError("hash input must be a regular file")
+        if metadata.st_size > max_bytes:
+            raise RequestLimitError("hash input exceeds file byte limit")
+        total = 0
         for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            total += len(chunk)
+            if total > max_bytes:
+                raise RequestLimitError("hash input exceeds file byte limit")
             hasher.update(chunk)
+        after = os.fstat(handle.fileno())
+        if total != metadata.st_size or after.st_mtime_ns != metadata.st_mtime_ns:
+            raise ValueError("file changed while hashing")
     return hasher.hexdigest()
 
 

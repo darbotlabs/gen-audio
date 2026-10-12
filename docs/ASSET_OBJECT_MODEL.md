@@ -4,6 +4,78 @@ One envelope for every composable Gen-Audio asset: voice models, voice profiles
 (agent personas), audio clips, 2D spectrograms, inverse-HDR cubes, cube layers,
 podcast scripts, transcripts, cards/livetiles and MCP tools.
 
+## Semantic metric cubes (1.0.0)
+
+The Cube viewport also accepts portable `semantic_cube` documents through
+**Metrics…**. Import a JSON file, edit its axes, records and layer definitions,
+then choose **Render cube**. The installed Rust backend validates the entire
+document before the view changes. Layer controls edit color, opacity, gain,
+blend, visibility and draw order. Reopen **Metrics… → Export JSON** to save
+those changes together with the original records and context. Import that file
+to restore the view. Files are not automatically saved on application exit.
+
+The schema library contains five domain contracts and a `custom` domain:
+
+| Domain | Record context | Metric vocabulary |
+|---|---|---|
+| `agent.session` | session id, agent name, lifecycle state | latency_ms, integer tokens, cost_usd, confidence |
+| `storyline` | story id, scene id, beat | tension, pace, sentiment |
+| `camera` | shot id, camera id, right-handed Y-up coordinates | yaw_deg, pitch_deg, roll_deg, fov_deg |
+| `market.stock` | symbol, venue, currency, UTC timestamp | open, high, low, close, volume, change_pct |
+| `market.crypto` | base/quote asset, venue, UTC timestamp | open, high, low, close, volume, change_pct |
+| `custom` | up to 16 named string context fields | up to 32 named numeric or null metrics |
+
+Each record has an id, X/Y coordinates in the declared axis units, metric
+values and context. Each layer references a metric, declares its unit and
+normalization range, chooses linear or logarithmic scaling, and defines its
+plane position and `#RRGGBB` color. Values set point intensity; X/Y determine
+position and the layer's plane supplies Z. Known domains enforce their metric
+vocabulary and units. For new metric vocabularies, set `domain` to `custom`.
+Market `quote` and `base` units resolve through the record's currency or asset
+context. These are binary64 chart observations, not exact-decimal accounting
+or trading-order records. No feed, trading operation, or live market claim is
+implied. Shipped examples are visibly marked `source.kind: example`.
+
+Null and absent observations are skipped, never filled with zero. Zero remains
+an observation. Coordinates outside the axes are rejected. A value outside a
+layer's range is rejected unless the layer explicitly selects `outside: clip`;
+the view reports the number clipped and preserves the raw values on export.
+Log scales require positive observations and a positive minimum. Duplicate
+record/layer ids, indistinguishable plane positions, invalid dates, mismatched
+units, invalid OHLC candles, unknown properties and missing metric references
+are rejected. Limits are 1 MiB UTF-8, 2,048 records, 16 layers, and 32 metrics
+per record. Metric scrubbing is independent of the audio transport.
+
+| Contract / implementation | Location |
+|---|---|
+| Cube and record JSON Schema 2020-12 | `schemas/semantic-cube.schema.json`, `schemas/semantic-record.schema.json` |
+| Authoritative domain definitions and generator | `scripts/generate-semantic-library.py` (`--check` verifies generated files) |
+| Explicit example documents | `schemas/examples/semantic-cubes.json` |
+| Native validation and bounded projection | `gen_audio_core::semantic_cube` |
+| Matching browser validation and projection | `apps/desktop/src/semantic-cube.ts` |
+| Native MCP schema export | `semantic_schema_library {}` |
+| Native MCP projection | `semantic_cube_project {document, offset?, limit?}`; maximum 2,048 points per response, `nextOffset` for continuation |
+| Browser/native integration check | `scripts/validate-semantic-cube.py` |
+
+These documents have user-defined ids and their own versioned contract. They
+do not mint ga1 audio identities or claim to be WAV-derived `cube_ihdr` assets.
+Existing content-addressed audio cubes and same-WAV comparison remain intact.
+The validators resolve only compiled-in schemas; imported documents cannot
+execute expressions, load URLs, or choose filesystem paths.
+
+The October 12 accelerator audit is in
+`artifacts/validation/accelerators/hardware-audit.json`. On this machine, Windows
+exposes 31.65 GiB to CPU allocations while the AMD driver reports 96 GiB assigned
+to graphics, out of 128 GiB installed. `scripts/probe-npu.py` ran AMD's local
+quicktest model successfully through Ryzen AI 1.6.1: 398 NPU operators and one
+subgraph actually running on NPU. This verifies the accelerator runtime, not
+VibeVoice/PersonaPlex inference. Those workers still use their pinned CPU
+PyTorch environments. Their preflight now includes installed and reserved
+memory separately from the CPU budget. The local DarbotLM gateway at port 9000
+advertises Gen.AID.Audio, but its routes reference an undefined
+`GENAID_AUDIO_BASE_URL`; its configured `host.docker.internal:7861` backend was
+unreachable. No VibeVoice or PersonaPlex container was present in Docker Desktop.
+
 | Piece | Where |
 |---|---|
 | Contract (source of truth, hand-written JSON Schema 2020-12) | `schemas/asset-object.schema.json` |
@@ -186,7 +258,9 @@ commit:
 - `gen_audio.cube_layers` writes `provenance.generator_sha256` into the cube
   JSON: the sha256 of `src/gen_audio/cube_layers.py` with CRLF normalized to
   LF, so a Windows `core.autocrlf=true` checkout hashes the same. The JSON also
-  keeps `generator` (the path), `layer_method` (`library_r3`) and `params`.
+  keeps `generator` (the path), `layer_method` (`library_r3` or the
+  `pipeline_r2` comparison recipe) and `params`. A comparison remains a
+  separate cube derived from the same WAV; it never replaces the primary cube.
 - The cube JSON is hashed as the `cube_json` media, and the migration also
   copies `generator_sha256` and `layer_method` into `fields`. Both routes put
   the generator's content and method in the preimage; `params` reach it
@@ -199,7 +273,8 @@ commit:
   --record-generator-commit`, run after the regen is committed, writes the
   newest commit whose generator file has those bytes to the manifest cube block
   (`generator_commit`). `build_assets` copies it into the cube envelope's
-  `provenance`, which is unhashed. The five shipped blocks carry that commit.
+  `provenance`, which is unhashed. Uncommitted generator bytes have no matching
+  commit, so the field stays absent until a matching commit exists.
   A test hashes the generator file at that commit and checks it equals
   `generator_sha256`; it also strips the key and checks that
   `--record-generator-commit` writes a commit that still hashes. The cube
@@ -278,14 +353,21 @@ through `src`.
     they fold into `voice_model.body.availability`, so "no fake audio" is
     structural.
   - A voice model is `status: ok` only when Generate can produce it here
-    (`synth_adapter`, today only `kokoro_onnx`). A model with no in-app
+    (`synth_adapter`, currently `kokoro_onnx` and the isolated VibeVoice worker;
+    runtime readiness is checked separately). A model with no in-app
     adapter whose clips were rendered elsewhere (`kokoro_dayour`, and the G2P
     `misaki`) gets `availability {status: "offline_only", reason}` and status
     `unavailable`; its clips' provenance says "offline run" and its cubes show
     as offline runs. Tested in `asset_v1.rs` and the npm E test.
   - VoiceProfile → `voice_profile`:
     - `fields` hold the persona text plus the voice_model uid.
-    - `body` is the VoiceProfile document itself.
+    - `body` is the VoiceProfile v2 document itself: `profileVersion: "2.0"`
+      and `engineManifests` cover every supported engine. Managed reference
+      IDs resolve through `voices/manifest.json`, whose WAV hashes remain pinned.
+    - `build_assets` writes all nine profile JSON files and hashes each as
+      `profile_json`. Binding changes therefore remint the profile envelope;
+      card identities remain stable while `bound_to` updates. The asset schema
+      major and `ga1` identity scheme remain unchanged.
     - No `bound_to` (H): a persona is config, not audio. Its honest link is
       `fields.voice_model`, and that engine's own clips and cubes link from
       there. No voice_profile or persona card is bound_to a cube whose

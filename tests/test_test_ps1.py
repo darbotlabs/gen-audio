@@ -167,6 +167,27 @@ def test_sprawl_gate_fails_on_a_stray_shell_script_or_any_shebang_file(tmp_path)
     assert "main.rs" not in out
 
 
+@pytest.mark.skipif(SHELL is None or shutil.which("git") is None, reason="needs PowerShell and git")
+def test_sprawl_separates_quarantine_and_model_snapshots_from_authored_outputs(tmp_path):
+    repo = _temp_repo(tmp_path)
+    for directory in ("models/vendor", "artifacts/anti-pattern", "artifacts/library"):
+        (repo / directory).mkdir(parents=True, exist_ok=True)
+    for name in ("models/vendor/runtime.py", "artifacts/anti-pattern/old-rebuild.ps1"):
+        (repo / name).write_text("unused evidence\n", encoding="utf-8")
+    script = repo / "artifacts/library/rebuild.ps1"
+    script.write_text("Write-Output 'unexpected build helper'\n", encoding="utf-8")
+    command = [SHELL, "-NoProfile", "-File", str(repo / "scripts/test.ps1"),
+               "-Skip", "Pssa,Regen,Cargo,Npm,Python"]
+    run = subprocess.run(command, cwd=repo, capture_output=True, text=True, timeout=60)
+    assert run.returncode != 0
+    assert "SPRAWL outside-allowlist artifacts/library/rebuild.ps1" in run.stdout
+    assert "SPRAWL_EXCLUDED models" in run.stdout
+    assert "SPRAWL_EXCLUDED artifacts/anti-pattern" in run.stdout
+    script.unlink()
+    run = subprocess.run(command, cwd=repo, capture_output=True, text=True, timeout=60)
+    assert run.returncode == 0, run.stdout + run.stderr
+
+
 def _stub_cargo(tmp_path: Path) -> dict[str, str]:
     """PATH with a `cargo` that does nothing, so Regen runs only the python
     generator and its git diff (the build_assets bytes are not the question)."""
@@ -186,7 +207,7 @@ def test_regen_diffs_the_synth_sidecars_like_ci(tmp_path):
     repo = _temp_repo(tmp_path)
     library = repo / "apps" / "desktop" / "public" / "library"
     library.mkdir(parents=True)
-    (library / "a.synth.json").write_text('{\n  "engine": "x"\n}\n', encoding="utf-8")
+    (library / "a.synth.json").write_text('{\n  "engine": "x"\n}\n', encoding="utf-8", newline="\n")
     generator = repo / "scripts" / "cube_revision.py"
     generator.write_text("import sys\n", encoding="utf-8")
     _git(repo, "add", ".")
@@ -239,7 +260,46 @@ def _stub_npm_and_gate(tmp_path: Path, *, fail_gate: bool) -> dict[str, str]:
     )
     for name in ("npm", "npx", "python3"):
         (bin_dir / name).chmod(0o755)
-    return {**os.environ, "PATH": f"{bin_dir}{os.pathsep}{os.environ.get('PATH', '')}"}
+    for name in ("npm", "npx"):
+        (bin_dir / f"{name}.cmd").write_text(
+            f'@echo off\necho {name} %*>> "{calls}"\nexit /b 0\n', encoding="utf-8",
+        )
+    (bin_dir / "python3.cmd").write_text(
+        f'@echo off\necho python3 %*>> "{calls}"\necho PYTHONPATH=%PYTHONPATH%>> "{calls}"\n'
+        f'exit /b {1 if fail_gate else 0}\n', encoding="utf-8",
+    )
+    return {
+        **os.environ, "PATH": f"{bin_dir}{os.pathsep}{os.environ.get('PATH', '')}",
+        "GEN_AUDIO_PYTHON": str(bin_dir / ("python3.cmd" if os.name == "nt" else "python3")),
+    }
+
+
+@pytest.mark.skipif(SHELL is None or shutil.which("git") is None, reason="needs PowerShell and git")
+def test_sprawl_preserves_four_powershell_entries_and_only_the_maintained_bridge_exception(tmp_path):
+    repo = _temp_repo(tmp_path)
+    for name in ("build-tauri-windows.ps1", "mcp-call.ps1", "ui-shot.ps1"):
+        shutil.copy2(REPO / "scripts" / name, repo / "scripts" / name)
+    (repo / "tests").mkdir()
+    for name in ("test_build_scripts.py", "test_test_ps1.py", "test_mcp_call_ps1.py"):
+        shutil.copy2(REPO / "tests" / name, repo / "tests" / name)
+    bridge = repo / "scripts" / "connect-desktop-mcp.py"
+    shutil.copy2(REPO / "scripts" / bridge.name, bridge)
+
+    def run():
+        return subprocess.run([SHELL, "-NoProfile", "-File", str(repo / "scripts" / "test.ps1"),
+                               "-Skip", "Pssa,Regen,Cargo,Npm,Python"], cwd=repo, capture_output=True, text=True, timeout=120)
+
+    clean = run()
+    assert clean.returncode == 0, clean.stdout + clean.stderr
+    (repo / "scripts" / "build-extra.ps1").write_text(
+        "npm run " + "tauri -- build --no-bundle\n", encoding="utf-8",
+    )
+    (repo / "scripts" / "connect-other.py").write_text(bridge.read_text(encoding="utf-8"), encoding="utf-8")
+    bad = run()
+    assert bad.returncode != 0
+    assert "SPRAWL outside-allowlist scripts/build-extra.ps1" in bad.stdout
+    assert "SPRAWL tauri-build scripts/build-extra.ps1" in bad.stdout
+    assert "SPRAWL thick-shim scripts/connect-other.py" in bad.stdout
 
 
 @pytest.mark.skipif(SHELL is None or shutil.which("git") is None, reason="needs PowerShell and git")

@@ -1,0 +1,1476 @@
+{
+  "reviewedAt": "2026-10-12T06:23:18.648011+00:00",
+  "fullyIntegrated": false,
+  "basis": "Reviewed executable source and current local validation. Status is per capability, not inferred from labels, profiles or imported WAVs.",
+  "sourceRoot": "\\\\fschia\\darbot\\Gen.AID.Audio",
+  "targetRoot": "D:\\gen-audio",
+  "features": [
+    {
+      "feature": "One model owner",
+      "status": "partial",
+      "source": [
+        "api_server.py"
+      ],
+      "target": [
+        "crates/gen-audio-core/src/runtime_owner.rs",
+        "src/gen_audio/runtime_owner.py"
+      ],
+      "finding": "Native-owned resident Kokoro/VibeVoice/PersonaPlex workers exist. Repeated native engine_load still replaces the resident process. The desktop MCP sidecar itself is not yet protected by the model-worker Windows job mechanism."
+    },
+    {
+      "feature": "Multi-speaker script generation",
+      "status": "implemented_unvalidated_vibevoice",
+      "source": [
+        "api_server.py",
+        "inference_from_file.py"
+      ],
+      "target": [
+        "crates/gen-audio-core/src/studio.rs",
+        "src/gen_audio/model_workers/vibevoice.py",
+        "apps/desktop/src/speech-request.ts"
+      ],
+      "finding": "Desktop supplied scripts, 1..4 speakers, explicit managed references, local runtime and checkpoint validation are wired to VibeVoice. Real generation remains blocked on this machine by available CPU memory."
+    },
+    {
+      "feature": "Managed voice library",
+      "status": "implemented",
+      "source": [
+        "api_server.py",
+        "genaid-audio.py"
+      ],
+      "target": [
+        "voices/manifest.json",
+        "crates/gen-audio-core/src/voice_library.rs",
+        "apps/desktop/src/agent-profile-library.ts"
+      ],
+      "finding": "Nine agent profiles, seven engine descriptors per profile and nine hash-pinned reference recordings. Profile tab, search, engine filters, samples, linked projects and JSON/Adaptive Card/schema downloads are present. Native artist metadata comes from AgentName."
+    },
+    {
+      "feature": "Persistent profile authoring",
+      "status": "partial",
+      "source": [
+        "genaid-audio.py"
+      ],
+      "target": [
+        "crates/gen-audio-mcp/src/control.rs",
+        "apps/desktop/src/profiles.ts"
+      ],
+      "finding": "Built-in profile browsing/export is available. Persistent user-created profiles, microphone sample capture and reference editing are not complete; library_harvest updates process state only."
+    },
+    {
+      "feature": "VibeVoice CFG and diffusion controls",
+      "status": "missing",
+      "source": [
+        "api_server.py",
+        "genaid-audio.py"
+      ],
+      "target": [
+        "src/gen_audio/model_workers/vibevoice.py"
+      ],
+      "finding": "The source framework exposes cfg_scale and inference_steps. Unified worker currently fixes cfg_scale=1.3 and DDPM steps=10; no desktop/MCP configuration path exists."
+    },
+    {
+      "feature": "Audio streaming and stop",
+      "status": "partial",
+      "source": [
+        "api_server.py",
+        "genaid-audio.py"
+      ],
+      "target": [
+        "src/gen_audio/model_workers/vibevoice.py",
+        "crates/gen-audio-mcp/src/control.rs",
+        "crates/gen-audio-core/src/model_worker.rs"
+      ],
+      "finding": "Source FastAPI streams native PCM chunks and supports cooperative generation stop. Unified desktop waits for a complete validated WAV. Prompt jobs have cancellation, but direct synth/model/load calls do not expose equivalent cancellation or chunk streaming."
+    },
+    {
+      "feature": "Duration and token controls",
+      "status": "partial",
+      "source": [
+        "api_server.py"
+      ],
+      "target": [
+        "src/gen_audio/model_workers/contracts.py",
+        "src/gen_audio/model_workers/vibevoice.py"
+      ],
+      "finding": "Unified worker enforces an output ceiling of 60 seconds/1024 tokens and marks capped output incomplete. Source framework also supports target duration with terminal-token reserve and a higher bounded token limit; those semantics are not equivalent."
+    },
+    {
+      "feature": "Tokenizer validation",
+      "status": "partial",
+      "source": [
+        "api_server.py"
+      ],
+      "target": [
+        "src/gen_audio/model_workers/vibevoice.py",
+        "src/gen_audio/model_workers/checkpoints.py"
+      ],
+      "finding": "Unified worker loads only a local Qwen2-compatible tokenizer and validates token/vocabulary bounds and checkpoint shapes. The source framework's additional ordinary-text encoding parity and declared tokenizer revision checks are not fully carried over."
+    },
+    {
+      "feature": "Generation telemetry and turn timing",
+      "status": "partial",
+      "source": [
+        "api_server.py"
+      ],
+      "target": [
+        "src/gen_audio/model_workers/runtime.py",
+        "src/gen_audio/model_workers/vibevoice.py"
+      ],
+      "finding": "Unified manifests retain hashes, engine/runtime/dependencies, references, seed, tokens, caps and output metadata. Source chunk latency, CPU/RSS/RTF metrics, Prometheus endpoint and inferred silence-aligned per-turn timing are not integrated."
+    },
+    {
+      "feature": "Audio mastering",
+      "status": "implemented",
+      "source": [
+        "api_server.py"
+      ],
+      "target": [
+        "crates/gen-audio-core/src/mastering.rs",
+        "apps/desktop/src/authoring-panel.ts"
+      ],
+      "finding": "Actual FFmpeg filtering/compression and two-pass loudness mastering preserve the source WAV and Artist, with independent final measurement and downloadable report. Exposed as an explicit desktop/MCP action."
+    },
+    {
+      "feature": "Saved audio and provenance",
+      "status": "implemented",
+      "source": [
+        "api_server.py"
+      ],
+      "target": [
+        "crates/gen-audio-core/src/generation_store.rs",
+        "src/gen_audio/audio_metadata.py",
+        "crates/gen-audio-core/src/audio_metadata.rs"
+      ],
+      "finding": "Unified immutable audio/manifests reopen through a validated local asset library. WAV IART and JSON Artist retain exact AgentName values, including multiple agents."
+    },
+    {
+      "feature": "Script authoring",
+      "status": "partial",
+      "source": [
+        "genaid-audio.py"
+      ],
+      "target": [
+        "crates/gen-audio-core/src/authoring.rs",
+        "crates/gen-audio-mcp/src/authoring.rs",
+        "apps/desktop/src/authoring-panel.ts"
+      ],
+      "finding": "Script analysis, speaker indexing conversion, draft planning and provider-backed drafting are wired. Source local Phi-3-mini/Phi-4 model ownership/generation is not implemented in the unified runtime."
+    },
+    {
+      "feature": "Existing HTTP clients",
+      "status": "missing",
+      "source": [
+        "api_server.py",
+        "gradio_api_client.py",
+        "generate_genaid_audio.py"
+      ],
+      "target": [
+        "crates/gen-audio-mcp/src/http.rs"
+      ],
+      "finding": "Unified app exposes authenticated MCP and artifacts. Existing /tts, /tts/multi-speaker/stream, /generations and telemetry API contracts are not compatibility endpoints in the new backend."
+    },
+    {
+      "feature": "Qwen3 codec evaluation",
+      "status": "missing",
+      "source": [
+        "benchmark_qwen3_codec.py"
+      ],
+      "target": [],
+      "finding": "Source includes a separately pinned Qwen3 speech-codec encode/decode benchmark and reconstruction evidence. It is not a replacement for VibeVoice's text or speech tokenizer and is not exposed in the unified framework."
+    },
+    {
+      "feature": "PersonaPlex",
+      "status": "worker_only_unvalidated",
+      "source": [],
+      "target": [
+        "src/gen_audio/model_workers/personaplex.py",
+        "crates/gen-audio-core/src/model_worker.rs",
+        "crates/gen-audio-core/src/runtime_owner.rs"
+      ],
+      "finding": "Local speech-to-speech worker, model loading and MCP generation contracts exist. Desktop conversation/microphone/session controls are absent. PersonaPlex has no engine card and its catalog note is stale. No isolated PersonaPlex environment is installed here, and CPU memory is insufficient for its estimated 40 GiB minimum."
+    },
+    {
+      "feature": "Kokoro ONNX",
+      "status": "real_inference_verified",
+      "source": [],
+      "target": [
+        "src/gen_audio/synth_kokoro_onnx.py",
+        "src/gen_audio/synthesis.py",
+        "crates/gen-audio-core/src/bridge.rs"
+      ],
+      "finding": "Real local ONNX inference, multi-speaker script assembly, owned model loading, checksummed WAV/manifest publication, AgentName Artist, save/reopen and mastering are implemented. ONNX is the execution format/runtime for this Kokoro adapter, not a separate voice persona."
+    },
+    {
+      "feature": "Kokoro Torch / Misaki",
+      "status": "partial",
+      "source": [],
+      "target": [
+        "src/gen_audio/engines.py",
+        "src/gen_audio/adapters.py",
+        "crates/gen-audio-core/src/catalog.rs"
+      ],
+      "finding": "Imported Kokoro Torch and Misaki-to-Kokoro audio/cubes are preserved. There is no unified Kokoro Torch generation adapter or direct Misaki G2P route; Kokoro ONNX uses its package phonemizer."
+    },
+    {
+      "feature": "Magpie / Pocket TTS",
+      "status": "missing_adapters",
+      "source": [],
+      "target": [
+        "src/gen_audio/engines.py",
+        "crates/gen-audio-core/src/catalog.rs"
+      ],
+      "finding": "Profiles describe these engines, but there are no unified live inference adapters. Imported examples/descriptors are not evidence of generation support."
+    }
+  ],
+  "sourceSnapshot": [
+    {
+      "path": "api_server.py",
+      "sha256": "7c0b8b6548d9ff397945f747759d6ec0613d6ab46d2d09ace391c1bd0b6f66a0",
+      "lines": 1295,
+      "symbols": [
+        {
+          "name": "ScriptTurn",
+          "line": 78,
+          "endLine": 88
+        },
+        {
+          "name": "GenerationParameters",
+          "line": 91,
+          "endLine": 104
+        },
+        {
+          "name": "TTSRequest",
+          "line": 107,
+          "endLine": 119
+        },
+        {
+          "name": "MultiSpeakerTTSRequest",
+          "line": 122,
+          "endLine": 124
+        },
+        {
+          "name": "ModelInfo",
+          "line": 127,
+          "endLine": 134
+        },
+        {
+          "name": "ModelLoadRequest",
+          "line": 137,
+          "endLine": 149
+        },
+        {
+          "name": "VoiceMapper",
+          "line": 152,
+          "endLine": 182
+        },
+        {
+          "name": "_TokenizerWarningFilter",
+          "line": 185,
+          "endLine": 191
+        },
+        {
+          "name": "service_lifespan",
+          "line": 260,
+          "endLine": 268
+        },
+        {
+          "name": "_timestamp",
+          "line": 305,
+          "endLine": 306
+        },
+        {
+          "name": "emit",
+          "line": 309,
+          "endLine": 316
+        },
+        {
+          "name": "_process_reading",
+          "line": 319,
+          "endLine": 328
+        },
+        {
+          "name": "_sha256",
+          "line": 331,
+          "endLine": 336
+        },
+        {
+          "name": "infer_model_size_from_path",
+          "line": 339,
+          "endLine": 345
+        },
+        {
+          "name": "get_model_path_for_size",
+          "line": 348,
+          "endLine": 353
+        },
+        {
+          "name": "_runtime_capabilities",
+          "line": 356,
+          "endLine": 372
+        },
+        {
+          "name": "_load_processor",
+          "line": 375,
+          "endLine": 386
+        },
+        {
+          "name": "_validate_tokenizer",
+          "line": 389,
+          "endLine": 464
+        },
+        {
+          "name": "_unload_model_locked",
+          "line": 467,
+          "endLine": 485
+        },
+        {
+          "name": "unload_model",
+          "line": 488,
+          "endLine": 490
+        },
+        {
+          "name": "load_model",
+          "line": 493,
+          "endLine": 590
+        },
+        {
+          "name": "read_audio",
+          "line": 593,
+          "endLine": 617
+        },
+        {
+          "name": "_write_wav",
+          "line": 620,
+          "endLine": 626
+        },
+        {
+          "name": "_parse_loudnorm",
+          "line": 629,
+          "endLine": 641
+        },
+        {
+          "name": "_audio_analysis",
+          "line": 644,
+          "endLine": 706
+        },
+        {
+          "name": "_master_audio",
+          "line": 709,
+          "endLine": 752
+        },
+        {
+          "name": "_derive_turn_timing",
+          "line": 755,
+          "endLine": 806
+        },
+        {
+          "name": "_prepare_request",
+          "line": 809,
+          "endLine": 849
+        },
+        {
+          "name": "_trim_records",
+          "line": 852,
+          "endLine": 856
+        },
+        {
+          "name": "_generation_chunks",
+          "line": 859,
+          "endLine": 1114
+        },
+        {
+          "name": "_run_to_completion",
+          "line": 1117,
+          "endLine": 1123
+        },
+        {
+          "name": "root",
+          "line": 1127,
+          "endLine": 1133
+        },
+        {
+          "name": "health_check",
+          "line": 1137,
+          "endLine": 1138
+        },
+        {
+          "name": "readiness",
+          "line": 1142,
+          "endLine": 1152
+        },
+        {
+          "name": "metrics",
+          "line": 1156,
+          "endLine": 1157
+        },
+        {
+          "name": "events",
+          "line": 1161,
+          "endLine": 1165
+        },
+        {
+          "name": "get_model_info",
+          "line": 1169,
+          "endLine": 1178
+        },
+        {
+          "name": "list_voices",
+          "line": 1182,
+          "endLine": 1186
+        },
+        {
+          "name": "trigger_model_load",
+          "line": 1190,
+          "endLine": 1195
+        },
+        {
+          "name": "unload_model_endpoint",
+          "line": 1199,
+          "endLine": 1201
+        },
+        {
+          "name": "text_to_speech",
+          "line": 1205,
+          "endLine": 1218
+        },
+        {
+          "name": "multi_speaker_tts",
+          "line": 1222,
+          "endLine": 1235
+        },
+        {
+          "name": "multi_speaker_stream",
+          "line": 1239,
+          "endLine": 1249
+        },
+        {
+          "name": "generation_status",
+          "line": 1253,
+          "endLine": 1258
+        },
+        {
+          "name": "generation_audio",
+          "line": 1262,
+          "endLine": 1267
+        },
+        {
+          "name": "generation_report",
+          "line": 1271,
+          "endLine": 1276
+        },
+        {
+          "name": "main",
+          "line": 1279,
+          "endLine": 1291
+        },
+        {
+          "name": "strip_value",
+          "line": 84,
+          "endLine": 88
+        },
+        {
+          "name": "effective_max_new_tokens",
+          "line": 99,
+          "endLine": 104
+        },
+        {
+          "name": "managed_voice_prompts_only",
+          "line": 114,
+          "endLine": 119
+        },
+        {
+          "name": "validate_model_size",
+          "line": 143,
+          "endLine": 149
+        },
+        {
+          "name": "__init__",
+          "line": 155,
+          "endLine": 176
+        },
+        {
+          "name": "get_voice_path",
+          "line": 178,
+          "endLine": 179
+        },
+        {
+          "name": "list_voices",
+          "line": 181,
+          "endLine": 182
+        },
+        {
+          "name": "filter",
+          "line": 190,
+          "endLine": 191
+        },
+        {
+          "name": "generate",
+          "line": 916,
+          "endLine": 933
+        }
+      ]
+    },
+    {
+      "path": "benchmark_qwen3_codec.py",
+      "sha256": "5798854230d3f709af6745b96dfa1e8f0d047269a1aa4f434c04266186ccecb3",
+      "lines": 235,
+      "symbols": [
+        {
+          "name": "_sha256",
+          "line": 27,
+          "endLine": 32
+        },
+        {
+          "name": "ProcessSampler",
+          "line": 35,
+          "endLine": 73
+        },
+        {
+          "name": "_align",
+          "line": 76,
+          "endLine": 87
+        },
+        {
+          "name": "_quality",
+          "line": 90,
+          "endLine": 115
+        },
+        {
+          "name": "main",
+          "line": 118,
+          "endLine": 231
+        },
+        {
+          "name": "__init__",
+          "line": 36,
+          "endLine": 43
+        },
+        {
+          "name": "_run",
+          "line": 45,
+          "endLine": 53
+        },
+        {
+          "name": "__enter__",
+          "line": 55,
+          "endLine": 58
+        },
+        {
+          "name": "__exit__",
+          "line": 60,
+          "endLine": 62
+        },
+        {
+          "name": "report",
+          "line": 64,
+          "endLine": 73
+        }
+      ]
+    },
+    {
+      "path": "genaid-audio.py",
+      "sha256": "49310a2aa56a20413e441fe0216c48835736dcf46b47c58d930aa9dadb084e6d",
+      "lines": 2506,
+      "symbols": [
+        {
+          "name": "ScriptGenerationLLM",
+          "line": 36,
+          "endLine": 228
+        },
+        {
+          "name": "VibeVoiceDemo",
+          "line": 231,
+          "endLine": 1116
+        },
+        {
+          "name": "create_demo_interface",
+          "line": 1119,
+          "endLine": 2404
+        },
+        {
+          "name": "convert_to_16_bit_wav",
+          "line": 2407,
+          "endLine": 2421
+        },
+        {
+          "name": "parse_args",
+          "line": 2424,
+          "endLine": 2456
+        },
+        {
+          "name": "main",
+          "line": 2459,
+          "endLine": 2502
+        },
+        {
+          "name": "__init__",
+          "line": 39,
+          "endLine": 58
+        },
+        {
+          "name": "load_model",
+          "line": 60,
+          "endLine": 112
+        },
+        {
+          "name": "unload_model",
+          "line": 114,
+          "endLine": 127
+        },
+        {
+          "name": "generate_script",
+          "line": 129,
+          "endLine": 228
+        },
+        {
+          "name": "__init__",
+          "line": 232,
+          "endLine": 285
+        },
+        {
+          "name": "_sync_fastapi_model",
+          "line": 287,
+          "endLine": 315
+        },
+        {
+          "name": "_format_status_message",
+          "line": 317,
+          "endLine": 322
+        },
+        {
+          "name": "load_model",
+          "line": 324,
+          "endLine": 437
+        },
+        {
+          "name": "setup_voice_presets",
+          "line": 439,
+          "endLine": 500
+        },
+        {
+          "name": "read_audio",
+          "line": 502,
+          "endLine": 513
+        },
+        {
+          "name": "_generate_podcast_via_api",
+          "line": 515,
+          "endLine": 640
+        },
+        {
+          "name": "generate_podcast_streaming",
+          "line": 642,
+          "endLine": 973
+        },
+        {
+          "name": "_generate_with_streamer",
+          "line": 975,
+          "endLine": 1005
+        },
+        {
+          "name": "stop_audio_generation",
+          "line": 1007,
+          "endLine": 1015
+        },
+        {
+          "name": "load_example_scripts",
+          "line": 1017,
+          "endLine": 1066
+        },
+        {
+          "name": "_get_num_speakers_from_script",
+          "line": 1068,
+          "endLine": 1094
+        },
+        {
+          "name": "generate_script_with_llm",
+          "line": 1096,
+          "endLine": 1116
+        },
+        {
+          "name": "clone_voice_and_generate",
+          "line": 1971,
+          "endLine": 2122
+        },
+        {
+          "name": "update_speaker_visibility",
+          "line": 2146,
+          "endLine": 2150
+        },
+        {
+          "name": "generate_podcast_wrapper",
+          "line": 2159,
+          "endLine": 2201
+        },
+        {
+          "name": "stop_generation_handler",
+          "line": 2203,
+          "endLine": 2207
+        },
+        {
+          "name": "handle_model_load",
+          "line": 2210,
+          "endLine": 2218
+        },
+        {
+          "name": "handle_llm_load",
+          "line": 2228,
+          "endLine": 2243
+        },
+        {
+          "name": "handle_llm_unload",
+          "line": 2245,
+          "endLine": 2261
+        },
+        {
+          "name": "clear_audio_outputs",
+          "line": 2278,
+          "endLine": 2280
+        },
+        {
+          "name": "load_random_example",
+          "line": 2315,
+          "endLine": 2338
+        },
+        {
+          "name": "handle_generate_script",
+          "line": 2349,
+          "endLine": 2376
+        },
+        {
+          "name": "check_stop_generation",
+          "line": 984,
+          "endLine": 985
+        }
+      ]
+    },
+    {
+      "path": "generate_genaid_audio.py",
+      "sha256": "d21a85e611b73db46c376d41605dc92b6ebfacfb82e41c95815ac8f1b6f543eb",
+      "lines": 131,
+      "symbols": []
+    },
+    {
+      "path": "gradio_api_client.py",
+      "sha256": "09fa5b7a320ea47c6f5c5042ed36dcfccf096a76b0613072e390774a8347934b",
+      "lines": 396,
+      "symbols": [
+        {
+          "name": "VibeVoiceAPIClient",
+          "line": 18,
+          "endLine": 341
+        },
+        {
+          "name": "main",
+          "line": 344,
+          "endLine": 392
+        },
+        {
+          "name": "__init__",
+          "line": 21,
+          "endLine": 28
+        },
+        {
+          "name": "check_api_health",
+          "line": 30,
+          "endLine": 46
+        },
+        {
+          "name": "load_voices",
+          "line": 48,
+          "endLine": 75
+        },
+        {
+          "name": "load_example_scripts",
+          "line": 77,
+          "endLine": 108
+        },
+        {
+          "name": "generate_podcast",
+          "line": 110,
+          "endLine": 232
+        },
+        {
+          "name": "create_interface",
+          "line": 234,
+          "endLine": 341
+        },
+        {
+          "name": "update_speaker_visibility",
+          "line": 320,
+          "endLine": 326
+        },
+        {
+          "name": "load_example",
+          "line": 298,
+          "endLine": 301
+        }
+      ]
+    },
+    {
+      "path": "inference_from_file.py",
+      "sha256": "397191ff55bfa330ddc0b61071b1130fb4da48bdeb1f798225dd96baa480db37",
+      "lines": 400,
+      "symbols": [
+        {
+          "name": "VoiceMapper",
+          "line": 17,
+          "endLine": 90
+        },
+        {
+          "name": "parse_txt_script",
+          "line": 93,
+          "endLine": 136
+        },
+        {
+          "name": "parse_args",
+          "line": 139,
+          "endLine": 180
+        },
+        {
+          "name": "main",
+          "line": 182,
+          "endLine": 397
+        },
+        {
+          "name": "__init__",
+          "line": 20,
+          "endLine": 34
+        },
+        {
+          "name": "setup_voice_presets",
+          "line": 37,
+          "endLine": 73
+        },
+        {
+          "name": "get_voice_path",
+          "line": 75,
+          "endLine": 90
+        }
+      ]
+    }
+  ],
+  "targetSnapshot": [
+    {
+      "path": "apps/desktop/src/agent-profile-library.ts",
+      "sha256": "b1632406c0c7535cc646c5ce44db58c9a90eff0bfaeaef47eafb0185b3f7ff1d",
+      "lines": 53
+    },
+    {
+      "path": "apps/desktop/src/authoring-panel.ts",
+      "sha256": "f50a7a68fb8b72ab39ee0c57989ce32bd6d5c790bb00b852a660434cf4585f78",
+      "lines": 194
+    },
+    {
+      "path": "apps/desktop/src/profiles.ts",
+      "sha256": "0f33bb8f7280347d3eb9def296e5cc544d3fd1ca50bbb2a08266584223ef73bd",
+      "lines": 200
+    },
+    {
+      "path": "apps/desktop/src/speech-request.ts",
+      "sha256": "3923a2e73d19278ffdaa9d840867674e4e349842098c4342df5206acc9f4c675",
+      "lines": 107
+    },
+    {
+      "path": "crates/gen-audio-core/src/audio_metadata.rs",
+      "sha256": "07826c85ba17e00684331dfb0190429022398ce3c951807207f38890bd0e452c",
+      "lines": 107
+    },
+    {
+      "path": "crates/gen-audio-core/src/authoring.rs",
+      "sha256": "032b47b18f48fb1ad3e44c9c7674b61534e492b75fb0e9fc80443bd14a7ecb1e",
+      "lines": 883
+    },
+    {
+      "path": "crates/gen-audio-core/src/bridge.rs",
+      "sha256": "e6ba778de8c160ff6de13f64d44b1013c4e5333d711937520d41e09ad3f0a260",
+      "lines": 978
+    },
+    {
+      "path": "crates/gen-audio-core/src/catalog.rs",
+      "sha256": "1c244c6d175642581988f230fdb27589004cff16c3d25c13f18b545fb002301b",
+      "lines": 459
+    },
+    {
+      "path": "crates/gen-audio-core/src/generation_store.rs",
+      "sha256": "c029e37c006fddf859a894928f9a43d26c7dcd4dd9ce6dd85eb1f3de28b1bc63",
+      "lines": 252
+    },
+    {
+      "path": "crates/gen-audio-core/src/mastering.rs",
+      "sha256": "5dab207c497b93b4e97a15f8c1a0f4019e6a48e40c19caaf38011fc8a9c866e4",
+      "lines": 961
+    },
+    {
+      "path": "crates/gen-audio-core/src/model_worker.rs",
+      "sha256": "ab75422a9645cd993cafc6d10b1b48c512c79364493e3f3d9db9384eee66021d",
+      "lines": 979
+    },
+    {
+      "path": "crates/gen-audio-core/src/runtime_owner.rs",
+      "sha256": "82423f8dbaa1498224dc4797025e327e545d51b951697729ba6b20e1508e2ecc",
+      "lines": 169
+    },
+    {
+      "path": "crates/gen-audio-core/src/studio.rs",
+      "sha256": "f5165716b2a9d37835f5cd40effac1560ebc0ca8c3718aff1c25bf14a8775ffb",
+      "lines": 124
+    },
+    {
+      "path": "crates/gen-audio-core/src/voice_library.rs",
+      "sha256": "136eb41cd140a83b9a17352cac03475cd17af4a1048d77cf9019f367f7535d79",
+      "lines": 309
+    },
+    {
+      "path": "crates/gen-audio-mcp/src/authoring.rs",
+      "sha256": "d6ce6607bdc31f5f741a3ad0ae676d9e9667924542df44cd46b67d9863cc819d",
+      "lines": 157
+    },
+    {
+      "path": "crates/gen-audio-mcp/src/control.rs",
+      "sha256": "46095d302f5cab8b742a118d41cf03bdb982a1e0209f9f79580eb8427dc0eb9f",
+      "lines": 2585
+    },
+    {
+      "path": "crates/gen-audio-mcp/src/http.rs",
+      "sha256": "381c80fe32cd283807e6305551c3ffee51440a8b946a01d6268fc53698fffd22",
+      "lines": 1817
+    },
+    {
+      "path": "src/gen_audio/adapters.py",
+      "sha256": "3448a247a5d7b4ed3412ea4b72ab4c6d6509e9624bb565eea81f40c3b9120c02",
+      "lines": 391,
+      "symbols": [
+        {
+          "name": "EngineRefusal",
+          "line": 21,
+          "endLine": 30
+        },
+        {
+          "name": "Probe",
+          "line": 34,
+          "endLine": 45
+        },
+        {
+          "name": "probe",
+          "line": 48,
+          "endLine": 51
+        },
+        {
+          "name": "synthesize",
+          "line": 54,
+          "endLine": 84
+        },
+        {
+          "name": "_missing",
+          "line": 87,
+          "endLine": 100
+        },
+        {
+          "name": "_module_present",
+          "line": 103,
+          "endLine": 107
+        },
+        {
+          "name": "_missing_kokoro",
+          "line": 110,
+          "endLine": 124
+        },
+        {
+          "name": "_missing_pocket",
+          "line": 127,
+          "endLine": 134
+        },
+        {
+          "name": "_cuda_available",
+          "line": 137,
+          "endLine": 142
+        },
+        {
+          "name": "_vibevoice_device",
+          "line": 145,
+          "endLine": 154
+        },
+        {
+          "name": "_vibevoice_dtype_name",
+          "line": 157,
+          "endLine": 168
+        },
+        {
+          "name": "_vibevoice_torch_dtype",
+          "line": 171,
+          "endLine": 186
+        },
+        {
+          "name": "_missing_vibevoice",
+          "line": 189,
+          "endLine": 203
+        },
+        {
+          "name": "_missing_magpie",
+          "line": 206,
+          "endLine": 224
+        },
+        {
+          "name": "_synth_kokoro",
+          "line": 227,
+          "endLine": 254
+        },
+        {
+          "name": "_synth_pocket",
+          "line": 257,
+          "endLine": 283
+        },
+        {
+          "name": "_pocket_voice_state",
+          "line": 286,
+          "endLine": 307
+        },
+        {
+          "name": "_synth_vibevoice",
+          "line": 310,
+          "endLine": 343
+        },
+        {
+          "name": "_synth_magpie",
+          "line": 346,
+          "endLine": 382
+        },
+        {
+          "name": "_as_float_mono",
+          "line": 385,
+          "endLine": 391
+        },
+        {
+          "name": "__init__",
+          "line": 24,
+          "endLine": 30
+        },
+        {
+          "name": "as_dict",
+          "line": 39,
+          "endLine": 45
+        }
+      ]
+    },
+    {
+      "path": "src/gen_audio/audio_metadata.py",
+      "sha256": "34f269b4760413d311338e8b07b7399adfbe1da7be24a746471ee8ee8314482b",
+      "lines": 117,
+      "symbols": [
+        {
+          "name": "agent_metadata",
+          "line": 12,
+          "endLine": 26
+        },
+        {
+          "name": "_chunks",
+          "line": 29,
+          "endLine": 44
+        },
+        {
+          "name": "_wave",
+          "line": 47,
+          "endLine": 67
+        },
+        {
+          "name": "read_artist",
+          "line": 70,
+          "endLine": 84
+        },
+        {
+          "name": "tag_wav",
+          "line": 87,
+          "endLine": 117
+        }
+      ]
+    },
+    {
+      "path": "src/gen_audio/engines.py",
+      "sha256": "e4744d4ee756e52bc265f8b8765d590e90eedcd264abd77edfc1fbd7899546c8",
+      "lines": 94,
+      "symbols": [
+        {
+          "name": "EngineSpec",
+          "line": 14,
+          "endLine": 20
+        },
+        {
+          "name": "list_engines",
+          "line": 83,
+          "endLine": 85
+        },
+        {
+          "name": "get_engine",
+          "line": 88,
+          "endLine": 94
+        }
+      ]
+    },
+    {
+      "path": "src/gen_audio/model_workers/checkpoints.py",
+      "sha256": "0fbb014adeb150a59d3d1f1bf517553d9b9346c9abfd5899e6fae1127f800a92",
+      "lines": 269,
+      "symbols": [
+        {
+          "name": "_supported",
+          "line": 17,
+          "endLine": 21
+        },
+        {
+          "name": "_integer",
+          "line": 24,
+          "endLine": 28
+        },
+        {
+          "name": "_fixed",
+          "line": 31,
+          "endLine": 37
+        },
+        {
+          "name": "_codec_shapes",
+          "line": 40,
+          "endLine": 111
+        },
+        {
+          "name": "vibevoice_architecture",
+          "line": 114,
+          "endLine": 219
+        },
+        {
+          "name": "shape_bytes",
+          "line": 222,
+          "endLine": 223
+        },
+        {
+          "name": "validate_shapes",
+          "line": 226,
+          "endLine": 239
+        },
+        {
+          "name": "combine_headers",
+          "line": 242,
+          "endLine": 248
+        },
+        {
+          "name": "current_headers",
+          "line": 251,
+          "endLine": 259
+        },
+        {
+          "name": "validate_meta_model",
+          "line": 262,
+          "endLine": 269
+        },
+        {
+          "name": "conv",
+          "line": 71,
+          "endLine": 76
+        },
+        {
+          "name": "stages",
+          "line": 78,
+          "endLine": 88
+        }
+      ]
+    },
+    {
+      "path": "src/gen_audio/model_workers/contracts.py",
+      "sha256": "25ed484c38a816ed9b60d7d1645912d4caa672fffca65dd687d8079627453c93",
+      "lines": 77,
+      "symbols": [
+        {
+          "name": "WorkerError",
+          "line": 21,
+          "endLine": 24
+        },
+        {
+          "name": "Request",
+          "line": 28,
+          "endLine": 42
+        },
+        {
+          "name": "runtime_spec",
+          "line": 45,
+          "endLine": 77
+        },
+        {
+          "name": "__init__",
+          "line": 22,
+          "endLine": 24
+        }
+      ]
+    },
+    {
+      "path": "src/gen_audio/model_workers/personaplex.py",
+      "sha256": "a4d75842e0469dadd9b28cd2990c195f59681a3eb7f83f189e36b7a5f5e513c5",
+      "lines": 149,
+      "symbols": [
+        {
+          "name": "load",
+          "line": 18,
+          "endLine": 51
+        },
+        {
+          "name": "generate",
+          "line": 54,
+          "endLine": 149
+        },
+        {
+          "name": "BoundedLMGen",
+          "line": 79,
+          "endLine": 82
+        },
+        {
+          "name": "step",
+          "line": 80,
+          "endLine": 82
+        }
+      ]
+    },
+    {
+      "path": "src/gen_audio/model_workers/runtime.py",
+      "sha256": "7915570a3f4be5eb2a102af07142a6ceb7dc635c05caf649166b62a38fb21196",
+      "lines": 135,
+      "symbols": [
+        {
+          "name": "offline_runtime",
+          "line": 22,
+          "endLine": 38
+        },
+        {
+          "name": "check_deadline",
+          "line": 41,
+          "endLine": 43
+        },
+        {
+          "name": "checked_audio",
+          "line": 46,
+          "endLine": 62
+        },
+        {
+          "name": "read_pcm",
+          "line": 65,
+          "endLine": 71
+        },
+        {
+          "name": "publish",
+          "line": 74,
+          "endLine": 109
+        },
+        {
+          "name": "execute",
+          "line": 112,
+          "endLine": 135
+        },
+        {
+          "name": "deny",
+          "line": 24,
+          "endLine": 25
+        }
+      ]
+    },
+    {
+      "path": "src/gen_audio/model_workers/vibevoice.py",
+      "sha256": "21e54176131add65aa1e96ef21e3140a4ac0b346832243de698a2131ec402600",
+      "lines": 131,
+      "symbols": [
+        {
+          "name": "load",
+          "line": 16,
+          "endLine": 84
+        },
+        {
+          "name": "generate",
+          "line": 87,
+          "endLine": 131
+        },
+        {
+          "name": "stop_check",
+          "line": 108,
+          "endLine": 110
+        }
+      ]
+    },
+    {
+      "path": "src/gen_audio/runtime_owner.py",
+      "sha256": "5b61a64e43b2b8b16538897d22c88a5ec20e0d071cdd67847c08b3d8f230ee8a",
+      "lines": 157,
+      "symbols": [
+        {
+          "name": "BoundedText",
+          "line": 17,
+          "endLine": 21
+        },
+        {
+          "name": "digest",
+          "line": 24,
+          "endLine": 29
+        },
+        {
+          "name": "Owner",
+          "line": 32,
+          "endLine": 111
+        },
+        {
+          "name": "main",
+          "line": 114,
+          "endLine": 153
+        },
+        {
+          "name": "write",
+          "line": 18,
+          "endLine": 21
+        },
+        {
+          "name": "__init__",
+          "line": 33,
+          "endLine": 38
+        },
+        {
+          "name": "load",
+          "line": 40,
+          "endLine": 76
+        },
+        {
+          "name": "verify_assets",
+          "line": 78,
+          "endLine": 81
+        },
+        {
+          "name": "status",
+          "line": 83,
+          "endLine": 86
+        },
+        {
+          "name": "run",
+          "line": 88,
+          "endLine": 111
+        }
+      ]
+    },
+    {
+      "path": "src/gen_audio/synth_kokoro_onnx.py",
+      "sha256": "0a06d2fba2888f47ccbc3c10727db42e56eff0e890f220da3ca75d7489c0c549",
+      "lines": 136,
+      "symbols": [
+        {
+          "name": "resolve_model_paths",
+          "line": 29,
+          "endLine": 54
+        },
+        {
+          "name": "_package_version",
+          "line": 57,
+          "endLine": 61
+        },
+        {
+          "name": "KokoroOnnxSynthesizer",
+          "line": 64,
+          "endLine": 136
+        },
+        {
+          "name": "__init__",
+          "line": 69,
+          "endLine": 100
+        },
+        {
+          "name": "validate_loaded_assets",
+          "line": 102,
+          "endLine": 106
+        },
+        {
+          "name": "validate_assignment",
+          "line": 108,
+          "endLine": 110
+        },
+        {
+          "name": "generate",
+          "line": 112,
+          "endLine": 118
+        },
+        {
+          "name": "synthesize_turns",
+          "line": 120,
+          "endLine": 136
+        }
+      ]
+    },
+    {
+      "path": "src/gen_audio/synthesis.py",
+      "sha256": "62fbc0ca37a9fe1461f80a444820c56b75e8d9cd6b0a5c9cd6ec9d6167d06db6",
+      "lines": 210,
+      "symbols": [
+        {
+          "name": "EngineAdapter",
+          "line": 23,
+          "endLine": 31
+        },
+        {
+          "name": "SynthTurn",
+          "line": 35,
+          "endLine": 47
+        },
+        {
+          "name": "SynthResult",
+          "line": 51,
+          "endLine": 109
+        },
+        {
+          "name": "validate_request",
+          "line": 112,
+          "endLine": 125
+        },
+        {
+          "name": "validate_generated_audio",
+          "line": 128,
+          "endLine": 136
+        },
+        {
+          "name": "synthesize_turns",
+          "line": 139,
+          "endLine": 210
+        },
+        {
+          "name": "validate_assignment",
+          "line": 29,
+          "endLine": 29
+        },
+        {
+          "name": "generate",
+          "line": 31,
+          "endLine": 31
+        },
+        {
+          "name": "manifest",
+          "line": 64,
+          "endLine": 109
+        },
+        {
+          "name": "check_deadline",
+          "line": 155,
+          "endLine": 157
+        }
+      ]
+    },
+    {
+      "path": "voices/manifest.json",
+      "sha256": "d6102d392b643ea60e2e6d3c2cba81081910b5ebb6c1489f3f9173cc5a6f261b",
+      "lines": 2317
+    }
+  ],
+  "evidence": [
+    "artifacts/validation/viewport-cleanup/browser-validation.json",
+    "artifacts/validation/viewport-cleanup/vibevoice-preflight.json",
+    "artifacts/validation/agent-profiles/mcp-artist-validation.json"
+  ],
+  "currentChanges": [
+    "Tabs derive from rendered slides; seven release slides have seven buttons.",
+    "Removed explanatory header/footer copy and moved indicators under tabs.",
+    "Playing-audio arrow, stop/close X, persistent pause/resume, and one active transport across library, reference, generated and mastered audio.",
+    "Correlated native playback events prevent stale local echoes undoing Pause/Close.",
+    "Frontend model loading/preflight timeout allows the existing native operation to finish.",
+    "Enabled exact JSON float round trips after reproducing intact mastering report rejection at a 240004-sample WAV duration; strict persistence checks remain enabled."
+  ]
+}

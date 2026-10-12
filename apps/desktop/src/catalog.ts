@@ -118,7 +118,7 @@ export const PERSONAS: Persona[] = [
     purpose: "Name what is stubbed",
     domain: "Engine honesty",
     accent: "General American",
-    traits: "Flat delivery. Magpie, VibeVoice, and Pocket stay unavailable when this persona is selected.",
+    traits: "Flat delivery. Persona selection never implies that a model, its weights, or its runtime are ready.",
     refs: ["persona:ivo"],
     f0: 128,
     formants: [540, 1500, 2500],
@@ -166,11 +166,19 @@ export const VOICE_MODELS: VoiceModel[] = [
   },
   {
     id: "vibevoice",
-    label: "VibeVoice (unavailable)",
+    label: "VibeVoice · CPU worker",
+    waveform: true,
+    synthAdapter: true,
+    unavailable: false,
+    note: "Multi-speaker script TTS through the isolated Python 3.12 worker. Requires model, tokenizer, managed references and a passing memory preflight.",
+  },
+  {
+    id: "personaplex",
+    label: "PersonaPlex (unavailable)",
     waveform: true,
     synthAdapter: false,
     unavailable: true,
-    note: "No adapter and no verified synth in this app.",
+    note: "Profile selection only. No PersonaPlex adapter, weights, or verified runtime in this app; Pocket TTS is not PersonaPlex.",
   },
   {
     id: "magpie",
@@ -194,6 +202,12 @@ export const SLIDE_IDS = ["models", "profiles", "studio", "library", "video", "s
 
 export function personaById(id: string): Persona | undefined {
   return PERSONAS.find((item) => item.id === id);
+}
+
+/** Explicit catalog references only: an unmapped persona must not borrow a voice. */
+export function personaKokoroPack(id: string): string | undefined {
+  const packs = personaById(id)?.refs.filter((ref) => ref.startsWith("kokoro-pack:")).map((ref) => ref.slice("kokoro-pack:".length)) ?? [];
+  return packs.length === 1 && /^[a-z]{2}_[a-z0-9_]+$(?![\s\S])/.test(packs[0]) ? packs[0] : undefined;
 }
 
 export function voiceById(id: string): VoiceModel | undefined {

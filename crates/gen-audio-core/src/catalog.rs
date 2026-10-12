@@ -149,7 +149,7 @@ const PERSONAS: &[Persona] = &[
         purpose: "Name what is stubbed",
         domain: "Engine honesty",
         accent: "General American",
-        traits: "Flat delivery. Magpie, VibeVoice, and Pocket stay unavailable when this persona is selected.",
+        traits: "Flat delivery. Persona selection never implies that a model, its weights, or its runtime are ready.",
         refs: &["persona:ivo"],
     },
     Persona {
@@ -194,11 +194,20 @@ const VOICE_MODELS: &[VoiceModel] = &[
     },
     VoiceModel {
         id: "vibevoice",
-        label: "VibeVoice (unavailable)",
+        label: "VibeVoice · CPU worker",
+        waveform: true,
+        synth_adapter: true,
+        unavailable: false,
+        note: "Isolated Python 3.12 multi-speaker worker. Model, tokenizer, managed references and memory readiness are checked before generation.",
+        offline_reason: None,
+    },
+    VoiceModel {
+        id: "personaplex",
+        label: "PersonaPlex (unavailable)",
         waveform: true,
         synth_adapter: false,
         unavailable: true,
-        note: "No adapter and no verified synth in this app.",
+        note: "Profile selection only. No PersonaPlex adapter, weights, or verified runtime in this app; Pocket TTS is not PersonaPlex.",
         offline_reason: None,
     },
     VoiceModel {
@@ -275,7 +284,7 @@ const LIBRARY: &[LibraryClipMeta] = &[
         wav_url: Some("/library/bitdot_braille_vibevoice.wav"),
         cube_json_url: Some("/library/library_bitdot_braille_vibevoice_cube3d.json"),
         sidecar_url: Some("/library/bitdot_braille_vibevoice.synth.json"),
-        summary: "Catalog says this clip is a real VibeVoice-1.5B podcast (Alice, Frank) rendered offline, with an Inverse-HDR cube. This app has no VibeVoice adapter; it only plays the WAV.",
+        summary: "Real VibeVoice-1.5B podcast (Alice, Frank) rendered offline, with an Inverse-HDR cube. This archived render does not verify readiness of the current CPU worker.",
     },
     LibraryClipMeta {
         id: "lib-magpie",
@@ -297,7 +306,7 @@ const LIBRARY: &[LibraryClipMeta] = &[
         wav_url: None,
         cube_json_url: None,
         sidecar_url: None,
-        summary: "VibeVoice stays unavailable. No fake audio.",
+        summary: "No new VibeVoice worker render is attached to this row. The archived Bitdot clip is separate; generation requires a passing readiness check.",
     },
     LibraryClipMeta {
         id: "lib-pocket",
@@ -318,6 +327,17 @@ pub fn personas() -> &'static [Persona] {
 
 pub fn persona(id: &str) -> Option<&'static Persona> {
     PERSONAS.iter().find(|item| item.id == id)
+}
+
+/// Only an explicit, unambiguous pack reference is an assignment. No fallback.
+pub fn persona_kokoro_pack(id: &str) -> Option<&'static str> {
+    let mut packs = persona(id)?.refs.iter().filter_map(|reference| reference.strip_prefix("kokoro-pack:"));
+    let pack = packs.next()?;
+    let valid = pack.split_once('_').is_some_and(|(prefix, name)| {
+        prefix.len() == 2 && prefix.bytes().all(|ch| ch.is_ascii_lowercase())
+            && !name.is_empty() && name.bytes().all(|ch| ch.is_ascii_lowercase() || ch.is_ascii_digit() || ch == b'_')
+    });
+    (valid && packs.next().is_none()).then_some(pack)
 }
 
 pub fn voice_models() -> &'static [VoiceModel] {
@@ -341,15 +361,18 @@ pub fn is_connector_id(id: &str) -> bool {
 }
 
 pub fn voice_profile_value(id: &str) -> Option<Value> {
+    voice_profile_for_model(id, "kokoro_onnx")
+}
+
+/// A profile is descriptive, never evidence of synthesis or engine readiness.
+pub fn voice_profile_for_model(id: &str, model_id: &str) -> Option<Value> {
     let person = persona(id)?;
-    let voice = voice_models().iter().find(|item| item.id == "kokoro_onnx");
-    let voice_label = voice.map(|item| item.label).unwrap_or("kokoro-onnx");
-    // Persona config only (H): no spectrogram, no cube hook, no audio claim.
-    // Its honest link is voiceModel; that engine's own clips and cubes link from there.
-    Some(json!({
+    let voice = voice_model(model_id)?;
+    let voice_label = voice.label;
+    let mut profile = json!({
         "agentName": person.name,
         "personaId": person.id,
-        "voiceModel": "kokoro_onnx",
+        "voiceModel": voice.id,
         "voiceLabel": voice_label,
         "tone": person.tone,
         "purpose": person.purpose,
@@ -365,7 +388,10 @@ pub fn voice_profile_value(id: &str) -> Option<Value> {
             "Persona config for {} on voice model {}. No audio of this persona yet; not a podcast render.",
             person.name, voice_label
         )
-    }))
+    });
+    let bindings = crate::voice_library::profile(id)?;
+    profile.as_object_mut()?.extend(bindings.as_object()?.clone());
+    Some(profile)
 }
 
 #[cfg(test)]

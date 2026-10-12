@@ -269,7 +269,7 @@ def sync_synth_sidecars(library: Path, repo_root: Path | None = None, work_dirs:
                 raise FileNotFoundError(f"{path.name}: {label} ({source}) is not on this machine, so its sha256 can't be recorded; run the sync where it is") from exc
         if facts:
             labelled["outside_repo"] = dict(sorted(facts.items()))
-        path.write_text(render(labelled), encoding="utf-8")
+        path.write_text(render(labelled), encoding="utf-8", newline="\n")
         changed.append(path.name)
     return changed
 
@@ -324,10 +324,14 @@ def sync_manifest(manifest_path: Path | str, library_dir: Path | str | None = No
     library = Path(library_dir) if library_dir is not None else manifest_path.parent
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
     by_wav: dict[str, tuple[str, dict]] = {}
+    comparisons: dict[str, list[tuple[str, dict]]] = {}
     for path in sorted(library.glob("*_cube3d.json")):
         doc = json.loads(path.read_text(encoding="utf-8"))
-        if "cube_revision" in doc and isinstance(doc.get("wavUrl"), str):
+        method = (doc.get("provenance") or {}).get("layer_method", doc.get("layer_method", "library_r3"))
+        if "cube_revision" in doc and method == "library_r3" and isinstance(doc.get("wavUrl"), str):
             by_wav[doc["wavUrl"]] = (path.name, doc)
+        elif "cube_revision" in doc and method == "pipeline_r2" and isinstance(doc.get("wavUrl"), str):
+            comparisons.setdefault(doc["wavUrl"], []).append((path.name, doc))
     changed: list[str] = []
     for clip in manifest.get("clips", []):
         # F: the manifest ships in dist, so no machine paths. ``wav`` already
@@ -349,11 +353,21 @@ def sync_manifest(manifest_path: Path | str, library_dir: Path | str | None = No
             continue
         before = dict(block)
         block.update(cube_mirror(doc))
+        alternate = []
+        for alternate_name, alternate_doc in comparisons.get(clip.get("wavUrl"), []):
+            if alternate_doc.get("source_sha256") != doc.get("source_sha256"):
+                raise ValueError(f"{alternate_name}: comparison cube belongs to a different WAV")
+            alternate.append({"jsonUrl":f"/library/{alternate_name}", "pngUrl":alternate_doc["pngUrl"],
+                              "layer_method":"pipeline_r2", **cube_mirror(alternate_doc)})
+        if alternate:
+            block["compare"] = alternate
+        else:
+            block.pop("compare", None)
         if block != before:
             changed.append(str(clip.get("id")))
     text = render(manifest)
     if text != manifest_path.read_text(encoding="utf-8"):
-        manifest_path.write_text(text, encoding="utf-8")
+        manifest_path.write_text(text, encoding="utf-8", newline="\n")
     return changed + sync_synth_sidecars(library, work_dirs=work_dirs)
 
 
@@ -417,5 +431,5 @@ def record_generator_commits(manifest_path: Path | str, repo: Path | str, librar
             changed.append(str(clip.get("id")))
     text = render(manifest)
     if text != manifest_path.read_text(encoding="utf-8"):
-        manifest_path.write_text(text, encoding="utf-8")
+        manifest_path.write_text(text, encoding="utf-8", newline="\n")
     return changed

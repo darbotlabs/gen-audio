@@ -1,0 +1,545 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://darbotlabs.dev/gen-audio/schemas/semantic-record.schema.json",
+  "$defs": {
+    "record": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_.-]{0,63}$"
+        },
+        "x": {
+          "type": "number",
+          "minimum": -1000000000000000.0,
+          "maximum": 1000000000000000.0
+        },
+        "y": {
+          "type": "number",
+          "minimum": -1000000000000000.0,
+          "maximum": 1000000000000000.0
+        },
+        "metrics": {
+          "type": "object",
+          "minProperties": 1,
+          "maxProperties": 32,
+          "propertyNames": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_.-]{0,63}$"
+          },
+          "additionalProperties": {
+            "anyOf": [
+              {
+                "type": "number",
+                "minimum": -1000000000000000.0,
+                "maximum": 1000000000000000.0
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "context": {
+          "type": "object",
+          "maxProperties": 16,
+          "propertyNames": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_.-]{0,63}$"
+          },
+          "additionalProperties": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 240,
+            "pattern": "^[^\\u0000-\\u001f\\u007f]+$"
+          }
+        }
+      },
+      "required": [
+        "id",
+        "x",
+        "y",
+        "metrics",
+        "context"
+      ],
+      "additionalProperties": false
+    },
+    "agent.session": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/record"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "context": {
+              "type": "object",
+              "properties": {
+                "session_id": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 120,
+                  "pattern": "^[^\\u0000-\\u001f\\u007f]+$"
+                },
+                "agent_name": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 120,
+                  "pattern": "^[^\\u0000-\\u001f\\u007f]+$"
+                },
+                "state": {
+                  "enum": [
+                    "queued",
+                    "running",
+                    "completed",
+                    "failed",
+                    "cancelled"
+                  ]
+                }
+              },
+              "required": [
+                "session_id",
+                "agent_name",
+                "state"
+              ],
+              "additionalProperties": false
+            },
+            "metrics": {
+              "type": "object",
+              "properties": {
+                "latency_ms": {
+                  "anyOf": [
+                    {
+                      "type": "number",
+                      "minimum": 0,
+                      "maximum": 86400000
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "tokens": {
+                  "anyOf": [
+                    {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 1000000000000.0
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "cost_usd": {
+                  "anyOf": [
+                    {
+                      "type": "number",
+                      "minimum": 0,
+                      "maximum": 1000000000000.0
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "confidence": {
+                  "anyOf": [
+                    {
+                      "type": "number",
+                      "minimum": 0,
+                      "maximum": 1
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              },
+              "required": [],
+              "additionalProperties": false,
+              "minProperties": 1
+            }
+          }
+        }
+      ]
+    },
+    "storyline": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/record"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "context": {
+              "type": "object",
+              "properties": {
+                "story_id": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 120,
+                  "pattern": "^[^\\u0000-\\u001f\\u007f]+$"
+                },
+                "scene_id": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 120,
+                  "pattern": "^[^\\u0000-\\u001f\\u007f]+$"
+                },
+                "beat": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 240,
+                  "pattern": "^[^\\u0000-\\u001f\\u007f]+$"
+                }
+              },
+              "required": [
+                "story_id",
+                "scene_id",
+                "beat"
+              ],
+              "additionalProperties": false
+            },
+            "metrics": {
+              "type": "object",
+              "properties": {
+                "tension": {
+                  "anyOf": [
+                    {
+                      "type": "number",
+                      "minimum": 0,
+                      "maximum": 1
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "pace": {
+                  "anyOf": [
+                    {
+                      "type": "number",
+                      "minimum": 0,
+                      "maximum": 1
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "sentiment": {
+                  "anyOf": [
+                    {
+                      "type": "number",
+                      "minimum": -1,
+                      "maximum": 1
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              },
+              "required": [],
+              "additionalProperties": false,
+              "minProperties": 1
+            }
+          }
+        }
+      ]
+    },
+    "camera": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/record"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "context": {
+              "type": "object",
+              "properties": {
+                "shot_id": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 120,
+                  "pattern": "^[^\\u0000-\\u001f\\u007f]+$"
+                },
+                "camera_id": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 120,
+                  "pattern": "^[^\\u0000-\\u001f\\u007f]+$"
+                },
+                "coordinate_system": {
+                  "const": "right-handed-y-up"
+                }
+              },
+              "required": [
+                "shot_id",
+                "camera_id",
+                "coordinate_system"
+              ],
+              "additionalProperties": false
+            },
+            "metrics": {
+              "type": "object",
+              "properties": {
+                "yaw_deg": {
+                  "anyOf": [
+                    {
+                      "type": "number",
+                      "minimum": -180,
+                      "maximum": 180
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "pitch_deg": {
+                  "anyOf": [
+                    {
+                      "type": "number",
+                      "minimum": -90,
+                      "maximum": 90
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "roll_deg": {
+                  "anyOf": [
+                    {
+                      "type": "number",
+                      "minimum": -180,
+                      "maximum": 180
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "fov_deg": {
+                  "anyOf": [
+                    {
+                      "type": "number",
+                      "minimum": 1,
+                      "maximum": 179
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              },
+              "required": [],
+              "additionalProperties": false,
+              "minProperties": 1
+            }
+          }
+        }
+      ]
+    },
+    "market.stock": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/record"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "context": {
+              "type": "object",
+              "properties": {
+                "symbol": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 32,
+                  "pattern": "^[^\\u0000-\\u001f\\u007f]+$"
+                },
+                "venue": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 32,
+                  "pattern": "^[^\\u0000-\\u001f\\u007f]+$"
+                },
+                "currency": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 32,
+                  "pattern": "^[^\\u0000-\\u001f\\u007f]+$"
+                },
+                "timestamp": {
+                  "type": "string",
+                  "maxLength": 24,
+                  "format": "date-time",
+                  "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{3})?Z$"
+                }
+              },
+              "required": [
+                "symbol",
+                "venue",
+                "currency",
+                "timestamp"
+              ],
+              "additionalProperties": false
+            },
+            "metrics": {
+              "type": "object",
+              "properties": {
+                "open": {
+                  "type": "number",
+                  "minimum": 0,
+                  "maximum": 1000000000000000.0
+                },
+                "high": {
+                  "type": "number",
+                  "minimum": 0,
+                  "maximum": 1000000000000000.0
+                },
+                "low": {
+                  "type": "number",
+                  "minimum": 0,
+                  "maximum": 1000000000000000.0
+                },
+                "close": {
+                  "type": "number",
+                  "minimum": 0,
+                  "maximum": 1000000000000000.0
+                },
+                "volume": {
+                  "type": "number",
+                  "minimum": 0,
+                  "maximum": 1000000000000000.0
+                },
+                "change_pct": {
+                  "anyOf": [
+                    {
+                      "type": "number",
+                      "minimum": -100,
+                      "maximum": 1000000000000000.0
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              },
+              "required": [
+                "open",
+                "high",
+                "low",
+                "close",
+                "volume"
+              ],
+              "additionalProperties": false,
+              "minProperties": 1
+            }
+          }
+        }
+      ]
+    },
+    "market.crypto": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/record"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "context": {
+              "type": "object",
+              "properties": {
+                "base_asset": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 32,
+                  "pattern": "^[^\\u0000-\\u001f\\u007f]+$"
+                },
+                "quote_asset": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 32,
+                  "pattern": "^[^\\u0000-\\u001f\\u007f]+$"
+                },
+                "venue": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 32,
+                  "pattern": "^[^\\u0000-\\u001f\\u007f]+$"
+                },
+                "timestamp": {
+                  "type": "string",
+                  "maxLength": 24,
+                  "format": "date-time",
+                  "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{3})?Z$"
+                }
+              },
+              "required": [
+                "base_asset",
+                "quote_asset",
+                "venue",
+                "timestamp"
+              ],
+              "additionalProperties": false
+            },
+            "metrics": {
+              "type": "object",
+              "properties": {
+                "open": {
+                  "type": "number",
+                  "minimum": 0,
+                  "maximum": 1000000000000000.0
+                },
+                "high": {
+                  "type": "number",
+                  "minimum": 0,
+                  "maximum": 1000000000000000.0
+                },
+                "low": {
+                  "type": "number",
+                  "minimum": 0,
+                  "maximum": 1000000000000000.0
+                },
+                "close": {
+                  "type": "number",
+                  "minimum": 0,
+                  "maximum": 1000000000000000.0
+                },
+                "volume": {
+                  "type": "number",
+                  "minimum": 0,
+                  "maximum": 1000000000000000.0
+                },
+                "change_pct": {
+                  "anyOf": [
+                    {
+                      "type": "number",
+                      "minimum": -100,
+                      "maximum": 1000000000000000.0
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              },
+              "required": [
+                "open",
+                "high",
+                "low",
+                "close",
+                "volume"
+              ],
+              "additionalProperties": false,
+              "minProperties": 1
+            }
+          }
+        }
+      ]
+    }
+  }
+}

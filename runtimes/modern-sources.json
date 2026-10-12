@@ -1,0 +1,22 @@
+{
+  "vibevoice": {
+    "url": "https://codeload.github.com/vibevoice-community/VibeVoice/zip/952326ddb264062466a888cf32a5b2f4e803e16e",
+    "sha256": "041ad298d772efd112e57847406146a0299109e0d77690602cbcb13db5dff39e",
+    "root": "VibeVoice-952326ddb264062466a888cf32a5b2f4e803e16e",
+    "version": "0.1.0+genaudio.1"
+  },
+  "datasets": {
+    "url": "https://files.pythonhosted.org/packages/17/e6/b5d8c77f13cc6269660b0f2691e8875777b9d94972e281b7b2c25f25bd9d/datasets-5.1.0.tar.gz",
+    "sha256": "1561347daa8841b51351ef2ad1647b4ee4af406852c0f7bd1df587ac1ca7888e",
+    "root": "datasets-5.1.0",
+    "version": "5.1.0+genaudio.1"
+  },
+  "personaplex": {
+    "url": "https://codeload.github.com/NVIDIA/personaplex/zip/3428dfd95309a7f3c84fd93259ded0f810d1ff91",
+    "sha256": "43aac4cf0145678c547a762a45a6faae000a19212a9d3c1432a6eaf09b2b4340",
+    "root": "personaplex-3428dfd95309a7f3c84fd93259ded0f810d1ff91/moshi",
+    "version": "0.1.0+genaudio.1",
+    "distribution": "moshi-personaplex",
+    "module": "moshi"
+  }
+}

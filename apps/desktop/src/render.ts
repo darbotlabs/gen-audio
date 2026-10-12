@@ -5,13 +5,14 @@ import { emptyStrip } from "./livestrip";
 import { renderTransport } from "./playback";
 import { SnapAnimator, WheelGesture, stepIndex, type SlideKey } from "./snap";
 import type { ViewportCard, ViewportDocument } from "./validate";
+import { profileMatches } from "./profiles";
+import profileSchema from "../../../schemas/voice_profile.schema.json";
 
 const EMPTY_COPY = "No cards in this viewport.";
 
 export type SlideSchema = {
   id: string;
   title: string;
-  blurb: string;
   columns: number;
   cardIds: string[];
   layer: string;
@@ -22,23 +23,20 @@ export const SLIDE_SCHEMAS: SlideSchema[] = [
   {
     id: "models",
     title: "Voice models",
-    blurb: "TTS and G2P models. Magpie, VibeVoice, and Pocket stay unavailable.",
     columns: 3,
     layer: "models",
     cardIds: ["engine-kokoro", "engine-kokoro-dayour", "engine-misaki", "engine-vibevoice", "engine-magpie", "engine-pocket"],
   },
   {
     id: "profiles",
-    title: "Voice profiles",
-    blurb: "Agent personas. Flip a tile for tone, purpose, domain, accent, traits, and refs.",
+    title: "Agent Voice Profiles",
     columns: 3,
-    layer: "models",
-    cardIds: ["profile-anton", "profile-alice", "profile-khortana", "profile-rocky", "profile-optimus"],
+    layer: "profiles",
+    cardIds: ["profile-anton", "profile-alice", "profile-khortana", "profile-rocky", "profile-optimus", "profile-frank", "profile-nova", "profile-ivo", "profile-sable"],
   },
   {
     id: "studio",
     title: "Studio",
-    blurb: "Browser spectrogram of the side-pane personas and voice model — not product speech",
     columns: 3,
     layer: "models",
     cardIds: [],
@@ -46,7 +44,6 @@ export const SLIDE_SCHEMAS: SlideSchema[] = [
   {
     id: "library",
     title: "Audio clips",
-    blurb: "One livetile per clip — real WAVs play when the file loads; unavailable stays honest",
     columns: 3,
     layer: "clips",
     cardIds: [
@@ -63,7 +60,6 @@ export const SLIDE_SCHEMAS: SlideSchema[] = [
   {
     id: "connectors",
     title: "Connectors",
-    blurb: "LLM connectors live here, not on the Agent control",
     columns: 3,
     layer: "connectors",
     cardIds: [
@@ -77,8 +73,7 @@ export const SLIDE_SCHEMAS: SlideSchema[] = [
   },
   {
     id: "pipeline",
-    title: "Pipeline / Ready",
-    blurb: "MCP + serve health + compare notes — readiness, not a completed render",
+    title: "Pipeline",
     columns: 3,
     layer: "pipeline",
     cardIds: ["conn-mcp"],
@@ -95,6 +90,115 @@ export function showRejected(board: HTMLElement, empty: HTMLElement, error: stri
 }
 
 const liveTimers = new WeakMap<HTMLElement, number>();
+let requestFace: ((tileId: string) => void) | null = null;
+export function setFaceRequester(request: (tileId: string) => void): void { requestFace = request; }
+
+/** Applicable face ids and facts come from Rust, not a second frontend reducer. */
+export function applyViewportViews(board: HTMLElement, views: unknown): void {
+  if (!Array.isArray(views)) return;
+  for (const view of views) {
+    if (!view || typeof view.id !== "string" || !Array.isArray(view.faces)) continue;
+    const id = view.id.replace(/^view:/, "");
+    const tile = board.querySelector<HTMLElement>(`.card[data-id="${CSS.escape(id)}"]`);
+    const flip = tile?.querySelector<HTMLElement>(".flip");
+    if (!tile || !flip) continue;
+    const faces = view.faces.filter((face: { id?: unknown; name?: unknown }) => typeof face?.id === "string" && /^[a-z_]+$/.test(face.id));
+    if (!faces.length) continue;
+    const front = flip.querySelector<HTMLElement>(".face.front");
+    const back = flip.querySelector<HTMLElement>(".face.back");
+    if (!front) continue;
+    const profileTools = tile.querySelector(".profile-back");
+    const engineTools = tile.querySelector(".engine-back");
+    const renameTools = tile.querySelector(".rename-block");
+    const adaptive = !profileTools && !engineTools ? tile.querySelector(".adaptive-body") : null;
+    tile.classList.add("server-faces");
+    tile.dataset.faceIds = JSON.stringify(faces.map((face: { id: string }) => face.id));
+    front.dataset.faceId = faces[0].id;
+    if (typeof view.asset === "string") tile.dataset.assetUid = view.asset;
+    flip.querySelectorAll("[data-server-face]").forEach(node => node.remove());
+    if (back) { back.hidden = true; markFace(back, true); }
+    const sections = Array.isArray(view.snapshot?.sections) ? view.snapshot.sections : [];
+    for (const face of faces.slice(1)) {
+      const pane = window.document.createElement("div");
+      pane.className = "face server-face";
+      pane.dataset.serverFace = "1";
+      pane.dataset.faceId = face.id;
+      const heading = window.document.createElement("h2");
+      heading.textContent = `${view.snapshot?.title ?? id} · ${face.name ?? face.id}`;
+      pane.append(heading);
+      const aliases: Record<string, string[]> = { persona: ["profile", "persona", "engines"], layers: ["layers"], cubes: ["cubes", "cube"] };
+      const selected = sections.filter((section: { id?: string }) => (aliases[face.id] ?? [face.id]).includes(section.id ?? ""));
+      for (const section of selected) {
+        if (typeof section.status === "string") pane.append(paragraph(section.status));
+        if (Array.isArray(section.facts) && !(profileTools && face.id === "persona")) {
+          const list = window.document.createElement("dl");
+          list.className = "profile-schema";
+          for (const fact of section.facts) {
+            const term = window.document.createElement("dt"), detail = window.document.createElement("dd");
+            term.textContent = String(fact.label ?? fact.field ?? "");
+            detail.textContent = typeof fact.value === "string" ? fact.value : JSON.stringify(fact.value ?? null);
+            list.append(term, detail);
+          }
+          pane.append(list);
+        }
+        for (const key of ["layers", "rows", "links"]) {
+          if (!Array.isArray(section[key])) continue;
+          for (const row of section[key]) {
+            const detail = window.document.createElement("details");
+            const summary = window.document.createElement("summary");
+            summary.textContent = String(row?.name ?? row?.label ?? row?.kind ?? key);
+            const value = window.document.createElement("pre");
+            value.textContent = JSON.stringify(row, null, 2);
+            detail.append(summary, value);
+            pane.append(detail);
+          }
+        }
+      }
+      // Preserve the local profile editor/model cube table/rename tools on their relevant face.
+      const detail = face.id === "persona" ? profileTools
+        : face.id === "cubes" ? engineTools
+        : face.id === "relations" ? renameTools : null;
+      if (detail) pane.append(detail);
+      if (face.id === "relations" && adaptive) pane.append(adaptive);
+      if (face.id === "cube" && tile.dataset.cubeJson) {
+        const open = button("Open this clip in Cube");
+        open.addEventListener("click", () => tile.dispatchEvent(new CustomEvent("open-cube", { bubbles: true, detail: { url: tile.dataset.cubeJson, tileId: id } })));
+        pane.append(open);
+      }
+      if (!selected.length && !detail) pane.append(paragraph("No additional facts in the viewport snapshot."));
+      const next = button("Next face");
+      next.className = "flip-toggle";
+      next.addEventListener("click", event => { event.stopPropagation(); toggleFlip(tile); });
+      pane.append(next);
+      pane.hidden = true;
+      markFace(pane, true);
+      flip.append(pane);
+    }
+    const active = faces.some((face: { id: string }) => face.id === tile.dataset.faceId) ? tile.dataset.faceId! : faces[0].id;
+    setCardFace(board, id, active);
+    // Changing applicable faces must not discard the editors or the original adaptive facts.
+    for (const [faceId, tool] of [["cubes", engineTools], ["persona", profileTools], ["relations", renameTools], ["relations", adaptive]] as const) {
+      if (tool && !faces.slice(1).some((face: { id: string }) => face.id === faceId)) front.append(tool);
+    }
+  }
+}
+
+export function setCardFace(board: HTMLElement, tileId: string, faceId: string): boolean {
+  const tile = board.querySelector<HTMLElement>(`.card[data-id="${CSS.escape(tileId.replace(/^view:/, ""))}"]`);
+  if (!tile) return false;
+  const panes = Array.from(tile.querySelectorAll<HTMLElement>(".face[data-face-id]"));
+  const active = panes.find(pane => pane.dataset.faceId === faceId);
+  if (!active) return false;
+  tile.dataset.faceId = faceId;
+  tile.classList.remove("is-flipped");
+  panes.forEach(pane => { pane.hidden = pane !== active; markFace(pane, pane !== active); });
+  const ids: string[] = JSON.parse(tile.dataset.faceIds ?? "[]");
+  tile.querySelectorAll<HTMLButtonElement>(".flip-toggle").forEach(button => {
+    button.disabled = ids.length < 2;
+    button.textContent = ids.length < 2 ? "Single face" : `${ids.indexOf(faceId) + 1}/${ids.length} · Next face`;
+  });
+  return true;
+}
 
 export function renderBoard(board: HTMLElement, empty: HTMLElement, document: ViewportDocument): void {
   stopLiveCycle(board);
@@ -121,7 +225,6 @@ export function renderBoard(board: HTMLElement, empty: HTMLElement, document: Vi
       schema: {
         id: "more",
         title: "More",
-        blurb: "Additional cards from the viewport document",
         columns: document.columns ?? 3,
         layer: "more",
         cardIds: leftovers.map((c) => c.id),
@@ -136,6 +239,7 @@ export function renderBoard(board: HTMLElement, empty: HTMLElement, document: Vi
     section.className = "slide";
     section.dataset.slide = slide.schema.id;
     section.dataset.layer = slide.schema.layer;
+    section.dataset.title = slide.schema.title;
     section.dataset.slideIndex = String(slideIndex);
     section.style.setProperty("--cols", String(slide.schema.columns));
     section.setAttribute("aria-label", `Slide ${slideIndex + 1}: ${slide.schema.title}`);
@@ -144,10 +248,32 @@ export function renderBoard(board: HTMLElement, empty: HTMLElement, document: Vi
     banner.className = "slide-banner";
     const heading = window.document.createElement("h3");
     heading.textContent = slide.schema.title;
-    const blurb = window.document.createElement("p");
-    blurb.textContent = slide.schema.blurb;
-    banner.append(heading, blurb);
+    banner.append(heading);
     section.append(banner);
+    if (slide.schema.id === "profiles") {
+      const search = window.document.createElement("input");
+      search.type = "search"; search.placeholder = "Search agents, accents, traits, models or projects";
+      search.setAttribute("aria-label", "Search Agent Voice Profiles");
+      const filter = window.document.createElement("select");
+      filter.setAttribute("aria-label", "Filter profiles by mapped engine");
+      const all = window.document.createElement("option"); all.value = ""; all.textContent = "All engine bindings"; filter.append(all);
+      for (const id of Object.keys(slide.cards[0]?.body.engineManifests ?? {})) {
+        const option = window.document.createElement("option"); option.value = id; option.textContent = id; filter.append(option);
+      }
+      const count = paragraph(`${slide.cards.length} agent profiles`); count.setAttribute("role", "status");
+      const update = (): void => {
+        let visible = 0;
+        for (const card of slide.cards) {
+          const tile = section.querySelector<HTMLElement>(`.profile-tile[data-id="${CSS.escape(card.id)}"]`);
+          if (!tile) continue;
+          tile.hidden = !profileMatches(card.body, search.value, filter.value);
+          if (!tile.hidden) visible++;
+        }
+        count.textContent = `${visible} of ${slide.cards.length} agent profiles${visible ? "" : " — no matches"}`;
+      };
+      search.addEventListener("input", update); filter.addEventListener("change", update);
+      const tools = window.document.createElement("div"); tools.className = "profile-library-tools"; tools.append(search, filter, count); banner.append(tools);
+    }
 
     slide.cards.forEach((card) => {
       const article = window.document.createElement("article");
@@ -207,7 +333,7 @@ export function renderBoard(board: HTMLElement, empty: HTMLElement, document: Vi
 
   const extra = appendUtilitySlides(board, slides.length);
   const total = slides.length + extra;
-  buildSlideDots(total);
+  buildSlideNavigation(board);
   syncSlideChrome(0, total);
   startLiveCycle(board);
   board.scrollTop = 0;
@@ -298,12 +424,17 @@ function backFace(card: ViewportCard): HTMLElement {
 }
 
 function toggleFlip(article: HTMLElement): void {
+  if (requestFace && article.dataset.id) { requestFace(article.dataset.id); return; }
   setCardFlipState(article, !article.classList.contains("is-flipped"));
 }
 
 export function setCardFlip(board: HTMLElement, tileId: string, flipped: boolean): boolean {
   const tile = board.querySelector<HTMLElement>(`.card[data-id="${CSS.escape(tileId)}"]`);
   if (!tile) return false;
+  if (tile.dataset.faceIds) {
+    const ids: string[] = JSON.parse(tile.dataset.faceIds);
+    return setCardFace(board, tileId, ids[flipped ? Math.min(1, ids.length - 1) : 0]);
+  }
   setCardFlipState(tile, flipped);
   return true;
 }
@@ -330,14 +461,6 @@ function setCardFlipState(article: HTMLElement, flipped: boolean): void {
   if (back) markFace(back, hidden.back);
 }
 
-function syncLayerTabs(slideId: string | undefined): void {
-  const layer =
-    slideId === "models" ? "models" : slideId === "library" ? "clips" : slideId === "video" ? "video" : slideId === "spatial" ? "cube" : "";
-  window.document.querySelectorAll<HTMLButtonElement>("#layer-switch [data-layer]").forEach((button) => {
-    button.setAttribute("aria-selected", button.dataset.layer === layer ? "true" : "false");
-  });
-}
-
 function startLiveCycle(board: HTMLElement): void {
   if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
   let cursor = 0;
@@ -355,7 +478,8 @@ function startLiveCycle(board: HTMLElement): void {
         tile.dataset.kind !== "Cube3D" &&
         tile.dataset.kind !== "PodcastCast" &&
         tile.dataset.kind !== "LibraryClip" &&
-        tile.dataset.kind !== "VoiceProfile",
+        tile.dataset.kind !== "VoiceProfile" &&
+        !tile.classList.contains("server-faces"),
     );
     if (idle.length === 0) return;
     toggleFlip(idle[cursor % idle.length]);
@@ -646,7 +770,7 @@ export function fillModelCubes(board: HTMLElement, catalog: LibraryCatalog | nul
         panel.append(link);
       }
     } else {
-      if (view.offline) panel.append(paragraph("Offline run: rendered outside this app; the engine has no adapter here."));
+      if (view.offline) panel.append(paragraph("Stored renders; this engine has no desktop synthesis adapter."));
       const table = window.document.createElement("table");
       table.className = "model-cube-table";
       const head = window.document.createElement("tr");
@@ -660,7 +784,7 @@ export function fillModelCubes(board: HTMLElement, catalog: LibraryCatalog | nul
         const tr = window.document.createElement("tr");
         tr.dataset.cubeUid = row.cubeUid;
         const cells = [
-          view.offline ? `${row.clipTitle} (offline run)` : row.clipTitle,
+          row.imported ? `${row.clipTitle} (imported render)` : row.clipTitle,
           row.cubeUid,
           row.revision === null ? "pending" : String(row.revision),
           row.shape ? `${row.shape[0]}\u00d7${row.shape[1]}` : "pending",
@@ -711,6 +835,7 @@ function voiceProfileBack(card: ViewportCard): HTMLElement {
   const body = card.body;
   const rows: Array<[string, string]> = [
     ["Agent", String(body.agentName ?? "")],
+    ["Artist", String((body.metadata as Record<string, unknown> | undefined)?.artist ?? body.agentName ?? "")],
     ["Voice model", String(body.voiceModel ?? "")],
     ["Tone", String(body.tone ?? "")],
     ["Purpose", String(body.purpose ?? "")],
@@ -733,11 +858,64 @@ function voiceProfileBack(card: ViewportCard): HTMLElement {
   // Persona config, not audio evidence (H): no spectrogram area and no cube
   // link. The voice model row is the honest relation; that engine's own
   // clips and cubes are on the Library slide.
-  const none = paragraph("No audio of this persona yet");
+  const none = paragraph("Reference samples are source recordings used for voice conditioning.");
   none.dataset.field = "no-audio";
   wrap.append(none);
+  const use = button("Use agent in Studio"); use.dataset.action = "use-agent"; use.dataset.personaId = String(body.personaId); wrap.append(use);
+  const samples = Array.isArray(body.samples) ? body.samples : [];
+  const sampleSection = window.document.createElement("details"); sampleSection.open = true;
+  const sampleHeading = window.document.createElement("summary"); sampleHeading.textContent = `Reference samples · ${samples.length}`; sampleSection.append(sampleHeading);
+  for (const sample of samples) {
+    const row = window.document.createElement("div"); row.className = "profile-sample";
+    const audition = button(`Listen · ${String(sample.label)}`); audition.dataset.action = "audition-reference"; audition.dataset.referenceId = String(sample.referenceId);
+    const audio = window.document.createElement("audio"); audio.controls = true; audio.preload = "none"; audio.setAttribute("aria-label", `Reference sample ${String(sample.label)}`);
+    const status = paragraph("Acoustic reference"); status.dataset.sampleStatus = "1"; status.setAttribute("role", "status");
+    row.append(audition, audio, status); sampleSection.append(row);
+  }
+  if (!samples.length) sampleSection.append(paragraph("Choose an acoustic reference when configuring this agent for a reference-based engine."));
+  wrap.append(sampleSection);
+  const projects = window.document.createElement("details");
+  const projectHeading = window.document.createElement("summary"); projectHeading.textContent = "Linked projects"; projects.append(projectHeading);
+  for (const project of Array.isArray(body.linkedProjects) ? body.linkedProjects : []) {
+    const link = button(String(project.name)); link.dataset.action = "open-profile-project"; link.dataset.projectSlide = String(project.slide);
+    projects.append(link, paragraph(String(project.path)));
+  }
+  wrap.append(projects);
+  const engines = body.engineManifests;
+  if (engines && typeof engines === "object" && !Array.isArray(engines)) {
+    const manifests = window.document.createElement("details");
+    manifests.className = "engine-manifests";
+    const summary = window.document.createElement("summary");
+    summary.textContent = `All engine manifests · profile ${String(body.profileVersion ?? "2.0")}`;
+    manifests.append(summary);
+    for (const [engine, value] of Object.entries(engines)) {
+      if (!value || typeof value !== "object") continue;
+      const binding = value as Record<string, unknown>;
+      const item = window.document.createElement("p");
+      item.textContent = `${engine}: ${String(binding.capability)} · ${String(binding.mapping)} · ${String(binding.voiceId ?? binding.referenceId ?? "choose a voice mapping")}`;
+      manifests.append(item);
+    }
+    const download = button("Download full voice profile");
+    download.addEventListener("click", (event) => {
+      event.stopPropagation();
+      downloadJson(body, `${String(body.personaId)}.voice-profile.json`);
+    });
+    wrap.append(manifests, download);
+  }
+  const adaptiveDownload = button("Download Adaptive Card JSON");
+  adaptiveDownload.addEventListener("click", event => { event.stopPropagation(); downloadJson(body.adaptiveCard, `${String(body.personaId)}.adaptive-card.json`); });
+  adaptiveDownload.disabled = !body.adaptiveCard;
+  const schemaDownload = button("Download profile JSON Schema");
+  schemaDownload.addEventListener("click", event => { event.stopPropagation(); downloadJson(profileSchema, "agent-voice-profile.schema.json"); });
+  wrap.append(adaptiveDownload, schemaDownload);
   wrap.append(paragraph(String(body.disclaimer ?? "")));
   return wrap;
+}
+
+function downloadJson(value: unknown, filename: string): void {
+  const url = URL.createObjectURL(new Blob([JSON.stringify(value, null, 2)], { type: "application/json" }));
+  const link = window.document.createElement("a"); link.href = url; link.download = filename; link.click();
+  window.setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
 function renameBlock(card: ViewportCard): HTMLElement {
@@ -775,6 +953,7 @@ function appendUtilitySlides(board: HTMLElement, startIndex: number): number {
   video.className = "slide";
   video.dataset.slide = "video";
   video.dataset.layer = "video";
+  video.dataset.title = "Video";
   video.dataset.slideIndex = String(startIndex);
   video.setAttribute("aria-label", "Video layer");
   const videoBanner = window.document.createElement("div");
@@ -794,6 +973,7 @@ function appendUtilitySlides(board: HTMLElement, startIndex: number): number {
   spatial.className = "slide spatial-slide";
   spatial.dataset.slide = "spatial";
   spatial.dataset.layer = "cube";
+  spatial.dataset.title = "Cube";
   spatial.dataset.slideIndex = String(startIndex + 1);
   spatial.setAttribute("aria-label", "Spatial cube: Inverse-HDR cube from library cube JSON");
 
@@ -808,6 +988,30 @@ function appendUtilitySlides(board: HTMLElement, startIndex: number): number {
   labels.id = "cube-labels";
   labels.className = "cube-labels";
   labels.setAttribute("aria-hidden", "true");
+  const compareCanvas = window.document.createElement("canvas");
+  compareCanvas.id = "cube-compare-viewport";
+  compareCanvas.className = "cube-compare-canvas";
+  compareCanvas.hidden = true;
+  compareCanvas.setAttribute("aria-label", "Pipeline formulas cube; one shared playback slice");
+  const compareLabels = window.document.createElement("canvas");
+  compareLabels.id = "cube-compare-labels";
+  compareLabels.className = "cube-labels cube-compare-labels";
+  compareLabels.hidden = true;
+  compareLabels.setAttribute("aria-hidden", "true");
+  const compareFallback = window.document.createElement("img");
+  compareFallback.id = "cube-compare-fallback";
+  compareFallback.className = "cube-fallback cube-compare-fallback";
+  compareFallback.hidden = true;
+  const paneHeads = ["primary", "compare"].map(id => {
+    const head = window.document.createElement("p");
+    head.id = `cube-pane-head-${id}`;
+    head.className = `cube-overlay cube-pane-head cube-pane-head-${id}`;
+    head.hidden = true;
+    return head;
+  });
+  const compareClock = window.document.createElement("p");
+  compareClock.id = "cube-compare-clock";
+  compareClock.className = "cube-overlay cube-compare-clock";
 
   const title = window.document.createElement("p");
   title.id = "cube-title";
@@ -844,7 +1048,11 @@ function appendUtilitySlides(board: HTMLElement, startIndex: number): number {
   const cubeGlyph = window.document.createElement("span");
   cubeGlyph.id = "cube-glyph";
   cubeGlyph.className = "cube-glyph";
-  picker.append(cubeGlyph, select, play, layersToggle);
+  const compareToggle = button("Compare");
+  compareToggle.id = "cube-compare-toggle";
+  compareToggle.setAttribute("aria-pressed", "false");
+  compareToggle.setAttribute("aria-label", "Compare Library and Pipeline formulas for the same WAV");
+  picker.append(cubeGlyph, select, play, compareToggle, layersToggle);
 
   const badge = window.document.createElement("p");
   badge.id = "cube-badge";
@@ -880,7 +1088,7 @@ function appendUtilitySlides(board: HTMLElement, startIndex: number): number {
   scrub.value = "0";
   scrub.setAttribute("aria-label", "Shared cube and audio clock");
 
-  stage.append(canvas, labels, fallback, title, badge, legend, picker, caption, clock, matrix, scrub);
+  stage.append(canvas, labels, fallback, compareCanvas, compareLabels, compareFallback, ...paneHeads, title, badge, legend, picker, caption, clock, compareClock, matrix, scrub);
   spatial.append(stage);
   board.append(spatial);
   return 2;
@@ -895,7 +1103,7 @@ export function goToSlideId(board: HTMLElement, id: string): boolean {
 }
 
 export function cards(board: HTMLElement): HTMLElement[] {
-  return Array.from(board.querySelectorAll<HTMLElement>(".card"));
+  return Array.from(board.querySelectorAll<HTMLElement>(".card:not([hidden])"));
 }
 
 export function slides(board: HTMLElement): HTMLElement[] {
@@ -949,12 +1157,11 @@ export function goToSlide(board: HTMLElement, index: number, options: { animate?
   if (list.length === 0) return;
   const next = Math.min(list.length - 1, Math.max(0, index));
   const slide = list[next];
-  const slideCards = Array.from(slide.querySelectorAll<HTMLElement>(".card"));
+  const slideCards = Array.from(slide.querySelectorAll<HTMLElement>(".card:not([hidden])"));
   cards(board).forEach((item) => {
     item.tabIndex = -1;
   });
   syncSlideChrome(next, list.length);
-  syncLayerTabs(slide.dataset.slide);
   animatorFor(board).go(slide, next, options.animate === true);
   if (slideCards[0]) {
     slideCards[0].tabIndex = 0;
@@ -977,7 +1184,7 @@ export function moveSlide(board: HTMLElement, direction: 1 | -1 | Exclude<SlideK
 
 export function moveFocus(board: HTMLElement, direction: 1 | -1 | "home" | "end"): void {
   const slide = currentSlide(board);
-  const items = slide ? Array.from(slide.querySelectorAll<HTMLElement>(".card")) : cards(board);
+  const items = slide ? Array.from(slide.querySelectorAll<HTMLElement>(".card:not([hidden])")) : cards(board);
   if (items.length === 0) return;
   const active = window.document.activeElement;
   const current = items.findIndex((item) => item === active || item.contains(active));
@@ -993,23 +1200,36 @@ export function moveFocus(board: HTMLElement, direction: 1 | -1 | "home" | "end"
   items[next].scrollIntoView({ block: "nearest" });
 }
 
-function buildSlideDots(count: number): void {
+/** Tabs and indicators share the actual rendered slide list, including extension slides. */
+function buildSlideNavigation(board: HTMLElement): void {
+  const tabs = window.document.querySelector<HTMLElement>("#layer-switch");
   const host = window.document.querySelector<HTMLElement>("#slide-dots");
-  if (!host) return;
-  host.replaceChildren();
-  for (let i = 0; i < count; i += 1) {
+  tabs?.replaceChildren();
+  host?.replaceChildren();
+  slides(board).forEach((slide, i) => {
+    const title = slide.dataset.title ?? slide.dataset.slide ?? `Slide ${i + 1}`;
+    slide.id = `viewport-slide-${i}`;
+    slide.setAttribute("role", "tabpanel");
+    slide.setAttribute("aria-labelledby", `viewport-tab-${i}`);
+    const tab = button(title);
+    tab.id = `viewport-tab-${i}`;
+    tab.dataset.layer = slide.dataset.layer;
+    tab.dataset.slide = slide.dataset.slide;
+    tab.setAttribute("role", "tab");
+    tab.setAttribute("aria-controls", slide.id);
+    tabs?.append(tab);
     const dot = window.document.createElement("button");
     dot.type = "button";
     dot.className = "slide-dot";
-    dot.setAttribute("role", "tab");
-    dot.setAttribute("aria-label", `Go to slide ${i + 1}`);
+    dot.setAttribute("aria-label", `Go to ${title}`);
+    dot.setAttribute("aria-controls", slide.id);
     dot.dataset.slideIndex = String(i);
     dot.addEventListener("click", () => {
       const board = window.document.querySelector<HTMLElement>("#board");
       if (board) goToSlide(board, i, { animate: true });
     });
-    host.append(dot);
-  }
+    host?.append(dot);
+  });
 }
 
 export function syncSlideChrome(index: number, total: number): void {
@@ -1019,13 +1239,22 @@ export function syncSlideChrome(index: number, total: number): void {
   }
   const host = window.document.querySelector<HTMLElement>("#slide-dots");
   host?.querySelectorAll<HTMLButtonElement>(".slide-dot").forEach((dot, i) => {
-    dot.setAttribute("aria-selected", i === index ? "true" : "false");
+    dot.setAttribute("aria-current", i === index && total > 0 ? "true" : "false");
+    dot.disabled = total === 0;
   });
   const board = window.document.querySelector<HTMLElement>("#board");
   const layer = board ? slides(board)[index]?.dataset.layer : undefined;
+  if (board) slides(board).forEach((slide, i) => {
+    const active = total > 0 && i === index;
+    slide.setAttribute("aria-hidden", String(!active));
+    slide.inert = !active;
+  });
   window.document.body.classList.toggle("cube-active", layer === "cube");
-  window.document.querySelectorAll<HTMLButtonElement>("#layer-switch [data-layer]").forEach((button) => {
-    button.setAttribute("aria-selected", button.dataset.layer === layer ? "true" : "false");
+  window.document.querySelectorAll<HTMLButtonElement>("#layer-switch [data-layer]").forEach((button, i) => {
+    const selected = total > 0 && i === index;
+    button.setAttribute("aria-selected", String(selected));
+    button.tabIndex = selected ? 0 : -1;
+    button.disabled = total === 0;
   });
 }
 

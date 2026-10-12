@@ -1,0 +1,288 @@
+{
+  "vibevoice": [
+    {
+      "path": "pyproject.toml",
+      "before": "version = \"0.1.0\"",
+      "after": "version = \"0.1.0+genaudio.1\""
+    },
+    {
+      "path": "pyproject.toml",
+      "before": "accelerate==1.6.0",
+      "after": "accelerate==1.15.0"
+    },
+    {
+      "path": "pyproject.toml",
+      "before": "transformers==4.51.3\", # we develop this project on transformers==4.51.3, later version may not be compatible",
+      "after": "transformers==5.19.0\", # Gen-Audio compatibility port"
+    },
+    {
+      "path": "pyproject.toml",
+      "before": "datasets==3.5.0\", # avoid issues with torchcodec",
+      "after": "datasets==5.1.0+genaudio.1\", # Qualified with fsspec 2026.9.0"
+    },
+    {
+      "path": "pyproject.toml",
+      "before": "gradio==5.50.0",
+      "after": "gradio==6.30.0"
+    },
+    {
+      "path": "vibevoice/modular/modeling_vibevoice.py",
+      "before": "AutoModel.register(VibeVoiceConfig, VibeVoiceModel)",
+      "after": "AutoModel.register(VibeVoiceConfig, VibeVoiceModel, exist_ok=True)"
+    },
+    {
+      "path": "vibevoice/modular/modeling_vibevoice.py",
+      "before": "AutoModelForCausalLM.register(VibeVoiceConfig, VibeVoiceForConditionalGeneration)",
+      "after": "AutoModelForCausalLM.register(VibeVoiceConfig, VibeVoiceForConditionalGeneration, exist_ok=True)"
+    },
+    {
+      "path": "vibevoice/modular/modeling_vibevoice_asr.py",
+      "before": "AutoModel.register(VibeVoiceASRConfig, VibeVoiceASRModel)",
+      "after": "AutoModel.register(VibeVoiceASRConfig, VibeVoiceASRModel, exist_ok=True)"
+    },
+    {
+      "path": "vibevoice/modular/modeling_vibevoice_asr.py",
+      "before": "AutoModelForCausalLM.register(VibeVoiceASRConfig, VibeVoiceASRForConditionalGeneration)",
+      "after": "AutoModelForCausalLM.register(VibeVoiceASRConfig, VibeVoiceASRForConditionalGeneration, exist_ok=True)"
+    },
+    {
+      "path": "vibevoice/modular/modeling_vibevoice_inference.py",
+      "before": "AutoModelForCausalLM.register(VibeVoiceConfig, VibeVoiceForConditionalGenerationInference)",
+      "after": "AutoModelForCausalLM.register(VibeVoiceConfig, VibeVoiceForConditionalGenerationInference, exist_ok=True)"
+    },
+    {
+      "path": "vibevoice/modular/modeling_vibevoice_streaming.py",
+      "before": "AutoModel.register(VibeVoiceStreamingConfig, VibeVoiceStreamingModel)",
+      "after": "AutoModel.register(VibeVoiceStreamingConfig, VibeVoiceStreamingModel, exist_ok=True)"
+    },
+    {
+      "path": "vibevoice/modular/modeling_vibevoice_streaming_inference.py",
+      "before": "AutoModelForCausalLM.register(VibeVoiceStreamingConfig, VibeVoiceStreamingForConditionalGenerationInference)",
+      "after": "AutoModelForCausalLM.register(VibeVoiceStreamingConfig, VibeVoiceStreamingForConditionalGenerationInference, exist_ok=True)"
+    },
+    {
+      "path": "vibevoice/modular/modular_vibevoice_diffusion_head.py",
+      "before": "AutoModel.register(VibeVoiceDiffusionHeadConfig, VibeVoiceDiffusionHead)",
+      "after": "AutoModel.register(VibeVoiceDiffusionHeadConfig, VibeVoiceDiffusionHead, exist_ok=True)"
+    },
+    {
+      "path": "vibevoice/modular/modular_vibevoice_tokenizer.py",
+      "before": "AutoModel.register(VibeVoiceAcousticTokenizerConfig, VibeVoiceAcousticTokenizerModel)",
+      "after": "AutoModel.register(VibeVoiceAcousticTokenizerConfig, VibeVoiceAcousticTokenizerModel, exist_ok=True)"
+    },
+    {
+      "path": "vibevoice/modular/modular_vibevoice_tokenizer.py",
+      "before": "AutoModel.register(VibeVoiceSemanticTokenizerConfig, VibeVoiceSemanticTokenizerModel)",
+      "after": "AutoModel.register(VibeVoiceSemanticTokenizerConfig, VibeVoiceSemanticTokenizerModel, exist_ok=True)"
+    },
+    {
+      "path": "vibevoice/modular/modular_vibevoice_text_tokenizer.py",
+      "before": "from transformers.models.qwen2.tokenization_qwen2_fast import Qwen2TokenizerFast",
+      "after": "from transformers.models.qwen2.tokenization_qwen2 import Qwen2Tokenizer as Qwen2TokenizerFast",
+      "count": 1
+    },
+    {
+      "path": "vibevoice/modular/modeling_vibevoice_inference.py",
+      "before": "self._prepare_cache_for_generation(generation_config, model_kwargs, None, batch_size, max_cache_length, device)",
+      "after": "self._prepare_cache_for_generation(generation_config, model_kwargs, generation_config.get_generation_mode(), batch_size, max_cache_length)",
+      "count": 1
+    },
+    {
+      "path": "vibevoice/modular/modeling_vibevoice_streaming_inference.py",
+      "before": "self._prepare_cache_for_generation(generation_config, model_kwargs, None, batch_size, max_cache_length, device)",
+      "after": "self._prepare_cache_for_generation(generation_config, model_kwargs, generation_config.get_generation_mode(), batch_size, max_cache_length)",
+      "count": 1
+    },
+    {
+      "path": "vibevoice/modular/modeling_vibevoice_inference.py",
+      "before": "zip(negative_model_kwargs['past_key_values'].key_cache, \n                                                                        negative_model_kwargs['past_key_values'].value_cache)",
+      "after": "((layer.keys, layer.values) for layer in negative_model_kwargs['past_key_values'].layers)",
+      "count": 2
+    },
+    {
+      "path": "vibevoice/schedule/dpm_solver.py",
+      "before": "torch.tensor(betas, dtype=torch.float32)",
+      "after": "torch.tensor(betas, dtype=torch.float32, device=\"cpu\")"
+    },
+    {
+      "path": "vibevoice/schedule/dpm_solver.py",
+      "before": "torch.tensor(trained_betas, dtype=torch.float32)",
+      "after": "torch.tensor(trained_betas, dtype=torch.float32, device=\"cpu\")"
+    },
+    {
+      "path": "vibevoice/schedule/dpm_solver.py",
+      "before": "torch.linspace(beta_start, beta_end, num_train_timesteps, dtype=torch.float32)",
+      "after": "torch.linspace(beta_start, beta_end, num_train_timesteps, dtype=torch.float32, device=\"cpu\")"
+    },
+    {
+      "path": "vibevoice/schedule/dpm_solver.py",
+      "before": "torch.linspace(beta_start**0.5, beta_end**0.5, num_train_timesteps, dtype=torch.float32)",
+      "after": "torch.linspace(beta_start**0.5, beta_end**0.5, num_train_timesteps, dtype=torch.float32, device=\"cpu\")"
+    },
+    {
+      "path": "vibevoice/modular/modular_vibevoice_tokenizer.py",
+      "before": "torch.linspace(0, drop_path_rate, sum(self.depths))",
+      "after": "torch.linspace(0, drop_path_rate, sum(self.depths), device=\"cpu\")",
+      "count": 2
+    },
+    {
+      "path": "vibevoice/modular/modular_vibevoice_tokenizer.py",
+      "before": "torch.tensor(config.fix_std)",
+      "after": "torch.tensor(config.fix_std, device=\"cpu\")"
+    },
+    {
+      "path": "vibevoice/modular/modeling_vibevoice_inference.py",
+      "before": "def tie_weights(self):",
+      "after": "def tie_weights(self, missing_keys=None, recompute_mapping=True):"
+    },
+    {
+      "path": "vibevoice/modular/modeling_vibevoice_streaming_inference.py",
+      "before": "def tie_weights(self):",
+      "after": "def tie_weights(self, missing_keys=None, recompute_mapping=True):"
+    },
+    {
+      "path": "vibevoice/modular/modeling_vibevoice_asr.py",
+      "before": "def tie_weights(self):",
+      "after": "def tie_weights(self, missing_keys=None, recompute_mapping=True):"
+    },
+    {
+      "path": "vibevoice/modular/modeling_vibevoice.py",
+      "before": "def tie_weights(self):",
+      "after": "def tie_weights(self, missing_keys=None, recompute_mapping=True):"
+    },
+    {
+      "path": "vibevoice/modular/modeling_vibevoice_inference.py",
+      "before": "self._prepare_generation_config(\n            generation_config, \n            True,",
+      "after": "self._prepare_generation_config(\n            generation_config,"
+    },
+    {
+      "path": "vibevoice/modular/modeling_vibevoice_streaming_inference.py",
+      "before": "self._prepare_generation_config(\n            generation_config,\n            True,",
+      "after": "self._prepare_generation_config(\n            generation_config,"
+    },
+    {
+      "path": "vibevoice/modular/configuration_vibevoice.py",
+      "before": "class VibeVoiceConfig(PretrainedConfig):",
+      "after": "class VibeVoiceConfig(PretrainedConfig):\n    def get_text_config(self, decoder=False, encoder=False):\n        return self.decoder_config\n"
+    },
+    {
+      "path": "vibevoice/modular/configuration_vibevoice_streaming.py",
+      "before": "class VibeVoiceStreamingConfig(PretrainedConfig):",
+      "after": "class VibeVoiceStreamingConfig(PretrainedConfig):\n    def get_text_config(self, decoder=False, encoder=False):\n        return self.decoder_config\n"
+    },
+    {
+      "path": "vibevoice/modular/modeling_vibevoice_inference.py",
+      "before": "    def tie_weights(self, missing_keys=None, recompute_mapping=True):",
+      "after": "    def prepare_inputs_for_generation(self, input_ids, past_key_values=None, attention_mask=None, **kwargs):\n        # Transformers 5 requires the caller to define the uncached input span.\n        past_length = past_key_values.get_seq_length() if past_key_values is not None else 0\n        length = input_ids.shape[-1] - past_length\n        if length <= 0:\n            raise ValueError(\"Generation cache exceeds the supplied token sequence\")\n        kwargs.pop(\"cache_position\", None)\n        if attention_mask is not None and kwargs.get(\"position_ids\") is None:\n            positions = attention_mask.long().cumsum(-1) - 1\n            kwargs[\"position_ids\"] = positions.masked_fill(attention_mask == 0, 1)\n        result = super().prepare_inputs_for_generation(\n            input_ids, past_key_values=past_key_values, attention_mask=attention_mask,\n            next_sequence_length=length, is_first_iteration=past_length == 0, **kwargs)\n        result.setdefault(\"inputs_embeds\", None)\n        return result\n\n    def tie_weights(self, missing_keys=None, recompute_mapping=True):"
+    },
+    {
+      "path": "vibevoice/modular/modeling_vibevoice_streaming_inference.py",
+      "before": "    def tie_weights(self, missing_keys=None, recompute_mapping=True):",
+      "after": "    def prepare_inputs_for_generation(self, input_ids, past_key_values=None, attention_mask=None, **kwargs):\n        # Transformers 5 requires the caller to define the uncached input span.\n        past_length = past_key_values.get_seq_length() if past_key_values is not None else 0\n        length = input_ids.shape[-1] - past_length\n        if length <= 0:\n            raise ValueError(\"Generation cache exceeds the supplied token sequence\")\n        kwargs.pop(\"cache_position\", None)\n        if attention_mask is not None and kwargs.get(\"position_ids\") is None:\n            positions = attention_mask.long().cumsum(-1) - 1\n            kwargs[\"position_ids\"] = positions.masked_fill(attention_mask == 0, 1)\n        result = super().prepare_inputs_for_generation(\n            input_ids, past_key_values=past_key_values, attention_mask=attention_mask,\n            next_sequence_length=length, is_first_iteration=past_length == 0, **kwargs)\n        result.setdefault(\"inputs_embeds\", None)\n        return result\n\n    def tie_weights(self, missing_keys=None, recompute_mapping=True):"
+    },
+    {
+      "path": "vibevoice/modular/modeling_vibevoice_inference.py",
+      "before": "    def tie_weights(self, missing_keys=None, recompute_mapping=True):\n        \"\"\"\n        Tie the weights between the input embeddings and the output embeddings.\n        \"\"\"\n        # Tie lm_head.weight to language_model.embed_tokens.weight\n        if not getattr(self.config, 'tie_word_embeddings', False):\n            return\n         \n        if hasattr(self, 'lm_head') and hasattr(self.model.language_model, 'embed_tokens'):\n            self.lm_head.weight = self.model.language_model.embed_tokens.weight",
+      "after": "    def tie_weights(self, missing_keys=None, recompute_mapping=True):\n        return super().tie_weights(missing_keys=missing_keys, recompute_mapping=recompute_mapping)"
+    },
+    {
+      "path": "vibevoice/modular/modeling_vibevoice_inference.py",
+      "before": "_tied_weights_keys = [\"lm_head.weight\"]",
+      "after": "_tied_weights_keys = {\"lm_head.weight\": \"model.language_model.embed_tokens.weight\"}"
+    },
+    {
+      "path": "vibevoice/modular/modeling_vibevoice.py",
+      "before": "    def tie_weights(self, missing_keys=None, recompute_mapping=True):\n        \"\"\"\n        Tie the weights between the input embeddings and the output embeddings.\n        \"\"\"\n        if getattr(self.config.decoder_config, 'tie_word_embeddings', False):\n            # The standard PreTrainedModel method will handle the tying.\n            # It typically does a simple parameter object assignment, which is\n            # CORRECT to do BEFORE FSDP wraps the model.\n            output_embeddings = self.get_output_embeddings()\n            input_embeddings = self.get_input_embeddings()\n            if hasattr(input_embeddings, 'weight'):\n                output_embeddings.weight = input_embeddings.weight\n            else:\n                # maybe returned input_embeddings a tensor directly\n                output_embeddings.weight = input_embeddings\n\n            if getattr(output_embeddings, \"bias\", None) is not None:\n                output_embeddings.bias.data = nn.functional.pad(\n                    output_embeddings.bias.data,\n                    (0, output_embeddings.weight.shape[0] - output_embeddings.bias.shape[0]),\n                    \"constant\",\n                    0,\n                )\n            print(\"Tied input and output embeddings using standard assignment.\")\n        else:\n            print(\"tie_word_embeddings is False, not tying weights.\")",
+      "after": "    def tie_weights(self, missing_keys=None, recompute_mapping=True):\n        return super().tie_weights(missing_keys=missing_keys, recompute_mapping=recompute_mapping)"
+    },
+    {
+      "path": "vibevoice/modular/modeling_vibevoice.py",
+      "before": "_tied_weights_keys = [\"lm_head.weight\"]",
+      "after": "_tied_weights_keys = {\"lm_head.weight\": \"model.language_model.embed_tokens.weight\"}"
+    },
+    {
+      "path": "vibevoice/modular/modeling_vibevoice_asr.py",
+      "before": "    def tie_weights(self, missing_keys=None, recompute_mapping=True):\n        \"\"\"Tie the weights between the input embeddings and the output embeddings.\"\"\"\n        if getattr(self.config.decoder_config, 'tie_word_embeddings', False):\n            output_embeddings = self.get_output_embeddings()\n            input_embeddings = self.get_input_embeddings()\n            if hasattr(input_embeddings, 'weight'):\n                output_embeddings.weight = input_embeddings.weight\n            else:\n                output_embeddings.weight = input_embeddings",
+      "after": "    def tie_weights(self, missing_keys=None, recompute_mapping=True):\n        return super().tie_weights(missing_keys=missing_keys, recompute_mapping=recompute_mapping)"
+    },
+    {
+      "path": "vibevoice/modular/modeling_vibevoice_asr.py",
+      "before": "_tied_weights_keys = [\"lm_head.weight\"]",
+      "after": "_tied_weights_keys = {\"lm_head.weight\": \"model.language_model.embed_tokens.weight\"}"
+    }
+  ],
+  "datasets": [
+    {
+      "path": "setup.py",
+      "before": "fsspec[http]>=2023.1.0,<=2026.7.0",
+      "after": "fsspec[http]==2026.9.0"
+    },
+    {
+      "path": "setup.py",
+      "before": "version=\"5.1.0\"",
+      "after": "version=\"5.1.0+genaudio.1\""
+    },
+    {
+      "path": "src/datasets/__init__.py",
+      "before": "__version__ = \"5.1.0\"",
+      "after": "__version__ = \"5.1.0+genaudio.1\""
+    }
+  ],
+  "personaplex": [
+    {
+      "path": "pyproject.toml",
+      "before": "numpy >= 1.26, < 2.2",
+      "after": "numpy >= 2.1.3, < 2.2"
+    },
+    {
+      "path": "pyproject.toml",
+      "before": "safetensors >= 0.4.0, < 0.5",
+      "after": "safetensors >= 0.8, < 1"
+    },
+    {
+      "path": "pyproject.toml",
+      "before": "huggingface-hub >= 0.24, < 0.25",
+      "after": "huggingface-hub >= 1.33, < 3"
+    },
+    {
+      "path": "pyproject.toml",
+      "before": "einops == 0.7",
+      "after": "einops == 0.8.2"
+    },
+    {
+      "path": "pyproject.toml",
+      "before": "sentencepiece == 0.2",
+      "after": "sentencepiece == 0.2.2"
+    },
+    {
+      "path": "pyproject.toml",
+      "before": "sounddevice == 0.5",
+      "after": "sounddevice == 0.5.6"
+    },
+    {
+      "path": "pyproject.toml",
+      "before": "sphn >= 0.1.4, < 0.2",
+      "after": "sphn == 0.2.1"
+    },
+    {
+      "path": "pyproject.toml",
+      "before": "torch >= 2.2.0, < 2.5",
+      "after": "torch >= 2.9.1, < 3"
+    },
+    {
+      "path": "pyproject.toml",
+      "before": "aiohttp>=3.10.5, <3.11",
+      "after": "aiohttp >= 3.14.5, < 4"
+    },
+    {
+      "path": "moshi/__init__.py",
+      "before": "__version__ = \"0.1.0\"",
+      "after": "__version__ = \"0.1.0+genaudio.1\""
+    },
+    {
+      "path": "pyproject.toml",
+      "before": "    \"sphn == 0.2.1\",",
+      "after": "    \"sphn == 0.2.1\",\n    \"pyloudnorm == 0.2.0\",\n    \"scipy >= 1.15.2\","
+    }
+  ]
+}

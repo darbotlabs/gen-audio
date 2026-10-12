@@ -13,6 +13,7 @@ import os
 import re
 import shutil
 import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -22,6 +23,62 @@ DEVENV = REPO / "scripts" / "lib" / "devenv.ps1"
 BUILD = REPO / "scripts" / "build-tauri-windows.ps1"
 SHELL = shutil.which("pwsh") or shutil.which("powershell")
 needs_shell = pytest.mark.skipif(SHELL is None, reason="needs PowerShell")
+
+
+@needs_shell
+def test_installed_runtime_payload_prepares_prompts_without_development_checkout(tmp_path):
+    root = tmp_path / "checkout"
+    root.mkdir()
+    shutil.copy2(REPO / "pyproject.toml", root / "pyproject.toml")
+    shutil.copytree(REPO / "src" / "gen_audio", root / "src" / "gen_audio",
+                    ignore=shutil.ignore_patterns("__pycache__", "*.pyc"))
+    catalog = root / "crates" / "gen-audio-core" / "src"
+    catalog.mkdir(parents=True)
+    shutil.copy2(REPO / "crates" / "gen-audio-core" / "src" / "catalog.rs", catalog / "catalog.rs")
+    scripts = root / "scripts"
+    scripts.mkdir()
+    for name in ("improve.py", "spectrogram.py", "cube_revision.py", "compare_wavs.py",
+                 "synth_kokoro_onnx.py", "generate.py"):
+        shutil.copy2(REPO / "scripts" / name, scripts / name)
+    for name in ("voices", "examples", "schemas", "runtimes", "apps/desktop/public/library"):
+        (root / name).mkdir(parents=True, exist_ok=True)
+    shutil.copy2(REPO / "runtimes/vibevoice-modern.json", root / "runtimes/vibevoice-modern.json")
+    result = _ps(f"New-RuntimePayload -Root '{root}'", root)
+    assert result.returncode == 0, result.stdout + result.stderr
+    payload = root / "apps" / "desktop" / "src-tauri" / "gen" / "runtime"
+    inventory = json.loads((payload / "payload-sha256.json").read_text(encoding="utf-8-sig"))
+    assert "runtimes/vibevoice-modern.json" in inventory
+    for relative, digest in inventory.items():
+        assert hashlib.sha256((payload / relative).read_bytes()).hexdigest() == digest
+    # Destroy checkout inputs so this cannot pass by importing development files.
+    shutil.rmtree(root / "src")
+    shutil.rmtree(root / "crates")
+    probe = subprocess.run([sys.executable, "-c",
+        "from gen_audio.prompt_script import prepare_prompt; "
+        "p = prepare_prompt('Packaged prompt works.', ['alice'], 'kokoro_onnx', 6); "
+        "assert p.cast['speakers']['1']['voice'] == 'af_heart'"],
+        cwd=tmp_path, env={**os.environ, "PYTHONPATH": str(payload / "src"),
+                         "GEN_AUDIO_REPO": str(payload)}, capture_output=True, text=True, timeout=30)
+    assert probe.returncode == 0, probe.stdout + probe.stderr
+
+
+@needs_shell
+@pytest.mark.parametrize("version,installed,expected", [
+    ("1.0.1", "", "1.0.1.0"), ("1.0.1", "1.0.1.0", "1.0.1.1"),
+    ("1.0.1", "1.0.1.12", "1.0.1.13"), ("1.0.2", "1.0.1.12", "1.0.2.0"),
+])
+def test_msix_rebuild_increments_package_revision_without_uninstall(tmp_path, version, installed, expected):
+    helper = REPO / "scripts" / "lib" / "msix.ps1"
+    result = _ps(f". '{helper}'; Get-MsixPackageVersion -Version '{version}' -InstalledVersion '{installed}'", tmp_path)
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.strip() == expected
+
+
+@needs_shell
+@pytest.mark.parametrize("version,installed", [("1.0.1", "1.0.2.0"), ("1.0.1", "1.0.1.65535"), ("65536.0.0", "")])
+def test_msix_refuses_downgrade_and_revision_overflow(tmp_path, version, installed):
+    helper = REPO / "scripts" / "lib" / "msix.ps1"
+    assert _ps(f". '{helper}'; Get-MsixPackageVersion -Version '{version}' -InstalledVersion '{installed}'", tmp_path).returncode != 0
 
 
 def _ps(command: str, cwd: Path) -> subprocess.CompletedProcess[str]:
@@ -73,7 +130,7 @@ def test_wav_check_fails_on_an_empty_or_missing_lock_instead_of_passing(tmp_path
 def test_build_script_checks_the_wavs_before_building_and_never_skips():
     text = BUILD.read_text(encoding="utf-8")
     gate = text.index("Get-LibraryWavProblem -Root $root")
-    assert gate < text.index("Invoke-CargoBinBuild -Package") and gate < text.index("npx $($tauriArgs")
+    assert gate < text.index("Invoke-CargoBinBuild -Package") and gate < text.index("npm $($tauriArgs")
     after = text[gate:text.index("Write-Step 'library WAVs match", gate)]
     assert "throw" in after and "skip" not in after.lower()
 
@@ -86,12 +143,14 @@ def _crate(tmp_path: Path) -> Path:
     (crate / "Cargo.toml").write_text('[package]\nname = "probe"\nversion = "0.1.0"\nedition = "2021"\n\n[[bin]]\nname = "probe"\n'
                                       'path = "src/main.rs"\n\n[workspace]\n', encoding="utf-8")
     (crate / "src" / "main.rs").write_text('fn main() { println!("v1"); }\n', encoding="utf-8")
+    (crate / "Cargo.lock").write_text('version = 4\n\n[[package]]\nname = "probe"\nversion = "0.1.0"\n', encoding="utf-8")
     return crate
 
 
 def _build(crate: Path) -> dict:
     env_target = crate / "target"
-    out = _ps(f"$env:CARGO_TARGET_DIR = '{env_target}'; Invoke-CargoBinBuild -Package probe -Bin probe | ConvertTo-Json -Compress", crate)
+    out = _ps(f"Import-VsDevEnv; $env:CARGO_BUILD_JOBS = '2'; $env:CARGO_TARGET_DIR = '{env_target}'; "
+              "Invoke-CargoBinBuild -Package probe -Bin probe | ConvertTo-Json -Compress", crate)
     assert out.returncode == 0, out.stdout + out.stderr
     assert " is stale" not in out.stdout + out.stderr
     return json.loads(out.stdout.strip().splitlines()[-1])
@@ -132,6 +191,8 @@ def test_select_cargo_bin_artifact_reads_cargo_json_and_fails_without_the_bin(tm
     assert json.loads(out.stdout) == {"Executable": "C:/t/release/gen-audio-mcp.exe", "Fresh": True}
     missing = _ps(f"{load}; Select-CargoBinArtifact -Line $l -Bin other", tmp_path)
     assert missing.returncode != 0 and "no compiler-artifact for bin other" in missing.stdout + missing.stderr
+    duplicate = _ps(f"{load}; Select-CargoBinArtifact -Line ($l + $l) -Bin gen-audio-mcp", tmp_path)
+    assert duplicate.returncode != 0 and "multiple compiler-artifacts" in duplicate.stdout + duplicate.stderr
 
 
 def test_build_script_judges_the_sidecar_by_cargo_and_hash_not_mtime():
@@ -151,6 +212,7 @@ def test_build_script_saves_its_transcript_even_when_it_throws(tmp_path):
     (root / "scripts" / "lib").mkdir(parents=True)
     shutil.copy2(BUILD, root / "scripts" / BUILD.name)
     shutil.copy2(DEVENV, root / "scripts" / "lib" / DEVENV.name)
+    shutil.copy2(REPO / "scripts" / "lib" / "msix.ps1", root / "scripts" / "lib" / "msix.ps1")
     git = ["git", "-c", "user.name=t", "-c", "user.email=t@example.invalid"]
     subprocess.run([*git, "init", "-q"], cwd=root, check=True)
     subprocess.run([*git, "add", "."], cwd=root, check=True)
@@ -229,3 +291,217 @@ def test_build_script_has_no_mtime_freshness_left():
         assert f"Assert-BuildOutput -LiteralPath {var} " in text, var
     assert "Get-DistCopyDrift -Source" in text
     assert "$conf.version" in text, "installers are picked by this build's version, not by newest mtime"
+
+
+def test_desktop_build_uses_the_locked_local_cli_and_one_frontend_hook():
+    desktop = REPO / "apps" / "desktop"
+    package = json.loads((desktop / "package.json").read_text(encoding="utf-8"))
+    lock = json.loads((desktop / "package-lock.json").read_text(encoding="utf-8"))
+    config = json.loads((desktop / "src-tauri" / "tauri.conf.json").read_text(encoding="utf-8"))
+    cli = "@tauri-apps/" + "cli"
+    version = package["devDependencies"][cli]
+    assert re.fullmatch(r"\d+\.\d+\.\d+", version)
+    assert lock["packages"][""]["devDependencies"][cli] == version
+    assert lock["packages"]["node_modules/" + cli]["version"] == version
+    assert package["scripts"]["tauri"] == "tauri"
+    assert config["build"]["beforeBuildCommand"] == "npm run build"
+    assert package["scripts"]["dev"] == "tauri dev"
+    assert config["build"]["beforeDevCommand"] == "npm run frontend:dev"
+    assert package["scripts"]["frontend:dev"] == "vite"
+    text = BUILD.read_text(encoding="utf-8")
+    assert not (REPO / "scripts" / "build-tauri.sh").exists()
+    assert "npx" not in text and "--http" not in text
+    clean_command = "Invoke-Checked cargo " + "clean --target-dir $cleanTarget"
+    assert clean_command in text and "Stop-Process" not in text
+    assert text.index("if ($Clean)", text.index("library WAVs match")) < text.index(clean_command)
+    assert "--locked" in text and "--smoke" in text
+    assert text.count("Invoke-Checked npm.cmd @tauriArgs") == 1
+    assert "function Invoke-Checked" not in text, "native execution belongs to the shared helper"
+
+
+WINDOWS_MOCKS = r"""
+function global:rustc { $global:LASTEXITCODE = 0; "host: x86_64-pc-windows-msvc" }
+function global:cl.exe {}
+function global:node {}
+function global:cargo {
+    Add-Content $env:MOCK_CALLS "cargo $args"
+    if ($env:CARGO_BUILD_JOBS -ne "2") { throw "Expected bounded build jobs" }
+    Set-Content $env:BUILD_TARGET $env:CARGO_TARGET_DIR
+    $global:LASTEXITCODE = 0
+    if ($env:FAIL_STAGE -eq "cargo") { $global:LASTEXITCODE = 9; return }
+    if ($env:FAIL_STAGE -ne "artifact") {
+        @{
+            reason = "compiler-artifact"
+            target = @{ name = "gen-audio-mcp"; kind = @("bin") }
+            executable = $env:MOCK_SIDECAR
+            fresh = $true
+        } | ConvertTo-Json -Compress
+    }
+    '{"reason":"build-finished","success":true}'
+}
+function global:npm.cmd {
+    Add-Content $env:MOCK_CALLS "npm $args"
+    $global:LASTEXITCODE = 0
+    if ($args[0] -eq "ci") {
+        if ($env:FAIL_STAGE -eq "install") { $global:LASTEXITCODE = 9; return }
+        if ($env:FAIL_STAGE -ne "cli") {
+            New-Item -ItemType Directory -Force "node_modules\.bin" | Out-Null
+            Set-Content "node_modules\.bin\tauri.cmd" "mock CLI"
+        }
+        New-Item -ItemType Directory -Force "node_modules\@tauri-apps\cli" | Out-Null
+        $version = if ($env:FAIL_STAGE -eq "cli-version") { "0.0.0" } else { "2.12.1" }
+        @{version=$version} | ConvertTo-Json | Set-Content "node_modules\@tauri-apps\cli\package.json"
+        return
+    }
+    if ($env:CARGO_BUILD_JOBS -ne "2") { throw "Expected bounded packaging jobs" }
+    if ($env:VITE_GEN_AUDIO_FIXTURES) { throw "Fixtures leaked into the release" }
+    if ($env:CARGO_TARGET_DIR -ne (Get-Content $env:BUILD_TARGET)) { throw "Cargo output directory changed" }
+    if ($env:FAIL_STAGE -eq "frontend") { $global:LASTEXITCODE = 9; return }
+    $release = Split-Path -Parent $env:MOCK_SIDECAR
+    switch ($env:FAIL_STAGE) {
+        "dist" { Remove-Item "dist\index.html" }
+        "drift" { Set-Content "dist\library\a.wav" "wrong bytes" }
+        "asset" { Remove-Item "dist\assets\app.js" }
+        "dev-html" { Add-Content "dist\index.html" '<script src="/src/main.ts"></script>' }
+        "fixture" {
+            Set-Content "public\library\assets.json" '{"assets":[{"claim":"fixture_tone"}]}'
+            Copy-Item "public\library\assets.json" "dist\library\assets.json"
+        }
+        "example" { Set-Content "dist\assets\viewport.example-x.js" "fixture deck" }
+        "dev-cfg" { Set-Content (Join-Path $release "build\gen-audio-desktop-x\output") "cargo:rustc-cfg=dev" }
+        "fingerprints" {
+            New-Item -ItemType Directory -Force (Join-Path $release ".fingerprint\gen-audio-desktop-y") | Out-Null
+            Set-Content (Join-Path $release ".fingerprint\gen-audio-desktop-y\lib-gen_audio_desktop_lib.json") "{}"
+        }
+        "exe" { Remove-Item (Join-Path $release "gen-audio.exe") }
+        "installer" { Remove-Item (Join-Path $release "bundle\nsis\test_0.1.0_x64-setup.exe") }
+    }
+}
+$parameters = @{}
+if ($env:BUILD_MODE -eq "alias") { $parameters.NoBundle = $true }
+elseif ($env:BUILD_MODE -in @("NoBundle", "Msi")) { $parameters.Mode = $env:BUILD_MODE }
+try {
+    & $env:BUILD_SCRIPT @parameters
+} finally {
+    Set-Content $env:RESTORED_STATE "$env:GEN_AUDIO_WORK_DIR`n$PWD`n$env:CARGO_TARGET_DIR`njobs=$env:CARGO_BUILD_JOBS`nfixtures=$env:VITE_GEN_AUDIO_FIXTURES"
+}
+"""
+MOCK_SIDECAR = r"""
+Add-Content $env:MOCK_CALLS "smoke $args"
+Set-Content $env:SMOKE_PATH $env:GEN_AUDIO_WORK_DIR
+Set-Content (Join-Path $env:GEN_AUDIO_WORK_DIR "fixture.wav") "fixture"
+$global:LASTEXITCODE = if ($env:FAIL_STAGE -eq "smoke") { 9 } else { 0 }
+"""
+
+
+@pytest.mark.skipif(os.name != "nt", reason="Windows build entry point")
+@pytest.mark.parametrize("shell_name", ["powershell", "pwsh"])
+@pytest.mark.parametrize(
+    ("failure", "mode"),
+    [("", "Full"), ("", "Msi"), ("", "NoBundle"), ("", "alias")]
+    + [(stage, "Full") for stage in (
+        "wav", "icon", "cargo", "artifact", "smoke", "install", "cli",
+        "cli-version", "frontend", "dist", "drift", "asset", "dev-html",
+        "fixture", "example", "dev-cfg", "fingerprints", "exe", "installer",
+    )],
+)
+def test_windows_build_flow(tmp_path, failure, mode, shell_name):
+    """PS5/PS7 fail-closed orchestration; unchanged, old outputs are valid."""
+    shell = shutil.which(shell_name)
+    if not shell:
+        pytest.skip(f"{shell_name} is not installed")
+    repo = _library(tmp_path, {"a.wav": b"RIFF"}, {"a.wav": b"RIFF"})
+    repo = repo.rename(tmp_path / "checkout with spaces")
+    scripts = repo / "scripts"
+    (scripts / "lib").mkdir(parents=True)
+    shutil.copy2(BUILD, scripts / BUILD.name)
+    shutil.copy2(DEVENV, scripts / "lib" / DEVENV.name)
+    shutil.copy2(REPO / "scripts" / "lib" / "msix.ps1", scripts / "lib" / "msix.ps1")
+    desktop = repo / "apps" / "desktop"
+    src = desktop / "src-tauri"
+    src.mkdir()
+    (src / "icon.ico").write_bytes(b"icon")
+    (src / "hooks.nsh").write_text("; hook\n", encoding="utf-8")
+    (src / "tauri.conf.json").write_text(json.dumps({
+        "version": "0.1.0",
+        "bundle": {"icon": ["icon.ico"], "windows": {"nsis": {"installerHooks": "hooks.nsh"}}},
+        "build": {"beforeBuildCommand": "npm run build"},
+    }), encoding="utf-8")
+    cli = "@tauri-apps/" + "cli"
+    (desktop / "package.json").write_text(json.dumps({
+        "scripts": {"tauri": "tauri"}, "devDependencies": {cli: "2.12.1"},
+    }), encoding="utf-8")
+    (desktop / "public" / "library" / "assets.json").write_text('{"assets":[]}', encoding="utf-8")
+    shutil.copytree(desktop / "public", desktop / "dist")
+    (desktop / "dist" / "assets").mkdir()
+    (desktop / "dist" / "assets" / "app.js").write_text("release", encoding="utf-8")
+    (desktop / "dist" / "index.html").write_text(
+        '<div class="brand-row ga-header-toolbar"></div><script src="/assets/app.js"></script>', encoding="utf-8",
+    )
+    release = tmp_path / "custom Cargo output" / "release"
+    for directory, filename in (("nsis", "test_0.1.0_x64-setup.exe"), ("msi", "test_0.1.0_x64.msi")):
+        bundle = release / "bundle" / directory
+        bundle.mkdir(parents=True)
+        (bundle / filename).write_bytes(b"unchanged installer")
+    (release / "gen-audio.exe").write_bytes(b"unchanged app")
+    fingerprint = release / ".fingerprint" / "gen-audio-desktop-x"
+    fingerprint.mkdir(parents=True)
+    (fingerprint / "lib-gen_audio_desktop_lib.json").write_text("{}", encoding="utf-8")
+    build_output = release / "build" / "gen-audio-desktop-x"
+    build_output.mkdir(parents=True)
+    (build_output / "output").write_text("cargo:rustc-cfg=custom_protocol", encoding="utf-8")
+    for output in [*release.rglob("*"), *desktop.joinpath("dist").rglob("*")]:
+        if output.is_file():
+            os.utime(output, (978307200, 978307200))
+    if failure == "wav":
+        (desktop / "public" / "library" / "a.wav").unlink()
+    if failure == "icon":
+        (src / "icon.ico").unlink()
+    sidecar = release / "sidecar.ps1"
+    sidecar.write_text(MOCK_SIDECAR, encoding="utf-8")
+    runner = tmp_path / "runner.ps1"
+    runner.write_text(WINDOWS_MOCKS, encoding="utf-8")
+    calls_file, restored, smoke, target = [tmp_path / name for name in ("calls.log", "state.txt", "smoke.txt", "target.txt")]
+    env = {
+        **os.environ,
+        "BUILD_SCRIPT": str(scripts / BUILD.name), "MOCK_SIDECAR": str(sidecar),
+        "MOCK_CALLS": str(calls_file), "RESTORED_STATE": str(restored),
+        "SMOKE_PATH": str(smoke), "BUILD_TARGET": str(target),
+        "CARGO_TARGET_DIR": "custom-target", "CARGO_BUILD_JOBS": "8",
+        "GEN_AUDIO_WORK_DIR": "preserve-user-setting", "VITE_GEN_AUDIO_FIXTURES": "1",
+        "FAIL_STAGE": failure, "BUILD_MODE": mode,
+    }
+    result = subprocess.run([shell, "-NoProfile", "-NonInteractive", "-File", str(runner)],
+                            cwd=tmp_path, env=env, capture_output=True, text=True, timeout=120)
+    output = result.stdout + result.stderr
+    assert (result.returncode == 0) == (not failure), output
+    assert restored.read_text(encoding="utf-8-sig").splitlines() == [
+        "preserve-user-setting", str(tmp_path), "custom-target", "jobs=8", "fixtures=1",
+    ]
+    calls = calls_file.read_text(encoding="utf-8-sig").splitlines() if calls_file.exists() else []
+    if failure not in {"wav", "icon"}:
+        assert calls[0] == "cargo build --locked -p gen-audio-mcp --bin gen-audio-mcp --message-format=json-render-diagnostics --release"
+        assert Path(target.read_text(encoding="utf-8-sig").strip()) == repo / "custom-target"
+    else:
+        assert calls == []
+    early = {"wav", "icon", "cargo", "artifact", "smoke", "install", "cli", "cli-version"}
+    tauri_calls = [call for call in calls if "run tauri" in call]
+    if failure in early:
+        assert not tauri_calls
+    else:
+        option = {"Full":"--bundles nsis,msi", "Msi":"--bundles msi"}.get(mode, "--no-bundle")
+        assert tauri_calls == ["npm run " + f"tauri -- build {option} -- --locked"]
+    if smoke.exists():
+        assert not Path(smoke.read_text(encoding="utf-8-sig").strip()).exists(), "smoke scratch leaked"
+    if not failure:
+        staged = src / "binaries" / "gen-audio-mcp-x86_64-pc-windows-msvc.exe"
+        assert staged.read_bytes() == sidecar.read_bytes()
+        assert output.count("BUILD_OK ") == 1 and "state=unchanged" in output
+        assert output.count("INSTALLER path=") == {"Full":2, "Msi":1}.get(mode, 0)
+    else:
+        assert "BUILD_OK " not in output and "BUILD_FAIL " in output
+    logs = list((repo / "target" / "logs").glob("build-*.log"))
+    assert len(logs) == 1
+    transcript = logs[0].read_text(encoding="utf-8-sig")
+    assert "PowerShell transcript end" in transcript
+    assert ("BUILD_FAIL " if failure else "BUILD_OK ") in transcript
