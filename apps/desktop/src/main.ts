@@ -448,7 +448,10 @@ function reportCubeMode(result: { ok: boolean; reason?: string; state: { cube_mo
   if (result.ok) return;
   const caption = document.querySelector<HTMLElement>("#cube-caption");
   if (caption && result.reason) caption.textContent = result.reason;
-  if (result.reason) status.textContent = `Cube mode stays ${result.state.cube_mode}: ${result.reason}`;
+  // The disconnected-control notice outranks this line, as it does the board status.
+  if (result.reason && status.dataset.control !== "disconnected") {
+    status.textContent = `Cube mode stays ${result.state.cube_mode}: ${result.reason}`;
+  }
 }
 
 /**
