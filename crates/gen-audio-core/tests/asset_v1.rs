@@ -246,6 +246,63 @@ fn library_media_hashes_verify_where_present() {
     assert!(verified > 0);
 }
 
+/// A v0 bundle with one clip, its cube and one `cube.compare[]` entry (Cube tab Compare mode).
+fn compare_bundle(compare_sha: &str, method: &str) -> Value {
+    let wav_sha = "61b8ca26b3f4759ce643738e2afbc80f7bf2a5eb554c5fedbfbdc2d9bfad3d38";
+    let cube_doc = |extra: Value| {
+        let mut doc = serde_json::json!({
+            "sample_rate": 24000, "duration_s": 139.375, "cube_shape_f_t": [102, 395], "downsample_sf_st": [5, 33],
+            "hop": 256, "n_fft": 1024, "cube_covers_s": 139.04, "n_points": 3600, "inv_hdr": 0.07021075781225594,
+            "cube_revision": 3, "title": "cube"
+        });
+        doc.as_object_mut().unwrap().extend(extra.as_object().unwrap().clone());
+        doc
+    };
+    let digest = |n: u8| serde_json::json!({"sha256": format!("{:064x}", n), "bytes": 10});
+    serde_json::json!({
+        "manifest": {"clips": [{
+            "id": "lib-misaki-kokoro", "engineId": "misaki_kokoro", "title": "misaki", "status": "ok", "synthesizedSpeech": false,
+            "sample_rate": 24000, "duration_s": 139.375, "wavUrl": "/library/m.wav",
+            "cube": {
+                "jsonUrl": "/library/c.json", "pngUrl": "/library/c.png",
+                "compare": [{"layer_method": method, "jsonUrl": "/library/c2.json", "pngUrl": "/library/c2.png"}]
+            }
+        }]},
+        "voice_models": [], "cards": [], "profiles": [], "spectrograms": [],
+        "cube_docs": {
+            "c.json": cube_doc(serde_json::json!({"layer_score": 0.24})),
+            "c2.json": cube_doc(serde_json::json!({"layer_score": 0.25, "cube_revision": 2, "layer_method": method, "source_sha256": compare_sha}))
+        },
+        "media": {
+            "m.wav": {"sha256": wav_sha, "bytes": 6690044, "frames": 3345000, "sample_rate": 24000, "channels": 1},
+            "c.json": digest(1), "c.png": digest(2), "c2.json": digest(3), "c2.png": digest(4)
+        }
+    })
+}
+
+#[test]
+fn compare_cubes_migrate_as_real_cubes_of_the_same_wav() {
+    let wav_sha = "61b8ca26b3f4759ce643738e2afbc80f7bf2a5eb554c5fedbfbdc2d9bfad3d38";
+    let migrated = migrate_to_v1(&compare_bundle(wav_sha, "pipeline_r2")).expect("migrates");
+    let assets = migrated["assets"].as_array().unwrap().clone();
+    validate_set(&assets).expect("valid set");
+    let compare = assets.iter().find(|a| a["legacy_id"] == "lib-misaki-kokoro.cube.pipeline_r2").expect("compare cube");
+    let own = assets.iter().find(|a| a["legacy_id"] == "lib-misaki-kokoro.cube").expect("own cube");
+    assert_eq!(compare["kind"], "cube_ihdr");
+    assert_eq!(compare["fields"]["source_sha256"], wav_sha);
+    assert_eq!(compare["fields"]["cube_revision"], 2);
+    assert_eq!(compare["provenance"]["params"]["layer_method"], "pipeline_r2");
+    assert_eq!(compare["provenance"]["params"]["compare_to"], own["uid"]);
+    assert_eq!(compare["src"], own["src"]);
+    assert_ne!(compare["uid"], own["uid"]);
+    let roles: Vec<&str> = compare["media"].as_array().unwrap().iter().map(|m| m["role"].as_str().unwrap()).collect();
+    assert_eq!(roles, ["cube_json", "cube_png"]);
+    // Another WAV's cube, or an unknown layer method, is refused rather than shipped.
+    assert_eq!(code(migrate_to_v1(&compare_bundle(&"0".repeat(64), "pipeline_r2"))), "source_sha_mismatch");
+    assert_eq!(code(migrate_to_v1(&compare_bundle(wav_sha, "library_r3"))), "bad_layer_method");
+    assert_eq!(code(migrate_to_v1(&compare_bundle(wav_sha, "pipeline_r9"))), "bad_layer_method");
+}
+
 /// E2: media.lock.json pins exactly the WAVs the release catalog hashes, so CI
 /// (no WAVs, build_assets --from-lock) mints the same clip uids.
 #[test]
@@ -266,17 +323,22 @@ fn media_lock_pins_every_library_wav() {
     assert_eq!(wavs, lock.len(), "media.lock.json has entries no clip uses");
 }
 
-/// Every cube file (JSON + PNG) the library manifest names, with its on-disk
-/// facts; `edit` may rewrite one file's bytes first (a hand edit).
+/// Every cube file (JSON + PNG) the library manifest names, the clip's cube
+/// and each cube.compare[] cube, with its on-disk facts; `edit` may rewrite
+/// one file's bytes first (a hand edit).
 fn cube_file_facts(edit: impl Fn(&str, Vec<u8>) -> Vec<u8>) -> Map<String, Value> {
     let library = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../apps/desktop/public/library");
     let manifest: Value = json(&std::fs::read_to_string(library.join("manifest.json")).unwrap());
     let mut facts = Map::new();
     for clip in manifest["clips"].as_array().unwrap() {
-        for key in ["jsonUrl", "pngUrl"] {
-            if let Some(path) = clip["cube"][key].as_str().and_then(|url| url.strip_prefix("/library/")) {
-                let bytes = edit(path, std::fs::read(library.join(path)).unwrap());
-                facts.insert(path.into(), serde_json::json!({"sha256": gen_audio_core::asset::sha256_hex(&bytes), "bytes": bytes.len()}));
+        let mut cube_blocks = vec![clip["cube"].clone()];
+        cube_blocks.extend(clip["cube"]["compare"].as_array().cloned().unwrap_or_default());
+        for block in &cube_blocks {
+            for key in ["jsonUrl", "pngUrl"] {
+                if let Some(path) = block[key].as_str().and_then(|url| url.strip_prefix("/library/")) {
+                    let bytes = edit(path, std::fs::read(library.join(path)).unwrap());
+                    facts.insert(path.into(), serde_json::json!({"sha256": gen_audio_core::asset::sha256_hex(&bytes), "bytes": bytes.len()}));
+                }
             }
         }
     }
@@ -289,7 +351,7 @@ fn cube_file_facts(edit: impl Fn(&str, Vec<u8>) -> Vec<u8>) -> Map<String, Value
 fn media_lock_pins_every_cube_file_byte_for_byte() {
     let locked = json(MEDIA_LOCK)["cubes"].as_object().cloned().unwrap_or_default();
     let actual = cube_file_facts(|_, bytes| bytes);
-    assert_eq!(actual.len(), 10, "5 cubes x (JSON, PNG)");
+    assert_eq!(actual.len(), 14, "(5 library + 2 pipeline_r2 compare) cubes x (JSON, PNG)");
     assert_eq!(verify_cube_lock(&locked, &actual), Ok(()));
 }
 
@@ -340,7 +402,13 @@ fn cube_lock_check_fails_on_unlocked_and_stale_entries() {
 #[test]
 fn cube_uid_is_generator_content_and_a_commit_is_provenance_only() {
     let catalog = json(ASSETS);
-    let cubes: Vec<&Value> = catalog["assets"].as_array().unwrap().iter().filter(|asset| asset["kind"] == "cube_ihdr").collect();
+    // The clips' own cubes (library_r3); comparison cubes are `<clip>.cube.<layer_method>`.
+    let cubes: Vec<&Value> = catalog["assets"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|asset| asset["kind"] == "cube_ihdr" && asset["legacy_id"].as_str().is_some_and(|id| id.ends_with(".cube")))
+        .collect();
     assert_eq!(cubes.len(), 5);
     for cube in cubes {
         let id = &cube["legacy_id"];
@@ -353,6 +421,35 @@ fn cube_uid_is_generator_content_and_a_commit_is_provenance_only() {
         moved["provenance"]["generator_commit"] = Value::from("0123456789abcdef0123456789abcdef01234567");
         assert_eq!(validate_envelope(&moved).unwrap().uid, cube["uid"].as_str().unwrap(), "{id}: a commit change keeps the uid");
         let mut edited = cube.clone();
+        edited["fields"]["generator_sha256"] = Value::from("f".repeat(64));
+        assert_ne!(gen_audio_core::asset::envelope_identity(&edited).unwrap(), gen_audio_core::asset::envelope_identity(cube).unwrap(), "{id}");
+    }
+}
+
+/// Each formula lives in its own module, so each cube's identity names the
+/// module that produced it: Library cubes gen_audio.cube_layers (library_r3),
+/// comparison cubes gen_audio.cube_pipeline_r2 (pipeline_r2). An edit to one
+/// module cannot move the other's uids.
+#[test]
+fn compare_cube_identity_is_its_own_module_not_cube_layers() {
+    let catalog = json(ASSETS);
+    let cubes: Vec<&Value> = catalog["assets"].as_array().unwrap().iter().filter(|asset| asset["kind"] == "cube_ihdr").collect();
+    let library_sha = cubes
+        .iter()
+        .find(|cube| cube["legacy_id"].as_str().is_some_and(|id| id.ends_with(".cube")))
+        .map(|cube| cube["fields"]["generator_sha256"].clone())
+        .unwrap();
+    let compare: Vec<&&Value> = cubes.iter().filter(|cube| cube["legacy_id"].as_str().is_some_and(|id| id.ends_with(".cube.pipeline_r2"))).collect();
+    assert_eq!(compare.len(), 2);
+    for cube in compare {
+        let id = &cube["legacy_id"];
+        let sha = cube["fields"]["generator_sha256"].as_str().unwrap_or_default();
+        assert!(gen_audio_core::asset::is_sha256_hex(sha), "{id}: fields.generator_sha256");
+        assert_eq!(cube["provenance"]["generator"], "src/gen_audio/cube_pipeline_r2.py", "{id}");
+        assert_eq!(cube["provenance"]["generator_sha256"], sha, "{id}");
+        assert_eq!(cube["fields"]["layer_method"], "pipeline_r2", "{id}");
+        assert_ne!(cube["fields"]["generator_sha256"], library_sha, "{id}: its own module's hash, not cube_layers'");
+        let mut edited = (*cube).clone();
         edited["fields"]["generator_sha256"] = Value::from("f".repeat(64));
         assert_ne!(gen_audio_core::asset::envelope_identity(&edited).unwrap(), gen_audio_core::asset::envelope_identity(cube).unwrap(), "{id}");
     }

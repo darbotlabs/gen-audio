@@ -3,7 +3,8 @@
 //! cargo run -p gen-audio-core --example build_assets [-- --from-lock]
 //!
 //! Reads manifest.json, the catalog voice models, viewport.example.json,
-//! voice_profile.optimus.json, the cube JSON files and the spectrogram
+//! voice_profile.optimus.json, the cube JSON files (each clip's cube and its
+//! `cube.compare[]` comparison cubes) and the spectrogram
 //! sidecars, hashes every referenced media file under
 //! apps/desktop/public/library, and writes the outputs below.
 //!
@@ -141,12 +142,17 @@ fn main() {
         if let Some(path) = clip["wavUrl"].as_str().and_then(|url| url.strip_prefix("/library/")) {
             hash(path);
         }
-        for key in ["jsonUrl", "pngUrl"] {
-            if let Some(path) = clip["cube"][key].as_str().and_then(|url| url.strip_prefix("/library/")) {
-                hash(path);
-                cube_files.push(path.to_string());
-                if key == "jsonUrl" {
-                    cube_docs.insert(path.to_string(), read_json(&library.join(path)));
+        // The clip's cube plus any comparison cubes (cube.compare[], other layer_method).
+        let mut cube_blocks = vec![clip["cube"].clone()];
+        cube_blocks.extend(clip["cube"]["compare"].as_array().cloned().unwrap_or_default());
+        for block in &cube_blocks {
+            for key in ["jsonUrl", "pngUrl"] {
+                if let Some(path) = block[key].as_str().and_then(|url| url.strip_prefix("/library/")) {
+                    hash(path);
+                    cube_files.push(path.to_string());
+                    if key == "jsonUrl" {
+                        cube_docs.insert(path.to_string(), read_json(&library.join(path)));
+                    }
                 }
             }
         }

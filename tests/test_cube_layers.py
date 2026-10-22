@@ -146,7 +146,12 @@ def _need_wav(stem: str) -> Path:
 
 
 def test_every_library_cube_json_is_listed_here():
-    assert sorted(path.name for path in LIBRARY.glob("*_cube3d.json")) == sorted(cube for _s, cube, _e, _l in GENERATED)
+    """Each *_cube3d.json is a library_r3 cube listed here or a comparison cube
+    listed in tests/test_cube_pipeline_r2.py (its own module, its own identity)."""
+    from test_cube_pipeline_r2 import COMPARE_CUBES
+
+    listed = [cube for _s, cube, _e, _l in GENERATED] + COMPARE_CUBES
+    assert sorted(path.name for path in LIBRARY.glob("*_cube3d.json")) == sorted(listed)
 
 
 @pytest.mark.parametrize(("stem", "cube", "engine", "label"), GENERATED)
@@ -293,8 +298,8 @@ def test_committed_manifest_mirrors_every_generated_cube(tmp_path):
 def test_manifest_sync_repairs_drift_wires_new_cubes_and_leaves_legacy_cubes_alone(tmp_path):
     from gen_audio.library_manifest import render, sync_manifest
 
-    library = tmp_path / "library"
-    library.mkdir()
+    library = tmp_path / "apps" / "desktop" / "public" / "library"
+    library.mkdir(parents=True)
     for path in LIBRARY.glob("*_cube3d.json"):
         (library / path.name).write_bytes(path.read_bytes())
     # A cube without cube_revision stands for the retired generator.

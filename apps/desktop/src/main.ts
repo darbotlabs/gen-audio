@@ -1,10 +1,14 @@
 import releaseDoc from "../../../schemas/examples/viewport.release.json";
 import {
+  bindCompareCube,
   bindCube,
   boundCubeUrl,
   clearCube,
   cubeNameFromUrl,
+  exitCompare,
   getCubeMeta,
+  isCompareOn,
+  loadCompareCube,
   loadCube,
   onCubeClock,
   rebuildLayerMatrixUi,
@@ -33,7 +37,7 @@ import {
 } from "./play-control";
 import { selectViewport } from "./viewport-source";
 import { glyphBadge } from "./glyph";
-import { loadLibraryCatalog, type LibraryCatalog } from "./library-assets";
+import { loadLibraryCatalog, mediaUrl, sourceSha256, type LibraryCatalog } from "./library-assets";
 import { decorateLibraryTiles } from "./livestrip";
 import { profilePreview, type ProfilePreview, type VoiceSelection } from "./profiles";
 import {
@@ -53,6 +57,7 @@ import {
 import { slideKey } from "./snap";
 import { applySidepane, bindStudio, promptNote, promptText, readSelection, type StudioSelection } from "./studio";
 import { drawCube, drawSpectrogram, makeFixture, play } from "./signal";
+import { CUBE_CONTROL_OP, createCubeModeController, type CubeCompareState, type ToolReply } from "./cube-mode";
 import { CONNECTOR_MODES, validateViewport, type ViewportDocument } from "./validate";
 
 function required(id: string): HTMLElement {
@@ -177,6 +182,11 @@ export async function discoverMcp(): Promise<string> {
 }
 
 const mcpReady = discoverMcp();
+/** Resolves once the first board (with the Cube stage) has rendered; bus events can arrive before that. */
+let markBoardReady: () => void = () => {};
+const boardReady = new Promise<void>((resolve) => {
+  markBoardReady = resolve;
+});
 
 bindSlideScroll(board);
 
@@ -210,6 +220,7 @@ function show(documentIn: unknown): void {
     status.textContent = `${doc.cards.length} cards · ${n} snap slides · spectrogram follows side pane`;
   }
   requestAnimationFrame(() => goToSlide(board, 0));
+  markBoardReady();
 }
 
 function paintProfile(): boolean {
@@ -287,6 +298,15 @@ function syncCubeChrome(): void {
   }
   const select = document.querySelector<HTMLSelectElement>("#cube-source");
   if (select && cubeClipId) select.value = cubeClipId;
+  const compareToggle = document.querySelector<HTMLButtonElement>("#cube-compare-toggle");
+  if (compareToggle) {
+    compareToggle.setAttribute("aria-pressed", cubeMode.state().cube_mode === "compare" ? "true" : "false");
+    const available = Boolean(compareCubeFor(cubeClipId));
+    compareToggle.disabled = !isCompareOn() && !available;
+    compareToggle.title = available || isCompareOn()
+      ? "Library formulas (rev 3) beside pipeline formulas (rev 2, PR #4) on the same WAV, one playback slice"
+      : "No comparison cube for this clip in assets.json";
+  }
   const play = document.querySelector<HTMLButtonElement>("#cube-play");
   if (play) {
     const tile = cubeClipId ? board.querySelector<HTMLElement>(`.card[data-id="${CSS.escape(cubeClipId)}"]`) : null;
@@ -307,16 +327,128 @@ function ensureDefaultCube(): void {
   reportAsync(bindCubeSource(preferred.clipId, preferred.url, "default"), "cube");
 }
 
-async function bindCubeSource(clipId: string, url: string, source: string): Promise<void> {
+/** Bind a clip's Library cube to the Cube tab. False when a newer binding won. Never touches the Cube mode. */
+async function loadBoundCube(clipId: string, url: string, source: string): Promise<boolean> {
   const seq = ++cubeBindSeq;
   cubeClipId = clipId;
   noCubeClipId = "";
   setCubeClockClip(clipId, clipUid(clipId));
   const caption = document.querySelector<HTMLElement>("#cube-caption");
   const message = await loadCube(url);
-  if (seq !== cubeBindSeq) return; // a newer binding won
+  if (seq !== cubeBindSeq) return false; // a newer binding won
   if (caption) caption.textContent = source === "default" ? message : `${source}: ${message}`;
   syncCubeChrome();
+  return true;
+}
+
+async function bindCubeSource(clipId: string, url: string, source: string): Promise<void> {
+  if (await loadBoundCube(clipId, url, source)) await followCubeMode(clipId);
+}
+
+/** Loading a cube drops the second pane. If Compare is on, follow the new clip through ui_cube (or leave Compare and say why). */
+async function followCubeMode(clipId: string): Promise<void> {
+  if (!clipId) {
+    if (cubeMode.state().cube_mode === "compare") reportCubeMode(await cubeMode.request("single"));
+    return;
+  }
+  const result = await cubeMode.rebound(clipId);
+  if (result) reportCubeMode(result);
+}
+
+/** The bound clip's comparison cube envelope (release assets.json only; no stand-in). */
+function compareCubeFor(clipId: string) {
+  const uid = clipId ? clipUid(clipId) : null;
+  return uid && libraryCatalog ? libraryCatalog.compareCubesFor(uid)[0] ?? null : null;
+}
+
+/**
+ * Compare mode: the bound clip's Library cube beside the same WAV's
+ * pipeline_r2 cube. Both slices follow the one cube clock (setCubeScrub),
+ * which the bound clip's audio drives, so Play/Pause/Seek/scrub move both.
+ */
+async function enterCompare(pair: CubeCompareState): Promise<{ ok: true } | { ok: false; reason: string }> {
+  const caption = document.querySelector<HTMLElement>("#cube-caption");
+  const meta = getCubeMeta();
+  const compare = compareCubeFor(cubeClipId);
+  const url = compare ? mediaUrl(compare, "cube_json") : null;
+  const bound = meta && libraryCatalog ? libraryCatalog.cubeForUrl(meta.url) : null;
+  let refusal = "";
+  if (!meta) refusal = "Bind a library cube before comparing.";
+  else if (!compare || !url) refusal = `No comparison cube for ${cubeClipId || "this cube"} in assets.json. Nothing is drawn in its place.`;
+  else if (compare.uid !== pair.right_cube_uid || bound?.uid !== pair.left_cube_uid) {
+    refusal = `ui_cube named ${pair.left_cube_uid} | ${pair.right_cube_uid}, but this window has ${bound?.uid ?? "no catalog cube"} | ${compare.uid}. Not drawn.`;
+  }
+  if (refusal || !compare || !url || !meta) {
+    exitCompare();
+    if (caption) caption.textContent = refusal;
+    syncCubeChrome();
+    return { ok: false, reason: refusal };
+  }
+  const seq = cubeBindSeq;
+  const result = await loadCompareCube(url, {
+    primary: sourceSha256(bound),
+    compare: sourceSha256(compare),
+  });
+  if (seq !== cubeBindSeq) return { ok: false, reason: "The bound cube changed while the comparison cube loaded." };
+  if (caption) caption.textContent = result.ok ? result.message : result.reason;
+  status.textContent = result.ok ? `Compare on: one slice follows ${cubeClipId}` : result.reason;
+  if (result.ok) {
+    // Two half-width cubes: fold the layer matrix away (the Layers button reopens it).
+    const matrix = document.querySelector("#cube-layer-matrix");
+    const layersToggle = document.querySelector<HTMLButtonElement>("#cube-matrix-toggle");
+    if (matrix && !matrix.classList.contains("is-collapsed")) {
+      matrix.classList.add("is-collapsed");
+      if (layersToggle) {
+        layersToggle.textContent = "Layers \u25b8";
+        layersToggle.setAttribute("aria-expanded", "false");
+      }
+    }
+  }
+  syncCubeChrome();
+  return result.ok ? { ok: true } : { ok: false, reason: result.reason };
+}
+
+/**
+ * Cube tab mode (rule 5). The MCP server owns it (ui_cube / viewport_get);
+ * the Compare button posts ui_cube like any agent, and the server's answer,
+ * or its `cube` bus event, is applied through the controller's one setter.
+ */
+const cubeMode = createCubeModeController(
+  {
+    async enter(pair) {
+      await boardReady;
+      libraryCatalog ??= await loadLibraryCatalog(loadDevAssets());
+      goToSlideId(board, "spatial");
+      if (cubeClipId !== pair.tileId || !boundCubeUrl()) {
+        const source = cubeSources().find((item) => item.clipId === pair.tileId);
+        if (!source) return { ok: false, reason: `No library tile ${pair.tileId} with cube JSON on this board.` };
+        if (!(await loadBoundCube(pair.tileId, source.url, "ui_cube"))) {
+          return { ok: false, reason: "A newer cube binding won while Compare loaded." };
+        }
+      }
+      return enterCompare(pair);
+    },
+    exit() {
+      exitCompare();
+      syncCubeChrome();
+    },
+  },
+  async (name, args): Promise<ToolReply> => {
+    const payload = await mcpCall(name, args);
+    if (!payload) return null;
+    const error = (payload as { error?: { message?: unknown } }).error;
+    if (error) return { error: String(error.message ?? "MCP error") };
+    const body = toolBody(payload);
+    return body ? { body } : { error: `${name} returned no body` };
+  },
+);
+
+function reportCubeMode(result: { ok: boolean; reason?: string; state: { cube_mode: string } }): void {
+  syncCubeChrome();
+  if (result.ok) return;
+  const caption = document.querySelector<HTMLElement>("#cube-caption");
+  if (caption && result.reason) caption.textContent = result.reason;
+  if (result.reason) status.textContent = `Cube mode stays ${result.state.cube_mode}: ${result.reason}`;
 }
 
 /**
@@ -375,6 +507,13 @@ function bindCubeCanvas(): void {
   if (canvas.dataset.bound === "1") return;
   canvas.dataset.bound = "1";
   bindCube(canvas, document.querySelector<HTMLCanvasElement>("#cube-labels"));
+  const compareCanvas = document.querySelector<HTMLCanvasElement>("#cube-compare-viewport");
+  if (compareCanvas) bindCompareCube(compareCanvas, document.querySelector<HTMLCanvasElement>("#cube-compare-labels"));
+  // Same path as an agent: post ui_cube, apply what the server returns.
+  document.querySelector<HTMLButtonElement>("#cube-compare-toggle")?.addEventListener("click", () => {
+    const next = cubeMode.state().cube_mode === "compare" ? "single" : "compare";
+    void cubeMode.request(next, cubeClipId || null).then(reportCubeMode);
+  });
   rebuildLayerMatrixUi();
   const select = document.querySelector<HTMLSelectElement>("#cube-source");
   if (select) {
@@ -526,6 +665,7 @@ async function openCube(url: string, source: string): Promise<void> {
   const message = await loadCube(url);
   if (caption) caption.textContent = `${source}: ${message}`;
   syncCubeChrome();
+  await followCubeMode(cubeClipId);
   status.textContent = `Cube tab bound (${source}).`;
 }
 
@@ -808,6 +948,8 @@ function applyControl(event: { seq?: number; op?: string; args?: Record<string, 
     });
   } else if (event.op === "job") {
     reportAsync(applyJob(args), "job");
+  } else if (event.op === CUBE_CONTROL_OP) {
+    void cubeMode.applyControl(args).then(reportCubeMode);
   } else if (event.op === "rename" && typeof args.clipId === "string") {
     const tile = board.querySelector<HTMLElement>(`.card[data-id="${CSS.escape(args.clipId)}"]`);
     if (!tile) return;
@@ -1027,7 +1169,10 @@ export function connectControl(): void {
       markControlDown();
     });
 }
-// Test hook (dev/test builds only): scrubs the cube and ONLY the clip the cube is bound to.
+// The bus ring holds 128 events; viewport_get is the Cube mode's resync.
+void boardReady.then(() => cubeMode.sync()).then(reportCubeMode);
+// Test hook (dev/test builds only, E1 addendum): scrubs the cube and ONLY the
+// clip the cube is bound to (never whatever played last).
 if (import.meta.env.VITE_GEN_AUDIO_FIXTURES === "1") {
   (window as unknown as { __genAudioScrub?: (f: number) => Promise<string> }).__genAudioScrub = (fraction: number) => {
     setCubeScrub(fraction, { silent: true });
