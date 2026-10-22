@@ -1,6 +1,7 @@
 // main.ts used to be checked by matching source text, so an early return above
 // the calls still passed. This loads the module and runs the three paths.
 import { test } from "node:test";
+import { fileURLToPath } from "node:url";
 import assert from "node:assert/strict";
 import { createServer, type ViteDevServer } from "vite";
 
@@ -257,8 +258,8 @@ test("main.ts counts a failed lookup, a failed library fetch, and a dropped reso
   let server: ViteDevServer | undefined;
   try {
     server = await createServer({
-      root: new URL("..", import.meta.url).pathname,
-      configFile: new URL("../vite.config.ts", import.meta.url).pathname,
+      root: fileURLToPath(new URL("..", import.meta.url)),
+      configFile: fileURLToPath(new URL("../vite.config.ts", import.meta.url)),
       server: { middlewareMode: true },
       appType: "custom",
       logLevel: "error",
