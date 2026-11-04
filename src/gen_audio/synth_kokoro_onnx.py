@@ -23,7 +23,7 @@ from pathlib import Path
 
 import numpy as np
 
-from gen_audio.cast import CastMap, Turn, resolve_turn
+from gen_audio.cast import CastMap, Turn, assignment_framework, resolve_turn
 from gen_audio.guards import (
     local_files_only_enabled,
     resolve_model_directory,
@@ -178,6 +178,12 @@ class KokoroOnnxSynthesizer:
         sample_rate: int | None = None
         for turn in turns:
             assignment = resolve_turn(turn, cast)
+            framework = assignment_framework(assignment, cast)
+            if framework != "kokoro_onnx":
+                raise ValueError(
+                    f"speaker {turn.speaker_id} framework is {framework!r}; "
+                    "synth_kokoro_onnx requires 'kokoro_onnx'"
+                )
             try:
                 raw_audio, raw_rate = self._kokoro.create(
                     turn.text,

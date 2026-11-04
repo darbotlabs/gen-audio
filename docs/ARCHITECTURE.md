@@ -43,9 +43,9 @@ Paths:
 
 There is no download step. A missing file raises `FileNotFoundError` before the optional package is imported. A missing install raises `ImportError` telling you to `pip install 'gen-audio[kokoro]'`.
 
-The example cast map uses `af_heart` and `am_michael`. Those are Kokoro v1 voice ids. kokoro-onnx raises if the loaded voice pack does not contain the id.
+The example cast map uses `af_heart` and `am_michael` for speakers 1 and 2. Those are Kokoro v1 voice ids. kokoro-onnx raises if the loaded voice pack does not contain the id. The same file also names a VibeVoice speaker and a character-to-voice table for other frameworks. That layer is documented in [VOICES.md](VOICES.md).
 
-Speeds are checked against 0.5–2.0 at cast-map load, which is the range kokoro-onnx asserts.
+Kokoro and `kokoro_onnx` speeds are checked against 0.5–2.0 at cast-map load, which is the range kokoro-onnx asserts. Other frameworks accept a finite speed greater than 0 and at most 4 so an older map that always wrote `speed` still loads. That number is not their synthesis parameter.
 
 ## 24 kHz publish path
 
@@ -121,6 +121,7 @@ Do not point the artifact directory at a folder you then commit. Generated audio
 | Module | Role |
 | --- | --- |
 | `cast.py` | Script parser and cast map |
+| `voices/` | Voice descriptors, framework registry, catalog, adapters |
 | `synth_kokoro_onnx.py` | kokoro-onnx multi-turn render |
 | `improve.py` | Publish chain and its stage functions |
 | `spectrogram.py` | PNG helpers |

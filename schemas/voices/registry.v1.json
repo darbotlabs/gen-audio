@@ -1,0 +1,53 @@
+{
+  "schema_version": "1.0.0",
+  "frameworks": [
+    {
+      "id": "kokoro",
+      "kind": "synth",
+      "engine_id": "kokoro_dayour",
+      "params_schema": "frameworks/kokoro.v1.schema.json",
+      "wired": false,
+      "summary": "PyTorch Kokoro voicepacks (dayour/kokoro, the hexgrad/kokoro fork). Pack ids look like af_heart. This package checks the pack id, language, speed, and weighted blend. It does not load .pt weights."
+    },
+    {
+      "id": "kokoro_onnx",
+      "kind": "synth",
+      "engine_id": "kokoro_onnx",
+      "params_schema": "frameworks/kokoro_onnx.v1.schema.json",
+      "wired": true,
+      "summary": "kokoro-onnx v1: kokoro-v1.0.onnx plus a voices .bin that is an npz of named style vectors. Blend is a weighted sum of those vectors. The existing synthesizer speaks a single pack id when the local model files are present."
+    },
+    {
+      "id": "misaki",
+      "kind": "g2p",
+      "engine_id": "misaki",
+      "params_schema": "frameworks/misaki.v1.schema.json",
+      "wired": false,
+      "summary": "Misaki grapheme-to-phoneme front end used by Kokoro. A G2P config, not a waveform voice. English takes a US/GB variant, optional espeak fallback, and a custom lexicon. This package does not import misaki."
+    },
+    {
+      "id": "vibevoice",
+      "kind": "synth",
+      "engine_id": "vibevoice",
+      "params_schema": "frameworks/vibevoice.v1.schema.json",
+      "wired": false,
+      "summary": "VibeVoice long-form multi-speaker TTS (1.5B and Large/7B). Voices are reference WAVs named <lang>-<Name>_<gender>[_bgm].wav, at most 4 speakers, Speaker N scripts, CFG scale, and diffusion steps. The experimental synth in adapters.py stays gated and does not read this schema."
+    },
+    {
+      "id": "livevoice",
+      "kind": "synth",
+      "engine_id": null,
+      "params_schema": "frameworks/livevoice.v1.schema.json",
+      "wired": false,
+      "summary": "VibeVoice-Realtime 0.5B, the streaming family this repo calls livevoice. One speaker, a .pt KV-cache preset under streaming_model/ or experimental_voices/<lang>/. Not the LiveVoice interpreting product."
+    },
+    {
+      "id": "personaplex",
+      "kind": "speech_to_speech",
+      "engine_id": null,
+      "params_schema": "frameworks/personaplex.v1.schema.json",
+      "wired": false,
+      "summary": "NVIDIA PersonaPlex-7B (nvidia/personaplex-7b-v1), a gated full-duplex speech-to-speech model. A stock .pt voice prompt plus a text role prompt. Weights are not bundled; the adapter returns a plan and a mock offline request."
+    }
+  ]
+}

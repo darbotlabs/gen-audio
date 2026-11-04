@@ -1,0 +1,31 @@
+{
+  "schema_version": "1.0.0",
+  "id": "livevoice.de-Spk0_man",
+  "display_name": "Speaker 0",
+  "language": "de",
+  "gender": "male",
+  "framework": "livevoice",
+  "assets": [
+    {
+      "role": "voice_embedding",
+      "path": "_hf_vibevoice_samples/realtime_model/voices/streaming_model/experimental_voices/de/de-Spk0_man.pt",
+      "format": "pt"
+    }
+  ],
+  "source": {
+    "name": "VibeVoice-Realtime",
+    "url": "https://github.com/microsoft/VibeVoice",
+    "license": "MIT",
+    "attribution": "Experimental German streaming preset de-Spk0_man. The realtime model card is English-first; other languages come from the experimental preset packs."
+  },
+  "tags": ["de", "streaming", "experimental", "genaid-voices-layout"],
+  "params": {
+    "model_id": "microsoft/VibeVoice-Realtime-0.5B",
+    "model_size": "0.5B",
+    "file_stem": "de-Spk0_man",
+    "preset_kind": "kv_cache",
+    "single_speaker": true,
+    "experimental": true,
+    "sample_rate": 24000
+  }
+}

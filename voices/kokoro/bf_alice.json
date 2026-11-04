@@ -1,0 +1,30 @@
+{
+  "schema_version": "1.0.0",
+  "id": "kokoro.bf_alice",
+  "display_name": "Alice",
+  "language": "en-gb",
+  "gender": "female",
+  "framework": "kokoro",
+  "assets": [
+    {
+      "role": "voicepack",
+      "path": "kokoro/voices/bf_alice.pt",
+      "format": "pt",
+      "member": "bf_alice"
+    }
+  ],
+  "source": {
+    "name": "hexgrad/Kokoro-82M",
+    "url": "https://huggingface.co/hexgrad/Kokoro-82M",
+    "license": "Apache-2.0",
+    "attribution": "Kokoro voice pack bf_alice (British English)."
+  },
+  "tags": ["en-gb", "illustrative"],
+  "g2p": "misaki.en-gb",
+  "params": {
+    "voice_id": "bf_alice",
+    "lang_code": "b",
+    "lang": "en-gb",
+    "speed": 1.0
+  }
+}

@@ -1,0 +1,21 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://darbotlabs.dev/gen-audio/voices/frameworks/personaplex.v1.schema.json",
+  "title": "PersonaPlexParams",
+  "description": "PersonaPlex conditions on a voice prompt and a text role prompt before full-duplex speech-to-speech. voice_code is one of NATF0-3, NATM0-3, VARF0-4, VARM0-4. voice_prompt is that code plus .pt. text_prompt sets role and persona. The public prompting guide trains persona shaping, not content injection. gated is always true: nvidia/personaplex-7b-v1 is a gated Hugging Face repo and the weights are not in this package. sample_rate is 24 kHz.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["model_id", "gated", "voice_code", "voice_family", "voice_prompt", "text_prompt", "sample_rate"],
+  "properties": {
+    "model_id": { "const": "nvidia/personaplex-7b-v1" },
+    "gated": { "const": true },
+    "voice_code": { "type": "string", "pattern": "^(NATF[0-3]|NATM[0-3]|VARF[0-4]|VARM[0-4])$" },
+    "voice_family": { "enum": ["natural", "variety"] },
+    "voice_prompt": { "type": "string", "pattern": "^(NATF[0-3]|NATM[0-3]|VARF[0-4]|VARM[0-4])\\.pt$" },
+    "text_prompt": { "type": "string", "minLength": 8, "maxLength": 2000 },
+    "text_prompt_role": { "enum": ["assistant", "customer_service", "casual"] },
+    "sample_rate": { "const": 24000 },
+    "seed": { "type": "integer", "minimum": 0, "maximum": 2147483647 },
+    "cpu_offload": { "type": "boolean" }
+  }
+}

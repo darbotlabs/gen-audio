@@ -1,0 +1,36 @@
+{
+  "schema_version": "1.0.0",
+  "id": "genaid-voices-example",
+  "catalog_source": "naming-conventions",
+  "note": "Illustrative index. DarbotLM/genaid-voices was not readable here (the GitHub API returned 404), so paths follow the published layout: root *.wav VibeVoice reference prompts, _hf_vibevoice_samples/realtime_model/voices/streaming_model/**.pt, and Kokoro pack ids. Point GENAID_VOICES_DIR at a checkout of that library to resolve files. This catalog does not vendor weights.",
+  "library": {
+    "env": "GENAID_VOICES_DIR"
+  },
+  "voices": [
+    "kokoro/af_heart.json",
+    "kokoro/am_adam.json",
+    "kokoro/am_michael.json",
+    "kokoro/bf_alice.json",
+    "kokoro/jf_alpha.json",
+    "kokoro/zf_xiaobei.json",
+    "kokoro/blend_heart_bella.json",
+    "kokoro_onnx/af_heart.json",
+    "kokoro_onnx/am_michael.json",
+    "kokoro_onnx/blend_heart_nicole.json",
+    "vibevoice/en-Alice_woman.json",
+    "vibevoice/en-Frank_man.json",
+    "vibevoice/en-Frank_man_bgm.json",
+    "vibevoice/zh-Bowen_man.json",
+    "livevoice/en-Carter_man.json",
+    "livevoice/de-Spk0_man.json",
+    "personaplex/NATF2.json",
+    "personaplex/NATM1.json"
+  ],
+  "g2p": [
+    "g2p/misaki.en-us.json",
+    "g2p/misaki.en-gb.json",
+    "g2p/misaki.ja.json",
+    "g2p/misaki.zh.json",
+    "g2p/misaki.es.json"
+  ]
+}

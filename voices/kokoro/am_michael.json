@@ -1,0 +1,30 @@
+{
+  "schema_version": "1.0.0",
+  "id": "kokoro.am_michael",
+  "display_name": "Michael",
+  "language": "en-us",
+  "gender": "male",
+  "framework": "kokoro",
+  "assets": [
+    {
+      "role": "voicepack",
+      "path": "kokoro/voices/am_michael.pt",
+      "format": "pt",
+      "member": "am_michael"
+    }
+  ],
+  "source": {
+    "name": "hexgrad/Kokoro-82M",
+    "url": "https://huggingface.co/hexgrad/Kokoro-82M",
+    "license": "Apache-2.0",
+    "attribution": "Kokoro voice pack am_michael."
+  },
+  "tags": ["en-us", "illustrative"],
+  "g2p": "misaki.en-us",
+  "params": {
+    "voice_id": "am_michael",
+    "lang_code": "a",
+    "lang": "en-us",
+    "speed": 1.0
+  }
+}

@@ -1,0 +1,32 @@
+{
+  "schema_version": "1.0.0",
+  "id": "vibevoice.en-Frank_man",
+  "display_name": "Frank",
+  "language": "en",
+  "gender": "male",
+  "framework": "vibevoice",
+  "assets": [
+    {
+      "role": "reference_wav",
+      "path": "en-Frank_man.wav",
+      "format": "wav"
+    }
+  ],
+  "source": {
+    "name": "VibeVoice",
+    "url": "https://github.com/microsoft/VibeVoice",
+    "license": "MIT",
+    "attribution": "Reference prompt named en-Frank_man.wav for the 1.5B long-form model."
+  },
+  "tags": ["en", "long-form", "genaid-voices-layout"],
+  "params": {
+    "model_size": "1.5B",
+    "model_id": "microsoft/VibeVoice-1.5B",
+    "file_stem": "en-Frank_man",
+    "cfg_scale": 1.3,
+    "diffusion_steps": 20,
+    "sample_rate": 24000,
+    "max_speakers": 4,
+    "background_music": false
+  }
+}

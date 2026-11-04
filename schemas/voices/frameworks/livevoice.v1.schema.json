@@ -1,0 +1,18 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://darbotlabs.dev/gen-audio/voices/frameworks/livevoice.v1.schema.json",
+  "title": "LiveVoiceParams",
+  "description": "VibeVoice-Realtime 0.5B voice preset. file_stem matches <lang>-<Name>_<gender>.pt (en-Carter_man, de-Spk0_man). preset_kind kv_cache is the serialized prefilled prompt, not a reference WAV. single_speaker is required. experimental is true for the optional multilingual presets (de, fr, it, jp, kr, nl, pl, pt, sp). The published realtime card is English-first; other languages are the experimental presets.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["model_id", "model_size", "file_stem", "preset_kind", "single_speaker", "experimental", "sample_rate"],
+  "properties": {
+    "model_id": { "const": "microsoft/VibeVoice-Realtime-0.5B" },
+    "model_size": { "const": "0.5B" },
+    "file_stem": { "type": "string", "pattern": "^[a-z]{2,3}-[A-Za-z0-9]+_(man|woman|neutral)$" },
+    "preset_kind": { "const": "kv_cache" },
+    "single_speaker": { "const": true },
+    "experimental": { "type": "boolean" },
+    "sample_rate": { "const": 24000 }
+  }
+}

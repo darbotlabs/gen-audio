@@ -1,0 +1,32 @@
+{
+  "schema_version": "1.0.0",
+  "id": "vibevoice.zh-Bowen_man",
+  "display_name": "Bowen",
+  "language": "zh",
+  "gender": "male",
+  "framework": "vibevoice",
+  "assets": [
+    {
+      "role": "reference_wav",
+      "path": "zh-Bowen_man.wav",
+      "format": "wav"
+    }
+  ],
+  "source": {
+    "name": "VibeVoice",
+    "url": "https://github.com/microsoft/VibeVoice",
+    "license": "MIT",
+    "attribution": "Reference prompt named zh-Bowen_man.wav. Long-form VibeVoice is trained on English and Chinese."
+  },
+  "tags": ["zh", "long-form", "genaid-voices-layout"],
+  "params": {
+    "model_size": "7B",
+    "model_id": "microsoft/VibeVoice-Large",
+    "file_stem": "zh-Bowen_man",
+    "cfg_scale": 1.3,
+    "diffusion_steps": 20,
+    "sample_rate": 24000,
+    "max_speakers": 4,
+    "background_music": false
+  }
+}

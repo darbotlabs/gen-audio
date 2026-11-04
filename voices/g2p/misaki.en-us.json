@@ -1,0 +1,16 @@
+{
+  "schema_version": "1.0.0",
+  "id": "misaki.en-us",
+  "framework": "misaki",
+  "language": "en",
+  "variant": "en-us",
+  "backend": "misaki-en",
+  "british": false,
+  "transformer": false,
+  "espeak_fallback": true,
+  "espeak_language": "en-us",
+  "custom_entries": {
+    "kokoro": "kˈOkəɹO"
+  },
+  "unk": ""
+}

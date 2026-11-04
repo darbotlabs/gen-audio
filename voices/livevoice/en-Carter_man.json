@@ -1,0 +1,31 @@
+{
+  "schema_version": "1.0.0",
+  "id": "livevoice.en-Carter_man",
+  "display_name": "Carter",
+  "language": "en",
+  "gender": "male",
+  "framework": "livevoice",
+  "assets": [
+    {
+      "role": "voice_embedding",
+      "path": "_hf_vibevoice_samples/realtime_model/voices/streaming_model/en-Carter_man.pt",
+      "format": "pt"
+    }
+  ],
+  "source": {
+    "name": "VibeVoice-Realtime",
+    "url": "https://github.com/microsoft/VibeVoice",
+    "license": "MIT",
+    "attribution": "Built-in English streaming preset en-Carter_man. The .pt file is a KV-cache voice prompt for VibeVoice-Realtime-0.5B, which this repo calls livevoice."
+  },
+  "tags": ["en", "streaming", "genaid-voices-layout"],
+  "params": {
+    "model_id": "microsoft/VibeVoice-Realtime-0.5B",
+    "model_size": "0.5B",
+    "file_stem": "en-Carter_man",
+    "preset_kind": "kv_cache",
+    "single_speaker": true,
+    "experimental": false,
+    "sample_rate": 24000
+  }
+}

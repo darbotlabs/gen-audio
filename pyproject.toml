@@ -61,6 +61,7 @@ gen-audio-spectrogram-strip = "gen_audio.cli.spectrogram_strip:main"
 gen-audio-compare = "gen_audio.cli.compare:main"
 gen-audio-generate = "gen_audio.cli.generate:main"
 gen-audio-release-gate = "gen_audio.cli.release_gate:main"
+gen-audio-voices = "gen_audio.cli.voices:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]

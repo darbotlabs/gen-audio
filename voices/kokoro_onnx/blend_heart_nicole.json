@@ -1,0 +1,38 @@
+{
+  "schema_version": "1.0.0",
+  "id": "kokoro_onnx.blend_heart_nicole",
+  "display_name": "Heart / Nicole",
+  "language": "en-us",
+  "gender": "female",
+  "framework": "kokoro_onnx",
+  "assets": [
+    {
+      "role": "style_pack",
+      "path": "kokoro/voices-v1.0.bin",
+      "format": "npz"
+    },
+    {
+      "role": "onnx_model",
+      "path": "kokoro/kokoro-v1.0.onnx",
+      "format": "onnx"
+    }
+  ],
+  "source": {
+    "name": "hexgrad/Kokoro-82M",
+    "url": "https://github.com/dayour/kokoro-onnx",
+    "license": "Apache-2.0",
+    "attribution": "Weighted sum of the af_heart and af_nicole style vectors in voices-v1.0.bin."
+  },
+  "tags": ["en-us", "blend", "illustrative"],
+  "g2p": "misaki.en-us",
+  "params": {
+    "lang": "en-us",
+    "speed": 1.0,
+    "voices_file": "voices-v1.0.bin",
+    "model_file": "kokoro-v1.0.onnx",
+    "blend": [
+      { "voice_id": "af_heart", "weight": 0.5 },
+      { "voice_id": "af_nicole", "weight": 0.5 }
+    ]
+  }
+}

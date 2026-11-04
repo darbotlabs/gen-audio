@@ -1,0 +1,48 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://darbotlabs.dev/gen-audio/voices/catalog.v1.schema.json",
+  "title": "VoiceCatalog",
+  "description": "Index of voice descriptors and G2P configs. Paths are relative to this file. Asset bytes stay in the voice library (GENAID_VOICES_DIR) and are not stored in the catalog.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "id", "catalog_source", "library", "voices", "g2p"],
+  "properties": {
+    "schema_version": { "const": "1.0.0" },
+    "id": { "type": "string", "pattern": "^[a-z][a-z0-9_-]{0,63}$" },
+    "catalog_source": { "enum": ["naming-conventions", "library-scan", "handwritten"] },
+    "note": { "type": "string", "minLength": 1, "maxLength": 800 },
+    "library": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["env"],
+      "properties": {
+        "env": { "const": "GENAID_VOICES_DIR" },
+        "path": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 240,
+          "description": "Optional default library path. An explicit CLI path or GENAID_VOICES_DIR wins."
+        }
+      }
+    },
+    "voices": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 512,
+      "items": { "$ref": "#/$defs/rel_json" }
+    },
+    "g2p": {
+      "type": "array",
+      "maxItems": 64,
+      "items": { "$ref": "#/$defs/rel_json" }
+    }
+  },
+  "$defs": {
+    "rel_json": {
+      "type": "string",
+      "minLength": 6,
+      "maxLength": 180,
+      "pattern": "^[A-Za-z0-9_][A-Za-z0-9_./+-]*\\.json$"
+    }
+  }
+}

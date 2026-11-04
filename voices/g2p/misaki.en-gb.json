@@ -1,0 +1,12 @@
+{
+  "schema_version": "1.0.0",
+  "id": "misaki.en-gb",
+  "framework": "misaki",
+  "language": "en",
+  "variant": "en-gb",
+  "backend": "misaki-en",
+  "british": true,
+  "transformer": false,
+  "espeak_fallback": true,
+  "espeak_language": "en-gb"
+}

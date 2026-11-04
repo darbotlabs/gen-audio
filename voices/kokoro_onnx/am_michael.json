@@ -1,0 +1,36 @@
+{
+  "schema_version": "1.0.0",
+  "id": "kokoro_onnx.am_michael",
+  "display_name": "Michael",
+  "language": "en-us",
+  "gender": "male",
+  "framework": "kokoro_onnx",
+  "assets": [
+    {
+      "role": "style_pack",
+      "path": "kokoro/voices-v1.0.bin",
+      "format": "npz",
+      "member": "am_michael"
+    },
+    {
+      "role": "onnx_model",
+      "path": "kokoro/kokoro-v1.0.onnx",
+      "format": "onnx"
+    }
+  ],
+  "source": {
+    "name": "hexgrad/Kokoro-82M",
+    "url": "https://github.com/dayour/kokoro-onnx",
+    "license": "Apache-2.0",
+    "attribution": "Style vector am_michael inside voices-v1.0.bin."
+  },
+  "tags": ["en-us", "illustrative"],
+  "g2p": "misaki.en-us",
+  "params": {
+    "voice_id": "am_michael",
+    "lang": "en-us",
+    "speed": 1.0,
+    "voices_file": "voices-v1.0.bin",
+    "model_file": "kokoro-v1.0.onnx"
+  }
+}

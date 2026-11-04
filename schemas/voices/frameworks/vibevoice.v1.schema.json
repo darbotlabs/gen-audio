@@ -1,0 +1,29 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://darbotlabs.dev/gen-audio/voices/frameworks/vibevoice.v1.schema.json",
+  "title": "VibeVoiceParams",
+  "description": "Long-form VibeVoice voice. file_stem matches <lang>-<Name>_<gender>[_bgm].wav. model_size 1.5B is microsoft/VibeVoice-1.5B. model_size 7B is microsoft/VibeVoice-Large (the attached checkpoint: Qwen2.5-7B, 20 DDPM inference steps, 24 kHz). At most 4 speakers. cfg_scale is an inference knob and is not a field of that checkpoint config.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["model_size", "model_id", "file_stem", "cfg_scale", "diffusion_steps", "sample_rate", "max_speakers", "background_music"],
+  "properties": {
+    "model_size": { "enum": ["1.5B", "7B"] },
+    "model_id": { "enum": ["microsoft/VibeVoice-1.5B", "microsoft/VibeVoice-Large"] },
+    "file_stem": { "type": "string", "pattern": "^[a-z]{2,3}-[A-Za-z0-9]+_(man|woman|neutral)(_bgm)?$" },
+    "cfg_scale": { "type": "number", "minimum": 0.5, "maximum": 5 },
+    "diffusion_steps": { "type": "integer", "minimum": 1, "maximum": 100 },
+    "sample_rate": { "const": 24000 },
+    "max_speakers": { "const": 4 },
+    "background_music": { "type": "boolean" }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "model_size": { "const": "1.5B" } }, "required": ["model_size"] },
+      "then": { "properties": { "model_id": { "const": "microsoft/VibeVoice-1.5B" } } }
+    },
+    {
+      "if": { "properties": { "model_size": { "const": "7B" } }, "required": ["model_size"] },
+      "then": { "properties": { "model_id": { "const": "microsoft/VibeVoice-Large" } } }
+    }
+  ]
+}

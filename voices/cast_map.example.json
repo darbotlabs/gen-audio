@@ -1,16 +1,64 @@
 {
-  "_note": "Example cast map for kokoro-onnx. Alice is Speaker 1, Frank is Speaker 2. This file is not audio and it is not a news script.",
+  "schema_version": "1.0.0",
+  "id": "example-mixed",
+  "note": "Sample cast. Speakers 1 and 2 stay Alice af_heart and Frank am_michael on kokoro_onnx, which the harness and the sample script already read. Speaker 3 is Bowen on VibeVoice. characters maps the same people onto other frameworks. This file is not audio.",
   "engine": "kokoro_onnx",
   "default_lang": "en-us",
   "default_speed": 1.0,
+  "characters": {
+    "alice": {
+      "display_name": "Alice",
+      "voices": {
+        "kokoro": "kokoro.af_heart",
+        "kokoro_onnx": "kokoro_onnx.af_heart",
+        "vibevoice": "vibevoice.en-Alice_woman",
+        "personaplex": "personaplex.NATF2"
+      }
+    },
+    "frank": {
+      "display_name": "Frank",
+      "voices": {
+        "kokoro": "kokoro.am_michael",
+        "kokoro_onnx": "kokoro_onnx.am_michael",
+        "vibevoice": "vibevoice.en-Frank_man",
+        "personaplex": "personaplex.NATM1"
+      }
+    },
+    "bowen": {
+      "display_name": "Bowen",
+      "voices": {
+        "vibevoice": "vibevoice.zh-Bowen_man"
+      }
+    },
+    "carter": {
+      "display_name": "Carter",
+      "voices": {
+        "livevoice": "livevoice.en-Carter_man"
+      }
+    }
+  },
   "speakers": {
     "1": {
       "name": "Alice",
-      "voice": "af_heart"
+      "voice": "af_heart",
+      "character": "alice",
+      "framework": "kokoro_onnx",
+      "voice_id": "kokoro_onnx.af_heart"
     },
     "2": {
       "name": "Frank",
-      "voice": "am_michael"
+      "voice": "am_michael",
+      "character": "frank",
+      "framework": "kokoro_onnx",
+      "voice_id": "kokoro_onnx.am_michael"
+    },
+    "3": {
+      "name": "Bowen",
+      "voice": "zh-Bowen_man",
+      "lang": "zh",
+      "character": "bowen",
+      "framework": "vibevoice",
+      "voice_id": "vibevoice.zh-Bowen_man"
     }
   }
 }

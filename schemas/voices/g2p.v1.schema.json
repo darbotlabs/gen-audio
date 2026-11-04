@@ -1,0 +1,58 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://darbotlabs.dev/gen-audio/voices/g2p.v1.schema.json",
+  "title": "G2pConfig",
+  "description": "Per-language Misaki (or espeak fallback) phonemizer config, schema_version 1.0.0. Voices reference it by id. This document does not synthesize audio.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "id", "framework", "language", "backend"],
+  "properties": {
+    "schema_version": { "const": "1.0.0" },
+    "id": { "type": "string", "pattern": "^misaki\\.[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$" },
+    "framework": { "const": "misaki" },
+    "language": { "type": "string", "pattern": "^[a-z]{2,3}(-[a-z0-9]{2,8})?$" },
+    "variant": { "type": "string", "pattern": "^[a-z]{2,3}(-[a-z0-9]{2,8})?$" },
+    "backend": { "enum": ["misaki-en", "misaki-ja", "misaki-zh", "espeak"] },
+    "british": { "type": "boolean" },
+    "transformer": { "type": "boolean" },
+    "espeak_fallback": { "type": "boolean" },
+    "espeak_language": { "type": "string", "pattern": "^[a-z]{2,3}(-[a-z0-9]{2,8})?$" },
+    "lexicon": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 220,
+      "pattern": "^[A-Za-z0-9_][A-Za-z0-9_./+-]*$",
+      "description": "Optional custom lexicon file relative to GENAID_VOICES_DIR. Bundled Misaki dictionaries are not copied here."
+    },
+    "custom_entries": {
+      "type": "object",
+      "maxProperties": 32,
+      "additionalProperties": { "type": "string", "minLength": 1, "maxLength": 80 }
+    },
+    "unk": { "type": "string", "maxLength": 4 }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "backend": { "const": "misaki-en" } }, "required": ["backend"] },
+      "then": {
+        "required": ["variant", "british", "transformer", "espeak_fallback"],
+        "properties": {
+          "language": { "const": "en" },
+          "variant": { "enum": ["en-us", "en-gb"] }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "backend": { "const": "misaki-ja" } }, "required": ["backend"] },
+      "then": { "properties": { "language": { "const": "ja" } } }
+    },
+    {
+      "if": { "properties": { "backend": { "const": "misaki-zh" } }, "required": ["backend"] },
+      "then": { "properties": { "language": { "const": "zh" } } }
+    },
+    {
+      "if": { "properties": { "backend": { "const": "espeak" } }, "required": ["backend"] },
+      "then": { "required": ["espeak_language", "espeak_fallback"] }
+    }
+  ]
+}
