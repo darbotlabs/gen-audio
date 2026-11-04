@@ -220,7 +220,7 @@ function Invoke-SprawlGate {
     Fails on any finding:
       outside-allowlist  a script (see Get-ScriptFile: any executable script
                          extension, .sh included, or a shebang) outside the allowlist:
-                         scripts/{build-tauri-windows,test,mcp-call,ui-shot}.ps1,
+                         scripts/{build-tauri-windows,test,mcp-call,ui-shot,run}.ps1,
                          scripts/lib/*.ps1, scripts/*.py, tests/**/*.py, src/**/*.py,
                          the NSIS installer hook apps/desktop/src-tauri/windows/hooks.nsh
                          (tauri.conf.json installerHooks), apps/desktop/validate.check.mts
@@ -234,7 +234,7 @@ function Invoke-SprawlGate {
     This file defines the patterns, so it is not content-scanned itself.
     #>
     param([Parameter(Mandatory = $true)][string]$Root, [string[]]$Exclude = @())
-    $entryPoints = @('scripts/build-tauri-windows.ps1', 'scripts/test.ps1', 'scripts/mcp-call.ps1', 'scripts/ui-shot.ps1',
+    $entryPoints = @('scripts/build-tauri-windows.ps1', 'scripts/test.ps1', 'scripts/mcp-call.ps1', 'scripts/ui-shot.ps1', 'scripts/run.ps1',
         'apps/desktop/src-tauri/windows/hooks.nsh', 'apps/desktop/validate.check.mts')
     $self = 'scripts/test.ps1'
     $vcvarsOwner = 'scripts/lib/devenv.ps1'

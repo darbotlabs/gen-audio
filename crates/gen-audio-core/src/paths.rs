@@ -196,9 +196,7 @@ impl Scratch {
 
 fn reject_sensitive_scratch(dir: &Path) -> Result<(), String> {
     if let Some(repo) = find_repo_root() {
-        if dir.starts_with(&repo) || repo.starts_with(dir) {
-            return Err("work directory must not contain or sit inside the repository".into());
-        }
+        reject_repo_scratch(dir, &repo)?;
     }
     if let Some(home) = std::env::var_os("HOME").or_else(|| std::env::var_os("USERPROFILE")) {
         if dir == Path::new(&home) {
@@ -207,6 +205,20 @@ fn reject_sensitive_scratch(dir: &Path) -> Result<(), String> {
     }
     if dir == std::env::temp_dir() {
         return Err("work directory must be a dedicated directory, not the temp root".into());
+    }
+    Ok(())
+}
+
+fn reject_repo_scratch(dir: &Path, repo: &Path) -> Result<(), String> {
+    let runtime = repo.join("artifacts").join("runtime");
+    if dir.starts_with(&runtime) && dir != runtime {
+        return Ok(());
+    }
+    if dir.starts_with(repo) || repo.starts_with(dir) {
+        return Err(
+            "work directory must be outside the repository or a dedicated subdirectory of artifacts/runtime"
+                .into(),
+        );
     }
     Ok(())
 }
@@ -612,6 +624,29 @@ mod tests {
         fn drop(&mut self) {
             unsafe { close(self.fd) };
         }
+    }
+
+    #[test]
+    fn repo_scratch_is_confined_to_a_dedicated_runtime_subdirectory() {
+        let temp = make_work_dir().unwrap();
+        let repo = temp.join("repo");
+        fs::create_dir_all(repo.join("artifacts/runtime/mcp")).unwrap();
+        fs::create_dir_all(repo.join("src")).unwrap();
+        let repo = repo.canonicalize().unwrap();
+        assert!(reject_repo_scratch(&repo.join("artifacts/runtime/mcp"), &repo).is_ok());
+        for dir in [
+            repo.clone(),
+            repo.join("src"),
+            repo.join("models"),
+            repo.join("artifacts"),
+            repo.join("artifacts/runtime"),
+            repo.join("artifacts/runtime-other"),
+            repo.parent().unwrap().to_path_buf(),
+        ] {
+            assert!(reject_repo_scratch(&dir, &repo).is_err(), "{dir:?}");
+        }
+        let escaped = repo.join("artifacts/runtime/mcp/../../../src").canonicalize().unwrap();
+        assert!(reject_repo_scratch(&escaped, &repo).is_err());
     }
 
     #[test]

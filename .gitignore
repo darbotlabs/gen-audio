@@ -18,6 +18,7 @@ venv/
 env/
 .env
 .env.*
+.owner
 
 # Local model weights and generated audio. Do not commit these.
 models/

@@ -116,6 +116,37 @@ It does not include the VibeVoice code or weights; nothing in this repo runs Vib
 
 `apps/desktop` builds with TypeScript ~7.0.2 (`npm ci`, then `npx tsc --noEmit` and `npm run build`).
 
+## Checkout-local deployment
+
+Keep downloaded `kokoro-v1.0.onnx` and `voices-v1.0.bin` in `models/`.
+Keep generated audio, harness results and logs in `artifacts/runtime/`; neither
+directory is committed. Install the Python package into `.venv` with the Kokoro
+extra before starting the services. The former sibling deployment folders are
+not required.
+
+From any working directory, run the checkout's `scripts\run.ps1`:
+
+```powershell
+.\scripts\run.ps1 -Service Mcp       # native MCP, loopback :8765
+.\scripts\run.ps1 -Service Node      # health/readiness HTTP, loopback :8002
+.\scripts\run.ps1 -Service Desktop   # native release app, not Vite
+.\scripts\run.ps1 -Service Preview   # optional Vite preview, loopback :1420
+.\scripts\run.ps1 -Service Mcp -Check
+```
+
+Each invocation runs in the foreground; use a separate terminal or your service
+supervisor. `-Port` overrides that service's port. `-Check` prints paths and
+arguments without changing files or starting a process. The launcher configures
+the native app and its child MCP/Python processes with the same checkout,
+`.venv`, and `models/` paths, without changing user-wide environment variables.
+Both model guards remain enabled, including when Rust passes Windows
+extended-length paths. MCP output is confined to `artifacts/runtime/mcp/`;
+pre-existing files cannot be overwritten or read as scratch inputs.
+
+Build the native MCP with `cargo build --release -p gen-audio-mcp`. Build the
+desktop through `scripts\build-tauri-windows.ps1 -Mode NoBundle` (or `Full` for
+installers); its locked library WAV prerequisites still apply.
+
 ## Quickstart
 
 From a checkout, with the environment variables above set:
@@ -191,10 +222,11 @@ Health: `http://<node>:8002/genaid-audio/health`
 
 ## Scripts
 
-Windows tooling has exactly four entry points. Each one runs under Windows PowerShell 5.1 and PowerShell 7, checks every native exit code, and exits non-zero on failure. Extend these with a parameter instead of adding a new script: `scripts/test.ps1` fails on any other `*.ps1`, `*.bat`, `*.cmd` or `*.py` outside the allowlist, including untracked and gitignored files such as anything under `artifacts/`.
+Windows tooling has five entry points. Each one runs under Windows PowerShell 5.1 and PowerShell 7, checks every native exit code, and exits non-zero on failure. Extend these with a parameter instead of adding a new script: `scripts/test.ps1` fails on any other `*.ps1`, `*.bat`, `*.cmd` or `*.py` outside the allowlist, including untracked and gitignored files such as anything under `artifacts/`.
 
 | Entry point | What it does |
 |---|---|
+| `scripts\run.ps1 -Service Mcp\|Node\|Desktop\|Preview [-Port n] [-Check]` | Launches against checkout-local `models/`, `.venv/` and `artifacts/runtime/`. Native desktop children inherit the same configuration. `-Check` prints the launch plan without side effects. |
 | `scripts\build-tauri-windows.ps1 [-Mode Full\|NoBundle]` | The only build path. Imports the MSVC environment (`Import-VsDevEnv`), then fails unless every library WAV in `schemas/asset-object/media.lock.json` is staged with the locked sha256 and byte count (they are gitignored and the release embeds them), builds and handshakes `gen-audio-mcp` (fresh means cargo's own fingerprint verdict from `--message-format=json` plus a sha256 check of the staged copy, never the file mtime), stages it for `externalBin`, runs `npm ci`, then the pinned tauri CLI (`@tauri-apps/cli@2.12.1`). `Full` (default) makes NSIS and MSI. `NoBundle` runs `tauri build --no-bundle`, which still embeds `frontendDist`. It judges `dist`, `gen-audio.exe` and the installers by content, never mtime: each must exist after the build and is reported by sha256 as `rebuilt` or `unchanged` (a no-op rebuild is not stale), `dist` must hold every `apps/desktop/public` file byte for byte, and the installers are the ones for this `tauri.conf.json` version. It also checks that `dist/index.html` has the header markers, that the build is not a dev build (`cargo:rustc-cfg=dev`, which would load `localhost:1420`), and that `target\release` holds one `gen-audio-desktop` fingerprint. It prints one `BUILD_OK` line, and only on success. Every run, failed ones included, saves its full transcript (native tool output too) to `target/logs/build-<sha>-<timestamp>.log`; the first line `BUILD_LOG`, `BUILD_OK ... log=` and `BUILD_FAIL log=` name it. |
 | `scripts\test.ps1 [-Tag name] [-Skip Pssa,Sprawl,Regen,Cargo,Npm,Python] [-SprawlExclude path] [-FromLock \| -WithWav]` | An EOL preflight first (`git ls-files --eol`: a tracked file with `eol=lf` in `.gitattributes` but CRLF in the working copy fails the run, is listed, and the fix is printed; nothing is rewritten), then PSScriptAnalyzer 1.24.0 with `PSScriptAnalyzerSettings.psd1` (any finding fails), the sprawl gate, a regen check (reruns the `build_assets` and `asset_vectors` examples and `cube_revision.py manifest`, then `git diff --exit-code` over `assets.json`, `manifest.json`, `assets.dev.json`, `media.lock.json`, `fixtures_v1.json`, `v1.json` and `viewport.{example,release}.json`; a missing gitignored library WAV fails the step, and `-FromLock` (CI) takes the WAV facts from `schemas/asset-object/media.lock.json`; PNGs are checked by pixels in pytest because zlib-ng makes their bytes vary), `cargo test --workspace`, `npm test` and `tsc --noEmit` in `apps/desktop`, and `pytest`. `-WithWav` is the merge check that the PR template requires. It first proves the staged WAVs are the `media.lock.json` bytes (Wavs step), then runs pytest with `GEN_AUDIO_REQUIRE_WAVS=1`, so a WAV test that would skip fails instead: the byte-for-byte cube regeneration, inv_hdr and strip tests must run. Prints a `TEST_SUMMARY` line. Logs go to `artifacts/test-logs/`. |
 | `scripts\mcp-call.ps1 -Tool <name> [-ArgsJson <json>] [-Port <n>]` | One MCP `tools/call` over HTTP. Finds the server from `-Port`, `GEN_AUDIO_MCP_ADDR`, `127.0.0.1:8765`, then the loopback ports a `gen-audio` process listens on, and checks `initialize` says `gen-audio`. Example: `scripts\mcp-call.ps1 -Tool ui_navigate -ArgsJson '{"slide":"slide:library"}'`. |

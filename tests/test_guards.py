@@ -100,6 +100,29 @@ def test_model_directory_confinement(tmp_path: Path):
         resolve_model_directory(str(base / "7B"), str(base))
 
 
+@pytest.mark.skipif(os.name != "nt", reason="Windows extended-length paths")
+def test_model_guard_accepts_extended_paths_without_allowing_escape(tmp_path: Path):
+    base = tmp_path / "models"
+    model = base / "kokoro"
+    model.mkdir(parents=True)
+    outside = tmp_path / "models-other"
+    outside.mkdir()
+    extended = "\\\\?\\" + str(model)
+    assert Path(resolve_model_directory(extended, str(base))).samefile(model)
+    assert Path(resolve_model_directory(str(model), "\\\\?\\" + str(base))).samefile(model)
+    with pytest.raises(ValueError, match="must stay inside"):
+        resolve_model_directory("\\\\?\\" + str(outside), str(base))
+
+
+@pytest.mark.skipif(os.name != "nt", reason="Windows extended-length paths")
+def test_extended_unc_paths_share_the_same_confinement_boundary(monkeypatch):
+    from gen_audio.guards import _is_within
+
+    monkeypatch.setattr(os.path, "realpath", lambda path: path)
+    assert _is_within(r"\\?\UNC\server\share\models\kokoro", r"\\server\share\models")
+    assert not _is_within(r"\\?\UNC\server\share\models-other", r"\\server\share\models")
+
+
 def test_checksum_pin_verifies_and_rejects_mismatch(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     model = tmp_path / "1.5B"
     model.mkdir()

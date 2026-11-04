@@ -122,9 +122,19 @@ def reject_voice_prompt_reference(path: str | None) -> str | None:
     return stripped
 
 
+def _comparison_path(path: str) -> str:
+    real = os.path.normcase(os.path.realpath(path))
+    if os.name == "nt":
+        if real.startswith("\\\\?\\unc\\"):
+            return "\\\\" + real[8:]
+        if real.startswith("\\\\?\\") and len(real) > 6 and real[5:7] == ":\\":
+            return real[4:]
+    return real
+
+
 def _is_within(child: str, root: str) -> bool:
-    child_real = os.path.normcase(os.path.realpath(child))
-    root_real = os.path.normcase(os.path.realpath(root))
+    child_real = _comparison_path(child)
+    root_real = _comparison_path(root)
     if child_real == root_real:
         return True
     try:

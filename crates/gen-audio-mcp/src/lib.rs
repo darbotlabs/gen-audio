@@ -57,7 +57,7 @@ impl Server {
     pub fn boot() -> Self {
         let scratch = if let Ok(raw) = std::env::var("GEN_AUDIO_WORK_DIR") {
             Scratch::new(PathBuf::from(raw))
-                .expect("GEN_AUDIO_WORK_DIR must be a dedicated directory outside the repository")
+                .expect("GEN_AUDIO_WORK_DIR must be outside the repository or under artifacts/runtime")
         } else {
             Scratch::create().expect("work directory")
         };
