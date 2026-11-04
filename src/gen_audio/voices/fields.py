@@ -15,7 +15,7 @@ from gen_audio.voices.errors import VoiceError
 
 _FRAMEWORK_RE = re.compile(r"^[a-z][a-z0-9_]{0,31}\Z")
 _VOICE_ID_RE = re.compile(r"^[a-z][a-z0-9_]{0,31}\.[A-Za-z0-9][A-Za-z0-9_.-]{0,63}\Z")
-_LANG_RE = re.compile(r"^[a-z]{2,3}(-[a-z0-9]{2,8})?\Z")
+_LANG_RE = re.compile(r"^[A-Za-z]{2,3}(-[A-Za-z0-9]{2,8})?\Z")
 _TAG_RE = re.compile(r"^[a-z0-9][a-z0-9_-]{0,31}\Z")
 _PATH_RE = re.compile(r"^[A-Za-z0-9_][A-Za-z0-9_./+-]{0,219}\Z")
 _SLUG_RE = re.compile(r"^[a-z][a-z0-9_]{0,31}\Z")
@@ -25,7 +25,7 @@ _HTTPS_RE = re.compile(r"^https://\S+\Z")
 def reject_unknown(payload: dict, allowed: set[str], label: str) -> None:
     extra = sorted(set(payload) - allowed)
     if extra:
-        raise VoiceError(f"{label} has unknown fields: {', '.join(extra)}")
+        raise VoiceError(f"{label} has unknown fields: {', '.join(extra)}", code="unknown_param")
 
 
 def require_object(value: Any, label: str) -> dict:

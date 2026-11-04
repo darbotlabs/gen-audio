@@ -1,7 +1,7 @@
 {
   "schema_version": "1.0.0",
   "id": "example-mixed",
-  "note": "Speakers 1 and 2 stay Alice af_heart and Frank am_michael on kokoro_onnx. Those Kokoro packs are not in DarbotLM/genaid-voices. Speaker 3 is Bowen on the scanned VibeVoice reference zh-Bowen_man.wav. characters points at voices that are in the manifest catalog. This file is not audio.",
+  "note": "Speakers 1 and 2 are Alice af_heart and Frank am_michael on kokoro_onnx, so this cast can be rendered by that engine. Kokoro packs are not in DarbotLM/genaid-voices. characters point at scanned VibeVoice and livevoice ids. This file is not audio.",
   "engine": "kokoro_onnx",
   "default_lang": "en-us",
   "default_speed": 1.0,
@@ -45,14 +45,6 @@
       "voice": "am_michael",
       "character": "frank",
       "framework": "kokoro_onnx"
-    },
-    "3": {
-      "name": "Bowen",
-      "voice": "zh-Bowen_man",
-      "lang": "zh",
-      "character": "bowen",
-      "framework": "vibevoice",
-      "voice_id": "vibevoice.zh-Bowen_man"
     }
   }
 }

@@ -1,0 +1,26 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://darbotlabs.dev/gen-audio/voices/frameworks/livevoice.v1.schema.json",
+  "title": "LiveVoiceParams",
+  "description": "VibeVoice-Realtime 0.5B voice preset. file_stem matches <file_prefix>-<Name>_<gender>.pt. file_prefix is the filename token (de, en, fr, in, it, jp, kr, nl, pl, pt, sp). language on the voice is the BCP-47 tag for that prefix. experimental is true for every prefix except built-in en and in, including Spk0/Spk1 files that sit at the streaming_model root. preset_kind kv_cache is the serialized prefilled prompt. single_speaker is required. weights_only is true. model_revision is null until the upstream revision is pinned, so these presets are not runnable. Output sample rate lives on the framework, not on the preset.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["model_id", "model_size", "file_stem", "file_prefix", "preset_kind", "single_speaker", "experimental", "weights_only", "model_revision"],
+  "properties": {
+    "model_id": { "const": "microsoft/VibeVoice-Realtime-0.5B" },
+    "model_size": { "const": "0.5B" },
+    "file_stem": { "type": "string", "pattern": "^[a-z]{2,3}-[A-Za-z0-9]+_(man|woman|neutral)$" },
+    "file_prefix": { "type": "string", "pattern": "^[a-z]{2,3}$" },
+    "preset_kind": { "const": "kv_cache" },
+    "single_speaker": { "const": true },
+    "experimental": {
+      "type": "boolean",
+      "description": "True for every file prefix except the built-in en and in presets. Not derived from the experimental_voices/ directory."
+    },
+    "weights_only": { "const": true, "description": "Realtime presets are loaded with torch.load(..., weights_only=True)." },
+    "model_revision": {
+      "type": ["string", "null"],
+      "description": "Upstream realtime-model revision this KV cache was built for. Null until that revision is pinned."
+    }
+  }
+}

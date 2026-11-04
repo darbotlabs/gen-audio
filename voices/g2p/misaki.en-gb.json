@@ -8,5 +8,6 @@
   "british": true,
   "transformer": false,
   "espeak_fallback": true,
-  "espeak_language": "en-gb"
+  "espeak_language": "en-gb",
+  "framework_lang_code": "b"
 }

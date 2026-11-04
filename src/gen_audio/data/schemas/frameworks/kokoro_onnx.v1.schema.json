@@ -1,0 +1,37 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://darbotlabs.dev/gen-audio/voices/frameworks/kokoro_onnx.v1.schema.json",
+  "title": "KokoroOnnxParams",
+  "description": "kokoro-onnx parameters. voices_file is an npz (usually voices-v1.0.bin) of named float32 style vectors. model_file is the ONNX graph (kokoro-v1.0.onnx). Blending is the same weighted sum, applied to those vectors. speed matches the 0.5–2.0 range kokoro-onnx asserts.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["lang", "speed", "voices_file", "model_file"],
+  "properties": {
+    "voice_id": { "type": "string", "pattern": "^[abefhijpz][fm]_[a-z0-9]{1,32}$" },
+    "lang": { "type": "string", "pattern": "^[a-z]{2,3}(-[a-z0-9]{2,8})?$" },
+    "speed": { "type": "number", "minimum": 0.5, "maximum": 2.0 },
+    "voices_file": { "type": "string", "pattern": "^voices-v[0-9]+\\.[0-9]+(-[a-z0-9]+)?\\.bin$" },
+    "model_file": { "type": "string", "pattern": "^kokoro-v[0-9]+\\.[0-9]+(\\.[a-z0-9]+)?\\.onnx$" },
+    "blend": {
+      "type": "array",
+      "minItems": 2,
+      "maxItems": 8,
+      "items": { "$ref": "#/$defs/part" }
+    }
+  },
+  "oneOf": [
+    { "required": ["voice_id"], "not": { "required": ["blend"] } },
+    { "required": ["blend"], "not": { "required": ["voice_id"] } }
+  ],
+  "$defs": {
+    "part": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["voice_id", "weight"],
+      "properties": {
+        "voice_id": { "type": "string", "pattern": "^[abefhijpz][fm]_[a-z0-9]{1,32}$" },
+        "weight": { "type": "number", "exclusiveMinimum": 0, "maximum": 1 }
+      }
+    }
+  }
+}

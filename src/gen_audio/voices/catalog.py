@@ -16,7 +16,7 @@ _SOURCES = {"naming-conventions", "library-scan", "handwritten"}
 _CATALOG_ID = re.compile(r"^[a-z][a-z0-9_-]{0,63}\Z")
 _MANIFEST_SOURCE = re.compile(r"^manifest:[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+@[0-9a-f]{7,40}\Z")
 _CATALOG_KEYS = {"schema_version", "id", "catalog_source", "note", "library", "voices", "g2p", "excluded"}
-_LIBRARY_KEYS = {"env", "path"}
+_LIBRARY_KEYS = {"env", "path", "revision"}
 _EXCLUDED_KEYS = {"path", "kind", "sha256", "size", "bytes", "note"}
 _EXCLUDED_KINDS = {"example_output", "text_example", "rendered_sample"}
 _SHA256_RE = re.compile(r"^[0-9a-f]{64}\Z")
@@ -43,6 +43,7 @@ class Catalog:
     note: str | None
     library_env: str
     library_path: str | None
+    library_revision: str | None
     voices: tuple[VoiceDescriptor, ...]
     g2p: tuple[G2pConfig, ...]
     path: Path | None = None
@@ -84,6 +85,9 @@ def load_catalog(path: Path | str) -> Catalog:
     if env != LIBRARY_ENV:
         raise VoiceError(f"catalog library env must be {LIBRARY_ENV}")
     library_path = optional_str(library, "path", label="catalog library", min_len=1, max_len=240)
+    revision = optional_str(library, "revision", label="catalog library", min_len=7, max_len=40)
+    if revision is not None and not all(ch in "0123456789abcdef" for ch in revision):
+        raise VoiceError("catalog library revision must be a hex commit")
     voices = tuple(_load_entries(source, payload.get("voices"), load_voice, "voices"))
     g2p = tuple(_load_entries(source, payload.get("g2p"), load_g2p, "g2p"))
     _unique(voices, "voice")
@@ -103,6 +107,7 @@ def load_catalog(path: Path | str) -> Catalog:
         note=note,
         library_env=env,
         library_path=library_path,
+        library_revision=revision,
         voices=voices,
         g2p=g2p,
         path=source,

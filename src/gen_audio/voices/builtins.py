@@ -49,7 +49,21 @@ _KOKORO_LANG = {
 }
 _GENDER_LETTER = {"f": "female", "m": "male"}
 _STEM_GENDER = {"woman": "female", "man": "male", "neutral": "neutral"}
-_VIBEVOICE_MODELS = {"1.5B": "microsoft/VibeVoice-1.5B", "7B": "microsoft/VibeVoice-Large"}
+_FILE_PREFIX_LANGUAGE = {
+    "en": "en",
+    "zh": "zh",
+    "in": "en-IN",
+    "jp": "ja",
+    "kr": "ko",
+    "sp": "es",
+    "de": "de",
+    "fr": "fr",
+    "it": "it",
+    "nl": "nl",
+    "pl": "pl",
+    "pt": "pt",
+}
+_LIVEVOICE_BUILTIN = {"en", "in"}
 _G2P_KEYS = {
     "schema_version",
     "id",
@@ -64,6 +78,7 @@ _G2P_KEYS = {
     "lexicon",
     "custom_entries",
     "unk",
+    "framework_lang_code",
 }
 _BACKENDS = {"misaki-en", "misaki-ja", "misaki-zh", "espeak"}
 _REGISTERED = False
@@ -130,7 +145,7 @@ def validate_kokoro_onnx_params(params: dict, *, language: str, gender: str, ass
     if lang != language:
         raise VoiceError(f"kokoro_onnx lang {lang} does not match the voice language {language}")
     if lang not in set(_KOKORO_LANG.values()):
-        raise VoiceError(f"kokoro_onnx lang {lang} is not a Kokoro language")
+        raise VoiceError(f"kokoro_onnx lang {lang} is not a Kokoro language", code="bad_lang")
     speed = require_number(body, "speed", label="kokoro_onnx params", minimum=0.5, maximum=2.0)
     voices_file = require_str(body, "voices_file", label="kokoro_onnx params", min_len=8, max_len=64)
     model_file = require_str(body, "model_file", label="kokoro_onnx params", min_len=8, max_len=64)
@@ -182,52 +197,31 @@ def validate_misaki_voice_params(params: dict, *, language: str, gender: str, as
 
 def validate_vibevoice_params(params: dict, *, language: str, gender: str, assets: tuple[AssetRef, ...]) -> dict:
     body = require_object(params, "vibevoice params")
-    allowed = {
-        "model_size",
-        "model_id",
-        "file_stem",
-        "cfg_scale",
-        "diffusion_steps",
-        "sample_rate",
-        "max_speakers",
-        "background_music",
-    }
+    allowed = {"file_stem", "file_prefix", "background_music"}
     reject_unknown(body, allowed, "vibevoice params")
     stem = require_str(body, "file_stem", label="vibevoice params", min_len=8, max_len=80)
     match = _STEM_RE.fullmatch(stem)
     if match is None:
         raise VoiceError("vibevoice file_stem must look like en-Alice_woman or zh-Bowen_man_bgm")
-    if match.group("lang") != language:
-        raise VoiceError(f"vibevoice file_stem language {match.group('lang')} does not match {language}")
+    prefix = require_str(body, "file_prefix", label="vibevoice params", min_len=2, max_len=3)
+    if match.group("lang") != prefix:
+        raise VoiceError(f"vibevoice file_prefix {prefix} does not match {stem}", code="bad_lang")
     stem_gender = _STEM_GENDER[match.group("gender")]
     if stem_gender != gender:
         raise VoiceError(f"vibevoice file_stem gender does not match {gender}")
     background = require_bool(body, "background_music", label="vibevoice params")
     if background != bool(match.group("bgm")):
         raise VoiceError("vibevoice background_music must follow the _bgm suffix")
-    rate = require_int(body, "sample_rate", label="vibevoice params", minimum=24000, maximum=24000)
-    speakers = require_int(body, "max_speakers", label="vibevoice params", minimum=4, maximum=4)
-    _one_asset(assets, role="reference_wav", fmt="wav", suffix=f"{stem}.wav", label="vibevoice")
-    normalized: dict[str, Any] = {
-        "file_stem": stem,
-        "sample_rate": rate,
-        "max_speakers": speakers,
-        "background_music": background,
-    }
-    if "model_size" in body or "model_id" in body:
-        model_size = require_str(body, "model_size", label="vibevoice params", min_len=2, max_len=8)
-        model_id = require_str(body, "model_id", label="vibevoice params", min_len=8, max_len=80)
-        if _VIBEVOICE_MODELS.get(model_size) != model_id:
-            raise VoiceError("vibevoice model_size and model_id do not match")
-        normalized["model_size"] = model_size
-        normalized["model_id"] = model_id
-    if "cfg_scale" in body:
-        normalized["cfg_scale"] = require_number(body, "cfg_scale", label="vibevoice params", minimum=0.5, maximum=5.0)
-    if "diffusion_steps" in body:
-        normalized["diffusion_steps"] = require_int(
-            body, "diffusion_steps", label="vibevoice params", minimum=1, maximum=100
+    expected_language = _FILE_PREFIX_LANGUAGE.get(prefix)
+    if expected_language is None:
+        raise VoiceError(f"vibevoice file_prefix {prefix} has no BCP-47 language", code="bad_lang")
+    if language != expected_language:
+        raise VoiceError(
+            f"vibevoice language {language} does not match file_prefix {prefix} ({expected_language})",
+            code="bad_lang",
         )
-    return normalized
+    _one_asset(assets, role="reference_wav", fmt="wav", suffix=f"{stem}.wav", label="vibevoice")
+    return {"file_stem": stem, "file_prefix": prefix, "background_music": background}
 
 
 def validate_livevoice_params(params: dict, *, language: str, gender: str, assets: tuple[AssetRef, ...]) -> dict:
@@ -236,10 +230,12 @@ def validate_livevoice_params(params: dict, *, language: str, gender: str, asset
         "model_id",
         "model_size",
         "file_stem",
+        "file_prefix",
         "preset_kind",
         "single_speaker",
         "experimental",
-        "sample_rate",
+        "weights_only",
+        "model_revision",
     }
     reject_unknown(body, allowed, "livevoice params")
     model_id = require_str(body, "model_id", label="livevoice params", min_len=8, max_len=80)
@@ -252,8 +248,17 @@ def validate_livevoice_params(params: dict, *, language: str, gender: str, asset
     match = _LIVE_RE.fullmatch(stem)
     if match is None:
         raise VoiceError("livevoice file_stem must look like en-Carter_man or de-Spk0_man")
-    if match.group("lang") != language:
-        raise VoiceError(f"livevoice file_stem language {match.group('lang')} does not match {language}")
+    prefix = require_str(body, "file_prefix", label="livevoice params", min_len=2, max_len=3)
+    if match.group("lang") != prefix:
+        raise VoiceError(f"livevoice file_prefix {prefix} does not match {stem}", code="bad_lang")
+    expected_language = _FILE_PREFIX_LANGUAGE.get(prefix)
+    if expected_language is None:
+        raise VoiceError(f"livevoice file_prefix {prefix} has no BCP-47 language", code="bad_lang")
+    if language != expected_language:
+        raise VoiceError(
+            f"livevoice language {language} does not match file_prefix {prefix} ({expected_language})",
+            code="bad_lang",
+        )
     if _STEM_GENDER[match.group("gender")] != gender:
         raise VoiceError(f"livevoice file_stem gender does not match {gender}")
     preset = require_str(body, "preset_kind", label="livevoice params", min_len=3, max_len=32)
@@ -261,21 +266,32 @@ def validate_livevoice_params(params: dict, *, language: str, gender: str, asset
         raise VoiceError("livevoice preset_kind must be kv_cache")
     single = require_bool(body, "single_speaker", label="livevoice params")
     if single is not True:
-        raise VoiceError("livevoice is a single-speaker streaming preset")
+        raise VoiceError("livevoice is a single-speaker streaming preset", code="bad_single_speaker")
     experimental = require_bool(body, "experimental", label="livevoice params")
-    rate = require_int(body, "sample_rate", label="livevoice params", minimum=24000, maximum=24000)
-    asset = _one_asset(assets, role="voice_embedding", fmt="pt", suffix=f"{stem}.pt", label="livevoice")
-    experimental_path = "/experimental_voices/" in asset.path.replace("\\", "/")
-    if experimental != experimental_path:
-        raise VoiceError("livevoice experimental must follow experimental_voices/ in the asset path")
+    expected_experimental = prefix not in _LIVEVOICE_BUILTIN
+    if experimental != expected_experimental:
+        raise VoiceError(
+            f"livevoice experimental for prefix {prefix} must be {str(expected_experimental).lower()}",
+            code="bad_experimental",
+        )
+    if body.get("weights_only") is not True:
+        raise VoiceError("livevoice presets must set weights_only true", code="bad_load")
+    if "model_revision" not in body:
+        raise VoiceError("livevoice model_revision is required (null until the upstream revision is pinned)", code="bad_revision")
+    revision = body.get("model_revision")
+    if revision is not None and (not isinstance(revision, str) or not revision.strip()):
+        raise VoiceError("livevoice model_revision must be a revision string or null", code="bad_revision")
+    _one_asset(assets, role="voice_embedding", fmt="pt", suffix=f"{stem}.pt", label="livevoice")
     return {
         "model_id": model_id,
         "model_size": model_size,
         "file_stem": stem,
+        "file_prefix": prefix,
         "preset_kind": preset,
         "single_speaker": True,
         "experimental": experimental,
-        "sample_rate": rate,
+        "weights_only": True,
+        "model_revision": revision,
     }
 
 
@@ -288,10 +304,8 @@ def validate_personaplex_params(params: dict, *, language: str, gender: str, ass
         "voice_family",
         "voice_prompt",
         "text_prompt",
-        "text_prompt_role",
         "sample_rate",
         "seed",
-        "cpu_offload",
     }
     reject_unknown(body, allowed, "personaplex params")
     if language != "en":
@@ -317,11 +331,7 @@ def validate_personaplex_params(params: dict, *, language: str, gender: str, ass
     if prompt != f"{code}.pt":
         raise VoiceError("personaplex voice_prompt must be the voice code plus .pt")
     text = require_str(body, "text_prompt", label="personaplex params", min_len=8, max_len=2000)
-    role = optional_str(body, "text_prompt_role", label="personaplex params", min_len=6, max_len=20)
-    if role is not None and role not in {"assistant", "customer_service", "casual"}:
-        raise VoiceError("personaplex text_prompt_role must be assistant, customer_service, or casual")
     rate = require_int(body, "sample_rate", label="personaplex params", minimum=24000, maximum=24000)
-    cpu = optional_bool(body, "cpu_offload", label="personaplex params")
     seed = None
     if "seed" in body:
         seed = require_int(body, "seed", label="personaplex params", minimum=0, maximum=2_147_483_647)
@@ -335,10 +345,6 @@ def validate_personaplex_params(params: dict, *, language: str, gender: str, ass
         "text_prompt": text,
         "sample_rate": rate,
     }
-    if role is not None:
-        normalized["text_prompt_role"] = role
-    if cpu is not None:
-        normalized["cpu_offload"] = cpu
     if seed is not None:
         normalized["seed"] = seed
     return normalized
@@ -366,6 +372,9 @@ def validate_g2p_document(payload: dict, *, path: Path | None = None) -> G2pConf
         check_lang(variant, label=f"{label} variant")
     british = optional_bool(body, "british", label=label)
     transformer = optional_bool(body, "transformer", label=label)
+    if transformer:
+        raise VoiceError("misaki transformer=true is rejected on Python 3.14", code="bad_transformer")
+    framework_lang_code = optional_str(body, "framework_lang_code", label=label, min_len=1, max_len=1)
     espeak_fallback = optional_bool(body, "espeak_fallback", label=label)
     espeak_language = optional_str(body, "espeak_language", label=label, min_len=2, max_len=12)
     if espeak_language is not None:
@@ -385,6 +394,18 @@ def validate_g2p_document(payload: dict, *, path: Path | None = None) -> G2pConf
         espeak_language=espeak_language,
         label=label,
     )
+    expected_code = {
+        ("misaki-en", "en-us"): "a",
+        ("misaki-en", "en-gb"): "b",
+        ("misaki-ja", "ja"): "j",
+        ("misaki-zh", "zh"): "z",
+        ("espeak", "es"): "e",
+    }.get((backend, variant or language))
+    if framework_lang_code != expected_code:
+        raise VoiceError(
+            f"{label} framework_lang_code must be {expected_code}",
+            code="bad_lang",
+        )
     return G2pConfig(
         schema_version=version,
         id=g2p_id,
@@ -399,15 +420,27 @@ def validate_g2p_document(payload: dict, *, path: Path | None = None) -> G2pConf
         lexicon=lexicon,
         custom_entries=MappingProxyType(entries),
         unk=unk,
+        framework_lang_code=framework_lang_code,
         path=path,
     )
 
 
 def prepare_kokoro(voice, library: Path | None = None) -> SynthesisPlan:
-    missing = ["the dayour/kokoro torch runtime is not vendored, so .pt voicepacks are not loaded"]
+    from gen_audio.voices.runtime import allow_hf_download
+
+    missing: list[str] = []
+    if importlib.util.find_spec("kokoro") is None:
+        missing.append("kokoro package is not installed")
+    if importlib.util.find_spec("misaki") is None:
+        missing.append("misaki is not installed; kokoro will not invent phonemes")
     files, absent = _existing_assets(voice, library)
     missing.extend(absent)
-    return _plan(voice, "kokoro", missing, files, executable=False)
+    packs_ready = library is not None and not absent
+    if not packs_ready and ("blend" in voice.params or not allow_hf_download()):
+        missing.append(
+            "Kokoro .pt packs are not bundled; GEN_AUDIO_ALLOW_HF_DOWNLOAD=1 is required before KPipeline can fetch hexgrad/Kokoro-82M"
+        )
+    return _plan(voice, "kokoro", missing, files, executable=not missing)
 
 
 def prepare_kokoro_onnx(voice, library: Path | None = None) -> SynthesisPlan:
@@ -452,23 +485,47 @@ def prepare_misaki(config, library: Path | None = None) -> SynthesisPlan:
 
 
 def prepare_vibevoice(voice, library: Path | None = None) -> SynthesisPlan:
-    missing = [
-        "VibeVoice weights are not bundled",
-        "GEN_AUDIO_VIBEVOICE_MODEL is unset"
-        if not os.environ.get("GEN_AUDIO_VIBEVOICE_MODEL", "").strip()
-        else "the voice plan does not load VibeVoice weights",
-    ]
+    """1.5B is executable when the package, weights, and reference wav are present. 7B stays GPU-only."""
+    missing: list[str] = []
+    size = os.environ.get("GEN_AUDIO_VIBEVOICE_SIZE", "1.5B").strip() or "1.5B"
+    if size == "7B":
+        model = os.environ.get("GEN_AUDIO_VIBEVOICE_7B_MODEL", "").strip()
+        if not model:
+            missing.append("GEN_AUDIO_VIBEVOICE_7B_MODEL is unset")
+        elif not Path(model).exists():
+            missing.append("VibeVoice 7B weights are not present at GEN_AUDIO_VIBEVOICE_7B_MODEL")
+        if not _torch_cuda():
+            missing.append("VibeVoice 7B is GPU-only")
+    elif size != "1.5B":
+        missing.append(f"unknown VibeVoice size {size}")
+    else:
+        model = os.environ.get("GEN_AUDIO_VIBEVOICE_MODEL", "").strip()
+        if not model:
+            missing.append("VibeVoice weights are not bundled")
+            missing.append("GEN_AUDIO_VIBEVOICE_MODEL is unset")
+        elif not Path(model).exists():
+            missing.append("VibeVoice-1.5B weights are not present at GEN_AUDIO_VIBEVOICE_MODEL")
+    if importlib.util.find_spec("vibevoice") is None:
+        missing.append("vibevoice package is not installed")
     files, absent = _existing_assets(voice, library)
     if library is None:
         missing.append("reference wav is unresolved until GENAID_VOICES_DIR or a library path is set")
     missing.extend(absent)
-    return _plan(voice, "vibevoice", missing, files, executable=False)
+    return _plan(voice, "vibevoice", missing, files, executable=not missing)
+
+
+def _torch_cuda() -> bool:
+    try:
+        import torch
+    except ImportError:
+        return False
+    return bool(torch.cuda.is_available())
 
 
 def prepare_livevoice(voice, library: Path | None = None) -> SynthesisPlan:
     missing = [
-        "VibeVoice-Realtime-0.5B weights are not bundled",
-        "livevoice is one streaming speaker; this package does not run that runtime",
+        "VibeVoice-Realtime-0.5B weights are not on disk",
+        "model_revision is null, so this KV cache is not pinned to a model and will not be loaded",
     ]
     files, absent = _existing_assets(voice, library)
     if library is None:
@@ -495,11 +552,14 @@ def mock_offline_request(plan: SynthesisPlan) -> dict[str, Any]:
         "module": "moshi.offline",
         "voice_prompt": plan.params["voice_prompt"],
         "text_prompt": plan.params["text_prompt"],
-        "text_prompt_role": plan.params.get("text_prompt_role"),
-        "sample_rate": plan.params["sample_rate"],
+        "input_wav": None,
+        "output_wav": None,
+        "output_text": None,
         "seed": plan.params.get("seed"),
-        "cpu_offload": bool(plan.params.get("cpu_offload", False)),
+        "sample_rate": plan.params["sample_rate"],
         "weights_loaded": False,
+        "runnable": False,
+        "reason": "nvidia/personaplex-7b-v1 is gated and this request has no input wav",
     }
 
 
@@ -583,7 +643,7 @@ def _kokoro_voices_agree(voice_ids: list[str], lang: str, gender: str, *, label:
         raise VoiceError(f"{label} blend must stay inside one language")
     code = codes.pop()
     if _KOKORO_LANG[code] != lang:
-        raise VoiceError(f"{label} pack language does not match {lang}")
+        raise VoiceError(f"{label} pack language does not match {lang}", code="bad_pack_lang")
     _gender_agrees(voice_ids, gender, label=label)
 
 

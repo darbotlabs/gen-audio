@@ -2,7 +2,7 @@
   "schema_version": "1.0.0",
   "id": "vibevoice.in-Samuel_man",
   "display_name": "Samuel",
-  "language": "in",
+  "language": "en-IN",
   "gender": "male",
   "framework": "vibevoice",
   "assets": [
@@ -34,8 +34,18 @@
   ],
   "params": {
     "file_stem": "in-Samuel_man",
-    "sample_rate": 24000,
-    "max_speakers": 4,
+    "file_prefix": "in",
     "background_music": false
+  },
+  "file_prefix": "in",
+  "access": {
+    "gated": false,
+    "provider": "local",
+    "repo": "DarbotLM/genaid-voices",
+    "requires_acceptance": false
+  },
+  "reference_audio": {
+    "sample_rate": 24000,
+    "channels": 1
   }
 }

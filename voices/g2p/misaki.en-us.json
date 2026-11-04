@@ -10,7 +10,8 @@
   "espeak_fallback": true,
   "espeak_language": "en-us",
   "custom_entries": {
-    "kokoro": "kˈOkəɹO"
+    "kokoro": "k\u02c8Ok\u0259\u0279O"
   },
-  "unk": ""
+  "unk": "",
+  "framework_lang_code": "a"
 }

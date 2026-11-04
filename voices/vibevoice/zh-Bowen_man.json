@@ -34,8 +34,18 @@
   ],
   "params": {
     "file_stem": "zh-Bowen_man",
-    "sample_rate": 24000,
-    "max_speakers": 4,
+    "file_prefix": "zh",
     "background_music": false
+  },
+  "file_prefix": "zh",
+  "access": {
+    "gated": false,
+    "provider": "local",
+    "repo": "DarbotLM/genaid-voices",
+    "requires_acceptance": false
+  },
+  "reference_audio": {
+    "sample_rate": 24000,
+    "channels": 1
   }
 }

@@ -16,8 +16,40 @@
     "display_name": { "type": "string", "minLength": 1, "maxLength": 80 },
     "language": {
       "type": "string",
-      "pattern": "^[a-z]{2,3}(-[a-z0-9]{2,8})?$",
-      "description": "BCP-47-style tag, or the voice-key code the file uses when that is not BCP-47. This library uses jp, sp, kr, and in."
+      "pattern": "^[A-Za-z]{2,3}(-[A-Za-z0-9]{2,8})?$",
+      "description": "BCP-47 tag. Filename prefixes that are not BCP-47 (in, jp, kr, sp) are file_prefix, not language. in is en-IN, jp is ja, kr is ko, sp is es."
+    },
+    "file_prefix": {
+      "type": "string",
+      "pattern": "^[a-z]{2,3}$",
+      "description": "The language token in the filename, which may differ from language. Examples: in, jp, kr, sp, en, zh."
+    },
+    "framework_lang_code": {
+      "type": "string",
+      "pattern": "^[abefhijpz]$",
+      "description": "Kokoro KPipeline code (a, b, e, f, h, i, p, j, z) when this voice is spoken by Kokoro."
+    },
+    "reference_audio": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Measured properties of a reference recording. Not the model's output rate.",
+      "required": ["sample_rate", "channels"],
+      "properties": {
+        "sample_rate": { "type": "integer", "minimum": 8000, "maximum": 48000 },
+        "channels": { "type": "integer", "minimum": 1, "maximum": 2 },
+        "duration_s": { "type": "number", "exclusiveMinimum": 0 }
+      }
+    },
+    "access": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["gated", "provider", "repo", "requires_acceptance"],
+      "properties": {
+        "gated": { "type": "boolean" },
+        "provider": { "type": "string", "minLength": 1, "maxLength": 40 },
+        "repo": { "type": "string", "minLength": 1, "maxLength": 120 },
+        "requires_acceptance": { "type": "boolean" }
+      }
     },
     "gender": { "enum": ["female", "male", "neutral", "unspecified"] },
     "framework": { "type": "string", "pattern": "^[a-z][a-z0-9_]{0,31}$" },

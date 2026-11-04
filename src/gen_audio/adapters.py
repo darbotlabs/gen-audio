@@ -74,7 +74,11 @@ def synthesize(engine: str, turns: list[Turn], cast: CastMap, output: Path) -> d
         raise EngineRefusal(engine, [f"cast map engine is {cast.engine}, not {engine}"])
     if engine == "kokoro_onnx":
         return _synth_kokoro(turns, cast, output)
-    if engine in {"pocket_tts", "vibevoice", "magpie"}:
+    if engine == "kokoro_dayour":
+        return _synth_kokoro_torch(turns, cast, output)
+    if engine == "vibevoice":
+        return _synth_vibevoice(turns, cast, output)
+    if engine in {"pocket_tts", "magpie"}:
         raise EngineRefusal(
             engine,
             [f"{engine} is experimental and is not enabled until a measured run proves it"],
@@ -94,7 +98,7 @@ def _missing(engine: str) -> list[str]:
     if engine == "misaki":
         return ["misaki is a grapheme-to-phoneme library and does not emit a waveform"]
     if engine == "kokoro_dayour":
-        return ["the dayour/kokoro torch runtime is not vendored in this package"]
+        return _missing_kokoro_torch()
     return [f"unknown engine {engine}"]
 
 
@@ -103,6 +107,91 @@ def _module_present(name: str) -> bool:
         return importlib.util.find_spec(name) is not None
     except (ModuleNotFoundError, ValueError):
         return False
+
+
+_KOKORO_LANG_CODE = {
+    "en-us": "a",
+    "en-gb": "b",
+    "es": "e",
+    "fr-fr": "f",
+    "hi": "h",
+    "it": "i",
+    "ja": "j",
+    "pt-br": "p",
+    "zh": "z",
+}
+_KOKORO_G2P = {
+    "en-us": "misaki.en-us",
+    "en-gb": "misaki.en-gb",
+    "es": "misaki.es",
+    "ja": "misaki.ja",
+    "zh": "misaki.zh",
+}
+
+
+def _missing_kokoro_torch() -> list[str]:
+    from gen_audio.voices.runtime import allow_hf_download
+
+    missing: list[str] = []
+    if not _module_present("kokoro"):
+        missing.append("kokoro package is not installed")
+    if not _module_present("misaki"):
+        missing.append("misaki is not installed; kokoro will not invent phonemes")
+    if not allow_hf_download() and not os.environ.get("GENAID_VOICES_DIR", "").strip():
+        missing.append(
+            "Kokoro .pt packs are not bundled; GEN_AUDIO_ALLOW_HF_DOWNLOAD=1 is required before KPipeline can fetch hexgrad/Kokoro-82M"
+        )
+    return missing
+
+
+def _synth_kokoro_torch(turns: list[Turn], cast: CastMap, output: Path) -> dict:
+    """Run dayour/kokoro ``KPipeline`` on CPU. Misaki is assigned to ``pipeline.g2p``."""
+    from gen_audio.voices.errors import VoiceError
+    from gen_audio.voices.model import g2p_config_path, load_g2p
+    from gen_audio.voices.runtime import run_kokoro_pipeline
+
+    library = os.environ.get("GENAID_VOICES_DIR", "").strip()
+    pieces: list[np.ndarray] = []
+    sample_rate = 24000
+    try:
+        for turn in turns:
+            assignment = resolve_turn(turn, cast)
+            lang = assignment.lang or cast.default_lang
+            code = _KOKORO_LANG_CODE.get(lang)
+            g2p_id = _KOKORO_G2P.get(lang)
+            if code is None or g2p_id is None:
+                raise EngineRefusal("kokoro_dayour", [f"no Misaki config for language {lang}"])
+            g2p = load_g2p(g2p_config_path(g2p_id))
+            voice_arg: object = assignment.voice
+            if library:
+                pack = Path(library) / "kokoro" / "voices" / f"{assignment.voice}.pt"
+                if pack.is_file():
+                    voice_arg = str(pack)
+            audio, sample_rate = run_kokoro_pipeline(
+                turn.text,
+                lang_code=code,
+                voice=voice_arg,
+                g2p=g2p,
+                speed=assignment.speed,
+            )
+            pieces.append(audio)
+            gap = int(0.15 * sample_rate)
+            if gap:
+                pieces.append(np.zeros(gap, dtype=np.float32))
+    except VoiceError as exc:
+        raise EngineRefusal("kokoro_dayour", [str(exc)]) from exc
+    if pieces and pieces[-1].size and np.all(pieces[-1] == 0):
+        pieces.pop()
+    if not pieces:
+        raise EngineRefusal("kokoro_dayour", ["KPipeline produced no samples"])
+    joined = np.concatenate(pieces).astype(np.float32)
+    write_wav(output, joined, sample_rate, subtype="FLOAT")
+    return {
+        "engine": "kokoro_dayour",
+        "sample_rate": sample_rate,
+        "samples": int(joined.size),
+        "turns": len(turns),
+    }
 
 
 def _missing_kokoro() -> list[str]:
@@ -198,6 +287,8 @@ def _missing_vibevoice() -> list[str]:
     device = _vibevoice_device()
     if device.lower().startswith("cuda") and _module_present("torch") and not _cuda_available():
         missing.append(f"GEN_AUDIO_VIBEVOICE_DEVICE is {device} and CUDA is not available")
+    if os.environ.get("GEN_AUDIO_VIBEVOICE_SIZE", "1.5B").strip() == "7B" and not _cuda_available():
+        missing.append("VibeVoice 7B is GPU-only")
     return missing
 
 
@@ -302,12 +393,84 @@ def _pocket_voice_state(model, voice: str):
     raise EngineRefusal("pocket_tts", ["TTSModel.get_state_for_audio_prompt is missing"])
 
 
+def vibevoice_profile(size: str | None = None) -> dict:
+    """Render profile for 1.5B (CPU) or 7B (GPU-only). Identity is a model_ref, not one HF id."""
+    chosen = (size or os.environ.get("GEN_AUDIO_VIBEVOICE_SIZE", "1.5B")).strip()
+    if chosen == "7B":
+        return {
+            "id": "7B",
+            "local_env": "GEN_AUDIO_VIBEVOICE_7B_MODEL",
+            "upstream": "vibevoice/VibeVoice-7B",
+            "device_policy": "gpu",
+            "cfg_scale": 1.3,
+            "diffusion_steps": 20,
+            "max_speakers": 4,
+            "output_sample_rate": 24000,
+            "max_position_embeddings": 32768,
+        }
+    if chosen != "1.5B":
+        raise EngineRefusal("vibevoice", [f"unknown VibeVoice size {chosen}"])
+    return {
+        "id": "1.5B",
+        "local_env": "GEN_AUDIO_VIBEVOICE_MODEL",
+        "upstream": "microsoft/VibeVoice-1.5B",
+        "device_policy": "cpu",
+        "cfg_scale": 1.3,
+        "diffusion_steps": 20,
+        "max_speakers": 4,
+        "output_sample_rate": 24000,
+        "max_position_embeddings": 65536,
+    }
+
+
+def vibevoice_call_plan(profile: dict, script: str, wavs: list) -> dict:
+    """The processor and generate arguments VibeVoice 1.5B/7B actually require.
+
+    ``voice_samples`` is one list per script, speakers in first-appearance order.
+    ``set_ddpm_inference_steps`` is called before ``generate``. ``tokenizer`` is
+    the processor tokenizer. 7B is refused on CPU before this plan is used.
+    """
+    if profile["device_policy"] == "gpu" and not _cuda_available():
+        raise EngineRefusal("vibevoice", ["VibeVoice 7B is GPU-only"])
+    if len(wavs) > int(profile["max_speakers"]):
+        raise EngineRefusal("vibevoice", [f"VibeVoice supports at most {profile['max_speakers']} speakers"])
+    return {
+        "processor": {
+            "text": [script],
+            "voice_samples": [wavs],
+            "padding": True,
+            "return_tensors": "pt",
+            "return_attention_mask": True,
+        },
+        "diffusion_steps": int(profile["diffusion_steps"]),
+        "generate": {
+            "cfg_scale": float(profile["cfg_scale"]),
+            "tokenizer_from": "processor.tokenizer",
+            "generation_config": {"do_sample": False},
+        },
+    }
+
+
+def run_vibevoice_generate(model, processor, inputs: dict, steps: int, cfg_scale: float):
+    """Call the inference model the way the 1.5B path is specified."""
+    model.set_ddpm_inference_steps(int(steps))
+    return model.generate(
+        **inputs,
+        cfg_scale=float(cfg_scale),
+        tokenizer=processor.tokenizer,
+        generation_config={"do_sample": False},
+    )
+
+
 def _synth_vibevoice(turns: list[Turn], cast: CastMap, output: Path) -> dict:
-    """Run VibeVoice-1.5B when the package and local weights load on the configured device."""
+    """Run VibeVoice when local weights load. 1.5B may use CPU. 7B refuses without a GPU."""
     import torch
 
-    model_dir = os.environ.get("GEN_AUDIO_VIBEVOICE_MODEL", "").strip()
-    device = _vibevoice_device()
+    profile = vibevoice_profile()
+    model_dir = os.environ.get(profile["local_env"], "").strip()
+    if profile["device_policy"] == "gpu" and not _cuda_available():
+        raise EngineRefusal("vibevoice", ["VibeVoice 7B is GPU-only"])
+    device = "cpu" if profile["device_policy"] == "cpu" else _vibevoice_device()
     try:
         from vibevoice.modular.modeling_vibevoice_inference import (
             VibeVoiceForConditionalGenerationInference,
@@ -318,24 +481,59 @@ def _synth_vibevoice(turns: list[Turn], cast: CastMap, output: Path) -> dict:
     try:
         processor = VibeVoiceProcessor.from_pretrained(model_dir)
         dtype_name = _vibevoice_dtype_name(device)
-        model = VibeVoiceForConditionalGenerationInference.from_pretrained(
-            model_dir,
-            torch_dtype=_vibevoice_torch_dtype(torch, dtype_name),
-        ).to(device)
+        load_kwargs = {
+            "torch_dtype": _vibevoice_torch_dtype(torch, dtype_name),
+            "attn_implementation": "sdpa",
+        }
+        if device == "cpu":
+            load_kwargs["device_map"] = "cpu"
+        model = VibeVoiceForConditionalGenerationInference.from_pretrained(model_dir, **load_kwargs)
+        if device != "cpu":
+            model = model.to(device)
         script = "\n".join(f"Speaker {turn.speaker_id}: {turn.text}" for turn in turns)
-        inputs = processor(text=script, return_tensors="pt")
+        wavs = []
+        seen: set[str] = set()
+        for turn in turns:
+            if turn.speaker_id in seen:
+                continue
+            seen.add(turn.speaker_id)
+            wavs.append(_load_vibevoice_prompt(turn, cast))
+        plan = vibevoice_call_plan(profile, script, wavs)
+        inputs = processor(**plan["processor"])
         moved = {key: value.to(device) if hasattr(value, "to") else value for key, value in inputs.items()}
         with torch.no_grad():
-            generated = model.generate(**moved)
+            generated = run_vibevoice_generate(
+                model,
+                processor,
+                moved,
+                plan["diffusion_steps"],
+                plan["generate"]["cfg_scale"],
+            )
         speech = generated.speech_outputs[0]
         audio = _as_float_mono("vibevoice", speech)
-        rate = int(getattr(model, "sampling_rate", 24000) or 24000)
+        rate = int(profile["output_sample_rate"])
         write_wav(output, audio, rate, subtype="FLOAT")
     except EngineRefusal:
         raise
     except Exception as exc:
-        raise EngineRefusal("vibevoice", [f"VibeVoice-1.5B failed to synthesize: {exc}"]) from exc
+        raise EngineRefusal("vibevoice", [f"VibeVoice {profile['id']} failed to synthesize: {exc}"]) from exc
     return {"engine": "vibevoice", "sample_rate": rate, "samples": int(audio.size), "turns": len(turns)}
+
+
+def _load_vibevoice_prompt(turn: Turn, cast: CastMap):
+    """Load one reference WAV. The cast voice is a file stem or a path."""
+    from gen_audio.audio_io import read_wav
+
+    assignment = resolve_turn(turn, cast)
+    candidate = Path(assignment.voice)
+    if not candidate.is_file():
+        library = os.environ.get("GENAID_VOICES_DIR", "").strip()
+        if library:
+            candidate = Path(library) / "_hf_vibevoice_samples" / "voices" / f"{assignment.voice}.wav"
+    if not candidate.is_file():
+        raise EngineRefusal("vibevoice", [f"reference wav for {assignment.voice} was not found"])
+    audio, _rate = read_wav(candidate)
+    return audio
 
 
 def _synth_magpie(turns: list[Turn], cast: CastMap, output: Path) -> dict:

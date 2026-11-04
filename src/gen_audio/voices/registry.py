@@ -93,7 +93,7 @@ def get_framework(framework_id: str) -> FrameworkSpec:
         return _SPECS[framework_id]
     except KeyError:
         known = ", ".join(sorted(_SPECS))
-        raise VoiceError(f"unknown framework {framework_id}; known: {known}") from None
+        raise VoiceError(f"unknown framework {framework_id}; known: {known}", code="unknown_framework") from None
 
 
 def list_frameworks() -> list[FrameworkSpec]:

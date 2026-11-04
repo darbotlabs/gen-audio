@@ -66,6 +66,9 @@ gen-audio-voices = "gen_audio.cli.voices:main"
 [tool.setuptools.packages.find]
 where = ["src"]
 
+[tool.setuptools.package-data]
+gen_audio = ["data/**/*.json"]
+
 [tool.uv]
 # Lock only for the hosts we ship to (box/CI linux x86_64, SMAX win AMD64), and
 # fail the lock if either one would need anything but a wheel.

@@ -34,8 +34,19 @@
   ],
   "params": {
     "file_stem": "en-Alice_woman",
-    "sample_rate": 24000,
-    "max_speakers": 4,
+    "file_prefix": "en",
     "background_music": false
+  },
+  "file_prefix": "en",
+  "access": {
+    "gated": false,
+    "provider": "local",
+    "repo": "DarbotLM/genaid-voices",
+    "requires_acceptance": false
+  },
+  "reference_audio": {
+    "sample_rate": 16000,
+    "channels": 1,
+    "duration_s": 9.3
   }
 }

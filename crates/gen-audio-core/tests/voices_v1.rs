@@ -82,3 +82,21 @@ fn schemas_accept_the_shipped_examples_and_rust_agrees() {
         validate_g2p_json(&value).unwrap();
     }
 }
+
+#[test]
+fn invalid_fixtures_match_python_error_codes() {
+    let folder = root().join("tests/fixtures/voices/invalid");
+    let cases: Value = read_json(&folder.join("cases.json"));
+    for case in cases["cases"].as_array().unwrap() {
+        let name = case["file"].as_str().unwrap();
+        let code = case["code"].as_str().unwrap();
+        let value = read_json(&folder.join(name));
+        let error = match case["kind"].as_str().unwrap() {
+            "voice" => validate_voice_json(&value).unwrap_err(),
+            "g2p" => validate_g2p_json(&value).unwrap_err(),
+            "cast" => validate_cast_json(&value).unwrap_err(),
+            other => panic!("unknown kind {other}"),
+        };
+        assert!(error.starts_with(code), "{name}: {error}");
+    }
+}

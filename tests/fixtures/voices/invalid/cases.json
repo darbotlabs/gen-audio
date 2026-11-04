@@ -1,0 +1,11 @@
+{
+  "cases": [
+    {"file": "kokoro_onnx_bad_lang.json", "kind": "voice", "code": "bad_lang"},
+    {"file": "kokoro_onnx_pack_lang.json", "kind": "voice", "code": "bad_pack_lang"},
+    {"file": "kokoro_onnx_unknown_param.json", "kind": "voice", "code": "unknown_param"},
+    {"file": "livevoice_not_single.json", "kind": "voice", "code": "bad_single_speaker"},
+    {"file": "g2p_transformer.json", "kind": "g2p", "code": "bad_transformer"},
+    {"file": "cast_unknown_framework.json", "kind": "cast", "code": "unknown_framework"},
+    {"file": "cast_five_vibevoice.json", "kind": "cast", "code": "speaker_limit"}
+  ]
+}

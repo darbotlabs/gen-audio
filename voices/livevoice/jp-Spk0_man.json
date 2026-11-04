@@ -2,7 +2,7 @@
   "schema_version": "1.0.0",
   "id": "livevoice.jp-Spk0_man",
   "display_name": "Spk0",
-  "language": "jp",
+  "language": "ja",
   "gender": "male",
   "framework": "livevoice",
   "assets": [
@@ -31,7 +31,16 @@
     "file_stem": "jp-Spk0_man",
     "preset_kind": "kv_cache",
     "single_speaker": true,
-    "experimental": false,
-    "sample_rate": 24000
+    "experimental": true,
+    "file_prefix": "jp",
+    "weights_only": true,
+    "model_revision": null
+  },
+  "file_prefix": "jp",
+  "access": {
+    "gated": false,
+    "provider": "local",
+    "repo": "DarbotLM/genaid-voices",
+    "requires_acceptance": false
   }
 }

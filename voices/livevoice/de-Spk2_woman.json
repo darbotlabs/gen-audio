@@ -33,6 +33,15 @@
     "preset_kind": "kv_cache",
     "single_speaker": true,
     "experimental": true,
-    "sample_rate": 24000
+    "file_prefix": "de",
+    "weights_only": true,
+    "model_revision": null
+  },
+  "file_prefix": "de",
+  "access": {
+    "gated": false,
+    "provider": "local",
+    "repo": "DarbotLM/genaid-voices",
+    "requires_acceptance": false
   }
 }

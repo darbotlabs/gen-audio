@@ -1,0 +1,30 @@
+{
+  "schema_version": "1.0.0",
+  "id": "livevoice.en-Carter_man",
+  "display_name": "Carter",
+  "language": "en",
+  "gender": "male",
+  "framework": "livevoice",
+  "file_prefix": "en",
+  "access": {"gated": false, "provider": "local", "repo": "DarbotLM/genaid-voices", "requires_acceptance": false},
+  "assets": [
+    {
+      "role": "voice_embedding",
+      "path": "_hf_vibevoice_samples/realtime_model/voices/streaming_model/en-Carter_man.pt",
+      "format": "pt"
+    }
+  ],
+  "source": {"name": "Example", "url": "https://example.com/live", "license": "MIT"},
+  "tags": ["en"],
+  "params": {
+    "model_id": "microsoft/VibeVoice-Realtime-0.5B",
+    "model_size": "0.5B",
+    "file_stem": "en-Carter_man",
+    "file_prefix": "en",
+    "preset_kind": "kv_cache",
+    "single_speaker": false,
+    "experimental": false,
+    "weights_only": true,
+    "model_revision": null
+  }
+}

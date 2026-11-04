@@ -28,6 +28,11 @@
           "minLength": 1,
           "maxLength": 240,
           "description": "Optional default library path. An explicit CLI path or GENAID_VOICES_DIR wins."
+        },
+        "revision": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{7,40}$",
+          "description": "Commit of the voice library this catalog was built from."
         }
       }
     },

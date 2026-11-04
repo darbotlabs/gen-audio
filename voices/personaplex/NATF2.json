@@ -15,10 +15,14 @@
   "source": {
     "name": "nvidia/personaplex-7b-v1",
     "url": "https://huggingface.co/nvidia/personaplex-7b-v1",
-    "license": "LicenseRef-NVIDIA-PersonaPlex",
+    "license": "NVIDIA Open Model License",
     "attribution": "Stock natural female voice embedding NATF2 from the public PersonaPlex voice list. Weights are gated and are not in this repo."
   },
-  "tags": ["en", "full-duplex", "illustrative"],
+  "tags": [
+    "en",
+    "full-duplex",
+    "illustrative"
+  ],
   "params": {
     "model_id": "nvidia/personaplex-7b-v1",
     "gated": true,
@@ -26,8 +30,12 @@
     "voice_family": "natural",
     "voice_prompt": "NATF2.pt",
     "text_prompt": "You are a wise and friendly teacher. Answer questions or provide advice in a clear and engaging way.",
-    "text_prompt_role": "assistant",
-    "sample_rate": 24000,
-    "cpu_offload": false
+    "sample_rate": 24000
+  },
+  "access": {
+    "gated": true,
+    "provider": "huggingface",
+    "repo": "nvidia/personaplex-7b-v1",
+    "requires_acceptance": true
   }
 }

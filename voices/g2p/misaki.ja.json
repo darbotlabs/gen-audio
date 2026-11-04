@@ -4,5 +4,6 @@
   "framework": "misaki",
   "language": "ja",
   "backend": "misaki-ja",
-  "espeak_fallback": false
+  "espeak_fallback": false,
+  "framework_lang_code": "j"
 }

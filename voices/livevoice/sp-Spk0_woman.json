@@ -2,7 +2,7 @@
   "schema_version": "1.0.0",
   "id": "livevoice.sp-Spk0_woman",
   "display_name": "Spk0",
-  "language": "sp",
+  "language": "es",
   "gender": "female",
   "framework": "livevoice",
   "assets": [
@@ -31,7 +31,16 @@
     "file_stem": "sp-Spk0_woman",
     "preset_kind": "kv_cache",
     "single_speaker": true,
-    "experimental": false,
-    "sample_rate": 24000
+    "experimental": true,
+    "file_prefix": "sp",
+    "weights_only": true,
+    "model_revision": null
+  },
+  "file_prefix": "sp",
+  "access": {
+    "gated": false,
+    "provider": "local",
+    "repo": "DarbotLM/genaid-voices",
+    "requires_acceptance": false
   }
 }

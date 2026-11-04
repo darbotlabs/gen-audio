@@ -12,10 +12,13 @@
     "voice_code": { "type": "string", "pattern": "^(NATF[0-3]|NATM[0-3]|VARF[0-4]|VARM[0-4])$" },
     "voice_family": { "enum": ["natural", "variety"] },
     "voice_prompt": { "type": "string", "pattern": "^(NATF[0-3]|NATM[0-3]|VARF[0-4]|VARM[0-4])\\.pt$" },
-    "text_prompt": { "type": "string", "minLength": 8, "maxLength": 2000 },
-    "text_prompt_role": { "enum": ["assistant", "customer_service", "casual"] },
+    "text_prompt": {
+      "type": "string",
+      "minLength": 8,
+      "maxLength": 2000,
+      "description": "Free-text role prompt passed as --text-prompt. There is no separate role enum."
+    },
     "sample_rate": { "const": 24000 },
-    "seed": { "type": "integer", "minimum": 0, "maximum": 2147483647 },
-    "cpu_offload": { "type": "boolean" }
+    "seed": { "type": "integer", "minimum": 0, "maximum": 2147483647 }
   }
 }

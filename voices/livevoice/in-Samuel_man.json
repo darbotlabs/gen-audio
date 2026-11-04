@@ -2,7 +2,7 @@
   "schema_version": "1.0.0",
   "id": "livevoice.in-Samuel_man",
   "display_name": "Samuel",
-  "language": "in",
+  "language": "en-IN",
   "gender": "male",
   "framework": "livevoice",
   "assets": [
@@ -32,6 +32,15 @@
     "preset_kind": "kv_cache",
     "single_speaker": true,
     "experimental": false,
-    "sample_rate": 24000
+    "file_prefix": "in",
+    "weights_only": true,
+    "model_revision": null
+  },
+  "file_prefix": "in",
+  "access": {
+    "gated": false,
+    "provider": "local",
+    "repo": "DarbotLM/genaid-voices",
+    "requires_acceptance": false
   }
 }

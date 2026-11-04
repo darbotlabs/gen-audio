@@ -1,0 +1,14 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://darbotlabs.dev/gen-audio/voices/frameworks/vibevoice.v1.schema.json",
+  "title": "VibeVoiceParams",
+  "description": "Long-form VibeVoice reference prompt. file_stem matches <file_prefix>-<Name>_<gender>[_bgm].wav. file_prefix is the filename token (en, zh, in). The voice language is the BCP-47 tag for that prefix. _bgm is a real suffix (en-Mary_woman_bgm, zh-Anchen_man_bgm). Model identity, cfg_scale, diffusion steps, speaker limit, and output rate live on the registry models, because one reference WAV works with both 1.5B and 7B.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["file_stem", "file_prefix", "background_music"],
+  "properties": {
+    "file_stem": { "type": "string", "pattern": "^[a-z]{2,3}-[A-Za-z0-9]+_(man|woman|neutral)(_bgm)?$" },
+    "file_prefix": { "type": "string", "pattern": "^[a-z]{2,3}$" },
+    "background_music": { "type": "boolean" }
+  }
+}

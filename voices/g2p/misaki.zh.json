@@ -4,5 +4,6 @@
   "framework": "misaki",
   "language": "zh",
   "backend": "misaki-zh",
-  "espeak_fallback": false
+  "espeak_fallback": false,
+  "framework_lang_code": "z"
 }

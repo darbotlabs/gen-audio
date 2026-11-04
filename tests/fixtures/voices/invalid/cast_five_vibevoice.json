@@ -1,0 +1,11 @@
+{
+  "schema_version": "1.0.0",
+  "engine": "vibevoice",
+  "speakers": {
+    "1": {"name": "A", "voice": "en-A_man", "framework": "vibevoice"},
+    "2": {"name": "B", "voice": "en-B_man", "framework": "vibevoice"},
+    "3": {"name": "C", "voice": "en-C_man", "framework": "vibevoice"},
+    "4": {"name": "D", "voice": "en-D_man", "framework": "vibevoice"},
+    "5": {"name": "E", "voice": "en-E_man", "framework": "vibevoice"}
+  }
+}

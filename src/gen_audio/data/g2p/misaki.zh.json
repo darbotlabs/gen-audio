@@ -1,0 +1,9 @@
+{
+  "schema_version": "1.0.0",
+  "id": "misaki.zh",
+  "framework": "misaki",
+  "language": "zh",
+  "backend": "misaki-zh",
+  "espeak_fallback": false,
+  "framework_lang_code": "z"
+}

@@ -1,0 +1,7 @@
+{
+  "schema_version": "1.0.0",
+  "engine": "nosuchfw",
+  "speakers": {
+    "1": {"name": "A", "voice": "x", "framework": "nosuchfw"}
+  }
+}

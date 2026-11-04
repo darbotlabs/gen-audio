@@ -2,7 +2,7 @@
   "schema_version": "1.0.0",
   "id": "livevoice.kr-Spk2_woman",
   "display_name": "Spk2",
-  "language": "kr",
+  "language": "ko",
   "gender": "female",
   "framework": "livevoice",
   "assets": [
@@ -33,6 +33,15 @@
     "preset_kind": "kv_cache",
     "single_speaker": true,
     "experimental": true,
-    "sample_rate": 24000
+    "file_prefix": "kr",
+    "weights_only": true,
+    "model_revision": null
+  },
+  "file_prefix": "kr",
+  "access": {
+    "gated": false,
+    "provider": "local",
+    "repo": "DarbotLM/genaid-voices",
+    "requires_acceptance": false
   }
 }

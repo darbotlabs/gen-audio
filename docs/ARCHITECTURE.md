@@ -13,7 +13,7 @@ The same floor applies to the spectrogram, the genaid-audio URL helpers, podcast
 | Id | Kind | In this package |
 | --- | --- | --- |
 | `kokoro_onnx` | waveform synth | `KokoroOnnxSynthesizer` calls `kokoro_onnx.Kokoro.create` per turn. You pass the ONNX file and the voices file. |
-| `kokoro_dayour` | waveform synth | Compare-list name for the dayour Kokoro runtime. No code path calls it. |
+| `kokoro_dayour` | waveform synth | dayour/kokoro `KPipeline` on CPU when the package and a local pack, or `GEN_AUDIO_ALLOW_HF_DOWNLOAD=1`, are present. Misaki is assigned to `pipeline.g2p`. |
 | `misaki` | grapheme-to-phoneme | Kokoro's G2P library (hexgrad/misaki). Not a waveform synth. kokoro-onnx phonemizes inside its own dependency tree. This package does not import misaki. |
 | `vibevoice` | waveform synth | Compare-list slot for VibeVoice. No adapter. |
 | `magpie` | waveform synth | Compare-list slot for Magpie TTS. No adapter. |

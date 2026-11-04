@@ -41,6 +41,10 @@ _VOICE_KEYS = {
     "g2p",
     "params",
     "duplicates",
+    "file_prefix",
+    "framework_lang_code",
+    "reference_audio",
+    "access",
 }
 _ASSET_KEYS = {"role", "path", "format", "member", "sha256", "size"}
 _DUPLICATE_KEYS = {"path", "sha256", "size"}
@@ -91,6 +95,9 @@ class VoiceDescriptor:
     params: Mapping[str, Any]
     path: Path | None = None
     duplicates: tuple[DuplicateRef, ...] = ()
+    file_prefix: str | None = None
+    reference_audio: Mapping[str, Any] | None = None
+    access: Mapping[str, Any] | None = None
 
     @property
     def local_id(self) -> str:
@@ -114,6 +121,7 @@ class G2pConfig:
     lexicon: str | None
     custom_entries: Mapping[str, str]
     unk: str | None
+    framework_lang_code: str | None = None
     path: Path | None = None
 
 
@@ -122,8 +130,45 @@ def repo_root() -> Path:
     return Path(__file__).resolve().parents[3]
 
 
+def _checkout_root() -> Path | None:
+    root = Path(__file__).resolve().parents[3]
+    if (root / "pyproject.toml").is_file() and (root / "schemas" / "voices" / "registry.v1.json").is_file():
+        return root
+    return None
+
+
+def default_catalog_path() -> Path:
+    """Example catalog in a checkout, otherwise the copy installed with the package."""
+    checkout = _checkout_root()
+    if checkout is not None:
+        return checkout / "voices" / "catalog.example.json"
+    bundled = Path(__file__).resolve().parent / "data" / "catalog.example.json"
+    if bundled.is_file():
+        return bundled
+    raise VoiceError("voice catalog is not installed", code="missing_schemas")
+
+
+def g2p_config_path(config_id: str) -> Path:
+    """One shipped Misaki config, from the checkout or the installed package data."""
+    name = f"{config_id}.json"
+    checkout = _checkout_root()
+    if checkout is not None:
+        return checkout / "voices" / "g2p" / name
+    bundled = Path(__file__).resolve().parent / "data" / "g2p" / name
+    if bundled.is_file():
+        return bundled
+    raise VoiceError(f"g2p config {config_id} is not installed", code="missing_schemas")
+
+
 def schema_dir() -> Path:
-    return repo_root() / "schemas" / "voices"
+    """Schema directory in a checkout, otherwise the copy installed with the package."""
+    checkout = _checkout_root()
+    if checkout is not None:
+        return checkout / "schemas" / "voices"
+    bundled = Path(__file__).resolve().parent / "data" / "schemas"
+    if (bundled / "registry.v1.json").is_file():
+        return bundled
+    raise VoiceError("voice schemas are not installed", code="missing_schemas")
 
 
 def read_json(path: Path) -> dict:
@@ -177,6 +222,19 @@ def validate_voice(payload: dict, *, path: Path | None = None) -> VoiceDescripto
     if spec.kind == "g2p":
         raise VoiceError(f"{label} framework {framework} is a G2P config, not a voice")
     normalized = spec.validate_params(params_raw, language=language, gender=gender, assets=assets)
+    file_prefix = optional_str(body, "file_prefix", label=label, min_len=2, max_len=3)
+    reference_audio = _reference_audio(body.get("reference_audio"), label)
+    access = _access(body.get("access"), label)
+    if framework in {"vibevoice", "livevoice"}:
+        if file_prefix is None:
+            raise VoiceError(f"{label} needs file_prefix", code="bad_lang")
+        if file_prefix != normalized.get("file_prefix"):
+            raise VoiceError(f"{label} file_prefix does not match params", code="bad_lang")
+    if framework == "vibevoice" and reference_audio is None:
+        raise VoiceError(f"{label} needs reference_audio", code="bad_reference")
+    if framework == "personaplex":
+        if access is None or access.get("gated") is not True:
+            raise VoiceError(f"{label} PersonaPlex access must be gated", code="bad_access")
     return VoiceDescriptor(
         schema_version=version,
         id=voice_id,
@@ -191,6 +249,45 @@ def validate_voice(payload: dict, *, path: Path | None = None) -> VoiceDescripto
         params=MappingProxyType(normalized),
         path=path,
         duplicates=duplicates,
+        file_prefix=file_prefix,
+        reference_audio=reference_audio,
+        access=access,
+    )
+
+
+def _reference_audio(value: Any, label: str) -> Mapping[str, Any] | None:
+    if value is None:
+        return None
+    body = require_object(value, f"{label} reference_audio")
+    reject_unknown(body, {"sample_rate", "channels", "duration_s"}, f"{label} reference_audio")
+    rate = body.get("sample_rate")
+    channels = body.get("channels")
+    if isinstance(rate, bool) or not isinstance(rate, int) or not 8000 <= rate <= 48000:
+        raise VoiceError(f"{label} reference sample_rate must be 8000..48000", code="bad_reference")
+    if isinstance(channels, bool) or not isinstance(channels, int) or channels not in {1, 2}:
+        raise VoiceError(f"{label} reference channels must be 1 or 2", code="bad_reference")
+    out: dict[str, Any] = {"sample_rate": rate, "channels": channels}
+    if "duration_s" in body:
+        duration = body["duration_s"]
+        if isinstance(duration, bool) or not isinstance(duration, (int, float)) or duration <= 0:
+            raise VoiceError(f"{label} reference duration_s must be positive", code="bad_reference")
+        out["duration_s"] = float(duration)
+    return MappingProxyType(out)
+
+
+def _access(value: Any, label: str) -> Mapping[str, Any] | None:
+    if value is None:
+        return None
+    body = require_object(value, f"{label} access")
+    reject_unknown(body, {"gated", "provider", "repo", "requires_acceptance"}, f"{label} access")
+    gated = body.get("gated")
+    acceptance = body.get("requires_acceptance")
+    if not isinstance(gated, bool) or not isinstance(acceptance, bool):
+        raise VoiceError(f"{label} access.gated and requires_acceptance must be booleans", code="bad_access")
+    provider = require_str(body, "provider", label=f"{label} access", min_len=1, max_len=40)
+    repo = require_str(body, "repo", label=f"{label} access", min_len=1, max_len=120)
+    return MappingProxyType(
+        {"gated": gated, "provider": provider, "repo": repo, "requires_acceptance": acceptance}
     )
 
 

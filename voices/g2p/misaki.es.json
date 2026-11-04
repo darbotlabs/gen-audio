@@ -5,5 +5,6 @@
   "language": "es",
   "backend": "espeak",
   "espeak_fallback": true,
-  "espeak_language": "es"
+  "espeak_language": "es",
+  "framework_lang_code": "e"
 }

@@ -2,9 +2,10 @@
   "schema_version": "1.0.0",
   "id": "genaid-voices",
   "catalog_source": "manifest:DarbotLM/genaid-voices@2f749142420cfeb4b4ee881ffa68f305ad79a96a",
-  "note": "Manifest of DarbotLM/genaid-voices@2f749142420cfeb4b4ee881ffa68f305ad79a96a (origin/main). 9 VibeVoice reference WAVs under _hf_vibevoice_samples/voices/. The 9 root *.wav files are the same LFS oids and are duplicates, not extra voices. 50 livevoice presets: 25 directly in streaming_model/ and 25 under experimental_voices/<lang>/. Top-level presets include de, en, fr, in, it, jp, kr, nl, pl, pt, and sp; experimental is the directory, not the language. example_output, text_examples, and realtime_model/vibevoice_tts_german.wav are not voices. No Kokoro packs are in this repo. size is the git lfs ls-files -s display size.",
+  "note": "Manifest of DarbotLM/genaid-voices@2f749142420cfeb4b4ee881ffa68f305ad79a96a (origin/main). 9 VibeVoice reference WAVs under _hf_vibevoice_samples/voices/. The 9 root *.wav files are the same LFS oids and are duplicates, not extra voices. 50 livevoice presets: 25 directly in streaming_model/ and 25 under experimental_voices/<lang>/. Top-level presets include de, en, fr, in, it, jp, kr, nl, pl, pt, and sp. experimental is the file prefix: en and in are built-in, and the other prefixes are experimental even at the streaming_model root. example_output, text_examples, and realtime_model/vibevoice_tts_german.wav are not voices. No Kokoro packs are in this repo. size is the git lfs ls-files -s display size, not a byte count.",
   "library": {
-    "env": "GENAID_VOICES_DIR"
+    "env": "GENAID_VOICES_DIR",
+    "revision": "2f749142420cfeb4b4ee881ffa68f305ad79a96a"
   },
   "voices": [
     "vibevoice/en-Alice_woman.json",

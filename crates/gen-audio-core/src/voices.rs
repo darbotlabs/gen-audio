@@ -220,6 +220,9 @@ pub fn validate_g2p_json(value: &Value) -> Result<G2pConfig, String> {
     {
         return Err("g2p id must be a misaki config".into());
     }
+    if config.transformer == Some(true) {
+        return Err("bad_transformer: misaki transformer=true is rejected on Python 3.14".into());
+    }
     if let Some(path) = &config.lexicon {
         if !path_ok(path) {
             return Err("lexicon path must stay inside the voice library".into());
@@ -283,16 +286,22 @@ pub fn validate_cast_json(value: &Value) -> Result<CastDocument, String> {
             return Err("cast map schema_version must be 1.0.0".into());
         }
     }
+    let mut counts: BTreeMap<String, usize> = BTreeMap::new();
     for (id, speaker) in &cast.speakers {
         if id.parse::<u32>().is_err() {
             return Err(format!("speaker id {id} must be an integer"));
         }
-        let framework = speaker.framework.as_deref().unwrap_or(cast.engine.as_str());
+        let fw_id = speaker.framework.as_deref().unwrap_or(cast.engine.as_str());
+        if framework(fw_id).is_none() {
+            return Err(format!("unknown_framework: {fw_id}"));
+        }
+        if fw_id == "personaplex" {
+            return Err("not_tts: personaplex cannot fill a text-to-speech cast slot".into());
+        }
+        *counts.entry(fw_id.to_string()).or_default() += 1;
         if let Some(voice_id) = &speaker.voice_id {
-            if !voice_id.starts_with(&(framework.to_string() + ".")) {
-                return Err(format!(
-                    "speaker {id} voice_id must start with {framework}."
-                ));
+            if !voice_id.starts_with(&(fw_id.to_string() + ".")) {
+                return Err(format!("speaker {id} voice_id must start with {fw_id}."));
             }
         }
         if let Some(character) = &speaker.character {
@@ -300,13 +309,26 @@ pub fn validate_cast_json(value: &Value) -> Result<CastDocument, String> {
                 return Err(format!("speaker {id} character {character} is missing"));
             };
             if let Some(voice_id) = &speaker.voice_id {
-                if found.voices.get(framework) != Some(voice_id) {
+                if found.voices.get(fw_id) != Some(voice_id) {
                     return Err(format!("speaker {id} does not match character {character}"));
                 }
             }
         }
         if let Some(speed) = speaker.speed {
-            check_speed(framework, speed)?;
+            check_speed(fw_id, speed)?;
+        }
+    }
+    for (fw, count) in &counts {
+        let limit = match fw.as_str() {
+            "vibevoice" => Some(4usize),
+            "livevoice" => Some(1),
+            "kokoro" | "kokoro_onnx" => Some(8),
+            _ => None,
+        };
+        if let Some(limit) = limit {
+            if *count > limit {
+                return Err(format!("speaker_limit: {fw} supports at most {limit} speakers"));
+            }
         }
     }
     for (character_id, character) in &cast.characters {
@@ -356,6 +378,17 @@ fn validate_params(voice: &VoiceDescriptor) -> Result<(), String> {
 }
 
 fn validate_kokoro(voice: &VoiceDescriptor, torch: bool) -> Result<(), String> {
+    if torch {
+        reject_unknown_params(
+            voice,
+            &["voice_id", "lang_code", "lang", "speed", "blend", "framework_lang_code"],
+        )?;
+    } else {
+        reject_unknown_params(
+            voice,
+            &["voice_id", "lang", "speed", "voices_file", "model_file", "blend", "framework_lang_code"],
+        )?;
+    }
     let lang = voice.language.as_str();
     let speed = number(voice, "speed")?;
     if !(0.5..=2.0).contains(&speed) {
@@ -371,8 +404,21 @@ fn validate_kokoro(voice: &VoiceDescriptor, torch: bool) -> Result<(), String> {
         if ids.iter().any(|id| !id.starts_with(code)) {
             return Err("kokoro pack id does not use lang_code".into());
         }
-    } else if text(voice, "lang")? != lang {
-        return Err("kokoro_onnx lang does not match language".into());
+    } else {
+        let lang_param = text(voice, "lang")?;
+        if !kokoro_langs().contains(&lang_param) {
+            return Err(format!("bad_lang: kokoro_onnx lang {lang_param} is not a Kokoro language"));
+        }
+        if lang_param != lang {
+            return Err("bad_lang: kokoro_onnx lang does not match language".into());
+        }
+        if ids.iter().any(|id| kokoro_lang(&id[..1]) != Some(lang_param)) {
+            return Err("bad_pack_lang: kokoro pack language does not match lang".into());
+        }
+        let roles: Vec<_> = voice.assets.iter().map(|asset| asset.role.as_str()).collect();
+        if !roles.contains(&"style_pack") || !roles.contains(&"onnx_model") {
+            return Err("bad_asset_role: kokoro_onnx needs a style_pack and an onnx_model".into());
+        }
     }
     let letters: Vec<char> = ids
         .iter()
@@ -407,23 +453,23 @@ fn validate_kokoro(voice: &VoiceDescriptor, torch: bool) -> Result<(), String> {
 fn validate_vibevoice(voice: &VoiceDescriptor) -> Result<(), String> {
     let stem = text(voice, "file_stem")?;
     let (stem_lang, gender, bgm) = split_stem(stem, true)?;
-    if stem_lang != voice.language || gender != voice.gender {
-        return Err("vibevoice file_stem does not match language or gender".into());
+    if gender != voice.gender {
+        return Err("vibevoice file_stem gender does not match the descriptor".into());
     }
     if bool_param(voice, "background_music")? != bgm {
         return Err("vibevoice background_music must follow _bgm".into());
     }
-    if voice.params.contains_key("model_size") || voice.params.contains_key("model_id") {
-        let size = text(voice, "model_size")?;
-        let model = text(voice, "model_id")?;
-        let expected = match size {
-            "1.5B" => "microsoft/VibeVoice-1.5B",
-            "7B" => "microsoft/VibeVoice-Large",
-            _ => return Err("vibevoice model_size must be 1.5B or 7B".into()),
-        };
-        if model != expected {
-            return Err("vibevoice model_id does not match model_size".into());
+    reject_unknown_params(voice, &["file_stem", "file_prefix", "background_music"])?;
+    let prefix = text(voice, "file_prefix")?;
+    if stem_lang != prefix {
+        return Err(format!("bad_lang: vibevoice file_prefix {prefix} does not match {stem}"));
+    }
+    match prefix_language(prefix) {
+        Some(expected) if expected == voice.language => {}
+        Some(expected) => {
+            return Err(format!("bad_lang: vibevoice language {} is not {expected}", voice.language));
         }
+        None => return Err(format!("bad_lang: vibevoice file_prefix {prefix} has no BCP-47 language")),
     }
     if voice.assets.len() != 1 || !voice.assets[0].path.ends_with(&format!("{stem}.wav")) {
         return Err("vibevoice asset must be the reference wav".into());
@@ -434,7 +480,7 @@ fn validate_vibevoice(voice: &VoiceDescriptor) -> Result<(), String> {
 fn validate_livevoice(voice: &VoiceDescriptor) -> Result<(), String> {
     let stem = text(voice, "file_stem")?;
     let (stem_lang, gender, bgm) = split_stem(stem, false)?;
-    if bgm || stem_lang != voice.language || gender != voice.gender {
+    if bgm || gender != voice.gender {
         return Err("livevoice file_stem does not match the descriptor".into());
     }
     if text(voice, "model_id")? != "microsoft/VibeVoice-Realtime-0.5B"
@@ -442,14 +488,55 @@ fn validate_livevoice(voice: &VoiceDescriptor) -> Result<(), String> {
     {
         return Err("livevoice model or preset_kind is wrong".into());
     }
+    reject_unknown_params(
+        voice,
+        &[
+            "model_id",
+            "model_size",
+            "file_stem",
+            "file_prefix",
+            "preset_kind",
+            "single_speaker",
+            "experimental",
+            "weights_only",
+            "model_revision",
+        ],
+    )?;
+    let prefix = text(voice, "file_prefix")?;
+    if stem_lang != prefix {
+        return Err(format!("bad_lang: livevoice file_prefix {prefix} does not match {stem}"));
+    }
+    match prefix_language(prefix) {
+        Some(expected) if expected == voice.language => {}
+        _ => {
+            return Err(format!(
+                "bad_lang: livevoice language {} does not match {prefix}",
+                voice.language
+            ))
+        }
+    }
+    if text(voice, "model_size")? != "0.5B" {
+        return Err("bad_model_size: livevoice model_size must be 0.5B".into());
+    }
+    if bool_param(voice, "single_speaker")? != true {
+        return Err("bad_single_speaker: livevoice is a single-speaker preset".into());
+    }
+    if bool_param(voice, "weights_only")? != true {
+        return Err("bad_load: livevoice presets must set weights_only true".into());
+    }
+    match voice.params.get("model_revision") {
+        Some(Value::Null) | Some(Value::String(_)) => {}
+        _ => return Err("bad_revision: livevoice model_revision must be a string or null".into()),
+    }
     let experimental = bool_param(voice, "experimental")?;
-    let path = &voice.assets[0].path;
-    if experimental != path.contains("experimental_voices/")
-        || !path.ends_with(&format!("{stem}.pt"))
-    {
-        return Err(
-            "livevoice experimental must follow experimental_voices/ and the file stem".into(),
-        );
+    let expected = prefix != "en" && prefix != "in";
+    if experimental != expected {
+        return Err(format!(
+            "bad_experimental: livevoice experimental for {prefix} must be {expected}"
+        ));
+    }
+    if voice.assets.is_empty() || !voice.assets[0].path.ends_with(&format!("{stem}.pt")) {
+        return Err("livevoice preset path does not match the stem".into());
     }
     Ok(())
 }
@@ -586,6 +673,10 @@ fn pack_ok(id: &str) -> bool {
         && chars.all(|ch| ch.is_ascii_lowercase() || ch.is_ascii_digit())
 }
 
+fn kokoro_langs() -> [&'static str; 9] {
+    ["en-us", "en-gb", "es", "fr-fr", "hi", "it", "ja", "pt-br", "zh"]
+}
+
 fn kokoro_lang(code: &str) -> Option<&'static str> {
     Some(match code {
         "a" => "en-us",
@@ -644,6 +735,38 @@ fn catalog_source_ok(value: &str) -> bool {
         && sha.chars().all(|ch| ch.is_ascii_hexdigit())
 }
 
+fn reject_unknown_params(voice: &VoiceDescriptor, allowed: &[&str]) -> Result<(), String> {
+    let mut extra: Vec<_> = voice
+        .params
+        .keys()
+        .filter(|key| !allowed.contains(&key.as_str()))
+        .cloned()
+        .collect();
+    extra.sort();
+    if extra.is_empty() {
+        return Ok(());
+    }
+    Err(format!("unknown_param: {}", extra.join(", ")))
+}
+
+fn prefix_language(prefix: &str) -> Option<&'static str> {
+    Some(match prefix {
+        "en" => "en",
+        "zh" => "zh",
+        "in" => "en-IN",
+        "jp" => "ja",
+        "kr" => "ko",
+        "sp" => "es",
+        "de" => "de",
+        "fr" => "fr",
+        "it" => "it",
+        "nl" => "nl",
+        "pl" => "pl",
+        "pt" => "pt",
+        _ => return None,
+    })
+}
+
 fn check_speed(framework: &str, speed: f64) -> Result<(), String> {
     if framework == "kokoro" || framework == "kokoro_onnx" {
         if !(0.5..=2.0).contains(&speed) {
@@ -688,16 +811,14 @@ fn lang_ok(value: &str) -> bool {
     let Some(primary) = parts.next() else {
         return false;
     };
-    if !(2..=3).contains(&primary.len()) || !primary.chars().all(|ch| ch.is_ascii_lowercase()) {
+    if !(2..=3).contains(&primary.len()) || !primary.chars().all(|ch| ch.is_ascii_alphabetic()) {
         return false;
     }
     match parts.next() {
         None => parts.next().is_none(),
         Some(rest) => {
             (2..=8).contains(&rest.len())
-                && rest
-                    .chars()
-                    .all(|ch| ch.is_ascii_lowercase() || ch.is_ascii_digit())
+                && rest.chars().all(|ch| ch.is_ascii_alphanumeric())
                 && parts.next().is_none()
         }
     }

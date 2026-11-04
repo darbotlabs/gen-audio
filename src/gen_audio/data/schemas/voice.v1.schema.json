@@ -1,0 +1,142 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://darbotlabs.dev/gen-audio/voices/voice.v1.schema.json",
+  "title": "VoiceDescriptor",
+  "description": "Common voice descriptor, schema_version 1.0.0. Framework-specific synthesis knobs live in params and are checked against that framework's schema. The framework id is an open slug so a new backend can register without forking this document. This is not a persona voice_profile.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "id", "display_name", "language", "gender", "framework", "assets", "source", "tags", "params"],
+  "properties": {
+    "schema_version": { "const": "1.0.0" },
+    "id": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_]{0,31}\\.[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$",
+      "description": "framework + '.' + local id, for example kokoro_onnx.af_heart or vibevoice.en-Alice_woman."
+    },
+    "display_name": { "type": "string", "minLength": 1, "maxLength": 80 },
+    "language": {
+      "type": "string",
+      "pattern": "^[A-Za-z]{2,3}(-[A-Za-z0-9]{2,8})?$",
+      "description": "BCP-47 tag. Filename prefixes that are not BCP-47 (in, jp, kr, sp) are file_prefix, not language. in is en-IN, jp is ja, kr is ko, sp is es."
+    },
+    "file_prefix": {
+      "type": "string",
+      "pattern": "^[a-z]{2,3}$",
+      "description": "The language token in the filename, which may differ from language. Examples: in, jp, kr, sp, en, zh."
+    },
+    "framework_lang_code": {
+      "type": "string",
+      "pattern": "^[abefhijpz]$",
+      "description": "Kokoro KPipeline code (a, b, e, f, h, i, p, j, z) when this voice is spoken by Kokoro."
+    },
+    "reference_audio": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Measured properties of a reference recording. Not the model's output rate.",
+      "required": ["sample_rate", "channels"],
+      "properties": {
+        "sample_rate": { "type": "integer", "minimum": 8000, "maximum": 48000 },
+        "channels": { "type": "integer", "minimum": 1, "maximum": 2 },
+        "duration_s": { "type": "number", "exclusiveMinimum": 0 }
+      }
+    },
+    "access": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["gated", "provider", "repo", "requires_acceptance"],
+      "properties": {
+        "gated": { "type": "boolean" },
+        "provider": { "type": "string", "minLength": 1, "maxLength": 40 },
+        "repo": { "type": "string", "minLength": 1, "maxLength": 120 },
+        "requires_acceptance": { "type": "boolean" }
+      }
+    },
+    "gender": { "enum": ["female", "male", "neutral", "unspecified"] },
+    "framework": { "type": "string", "pattern": "^[a-z][a-z0-9_]{0,31}$" },
+    "assets": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 16,
+      "items": { "$ref": "#/$defs/asset" }
+    },
+    "source": { "$ref": "#/$defs/source" },
+    "tags": {
+      "type": "array",
+      "maxItems": 16,
+      "uniqueItems": true,
+      "items": { "type": "string", "pattern": "^[a-z0-9][a-z0-9_-]{0,31}$" }
+    },
+    "g2p": {
+      "type": "string",
+      "pattern": "^misaki\\.[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$",
+      "description": "Id of a Misaki G2P config this voice uses. Omit when the framework does not use Misaki."
+    },
+    "params": { "type": "object" },
+    "duplicates": {
+      "type": "array",
+      "maxItems": 8,
+      "description": "Other library paths with the same sha256. Root *.wav copies of _hf_vibevoice_samples/voices/*.wav are recorded here and are not separate voices.",
+      "items": { "$ref": "#/$defs/duplicate" }
+    }
+  },
+  "$defs": {
+    "asset": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["role", "path", "format"],
+      "properties": {
+        "role": { "type": "string", "pattern": "^[a-z][a-z0-9_]{0,31}$" },
+        "path": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 220,
+          "pattern": "^[A-Za-z0-9_][A-Za-z0-9_./+-]*$",
+          "description": "Path relative to GENAID_VOICES_DIR. No absolute path, drive, or '..' segment."
+        },
+        "format": { "enum": ["pt", "npz", "onnx", "wav", "bin", "json"] },
+        "member": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 80,
+          "description": "Name inside a pack, such as a Kokoro style-vector key."
+        },
+        "sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$",
+          "description": "Git LFS oid from git lfs ls-files. Absent on illustrative packs that are not in the scanned library."
+        },
+        "size": {
+          "type": "string",
+          "pattern": "^[0-9]+(\\.[0-9]+)? (KB|MB)$",
+          "description": "Human size printed by git lfs ls-files -s. The manifest does not include an exact byte count."
+        }
+      }
+    },
+    "duplicate": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "sha256", "size"],
+      "properties": {
+        "path": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 220,
+          "pattern": "^[A-Za-z0-9_][A-Za-z0-9_./+-]*$"
+        },
+        "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+        "size": { "type": "string", "pattern": "^[0-9]+(\\.[0-9]+)? (KB|MB)$" }
+      }
+    },
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "url", "license"],
+      "properties": {
+        "name": { "type": "string", "minLength": 1, "maxLength": 120 },
+        "url": { "type": "string", "pattern": "^https://[^\\s]+$", "maxLength": 300 },
+        "license": { "type": "string", "minLength": 1, "maxLength": 80 },
+        "attribution": { "type": "string", "minLength": 1, "maxLength": 400 }
+      }
+    }
+  }
+}

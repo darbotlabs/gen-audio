@@ -137,7 +137,57 @@ class KokoroOnnxSynthesizer:
                 "kokoro-onnx is not installed. Install the optional extra: "
                 "pip install 'gen-audio[kokoro]'"
             ) from exc
+        self._voices_path = voices
         self._kokoro = Kokoro(str(model), str(voices))
+
+    def voice_for_create(self, params: dict):
+        """Pack id, or a blended style vector when ``params`` names a blend.
+
+        kokoro-onnx accepts the ndarray directly. A blend is runnable only
+        through this path; a single pack id is what the cast-map synthesizer
+        passes today.
+        """
+        from gen_audio.voices.blend import blend_from_pack
+
+        if "blend" in params:
+            parts = [(part["voice_id"], float(part["weight"])) for part in params["blend"]]
+            return blend_from_pack(self._voices_path, parts)
+        return params["voice_id"]
+
+    def synthesize_described(self, text: str, params: dict, *, speed: float, lang: str, phonemes: str | None = None):
+        """Speak one catalog voice. Phonemes, when given, skip kokoro-onnx's own G2P."""
+        voice = self.voice_for_create(params)
+        spoken = phonemes if phonemes is not None else text
+        kwargs = {"voice": voice, "speed": speed, "lang": lang}
+        if phonemes is not None:
+            kwargs["is_phonemes"] = True
+        return self._kokoro.create(spoken, **kwargs)
+
+    def synthesize_with_g2p(self, text: str, params: dict, g2p, *, speed: float, lang: str):
+        """Phonemize with the voice's Misaki config, then ``create(..., is_phonemes=True)``.
+
+        A blend passes the ndarray from ``blend_from_pack``. Each chunk stays
+        under 510 phoneme characters. Missing misaki is a refusal.
+        """
+        import numpy as np
+
+        from gen_audio.voices.runtime import phonemize_with_misaki, split_phonemes
+
+        phonemes = phonemize_with_misaki(text, g2p)
+        pieces: list[np.ndarray] = []
+        sample_rate: int | None = None
+        for chunk in split_phonemes(phonemes):
+            raw_audio, raw_rate = self.synthesize_described(
+                chunk, params, speed=speed, lang=lang, phonemes=chunk
+            )
+            audio = np.ascontiguousarray(np.asarray(raw_audio, dtype=np.float32)).reshape(-1)
+            rate = int(raw_rate)
+            if sample_rate is None:
+                sample_rate = rate
+            pieces.append(audio)
+        if sample_rate is None or not pieces:
+            raise ValueError("kokoro-onnx produced no audio")
+        return np.concatenate(pieces), sample_rate
 
     def synthesize_turns(
         self,

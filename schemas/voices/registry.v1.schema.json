@@ -33,7 +33,30 @@
           "type": "boolean",
           "description": "True when this package can hand the voice plan to a synthesizer that already runs here. False means schema, validation, and a plan or stub only."
         },
-        "summary": { "type": "string", "minLength": 12, "maxLength": 400 }
+        "summary": { "type": "string", "minLength": 12, "maxLength": 400 },
+        "output_sample_rate": { "type": "integer", "minimum": 8000, "maximum": 48000 },
+        "models": {
+          "type": "array",
+          "maxItems": 4,
+          "items": { "$ref": "#/$defs/model" }
+        }
+      }
+    },
+    "model": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "local_env", "upstream", "revision", "device_policy", "output_sample_rate"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1, "maxLength": 16 },
+        "local_env": { "type": "string", "pattern": "^[A-Z][A-Z0-9_]+$" },
+        "upstream": { "type": "string", "minLength": 1, "maxLength": 80 },
+        "revision": { "type": ["string", "null"] },
+        "max_position_embeddings": { "type": "integer", "minimum": 1 },
+        "device_policy": { "enum": ["cpu", "gpu"] },
+        "cfg_scale": { "type": "number", "minimum": 0.5, "maximum": 5 },
+        "diffusion_steps": { "type": "integer", "minimum": 1, "maximum": 100 },
+        "max_speakers": { "type": "integer", "minimum": 1, "maximum": 8 },
+        "output_sample_rate": { "type": "integer", "minimum": 8000, "maximum": 48000 }
       }
     }
   }

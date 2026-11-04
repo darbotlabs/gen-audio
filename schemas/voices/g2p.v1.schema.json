@@ -14,7 +14,15 @@
     "variant": { "type": "string", "pattern": "^[a-z]{2,3}(-[a-z0-9]{2,8})?$" },
     "backend": { "enum": ["misaki-en", "misaki-ja", "misaki-zh", "espeak"] },
     "british": { "type": "boolean" },
-    "transformer": { "type": "boolean" },
+    "transformer": {
+      "const": false,
+      "description": "The misaki fork raises RuntimeError for trf=true on Python 3.14. Only false is valid."
+    },
+    "framework_lang_code": {
+      "type": "string",
+      "pattern": "^[abefhijpz]$",
+      "description": "Kokoro pipeline code this phonemizer serves."
+    },
     "espeak_fallback": { "type": "boolean" },
     "espeak_language": { "type": "string", "pattern": "^[a-z]{2,3}(-[a-z0-9]{2,8})?$" },
     "lexicon": {

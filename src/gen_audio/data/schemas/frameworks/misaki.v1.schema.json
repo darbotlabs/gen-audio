@@ -1,0 +1,9 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://darbotlabs.dev/gen-audio/voices/frameworks/misaki.v1.schema.json",
+  "title": "MisakiVoiceParams",
+  "description": "Misaki is not a voice model. Voice descriptors use the G2P schema (g2p.v1) instead of this object. This schema exists so the registry's params_schema slot is a real document, and so a voice cannot smuggle synthesis knobs under framework misaki.",
+  "type": "object",
+  "additionalProperties": false,
+  "maxProperties": 0
+}

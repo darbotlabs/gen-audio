@@ -31,7 +31,16 @@
     "file_stem": "fr-Spk0_man",
     "preset_kind": "kv_cache",
     "single_speaker": true,
-    "experimental": false,
-    "sample_rate": 24000
+    "experimental": true,
+    "file_prefix": "fr",
+    "weights_only": true,
+    "model_revision": null
+  },
+  "file_prefix": "fr",
+  "access": {
+    "gated": false,
+    "provider": "local",
+    "repo": "DarbotLM/genaid-voices",
+    "requires_acceptance": false
   }
 }

@@ -31,7 +31,16 @@
     "file_stem": "de-Spk1_woman",
     "preset_kind": "kv_cache",
     "single_speaker": true,
-    "experimental": false,
-    "sample_rate": 24000
+    "experimental": true,
+    "file_prefix": "de",
+    "weights_only": true,
+    "model_revision": null
+  },
+  "file_prefix": "de",
+  "access": {
+    "gated": false,
+    "provider": "local",
+    "repo": "DarbotLM/genaid-voices",
+    "requires_acceptance": false
   }
 }

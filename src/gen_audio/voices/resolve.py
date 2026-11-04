@@ -45,12 +45,14 @@ def validate_cast(cast: CastMap, catalog: Catalog | None = None) -> None:
                 if voice.framework != framework:
                     raise VoiceError(f"character {character.character_id} maps {framework} to {voice.id}")
     for framework, count in counts.items():
-        try:
-            spec = get_framework(framework)
-        except VoiceError:
-            continue
+        spec = get_framework(framework)
+        if spec.kind == "speech_to_speech":
+            raise VoiceError(
+                f"{framework} is speech-to-speech and cannot fill a text-to-speech cast slot",
+                code="not_tts",
+            )
         if spec.speaker_limit is not None and count > spec.speaker_limit:
-            raise VoiceError(f"{framework} supports at most {spec.speaker_limit} speakers")
+            raise VoiceError(f"{framework} supports at most {spec.speaker_limit} speakers", code="speaker_limit")
 
 
 def _token_matches(token: str, voice) -> None:
