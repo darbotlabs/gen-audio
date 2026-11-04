@@ -8,23 +8,32 @@
   "assets": [
     {
       "role": "reference_wav",
+      "path": "_hf_vibevoice_samples/voices/en-Alice_woman.wav",
+      "format": "wav",
+      "sha256": "c27ae47421436287a6bd2c3062de2dc2a2855b78c0bb626d472202c359704203",
+      "size": "297 KB"
+    }
+  ],
+  "duplicates": [
+    {
       "path": "en-Alice_woman.wav",
-      "format": "wav"
+      "sha256": "c27ae47421436287a6bd2c3062de2dc2a2855b78c0bb626d472202c359704203",
+      "size": "297 KB"
     }
   ],
   "source": {
-    "name": "VibeVoice",
-    "url": "https://github.com/microsoft/VibeVoice",
+    "name": "DarbotLM/genaid-voices",
+    "url": "https://github.com/DarbotLM/genaid-voices",
     "license": "MIT",
-    "attribution": "Reference prompt named en-Alice_woman.wav. The 7B checkpoint config shipped with the model card uses 20 diffusion steps at 24 kHz. cfg_scale is an inference knob, not a field of that config."
+    "attribution": "Reference prompt en-Alice_woman.wav from DarbotLM/genaid-voices@2f749142420c. Root en-Alice_woman.wav is the same LFS oid."
   },
-  "tags": ["en", "long-form", "genaid-voices-layout"],
+  "tags": [
+    "en",
+    "long-form",
+    "genaid-voices"
+  ],
   "params": {
-    "model_size": "7B",
-    "model_id": "microsoft/VibeVoice-Large",
     "file_stem": "en-Alice_woman",
-    "cfg_scale": 1.3,
-    "diffusion_steps": 20,
     "sample_rate": 24000,
     "max_speakers": 4,
     "background_music": false

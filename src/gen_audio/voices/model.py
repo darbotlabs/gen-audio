@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 from dataclasses import dataclass
 from pathlib import Path
 from types import MappingProxyType
@@ -25,6 +26,8 @@ from gen_audio.voices.fields import (
 SCHEMA_VERSION = "1.0.0"
 _GENDERS = {"female", "male", "neutral", "unspecified"}
 _FORMATS = {"pt", "npz", "onnx", "wav", "bin", "json"}
+_SHA256_RE = re.compile(r"^[0-9a-f]{64}\Z")
+_LFS_SIZE_RE = re.compile(r"^[0-9]+(?:\.[0-9]+)? (?:KB|MB)\Z")
 _VOICE_KEYS = {
     "schema_version",
     "id",
@@ -37,8 +40,10 @@ _VOICE_KEYS = {
     "tags",
     "g2p",
     "params",
+    "duplicates",
 }
-_ASSET_KEYS = {"role", "path", "format", "member"}
+_ASSET_KEYS = {"role", "path", "format", "member", "sha256", "size"}
+_DUPLICATE_KEYS = {"path", "sha256", "size"}
 _SOURCE_KEYS = {"name", "url", "license", "attribution"}
 
 
@@ -48,6 +53,17 @@ class AssetRef:
     path: str
     format: str
     member: str | None = None
+    sha256: str | None = None
+    size: str | None = None
+
+
+@dataclass(frozen=True)
+class DuplicateRef:
+    """Another library path whose LFS oid matches the voice asset."""
+
+    path: str
+    sha256: str
+    size: str
 
 
 @dataclass(frozen=True)
@@ -74,6 +90,7 @@ class VoiceDescriptor:
     g2p: str | None
     params: Mapping[str, Any]
     path: Path | None = None
+    duplicates: tuple[DuplicateRef, ...] = ()
 
     @property
     def local_id(self) -> str:
@@ -139,6 +156,7 @@ def validate_voice(payload: dict, *, path: Path | None = None) -> VoiceDescripto
     if gender not in _GENDERS:
         raise VoiceError(f"{label} gender must be female, male, neutral, or unspecified")
     assets = _assets(body.get("assets"), label)
+    duplicates = _duplicates(body.get("duplicates"), assets, label)
     source = _source(body.get("source"), label)
     tags = _tags(body.get("tags"), label)
     g2p = optional_str(body, "g2p", label=label, min_len=3, max_len=80)
@@ -172,6 +190,7 @@ def validate_voice(payload: dict, *, path: Path | None = None) -> VoiceDescripto
         g2p=g2p,
         params=MappingProxyType(normalized),
         path=path,
+        duplicates=duplicates,
     )
 
 
@@ -205,11 +224,65 @@ def _assets(value: Any, label: str) -> tuple[AssetRef, ...]:
         if fmt not in _FORMATS:
             raise VoiceError(f"{label} asset format {fmt!r} is not supported")
         member = optional_str(item, "member", label=f"{label} asset {index}", min_len=1, max_len=80)
+        sha256 = _optional_sha256(item, label=f"{label} asset {index}")
+        size = _optional_lfs_size(item, label=f"{label} asset {index}")
         if rel in seen:
             raise VoiceError(f"{label} repeats asset path {rel}")
         seen.add(rel)
-        found.append(AssetRef(role=role, path=rel, format=fmt, member=member))
+        found.append(AssetRef(role=role, path=rel, format=fmt, member=member, sha256=sha256, size=size))
     return tuple(found)
+
+
+def _duplicates(value: Any, assets: tuple[AssetRef, ...], label: str) -> tuple[DuplicateRef, ...]:
+    if value is None:
+        return ()
+    if not isinstance(value, list) or len(value) > 8:
+        raise VoiceError(f"{label} duplicates must be an array of at most 8")
+    asset_sha = {asset.sha256 for asset in assets if asset.sha256}
+    found: list[DuplicateRef] = []
+    seen: set[str] = {asset.path for asset in assets}
+    for index, raw in enumerate(value):
+        item = require_object(raw, f"{label} duplicate {index}")
+        reject_unknown(item, _DUPLICATE_KEYS, f"{label} duplicate {index}")
+        rel = check_rel_path(
+            require_str(item, "path", label=f"{label} duplicate {index}", min_len=1, max_len=220),
+            label=f"{label} duplicate path",
+        )
+        sha256 = _require_sha256(item, label=f"{label} duplicate {index}")
+        size = _require_lfs_size(item, label=f"{label} duplicate {index}")
+        if rel in seen:
+            raise VoiceError(f"{label} duplicate path repeats {rel}")
+        if asset_sha and sha256 not in asset_sha:
+            raise VoiceError(f"{label} duplicate {rel} sha256 does not match the voice asset")
+        seen.add(rel)
+        found.append(DuplicateRef(path=rel, sha256=sha256, size=size))
+    return tuple(found)
+
+
+def _optional_sha256(payload: dict, *, label: str) -> str | None:
+    if "sha256" not in payload:
+        return None
+    return _require_sha256(payload, label=label)
+
+
+def _require_sha256(payload: dict, *, label: str) -> str:
+    value = require_str(payload, "sha256", label=label, min_len=64, max_len=64)
+    if _SHA256_RE.fullmatch(value) is None:
+        raise VoiceError(f"{label} sha256 must be 64 lowercase hex characters")
+    return value
+
+
+def _optional_lfs_size(payload: dict, *, label: str) -> str | None:
+    if "size" not in payload:
+        return None
+    return _require_lfs_size(payload, label=label)
+
+
+def _require_lfs_size(payload: dict, *, label: str) -> str:
+    value = require_str(payload, "size", label=label, min_len=4, max_len=16)
+    if _LFS_SIZE_RE.fullmatch(value) is None:
+        raise VoiceError(f"{label} size must be a git lfs ls-files display size such as 297 KB")
+    return value
 
 
 def _source(value: Any, label: str) -> VoiceSource:

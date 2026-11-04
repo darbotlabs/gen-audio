@@ -1,0 +1,41 @@
+{
+  "schema_version": "1.0.0",
+  "id": "vibevoice.en-Maya_woman",
+  "display_name": "Maya",
+  "language": "en",
+  "gender": "female",
+  "framework": "vibevoice",
+  "assets": [
+    {
+      "role": "reference_wav",
+      "path": "_hf_vibevoice_samples/voices/en-Maya_woman.wav",
+      "format": "wav",
+      "sha256": "eb1288bc02546c7f1117698fb78e994f060e623af148be8ccbf93dd0bea79e32",
+      "size": "1.3 MB"
+    }
+  ],
+  "duplicates": [
+    {
+      "path": "en-Maya_woman.wav",
+      "sha256": "eb1288bc02546c7f1117698fb78e994f060e623af148be8ccbf93dd0bea79e32",
+      "size": "1.3 MB"
+    }
+  ],
+  "source": {
+    "name": "DarbotLM/genaid-voices",
+    "url": "https://github.com/DarbotLM/genaid-voices",
+    "license": "MIT",
+    "attribution": "Reference prompt en-Maya_woman.wav from DarbotLM/genaid-voices@2f749142420c. Root en-Maya_woman.wav is the same LFS oid."
+  },
+  "tags": [
+    "en",
+    "long-form",
+    "genaid-voices"
+  ],
+  "params": {
+    "file_stem": "en-Maya_woman",
+    "sample_rate": 24000,
+    "max_speakers": 4,
+    "background_music": false
+  }
+}

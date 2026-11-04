@@ -25,13 +25,21 @@ Asset paths on a voice are relative to a directory you choose:
 
 The example catalog leaves `library.path` empty. `gen-audio-voices validate` checks the documents without that directory. `--require-assets` fails until the files are actually there.
 
-The private library this was written against is [DarbotLM/genaid-voices](https://github.com/DarbotLM/genaid-voices) (Git LFS). It was not readable from the environment that added these examples: the GitHub API returned 404. `voices/catalog.example.json` is therefore `catalog_source: naming-conventions`, not a dump of that repo. Paths follow the layout that repo is described as having:
+`voices/catalog.example.json` is a manifest scan of [DarbotLM/genaid-voices](https://github.com/DarbotLM/genaid-voices) at `2f749142420cfeb4b4ee881ffa68f305ad79a96a` (`catalog_source` `manifest:DarbotLM/genaid-voices@2f749142420cfeb4b4ee881ffa68f305ad79a96a`). The cloud agent could not read that private repo. The catalog was built from a verified local listing: `git ls-tree -r -l HEAD` plus `git lfs ls-files -l -s` (sha256 oid and the human size `git lfs` prints). Exact byte counts were not in that listing, so `size` is the LFS display size (`297 KB`, `7.0 MB`) and text files use the `ls-tree` byte count in `bytes`.
 
-* root `*.wav` — VibeVoice reference prompts (`en-Alice_woman.wav`, `zh-Bowen_man.wav`)
-* `_hf_vibevoice_samples/realtime_model/voices/streaming_model/**.pt` — streaming presets, including `experimental_voices/<lang>/`
-* `text_examples/` — scripts, not voice records, so the catalog does not index them
+That commit has 82 LFS files:
 
-Kokoro pack files and PersonaPlex embeddings are not part of that description. Their example paths are ordinary relative paths for when you place those files in the same library. They are tagged `illustrative`.
+| Files | Count | In the catalog |
+| --- | --- | --- |
+| `_hf_vibevoice_samples/voices/*.wav` | 9 | vibevoice voices. Asset path is this copy |
+| root `*.wav` | 9 | not separate voices. Same oid as the `voices/` copy, recorded on `duplicates` |
+| `streaming_model/**/*.pt` | 50 | livevoice. 25 beside `streaming_model/`, 25 under `experimental_voices/<lang>/` |
+| `example_output/*.wav` | 13 | `excluded`, kind `example_output` |
+| `realtime_model/vibevoice_tts_german.wav` | 1 | `excluded`, kind `rendered_sample` |
+
+Twelve `text_examples/*.txt` files are `excluded` with kind `text_example`. README, `.gitattributes`, and `.gitignore` are repo metadata, not voices. There are no Kokoro packs in the repo. Kokoro and PersonaPlex descriptors under `voices/kokoro/`, `voices/kokoro_onnx/`, and `voices/personaplex/` stay as illustrative schema examples and are not catalog entries.
+
+Reference-wav languages in this commit are `en`, `zh`, and `in` (`in-Samuel_man.wav`). Streaming preset codes are `de`, `en`, `fr`, `in`, `it`, `jp`, `kr`, `nl`, `pl`, `pt`, and `sp`. `jp`, `sp`, `kr`, and `in` are the file codes (`jp` rather than `ja`, `sp` rather than `es`, `kr` rather than `ko`). `in` is not rewritten to `hi`. `_bgm` is a real suffix on `en-Mary_woman_bgm` and `zh-Anchen_man_bgm`. `experimental` follows the `experimental_voices/` directory. Top-level `de-Spk0_man.pt`, `jp-Spk0_man.pt`, `sp-Spk0_woman.pt`, `kr-Spk0_woman.pt`, and `in-Samuel_man.pt` are not experimental. There is no `experimental_voices` directory for `en`, `in`, `it`, or `nl`.
 
 ## Common voice descriptor
 
@@ -107,10 +115,11 @@ Voices are reference WAVs:
 <lang>-<Name>_<gender>[_bgm].wav
 en-Alice_woman.wav
 zh-Bowen_man.wav
-en-Frank_man_bgm.wav
+en-Mary_woman_bgm.wav
+in-Samuel_man.wav
 ```
 
-`gender` is `woman`, `man`, or `neutral`. `_bgm` sets `background_music`. The long-form model is English and Chinese, at most 4 speakers, in the `Speaker N:` script this repo already parses.
+`gender` is `woman`, `man`, or `neutral`. `_bgm` sets `background_music`. The scanned library uses `en`, `zh`, and `in`, so a voice is not rejected for being outside English and Chinese. The published 7B card still says the model was trained on English and Chinese; `in-Samuel_man` is in the library anyway. At most 4 speakers, in the `Speaker N:` script this repo already parses. A reference WAV is not pinned to the 1.5B or 7B checkpoint, so scanned voices omit `model_size`. `cfg_scale` and `diffusion_steps` are inference knobs and are omitted unless a document sets them.
 
 | `model_size` | `model_id` |
 | --- | --- |
@@ -129,10 +138,14 @@ This is VibeVoice-Realtime 0.5B (`microsoft/VibeVoice-Realtime-0.5B`): one speak
 
 ```text
 streaming_model/en-Carter_man.pt
-streaming_model/experimental_voices/de/de-Spk0_man.pt
+streaming_model/de-Spk0_man.pt
+streaming_model/experimental_voices/de/de-Spk2_woman.pt
+streaming_model/in-Samuel_man.pt
+streaming_model/jp-Spk0_man.pt
+streaming_model/sp-Spk0_woman.pt
 ```
 
-`experimental` is false for `en` and true for `de`, `fr`, `it`, `jp`, `kr`, `nl`, `pl`, `pt`, and `sp`. Those codes are the project's preset codes (`jp` rather than `ja`, `sp` rather than `es`, `kr` rather than `ko`). A second livevoice speaker in one cast is rejected.
+`experimental` is true only for files under `experimental_voices/<lang>/`. The 25 top-level presets are not experimental, including German, Japanese, Spanish, Korean, and `in`. Preset codes in this commit are `de`, `en`, `fr`, `in`, `it`, `jp`, `kr`, `nl`, `pl`, `pt`, and `sp`. A second livevoice speaker in one cast is rejected.
 
 `preset_kind` is `kv_cache`. `single_speaker` is true. `sample_rate` is 24000.
 
@@ -162,7 +175,7 @@ Public model card and README for `nvidia/personaplex-7b-v1` (Hugging Face, gated
 * speaker `1` is Alice, voice `af_heart`
 * speaker `2` is Frank, voice `am_michael`
 
-Speaker `3` is Bowen on `vibevoice`. `characters` maps Alice, Frank, Bowen, and Carter onto voice ids in more than one framework. `resolve_character(cast, "alice", "personaplex")` returns `personaplex.NATF2`. The kokoro-onnx synthesizer refuses a turn whose speaker framework is not `kokoro_onnx`.
+Speaker `3` is Bowen on `vibevoice.zh-Bowen_man`. `characters` maps Alice and Carter onto scanned VibeVoice references, and Frank and Carter onto the matching livevoice presets (`livevoice.en-Frank_man`, `livevoice.en-Carter_man`). Kokoro pack ids stay on speakers 1 and 2 only, because those packs are not in the scanned catalog. The kokoro-onnx synthesizer refuses a turn whose speaker framework is not `kokoro_onnx`.
 
 A map with no `schema_version` is the older shape (`engine`, `speakers`, `name`, `voice`, `lang`, `speed`). Keys that start with `_` are still ignored there. Kokoro frameworks keep speed 0.5–2.0. Any other framework accepts a finite speed greater than 0 and at most 4, because generated casts always wrote `speed`. That number is not a VibeVoice or PersonaPlex parameter.
 

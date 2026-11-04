@@ -1,36 +1,243 @@
 {
   "schema_version": "1.0.0",
-  "id": "genaid-voices-example",
-  "catalog_source": "naming-conventions",
-  "note": "Illustrative index. DarbotLM/genaid-voices was not readable here (the GitHub API returned 404), so paths follow the published layout: root *.wav VibeVoice reference prompts, _hf_vibevoice_samples/realtime_model/voices/streaming_model/**.pt, and Kokoro pack ids. Point GENAID_VOICES_DIR at a checkout of that library to resolve files. This catalog does not vendor weights.",
+  "id": "genaid-voices",
+  "catalog_source": "manifest:DarbotLM/genaid-voices@2f749142420cfeb4b4ee881ffa68f305ad79a96a",
+  "note": "Manifest of DarbotLM/genaid-voices@2f749142420cfeb4b4ee881ffa68f305ad79a96a (origin/main). 9 VibeVoice reference WAVs under _hf_vibevoice_samples/voices/. The 9 root *.wav files are the same LFS oids and are duplicates, not extra voices. 50 livevoice presets: 25 directly in streaming_model/ and 25 under experimental_voices/<lang>/. Top-level presets include de, en, fr, in, it, jp, kr, nl, pl, pt, and sp; experimental is the directory, not the language. example_output, text_examples, and realtime_model/vibevoice_tts_german.wav are not voices. No Kokoro packs are in this repo. size is the git lfs ls-files -s display size.",
   "library": {
     "env": "GENAID_VOICES_DIR"
   },
   "voices": [
-    "kokoro/af_heart.json",
-    "kokoro/am_adam.json",
-    "kokoro/am_michael.json",
-    "kokoro/bf_alice.json",
-    "kokoro/jf_alpha.json",
-    "kokoro/zf_xiaobei.json",
-    "kokoro/blend_heart_bella.json",
-    "kokoro_onnx/af_heart.json",
-    "kokoro_onnx/am_michael.json",
-    "kokoro_onnx/blend_heart_nicole.json",
     "vibevoice/en-Alice_woman.json",
+    "vibevoice/en-Carter_man.json",
     "vibevoice/en-Frank_man.json",
-    "vibevoice/en-Frank_man_bgm.json",
+    "vibevoice/en-Mary_woman_bgm.json",
+    "vibevoice/en-Maya_woman.json",
+    "vibevoice/in-Samuel_man.json",
+    "vibevoice/zh-Anchen_man_bgm.json",
     "vibevoice/zh-Bowen_man.json",
-    "livevoice/en-Carter_man.json",
+    "vibevoice/zh-Xinran_woman.json",
     "livevoice/de-Spk0_man.json",
-    "personaplex/NATF2.json",
-    "personaplex/NATM1.json"
+    "livevoice/de-Spk1_woman.json",
+    "livevoice/en-Carter_man.json",
+    "livevoice/en-Davis_man.json",
+    "livevoice/en-Emma_woman.json",
+    "livevoice/en-Frank_man.json",
+    "livevoice/en-Grace_woman.json",
+    "livevoice/en-Mike_man.json",
+    "livevoice/de-Spk2_woman.json",
+    "livevoice/de-Spk3_man.json",
+    "livevoice/de-Spk4_woman.json",
+    "livevoice/de-Spk5_man.json",
+    "livevoice/de-Spk6_man.json",
+    "livevoice/fr-Spk2_man.json",
+    "livevoice/fr-Spk3_woman.json",
+    "livevoice/fr-Spk4_woman.json",
+    "livevoice/fr-Spk5_man.json",
+    "livevoice/jp-Spk2_woman.json",
+    "livevoice/jp-Spk3_woman.json",
+    "livevoice/jp-Spk4_woman.json",
+    "livevoice/jp-Spk5_man.json",
+    "livevoice/kr-Spk2_woman.json",
+    "livevoice/kr-Spk3_man.json",
+    "livevoice/pl-Spk2_man.json",
+    "livevoice/pl-Spk3_woman.json",
+    "livevoice/pt-Spk2_woman.json",
+    "livevoice/pt-Spk3_man.json",
+    "livevoice/pt-Spk4_man.json",
+    "livevoice/pt-Spk5_woman.json",
+    "livevoice/sp-Spk2_woman.json",
+    "livevoice/sp-Spk3_man.json",
+    "livevoice/sp-Spk4_woman.json",
+    "livevoice/sp-Spk5_man.json",
+    "livevoice/fr-Spk0_man.json",
+    "livevoice/fr-Spk1_woman.json",
+    "livevoice/in-Samuel_man.json",
+    "livevoice/it-Spk0_woman.json",
+    "livevoice/it-Spk1_man.json",
+    "livevoice/jp-Spk0_man.json",
+    "livevoice/jp-Spk1_woman.json",
+    "livevoice/kr-Spk0_woman.json",
+    "livevoice/kr-Spk1_man.json",
+    "livevoice/nl-Spk0_man.json",
+    "livevoice/nl-Spk1_woman.json",
+    "livevoice/pl-Spk0_man.json",
+    "livevoice/pl-Spk1_woman.json",
+    "livevoice/pt-Spk0_woman.json",
+    "livevoice/pt-Spk1_man.json",
+    "livevoice/sp-Spk0_woman.json",
+    "livevoice/sp-Spk1_man.json"
   ],
-  "g2p": [
-    "g2p/misaki.en-us.json",
-    "g2p/misaki.en-gb.json",
-    "g2p/misaki.ja.json",
-    "g2p/misaki.zh.json",
-    "g2p/misaki.es.json"
+  "g2p": [],
+  "excluded": [
+    {
+      "path": "_hf_vibevoice_samples/example_output/VibeVoice-1.5B_output.wav",
+      "kind": "example_output",
+      "sha256": "f926070d8690d194cadf116811bc1e6c1480814e87c2860e6e2542c4f9649a96",
+      "size": "2.0 MB",
+      "note": "Rendered VibeVoice sample, not a reference voice."
+    },
+    {
+      "path": "_hf_vibevoice_samples/example_output/VibeVoice-1.5B_output_0.wav",
+      "kind": "example_output",
+      "sha256": "0ad9335f9904f66297c1fca7591bc127631726a9b373460014b3aff28fe79894",
+      "size": "1.9 MB",
+      "note": "Rendered VibeVoice sample, not a reference voice."
+    },
+    {
+      "path": "_hf_vibevoice_samples/example_output/VibeVoice-1.5B_output_1.wav",
+      "kind": "example_output",
+      "sha256": "ef99c9d227e5ae3dc36f61145715957246e8fffcc7f6edd6bebba78c83ad69cf",
+      "size": "1.4 MB",
+      "note": "Rendered VibeVoice sample, not a reference voice."
+    },
+    {
+      "path": "_hf_vibevoice_samples/example_output/VibeVoice-1.5B_pipeline_tts.wav",
+      "kind": "example_output",
+      "sha256": "fbf2362ac7ce51600206245d14a9c7431a220713070c5dc5a8cfed80ef0e6515",
+      "size": "115 KB",
+      "note": "Rendered VibeVoice sample, not a reference voice."
+    },
+    {
+      "path": "_hf_vibevoice_samples/example_output/VibeVoice-7B_output.wav",
+      "kind": "example_output",
+      "sha256": "b89c8d5968ca66ac988ab1b1f221930135d9e7d62f002c9360e470141b742f29",
+      "size": "2.1 MB",
+      "note": "Rendered VibeVoice sample, not a reference voice."
+    },
+    {
+      "path": "_hf_vibevoice_samples/example_output/VibeVoice-7B_output_0.wav",
+      "kind": "example_output",
+      "sha256": "cd8808b3757d9c1403c24d493f1a240461612a44499c612d50d335397fc36000",
+      "size": "2.3 MB",
+      "note": "Rendered VibeVoice sample, not a reference voice."
+    },
+    {
+      "path": "_hf_vibevoice_samples/example_output/VibeVoice-7B_output_1.wav",
+      "kind": "example_output",
+      "sha256": "191f48c39bc320a84260b06afb546fd8235444ff995c272215efd34e616ae877",
+      "size": "1.3 MB",
+      "note": "Rendered VibeVoice sample, not a reference voice."
+    },
+    {
+      "path": "_hf_vibevoice_samples/example_output/VibeVoice-7B_pipeline_tts.wav",
+      "kind": "example_output",
+      "sha256": "d4b7b1673c7444c4f91a91a47dbf656f26a7cabcfa6247d1d2a2abc620b41537",
+      "size": "141 KB",
+      "note": "Rendered VibeVoice sample, not a reference voice."
+    },
+    {
+      "path": "_hf_vibevoice_samples/example_output/vibevoice_acoustic_tokenizer_reconstructed.wav",
+      "kind": "example_output",
+      "sha256": "3f600a10e29deae9c0ee5b292cc96551249c8c6136686c7165befcd610535cc8",
+      "size": "896 KB",
+      "note": "Rendered VibeVoice sample, not a reference voice."
+    },
+    {
+      "path": "_hf_vibevoice_samples/example_output/vibevoice_output_1_1b5.wav",
+      "kind": "example_output",
+      "sha256": "f4a5f6e9fdeac94237ff62bc6019cb8af54ea7bc86a10c9b380de3d68db09ea5",
+      "size": "1.6 MB",
+      "note": "Rendered VibeVoice sample, not a reference voice."
+    },
+    {
+      "path": "_hf_vibevoice_samples/example_output/vibevoice_output_1_7b.wav",
+      "kind": "example_output",
+      "sha256": "dfddc301f50fdec8b1a24e588a1e2b8302f26861172e6d58eaa4a43ab979abdc",
+      "size": "1.6 MB",
+      "note": "Rendered VibeVoice sample, not a reference voice."
+    },
+    {
+      "path": "_hf_vibevoice_samples/example_output/vibevoice_output_1b5.wav",
+      "kind": "example_output",
+      "sha256": "f253b067655ccec41e0f47855af82f2f4cb1c7933eb146990036cb2511e0ce62",
+      "size": "2.0 MB",
+      "note": "Rendered VibeVoice sample, not a reference voice."
+    },
+    {
+      "path": "_hf_vibevoice_samples/example_output/vibevoice_output_7b.wav",
+      "kind": "example_output",
+      "sha256": "b33871a7bd7faa2177364e8ba071e3e5f7f8f68f354d49f680370d4322ed6b6b",
+      "size": "2.1 MB",
+      "note": "Rendered VibeVoice sample, not a reference voice."
+    },
+    {
+      "path": "_hf_vibevoice_samples/realtime_model/vibevoice_tts_german.wav",
+      "kind": "rendered_sample",
+      "sha256": "b04b6277617c18726b2775fc018eb022f40a51709d2f59e4d8d560d5d0257a52",
+      "size": "363 KB",
+      "note": "Rendered German realtime sample, not a voice preset."
+    },
+    {
+      "path": "_hf_vibevoice_samples/realtime_model/text_examples/1p_abs.txt",
+      "kind": "text_example",
+      "bytes": 1068,
+      "note": "Script text, not a voice."
+    },
+    {
+      "path": "_hf_vibevoice_samples/realtime_model/text_examples/1p_vibevoice.txt",
+      "kind": "text_example",
+      "bytes": 908,
+      "note": "Script text, not a voice."
+    },
+    {
+      "path": "_hf_vibevoice_samples/text_examples/1p_Ch2EN.txt",
+      "kind": "text_example",
+      "bytes": 1835,
+      "note": "Script text, not a voice."
+    },
+    {
+      "path": "_hf_vibevoice_samples/text_examples/1p_abs.txt",
+      "kind": "text_example",
+      "bytes": 1091,
+      "note": "Script text, not a voice."
+    },
+    {
+      "path": "_hf_vibevoice_samples/text_examples/2p_goat.txt",
+      "kind": "text_example",
+      "bytes": 3554,
+      "note": "Script text, not a voice."
+    },
+    {
+      "path": "_hf_vibevoice_samples/text_examples/2p_music.txt",
+      "kind": "text_example",
+      "bytes": 1021,
+      "note": "Script text, not a voice."
+    },
+    {
+      "path": "_hf_vibevoice_samples/text_examples/2p_short.txt",
+      "kind": "text_example",
+      "bytes": 238,
+      "note": "Script text, not a voice."
+    },
+    {
+      "path": "_hf_vibevoice_samples/text_examples/2p_yayi.txt",
+      "kind": "text_example",
+      "bytes": 238,
+      "note": "Script text, not a voice."
+    },
+    {
+      "path": "_hf_vibevoice_samples/text_examples/3p_gpt5.txt",
+      "kind": "text_example",
+      "bytes": 13343,
+      "note": "Script text, not a voice."
+    },
+    {
+      "path": "_hf_vibevoice_samples/text_examples/4p_climate_100min.txt",
+      "kind": "text_example",
+      "bytes": 106518,
+      "note": "Script text, not a voice."
+    },
+    {
+      "path": "_hf_vibevoice_samples/text_examples/4p_climate_45min.txt",
+      "kind": "text_example",
+      "bytes": 59554,
+      "note": "Script text, not a voice."
+    },
+    {
+      "path": "_hf_vibevoice_samples/text_examples/test.txt",
+      "kind": "text_example",
+      "bytes": 411,
+      "note": "Script text, not a voice."
+    }
   ]
 }

@@ -19,6 +19,7 @@ from gen_audio.voices import (
     library_root,
     list_frameworks,
     load_catalog,
+    load_g2p,
     load_voice,
     missing_assets,
     mock_offline_request,
@@ -58,22 +59,44 @@ def _voice(**overrides) -> dict:
     return payload
 
 
-def test_example_catalog_covers_every_builtin_framework():
+def test_example_catalog_is_the_genaid_voices_manifest():
     catalog = load_catalog(CATALOG)
-    assert catalog.catalog_source == "naming-conventions"
+    assert catalog.catalog_source == (
+        "manifest:DarbotLM/genaid-voices@2f749142420cfeb4b4ee881ffa68f305ad79a96a"
+    )
     assert catalog.library_env == "GENAID_VOICES_DIR"
-    frameworks = {voice.framework for voice in catalog.voices}
-    builtin = {spec.id for spec in list_frameworks() if spec.kind != "g2p"}
-    assert frameworks == builtin
-    assert {item.id for item in catalog.g2p} >= {"misaki.en-us", "misaki.en-gb", "misaki.ja", "misaki.zh", "misaki.es"}
-    heart = catalog.voice("kokoro_onnx.af_heart")
-    assert heart.params["voice_id"] == "af_heart"
-    assert heart.g2p == "misaki.en-us"
-    assert catalog.g2p_config("misaki.en-us").british is False
-    assert catalog.g2p_config("misaki.en-gb").variant == "en-gb"
-    de = catalog.voice("livevoice.de-Spk0_man")
-    assert de.params["experimental"] is True
-    assert "experimental_voices/" in de.assets[0].path
+    assert catalog.g2p == ()
+    vibe = [voice for voice in catalog.voices if voice.framework == "vibevoice"]
+    live = [voice for voice in catalog.voices if voice.framework == "livevoice"]
+    assert len(vibe) == 9
+    assert len(live) == 50
+    assert {voice.framework for voice in catalog.voices} == {"vibevoice", "livevoice"}
+    alice = catalog.voice("vibevoice.en-Alice_woman")
+    assert alice.assets[0].path == "_hf_vibevoice_samples/voices/en-Alice_woman.wav"
+    assert alice.assets[0].sha256 == "c27ae47421436287a6bd2c3062de2dc2a2855b78c0bb626d472202c359704203"
+    assert alice.assets[0].size == "297 KB"
+    assert alice.duplicates[0].path == "en-Alice_woman.wav"
+    assert alice.duplicates[0].sha256 == alice.assets[0].sha256
+    mary = catalog.voice("vibevoice.en-Mary_woman_bgm")
+    assert mary.params["background_music"] is True
+    assert mary.language == "en"
+    samuel = catalog.voice("vibevoice.in-Samuel_man")
+    assert samuel.language == "in"
+    assert catalog.voice("livevoice.in-Samuel_man").params["experimental"] is False
+    de0 = catalog.voice("livevoice.de-Spk0_man")
+    assert de0.params["experimental"] is False
+    assert "experimental_voices/" not in de0.assets[0].path
+    de2 = catalog.voice("livevoice.de-Spk2_woman")
+    assert de2.params["experimental"] is True
+    assert de2.assets[0].path.endswith("experimental_voices/de/de-Spk2_woman.pt")
+    assert sum(item.params["experimental"] for item in live) == 25
+    kinds = {}
+    for item in catalog.excluded:
+        kinds[item.kind] = kinds.get(item.kind, 0) + 1
+    assert kinds == {"example_output": 13, "text_example": 12, "rendered_sample": 1}
+    assert "kokoro" not in {voice.framework for voice in catalog.voices}
+    load_voice(ROOT / "voices" / "kokoro_onnx" / "af_heart.json")
+    assert load_g2p(ROOT / "voices" / "g2p" / "misaki.en-us.json").british is False
 
 
 def test_mixed_cast_keeps_alice_and_frank_and_resolves_other_frameworks():
@@ -81,14 +104,16 @@ def test_mixed_cast_keeps_alice_and_frank_and_resolves_other_frameworks():
     catalog = load_catalog(CATALOG)
     assert cast.engine == "kokoro_onnx"
     assert cast.speakers["1"].voice == "af_heart"
+    assert cast.speakers["1"].framework == "kokoro_onnx"
     assert cast.speakers["2"].name == "Frank"
+    assert cast.speakers["2"].voice == "am_michael"
     assert cast.speakers["3"].framework == "vibevoice"
-    assert resolve_character(cast, "alice", "kokoro") == "kokoro.af_heart"
-    assert resolve_character(cast, "alice", "personaplex") == "personaplex.NATF2"
+    assert resolve_character(cast, "alice", "vibevoice") == "vibevoice.en-Alice_woman"
+    assert resolve_character(cast, "frank", "livevoice") == "livevoice.en-Frank_man"
     assert resolve_character(cast, "carter", "livevoice") == "livevoice.en-Carter_man"
     validate_cast(cast, catalog)
     with pytest.raises(KeyError, match="known frameworks"):
-        resolve_character(cast, "bowen", "kokoro_onnx")
+        resolve_character(cast, "alice", "kokoro_onnx")
 
 
 def test_kokoro_synth_refuses_a_vibevoice_speaker_in_the_mixed_cast():
@@ -278,7 +303,7 @@ def test_library_root_uses_the_env_var_and_rejects_escape(tmp_path: Path, monkey
     assert library_root() == tmp_path.resolve()
     catalog = load_catalog(CATALOG)
     missing = missing_assets(catalog, tmp_path)
-    assert "en-Alice_woman.wav" in missing
+    assert "_hf_vibevoice_samples/voices/en-Alice_woman.wav" in missing
     monkeypatch.delenv("GENAID_VOICES_DIR", raising=False)
     assert library_root() is None
     outside = tmp_path / "outside"
@@ -300,9 +325,10 @@ def test_cli_lists_validates_and_checks_the_cast(capsys):
     assert "personaplex" in text and "schema" in text
     assert main(["list", "--framework", "livevoice"]) == 0
     rows = json.loads(capsys.readouterr().out)
-    assert {row["id"] for row in rows} == {"livevoice.en-Carter_man", "livevoice.de-Spk0_man"}
+    assert len(rows) == 50
+    assert {"livevoice.en-Carter_man", "livevoice.de-Spk0_man"} <= {row["id"] for row in rows}
     assert main(["validate", str(CATALOG)]) == 0
-    assert "18 voices" in capsys.readouterr().out
+    assert "59 voices, 0 g2p" in capsys.readouterr().out
     assert main(["validate-cast", str(CAST), "--catalog", str(CATALOG)]) == 0
     assert "speakers=3" in capsys.readouterr().out
     assert main(["validate", str(CATALOG), "--require-assets"]) == 1

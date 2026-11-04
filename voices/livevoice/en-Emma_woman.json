@@ -1,0 +1,37 @@
+{
+  "schema_version": "1.0.0",
+  "id": "livevoice.en-Emma_woman",
+  "display_name": "Emma",
+  "language": "en",
+  "gender": "female",
+  "framework": "livevoice",
+  "assets": [
+    {
+      "role": "voice_embedding",
+      "path": "_hf_vibevoice_samples/realtime_model/voices/streaming_model/en-Emma_woman.pt",
+      "format": "pt",
+      "sha256": "75b15c481e0d848991f1789620aa9929c583ec2c5f701f8152362cf74498bbf8",
+      "size": "3.3 MB"
+    }
+  ],
+  "source": {
+    "name": "DarbotLM/genaid-voices",
+    "url": "https://github.com/DarbotLM/genaid-voices",
+    "license": "MIT",
+    "attribution": "Streaming preset en-Emma_woman.pt from DarbotLM/genaid-voices@2f749142420c."
+  },
+  "tags": [
+    "en",
+    "streaming",
+    "genaid-voices"
+  ],
+  "params": {
+    "model_id": "microsoft/VibeVoice-Realtime-0.5B",
+    "model_size": "0.5B",
+    "file_stem": "en-Emma_woman",
+    "preset_kind": "kv_cache",
+    "single_speaker": true,
+    "experimental": false,
+    "sample_rate": 24000
+  }
+}

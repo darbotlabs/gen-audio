@@ -1,0 +1,37 @@
+{
+  "schema_version": "1.0.0",
+  "id": "livevoice.nl-Spk0_man",
+  "display_name": "Spk0",
+  "language": "nl",
+  "gender": "male",
+  "framework": "livevoice",
+  "assets": [
+    {
+      "role": "voice_embedding",
+      "path": "_hf_vibevoice_samples/realtime_model/voices/streaming_model/nl-Spk0_man.pt",
+      "format": "pt",
+      "sha256": "70e9221ed11737e2b32af3ccfebb673bd1122f9f9ea8d357efd91e9f3b8e8f72",
+      "size": "3.7 MB"
+    }
+  ],
+  "source": {
+    "name": "DarbotLM/genaid-voices",
+    "url": "https://github.com/DarbotLM/genaid-voices",
+    "license": "MIT",
+    "attribution": "Streaming preset nl-Spk0_man.pt from DarbotLM/genaid-voices@2f749142420c."
+  },
+  "tags": [
+    "nl",
+    "streaming",
+    "genaid-voices"
+  ],
+  "params": {
+    "model_id": "microsoft/VibeVoice-Realtime-0.5B",
+    "model_size": "0.5B",
+    "file_stem": "nl-Spk0_man",
+    "preset_kind": "kv_cache",
+    "single_speaker": true,
+    "experimental": false,
+    "sample_rate": 24000
+  }
+}

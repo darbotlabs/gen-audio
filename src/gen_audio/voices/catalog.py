@@ -14,8 +14,25 @@ from gen_audio.voices.model import SCHEMA_VERSION, G2pConfig, VoiceDescriptor, l
 LIBRARY_ENV = "GENAID_VOICES_DIR"
 _SOURCES = {"naming-conventions", "library-scan", "handwritten"}
 _CATALOG_ID = re.compile(r"^[a-z][a-z0-9_-]{0,63}\Z")
-_CATALOG_KEYS = {"schema_version", "id", "catalog_source", "note", "library", "voices", "g2p"}
+_MANIFEST_SOURCE = re.compile(r"^manifest:[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+@[0-9a-f]{7,40}\Z")
+_CATALOG_KEYS = {"schema_version", "id", "catalog_source", "note", "library", "voices", "g2p", "excluded"}
 _LIBRARY_KEYS = {"env", "path"}
+_EXCLUDED_KEYS = {"path", "kind", "sha256", "size", "bytes", "note"}
+_EXCLUDED_KINDS = {"example_output", "text_example", "rendered_sample"}
+_SHA256_RE = re.compile(r"^[0-9a-f]{64}\Z")
+_LFS_SIZE_RE = re.compile(r"^[0-9]+(?:\.[0-9]+)? (?:KB|MB)\Z")
+
+
+@dataclass(frozen=True)
+class ExcludedSample:
+    """A library file that is not a voice."""
+
+    path: str
+    kind: str
+    sha256: str | None = None
+    size: str | None = None
+    byte_count: int | None = None
+    note: str | None = None
 
 
 @dataclass(frozen=True)
@@ -29,6 +46,7 @@ class Catalog:
     voices: tuple[VoiceDescriptor, ...]
     g2p: tuple[G2pConfig, ...]
     path: Path | None = None
+    excluded: tuple[ExcludedSample, ...] = ()
 
     def voice(self, voice_id: str) -> VoiceDescriptor:
         for item in self.voices:
@@ -56,10 +74,10 @@ def load_catalog(path: Path | str) -> Catalog:
     catalog_id = require_str(payload, "id", label="catalog", min_len=1, max_len=64)
     if _CATALOG_ID.fullmatch(catalog_id) is None:
         raise VoiceError("catalog id must be a lowercase slug")
-    origin = require_str(payload, "catalog_source", label="catalog", min_len=8, max_len=32)
-    if origin not in _SOURCES:
-        raise VoiceError("catalog_source must be naming-conventions, library-scan, or handwritten")
-    note = optional_str(payload, "note", label="catalog", min_len=1, max_len=800)
+    origin = require_str(payload, "catalog_source", label="catalog", min_len=8, max_len=120)
+    if origin not in _SOURCES and _MANIFEST_SOURCE.fullmatch(origin) is None:
+        raise VoiceError("catalog_source must name a manifest repo@commit or a handwritten source")
+    note = optional_str(payload, "note", label="catalog", min_len=1, max_len=1600)
     library = require_object(payload.get("library"), "catalog library")
     reject_unknown(library, _LIBRARY_KEYS, "catalog library")
     env = require_str(library, "env", label="catalog library", min_len=8, max_len=32)
@@ -88,6 +106,7 @@ def load_catalog(path: Path | str) -> Catalog:
         voices=voices,
         g2p=g2p,
         path=source,
+        excluded=_excluded(payload.get("excluded")),
     )
 
 
@@ -162,6 +181,40 @@ def _load_entries(catalog_path: Path, value, loader, label: str) -> list:
             raise VoiceError(f"catalog entry not found: {relative}")
         loaded.append(loader(candidate))
     return loaded
+
+
+def _excluded(value: object) -> tuple[ExcludedSample, ...]:
+    if value is None:
+        return ()
+    if not isinstance(value, list) or len(value) > 64:
+        raise VoiceError("catalog excluded must be an array of at most 64")
+    found: list[ExcludedSample] = []
+    seen: set[str] = set()
+    for index, raw in enumerate(value):
+        item = require_object(raw, f"excluded {index}")
+        reject_unknown(item, _EXCLUDED_KEYS, f"excluded {index}")
+        rel = check_rel_path(
+            require_str(item, "path", label=f"excluded {index}", min_len=1, max_len=220),
+            label=f"excluded {index} path",
+        )
+        kind = require_str(item, "kind", label=f"excluded {index}", min_len=8, max_len=20)
+        if kind not in _EXCLUDED_KINDS:
+            raise VoiceError(f"excluded {index} kind is not a sample kind")
+        if rel in seen:
+            raise VoiceError(f"catalog excluded repeats {rel}")
+        seen.add(rel)
+        sha256 = optional_str(item, "sha256", label=f"excluded {index}", min_len=64, max_len=64)
+        if sha256 is not None and _SHA256_RE.fullmatch(sha256) is None:
+            raise VoiceError(f"excluded {index} sha256 must be 64 lowercase hex characters")
+        size = optional_str(item, "size", label=f"excluded {index}", min_len=4, max_len=16)
+        if size is not None and _LFS_SIZE_RE.fullmatch(size) is None:
+            raise VoiceError(f"excluded {index} size must be a git lfs display size")
+        byte_count = item.get("bytes")
+        if byte_count is not None and (isinstance(byte_count, bool) or not isinstance(byte_count, int) or byte_count < 0):
+            raise VoiceError(f"excluded {index} bytes must be a non-negative integer")
+        note = optional_str(item, "note", label=f"excluded {index}", min_len=1, max_len=200)
+        found.append(ExcludedSample(rel, kind, sha256, size, byte_count, note))
+    return tuple(found)
 
 
 def _unique(items, label: str) -> None:

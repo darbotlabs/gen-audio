@@ -2,10 +2,10 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://darbotlabs.dev/gen-audio/voices/frameworks/vibevoice.v1.schema.json",
   "title": "VibeVoiceParams",
-  "description": "Long-form VibeVoice voice. file_stem matches <lang>-<Name>_<gender>[_bgm].wav. model_size 1.5B is microsoft/VibeVoice-1.5B. model_size 7B is microsoft/VibeVoice-Large (the attached checkpoint: Qwen2.5-7B, 20 DDPM inference steps, 24 kHz). At most 4 speakers. cfg_scale is an inference knob and is not a field of that checkpoint config.",
+  "description": "Long-form VibeVoice reference prompt. file_stem matches <lang>-<Name>_<gender>[_bgm].wav. Languages in DarbotLM/genaid-voices are en, zh, and in (in-Samuel_man), not only en and zh. _bgm is a real suffix (en-Mary_woman_bgm, zh-Anchen_man_bgm). model_size is optional because a reference WAV is not pinned to the 1.5B or 7B checkpoint. cfg_scale and diffusion_steps are inference knobs, not file properties. At most 4 speakers.",
   "type": "object",
   "additionalProperties": false,
-  "required": ["model_size", "model_id", "file_stem", "cfg_scale", "diffusion_steps", "sample_rate", "max_speakers", "background_music"],
+  "required": ["file_stem", "sample_rate", "max_speakers", "background_music"],
   "properties": {
     "model_size": { "enum": ["1.5B", "7B"] },
     "model_id": { "enum": ["microsoft/VibeVoice-1.5B", "microsoft/VibeVoice-Large"] },

@@ -1,0 +1,37 @@
+{
+  "schema_version": "1.0.0",
+  "id": "livevoice.pl-Spk1_woman",
+  "display_name": "Spk1",
+  "language": "pl",
+  "gender": "female",
+  "framework": "livevoice",
+  "assets": [
+    {
+      "role": "voice_embedding",
+      "path": "_hf_vibevoice_samples/realtime_model/voices/streaming_model/pl-Spk1_woman.pt",
+      "format": "pt",
+      "sha256": "4a30782a49635f0e60247529b4557cd39713fd158ce2f99bea2ac506bffe7427",
+      "size": "5.0 MB"
+    }
+  ],
+  "source": {
+    "name": "DarbotLM/genaid-voices",
+    "url": "https://github.com/DarbotLM/genaid-voices",
+    "license": "MIT",
+    "attribution": "Streaming preset pl-Spk1_woman.pt from DarbotLM/genaid-voices@2f749142420c."
+  },
+  "tags": [
+    "pl",
+    "streaming",
+    "genaid-voices"
+  ],
+  "params": {
+    "model_id": "microsoft/VibeVoice-Realtime-0.5B",
+    "model_size": "0.5B",
+    "file_stem": "pl-Spk1_woman",
+    "preset_kind": "kv_cache",
+    "single_speaker": true,
+    "experimental": false,
+    "sample_rate": 24000
+  }
+}

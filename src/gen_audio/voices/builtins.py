@@ -50,7 +50,6 @@ _KOKORO_LANG = {
 _GENDER_LETTER = {"f": "female", "m": "male"}
 _STEM_GENDER = {"woman": "female", "man": "male", "neutral": "neutral"}
 _VIBEVOICE_MODELS = {"1.5B": "microsoft/VibeVoice-1.5B", "7B": "microsoft/VibeVoice-Large"}
-_LIVE_EXPERIMENTAL = {"de", "fr", "it", "jp", "kr", "nl", "pl", "pt", "sp"}
 _G2P_KEYS = {
     "schema_version",
     "id",
@@ -194,12 +193,6 @@ def validate_vibevoice_params(params: dict, *, language: str, gender: str, asset
         "background_music",
     }
     reject_unknown(body, allowed, "vibevoice params")
-    if language not in {"en", "zh"}:
-        raise VoiceError("vibevoice language must be en or zh")
-    model_size = require_str(body, "model_size", label="vibevoice params", min_len=2, max_len=8)
-    model_id = require_str(body, "model_id", label="vibevoice params", min_len=8, max_len=80)
-    if _VIBEVOICE_MODELS.get(model_size) != model_id:
-        raise VoiceError("vibevoice model_size and model_id do not match")
     stem = require_str(body, "file_stem", label="vibevoice params", min_len=8, max_len=80)
     match = _STEM_RE.fullmatch(stem)
     if match is None:
@@ -212,21 +205,29 @@ def validate_vibevoice_params(params: dict, *, language: str, gender: str, asset
     background = require_bool(body, "background_music", label="vibevoice params")
     if background != bool(match.group("bgm")):
         raise VoiceError("vibevoice background_music must follow the _bgm suffix")
-    cfg = require_number(body, "cfg_scale", label="vibevoice params", minimum=0.5, maximum=5.0)
-    steps = require_int(body, "diffusion_steps", label="vibevoice params", minimum=1, maximum=100)
     rate = require_int(body, "sample_rate", label="vibevoice params", minimum=24000, maximum=24000)
     speakers = require_int(body, "max_speakers", label="vibevoice params", minimum=4, maximum=4)
     _one_asset(assets, role="reference_wav", fmt="wav", suffix=f"{stem}.wav", label="vibevoice")
-    return {
-        "model_size": model_size,
-        "model_id": model_id,
+    normalized: dict[str, Any] = {
         "file_stem": stem,
-        "cfg_scale": cfg,
-        "diffusion_steps": steps,
         "sample_rate": rate,
         "max_speakers": speakers,
         "background_music": background,
     }
+    if "model_size" in body or "model_id" in body:
+        model_size = require_str(body, "model_size", label="vibevoice params", min_len=2, max_len=8)
+        model_id = require_str(body, "model_id", label="vibevoice params", min_len=8, max_len=80)
+        if _VIBEVOICE_MODELS.get(model_size) != model_id:
+            raise VoiceError("vibevoice model_size and model_id do not match")
+        normalized["model_size"] = model_size
+        normalized["model_id"] = model_id
+    if "cfg_scale" in body:
+        normalized["cfg_scale"] = require_number(body, "cfg_scale", label="vibevoice params", minimum=0.5, maximum=5.0)
+    if "diffusion_steps" in body:
+        normalized["diffusion_steps"] = require_int(
+            body, "diffusion_steps", label="vibevoice params", minimum=1, maximum=100
+        )
+    return normalized
 
 
 def validate_livevoice_params(params: dict, *, language: str, gender: str, assets: tuple[AssetRef, ...]) -> dict:
@@ -262,19 +263,11 @@ def validate_livevoice_params(params: dict, *, language: str, gender: str, asset
     if single is not True:
         raise VoiceError("livevoice is a single-speaker streaming preset")
     experimental = require_bool(body, "experimental", label="livevoice params")
-    if language == "en":
-        if experimental:
-            raise VoiceError("livevoice English presets are the built-in streaming voices, not experimental")
-    elif language in _LIVE_EXPERIMENTAL:
-        if not experimental:
-            raise VoiceError(f"livevoice language {language} is an experimental preset")
-    else:
-        raise VoiceError(f"livevoice language {language} is not a known realtime preset language")
     rate = require_int(body, "sample_rate", label="livevoice params", minimum=24000, maximum=24000)
     asset = _one_asset(assets, role="voice_embedding", fmt="pt", suffix=f"{stem}.pt", label="livevoice")
-    experimental_path = "experimental_voices/" in asset.path
+    experimental_path = "/experimental_voices/" in asset.path.replace("\\", "/")
     if experimental != experimental_path:
-        raise VoiceError("livevoice experimental presets live under experimental_voices/")
+        raise VoiceError("livevoice experimental must follow experimental_voices/ in the asset path")
     return {
         "model_id": model_id,
         "model_size": model_size,

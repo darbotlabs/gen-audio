@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://darbotlabs.dev/gen-audio/voices/frameworks/livevoice.v1.schema.json",
   "title": "LiveVoiceParams",
-  "description": "VibeVoice-Realtime 0.5B voice preset. file_stem matches <lang>-<Name>_<gender>.pt (en-Carter_man, de-Spk0_man). preset_kind kv_cache is the serialized prefilled prompt, not a reference WAV. single_speaker is required. experimental is true for the optional multilingual presets (de, fr, it, jp, kr, nl, pl, pt, sp). The published realtime card is English-first; other languages are the experimental presets.",
+  "description": "VibeVoice-Realtime 0.5B voice preset. file_stem matches <lang>-<Name>_<gender>.pt. Language codes in the library are de, en, fr, in, it, jp, kr, nl, pl, pt, and sp (jp, sp, kr, and in are file codes, not BCP-47). experimental is true only when the file is under experimental_voices/<lang>/. Top-level streaming_model presets are not experimental, including the non-English ones (de-Spk0_man, jp-Spk0_man, sp-Spk0_woman, kr-Spk0_woman, in-Samuel_man). preset_kind kv_cache is the serialized prefilled prompt, not a reference WAV. single_speaker is required.",
   "type": "object",
   "additionalProperties": false,
   "required": ["model_id", "model_size", "file_stem", "preset_kind", "single_speaker", "experimental", "sample_rate"],

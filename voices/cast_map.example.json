@@ -1,7 +1,7 @@
 {
   "schema_version": "1.0.0",
   "id": "example-mixed",
-  "note": "Sample cast. Speakers 1 and 2 stay Alice af_heart and Frank am_michael on kokoro_onnx, which the harness and the sample script already read. Speaker 3 is Bowen on VibeVoice. characters maps the same people onto other frameworks. This file is not audio.",
+  "note": "Speakers 1 and 2 stay Alice af_heart and Frank am_michael on kokoro_onnx. Those Kokoro packs are not in DarbotLM/genaid-voices. Speaker 3 is Bowen on the scanned VibeVoice reference zh-Bowen_man.wav. characters points at voices that are in the manifest catalog. This file is not audio.",
   "engine": "kokoro_onnx",
   "default_lang": "en-us",
   "default_speed": 1.0,
@@ -9,19 +9,14 @@
     "alice": {
       "display_name": "Alice",
       "voices": {
-        "kokoro": "kokoro.af_heart",
-        "kokoro_onnx": "kokoro_onnx.af_heart",
-        "vibevoice": "vibevoice.en-Alice_woman",
-        "personaplex": "personaplex.NATF2"
+        "vibevoice": "vibevoice.en-Alice_woman"
       }
     },
     "frank": {
       "display_name": "Frank",
       "voices": {
-        "kokoro": "kokoro.am_michael",
-        "kokoro_onnx": "kokoro_onnx.am_michael",
         "vibevoice": "vibevoice.en-Frank_man",
-        "personaplex": "personaplex.NATM1"
+        "livevoice": "livevoice.en-Frank_man"
       }
     },
     "bowen": {
@@ -33,6 +28,7 @@
     "carter": {
       "display_name": "Carter",
       "voices": {
+        "vibevoice": "vibevoice.en-Carter_man",
         "livevoice": "livevoice.en-Carter_man"
       }
     }
@@ -42,15 +38,13 @@
       "name": "Alice",
       "voice": "af_heart",
       "character": "alice",
-      "framework": "kokoro_onnx",
-      "voice_id": "kokoro_onnx.af_heart"
+      "framework": "kokoro_onnx"
     },
     "2": {
       "name": "Frank",
       "voice": "am_michael",
       "character": "frank",
-      "framework": "kokoro_onnx",
-      "voice_id": "kokoro_onnx.am_michael"
+      "framework": "kokoro_onnx"
     },
     "3": {
       "name": "Bowen",

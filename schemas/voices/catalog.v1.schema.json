@@ -9,8 +9,14 @@
   "properties": {
     "schema_version": { "const": "1.0.0" },
     "id": { "type": "string", "pattern": "^[a-z][a-z0-9_-]{0,63}$" },
-    "catalog_source": { "enum": ["naming-conventions", "library-scan", "handwritten"] },
-    "note": { "type": "string", "minLength": 1, "maxLength": 800 },
+    "catalog_source": {
+      "type": "string",
+      "minLength": 8,
+      "maxLength": 120,
+      "pattern": "^(naming-conventions|library-scan|handwritten|manifest:[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+@[0-9a-f]{7,40})$",
+      "description": "handwritten, naming-conventions, library-scan, or manifest:owner/repo@commit from a verified file listing."
+    },
+    "note": { "type": "string", "minLength": 1, "maxLength": 1600 },
     "library": {
       "type": "object",
       "additionalProperties": false,
@@ -35,6 +41,12 @@
       "type": "array",
       "maxItems": 64,
       "items": { "$ref": "#/$defs/rel_json" }
+    },
+    "excluded": {
+      "type": "array",
+      "maxItems": 64,
+      "description": "Library files that are not voices: rendered example_output WAVs, text scripts, and other samples.",
+      "items": { "$ref": "#/$defs/excluded" }
     }
   },
   "$defs": {
@@ -43,6 +55,19 @@
       "minLength": 6,
       "maxLength": 180,
       "pattern": "^[A-Za-z0-9_][A-Za-z0-9_./+-]*\\.json$"
+    },
+    "excluded": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "kind"],
+      "properties": {
+        "path": { "type": "string", "minLength": 1, "maxLength": 220 },
+        "kind": { "enum": ["example_output", "text_example", "rendered_sample"] },
+        "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+        "size": { "type": "string", "pattern": "^[0-9]+(\\.[0-9]+)? (KB|MB)$" },
+        "bytes": { "type": "integer", "minimum": 0, "description": "Exact git ls-tree size for a non-LFS text file." },
+        "note": { "type": "string", "minLength": 1, "maxLength": 200 }
+      }
     }
   }
 }

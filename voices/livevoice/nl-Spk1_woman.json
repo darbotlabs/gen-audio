@@ -1,0 +1,37 @@
+{
+  "schema_version": "1.0.0",
+  "id": "livevoice.nl-Spk1_woman",
+  "display_name": "Spk1",
+  "language": "nl",
+  "gender": "female",
+  "framework": "livevoice",
+  "assets": [
+    {
+      "role": "voice_embedding",
+      "path": "_hf_vibevoice_samples/realtime_model/voices/streaming_model/nl-Spk1_woman.pt",
+      "format": "pt",
+      "sha256": "76bfd3c13bb9d61760f6146c4eadc032e9d19ddecd4eed6832bc323a8cb5e8c5",
+      "size": "5.1 MB"
+    }
+  ],
+  "source": {
+    "name": "DarbotLM/genaid-voices",
+    "url": "https://github.com/DarbotLM/genaid-voices",
+    "license": "MIT",
+    "attribution": "Streaming preset nl-Spk1_woman.pt from DarbotLM/genaid-voices@2f749142420c."
+  },
+  "tags": [
+    "nl",
+    "streaming",
+    "genaid-voices"
+  ],
+  "params": {
+    "model_id": "microsoft/VibeVoice-Realtime-0.5B",
+    "model_size": "0.5B",
+    "file_stem": "nl-Spk1_woman",
+    "preset_kind": "kv_cache",
+    "single_speaker": true,
+    "experimental": false,
+    "sample_rate": 24000
+  }
+}

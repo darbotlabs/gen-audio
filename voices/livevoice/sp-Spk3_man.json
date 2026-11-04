@@ -1,0 +1,38 @@
+{
+  "schema_version": "1.0.0",
+  "id": "livevoice.sp-Spk3_man",
+  "display_name": "Spk3",
+  "language": "sp",
+  "gender": "male",
+  "framework": "livevoice",
+  "assets": [
+    {
+      "role": "voice_embedding",
+      "path": "_hf_vibevoice_samples/realtime_model/voices/streaming_model/experimental_voices/sp/sp-Spk3_man.pt",
+      "format": "pt",
+      "sha256": "3275ca5b5dcd11c3ccd1c613e4e70004ee5c92ee293dc6476abae07fd79a72fd",
+      "size": "4.1 MB"
+    }
+  ],
+  "source": {
+    "name": "DarbotLM/genaid-voices",
+    "url": "https://github.com/DarbotLM/genaid-voices",
+    "license": "MIT",
+    "attribution": "Streaming preset sp-Spk3_man.pt from DarbotLM/genaid-voices@2f749142420c."
+  },
+  "tags": [
+    "sp",
+    "streaming",
+    "genaid-voices",
+    "experimental"
+  ],
+  "params": {
+    "model_id": "microsoft/VibeVoice-Realtime-0.5B",
+    "model_size": "0.5B",
+    "file_stem": "sp-Spk3_man",
+    "preset_kind": "kv_cache",
+    "single_speaker": true,
+    "experimental": true,
+    "sample_rate": 24000
+  }
+}

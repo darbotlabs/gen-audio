@@ -256,10 +256,7 @@ pub fn validate_catalog_json(value: &Value) -> Result<CatalogIndex, String> {
     if catalog.schema_version != "1.0.0" || catalog.library.env != "GENAID_VOICES_DIR" {
         return Err("catalog must be schema 1.0.0 and use GENAID_VOICES_DIR".into());
     }
-    if !matches!(
-        catalog.catalog_source.as_str(),
-        "naming-conventions" | "library-scan" | "handwritten"
-    ) {
+    if !catalog_source_ok(&catalog.catalog_source) {
         return Err("catalog_source is unknown".into());
     }
     if catalog.voices.is_empty() {
@@ -416,18 +413,17 @@ fn validate_vibevoice(voice: &VoiceDescriptor) -> Result<(), String> {
     if bool_param(voice, "background_music")? != bgm {
         return Err("vibevoice background_music must follow _bgm".into());
     }
-    let size = text(voice, "model_size")?;
-    let model = text(voice, "model_id")?;
-    let expected = match size {
-        "1.5B" => "microsoft/VibeVoice-1.5B",
-        "7B" => "microsoft/VibeVoice-Large",
-        _ => return Err("vibevoice model_size must be 1.5B or 7B".into()),
-    };
-    if model != expected {
-        return Err("vibevoice model_id does not match model_size".into());
-    }
-    if !matches!(voice.language.as_str(), "en" | "zh") {
-        return Err("vibevoice language must be en or zh".into());
+    if voice.params.contains_key("model_size") || voice.params.contains_key("model_id") {
+        let size = text(voice, "model_size")?;
+        let model = text(voice, "model_id")?;
+        let expected = match size {
+            "1.5B" => "microsoft/VibeVoice-1.5B",
+            "7B" => "microsoft/VibeVoice-Large",
+            _ => return Err("vibevoice model_size must be 1.5B or 7B".into()),
+        };
+        if model != expected {
+            return Err("vibevoice model_id does not match model_size".into());
+        }
     }
     if voice.assets.len() != 1 || !voice.assets[0].path.ends_with(&format!("{stem}.wav")) {
         return Err("vibevoice asset must be the reference wav".into());
@@ -447,19 +443,13 @@ fn validate_livevoice(voice: &VoiceDescriptor) -> Result<(), String> {
         return Err("livevoice model or preset_kind is wrong".into());
     }
     let experimental = bool_param(voice, "experimental")?;
-    let known = matches!(
-        voice.language.as_str(),
-        "de" | "fr" | "it" | "jp" | "kr" | "nl" | "pl" | "pt" | "sp"
-    );
-    let english = voice.language == "en";
-    if (english && experimental) || (known && !experimental) || (!english && !known) {
-        return Err("livevoice experimental flag does not match the language".into());
-    }
     let path = &voice.assets[0].path;
     if experimental != path.contains("experimental_voices/")
         || !path.ends_with(&format!("{stem}.pt"))
     {
-        return Err("livevoice preset path does not match the stem".into());
+        return Err(
+            "livevoice experimental must follow experimental_voices/ and the file stem".into(),
+        );
     }
     Ok(())
 }
@@ -633,6 +623,25 @@ fn bool_param(voice: &VoiceDescriptor, key: &str) -> Result<bool, String> {
         .get(key)
         .and_then(Value::as_bool)
         .ok_or_else(|| format!("params.{key} must be a boolean"))
+}
+
+fn catalog_source_ok(value: &str) -> bool {
+    if matches!(value, "naming-conventions" | "library-scan" | "handwritten") {
+        return true;
+    }
+    let Some(rest) = value.strip_prefix("manifest:") else {
+        return false;
+    };
+    let Some((repo, sha)) = rest.split_once('@') else {
+        return false;
+    };
+    let Some((owner, name)) = repo.split_once('/') else {
+        return false;
+    };
+    !owner.is_empty()
+        && !name.is_empty()
+        && (7..=40).contains(&sha.len())
+        && sha.chars().all(|ch| ch.is_ascii_hexdigit())
 }
 
 fn check_speed(framework: &str, speed: f64) -> Result<(), String> {

@@ -1,0 +1,42 @@
+{
+  "schema_version": "1.0.0",
+  "id": "vibevoice.zh-Anchen_man_bgm",
+  "display_name": "Anchen",
+  "language": "zh",
+  "gender": "male",
+  "framework": "vibevoice",
+  "assets": [
+    {
+      "role": "reference_wav",
+      "path": "_hf_vibevoice_samples/voices/zh-Anchen_man_bgm.wav",
+      "format": "wav",
+      "sha256": "f71aeb33ed66c449dedb75d8a505478d86d47ec49e0e4c33c1fd0f8324d781fb",
+      "size": "1.2 MB"
+    }
+  ],
+  "duplicates": [
+    {
+      "path": "zh-Anchen_man_bgm.wav",
+      "sha256": "f71aeb33ed66c449dedb75d8a505478d86d47ec49e0e4c33c1fd0f8324d781fb",
+      "size": "1.2 MB"
+    }
+  ],
+  "source": {
+    "name": "DarbotLM/genaid-voices",
+    "url": "https://github.com/DarbotLM/genaid-voices",
+    "license": "MIT",
+    "attribution": "Reference prompt zh-Anchen_man_bgm.wav from DarbotLM/genaid-voices@2f749142420c. Root zh-Anchen_man_bgm.wav is the same LFS oid."
+  },
+  "tags": [
+    "zh",
+    "long-form",
+    "genaid-voices",
+    "bgm"
+  ],
+  "params": {
+    "file_stem": "zh-Anchen_man_bgm",
+    "sample_rate": 24000,
+    "max_speakers": 4,
+    "background_music": true
+  }
+}

@@ -9,16 +9,22 @@
     {
       "role": "voice_embedding",
       "path": "_hf_vibevoice_samples/realtime_model/voices/streaming_model/en-Carter_man.pt",
-      "format": "pt"
+      "format": "pt",
+      "sha256": "a7bfdf1cd4939c22469bcfc6f427ae9c4467b3df46c2c14303a39c294cfc6897",
+      "size": "4.3 MB"
     }
   ],
   "source": {
-    "name": "VibeVoice-Realtime",
-    "url": "https://github.com/microsoft/VibeVoice",
+    "name": "DarbotLM/genaid-voices",
+    "url": "https://github.com/DarbotLM/genaid-voices",
     "license": "MIT",
-    "attribution": "Built-in English streaming preset en-Carter_man. The .pt file is a KV-cache voice prompt for VibeVoice-Realtime-0.5B, which this repo calls livevoice."
+    "attribution": "Streaming preset en-Carter_man.pt from DarbotLM/genaid-voices@2f749142420c."
   },
-  "tags": ["en", "streaming", "genaid-voices-layout"],
+  "tags": [
+    "en",
+    "streaming",
+    "genaid-voices"
+  ],
   "params": {
     "model_id": "microsoft/VibeVoice-Realtime-0.5B",
     "model_size": "0.5B",
