@@ -1,0 +1,5 @@
+Set-Location 'Q:\deploy\gen-audio'
+$env:GEN_AUDIO_MODEL_DIR = 'Q:\deploy\gen-audio-models'
+$env:GEN_AUDIO_KOKORO_MODEL = 'Q:\deploy\gen-audio-models\kokoro-v1.0.onnx'; $env:GEN_AUDIO_KOKORO_VOICES = 'Q:\deploy\gen-audio-models\voices-v1.0.bin'
+$env:GEN_AUDIO_PYTHON = 'Q:\deploy\gen-audio\.venv\Scripts\python.exe'
+& 'Q:\deploy\gen-audio\target\release\gen-audio-mcp.exe' --http 127.0.0.1:8765 > 'Q:\deploy\gen-audio-run\gen-audio-mcp.out.log' 2> 'Q:\deploy\gen-audio-run\gen-audio-mcp.err.log'
