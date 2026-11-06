@@ -1,0 +1,30 @@
+{
+  "schema_version": "1.0.0",
+  "id": "kokoro.af_heart",
+  "display_name": "Heart",
+  "language": "en-us",
+  "gender": "female",
+  "framework": "kokoro",
+  "assets": [
+    {
+      "role": "voicepack",
+      "path": "kokoro/voices/af_heart.pt",
+      "format": "pt",
+      "member": "af_heart"
+    }
+  ],
+  "source": {
+    "name": "hexgrad/Kokoro-82M",
+    "url": "https://huggingface.co/hexgrad/Kokoro-82M",
+    "license": "Apache-2.0",
+    "attribution": "Kokoro voice pack af_heart. The torch engine id in this repo is kokoro_dayour."
+  },
+  "tags": ["en-us", "illustrative"],
+  "g2p": "misaki.en-us",
+  "params": {
+    "voice_id": "af_heart",
+    "lang_code": "a",
+    "lang": "en-us",
+    "speed": 1.0
+  }
+}

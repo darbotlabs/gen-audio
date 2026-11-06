@@ -1,0 +1,46 @@
+{
+  "schema_version": "1.0.0",
+  "id": "livevoice.en-Frank_man",
+  "display_name": "Frank",
+  "language": "en",
+  "gender": "male",
+  "framework": "livevoice",
+  "assets": [
+    {
+      "role": "voice_embedding",
+      "path": "_hf_vibevoice_samples/realtime_model/voices/streaming_model/en-Frank_man.pt",
+      "format": "pt",
+      "sha256": "acaa8f1a4f46a79f8f5660cfb7a3af06ef473389319df7debc07376fdc840e47",
+      "size": "3.4 MB"
+    }
+  ],
+  "source": {
+    "name": "DarbotLM/genaid-voices",
+    "url": "https://github.com/DarbotLM/genaid-voices",
+    "license": "MIT",
+    "attribution": "Streaming preset en-Frank_man.pt from DarbotLM/genaid-voices@2f749142420c."
+  },
+  "tags": [
+    "en",
+    "streaming",
+    "genaid-voices"
+  ],
+  "params": {
+    "model_id": "microsoft/VibeVoice-Realtime-0.5B",
+    "model_size": "0.5B",
+    "file_stem": "en-Frank_man",
+    "preset_kind": "kv_cache",
+    "single_speaker": true,
+    "experimental": false,
+    "file_prefix": "en",
+    "weights_only": true,
+    "model_revision": null
+  },
+  "file_prefix": "en",
+  "access": {
+    "gated": false,
+    "provider": "local",
+    "repo": "DarbotLM/genaid-voices",
+    "requires_acceptance": false
+  }
+}

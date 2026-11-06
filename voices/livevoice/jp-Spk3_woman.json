@@ -1,0 +1,47 @@
+{
+  "schema_version": "1.0.0",
+  "id": "livevoice.jp-Spk3_woman",
+  "display_name": "Spk3",
+  "language": "ja",
+  "gender": "female",
+  "framework": "livevoice",
+  "assets": [
+    {
+      "role": "voice_embedding",
+      "path": "_hf_vibevoice_samples/realtime_model/voices/streaming_model/experimental_voices/jp/jp-Spk3_woman.pt",
+      "format": "pt",
+      "sha256": "9ac1ba6330a4cec757fcf25ac0ea97263b3930634bfb0d3cb514c719b14ba0a9",
+      "size": "4.5 MB"
+    }
+  ],
+  "source": {
+    "name": "DarbotLM/genaid-voices",
+    "url": "https://github.com/DarbotLM/genaid-voices",
+    "license": "MIT",
+    "attribution": "Streaming preset jp-Spk3_woman.pt from DarbotLM/genaid-voices@2f749142420c."
+  },
+  "tags": [
+    "jp",
+    "streaming",
+    "genaid-voices",
+    "experimental"
+  ],
+  "params": {
+    "model_id": "microsoft/VibeVoice-Realtime-0.5B",
+    "model_size": "0.5B",
+    "file_stem": "jp-Spk3_woman",
+    "preset_kind": "kv_cache",
+    "single_speaker": true,
+    "experimental": true,
+    "file_prefix": "jp",
+    "weights_only": true,
+    "model_revision": null
+  },
+  "file_prefix": "jp",
+  "access": {
+    "gated": false,
+    "provider": "local",
+    "repo": "DarbotLM/genaid-voices",
+    "requires_acceptance": false
+  }
+}

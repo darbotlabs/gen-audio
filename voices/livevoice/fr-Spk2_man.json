@@ -1,0 +1,47 @@
+{
+  "schema_version": "1.0.0",
+  "id": "livevoice.fr-Spk2_man",
+  "display_name": "Spk2",
+  "language": "fr",
+  "gender": "male",
+  "framework": "livevoice",
+  "assets": [
+    {
+      "role": "voice_embedding",
+      "path": "_hf_vibevoice_samples/realtime_model/voices/streaming_model/experimental_voices/fr/fr-Spk2_man.pt",
+      "format": "pt",
+      "sha256": "c2cdf781b65a44cf64afea9be7b7d6bf63bacd20c9c8db3b1ef29bb85e5fe4be",
+      "size": "5.4 MB"
+    }
+  ],
+  "source": {
+    "name": "DarbotLM/genaid-voices",
+    "url": "https://github.com/DarbotLM/genaid-voices",
+    "license": "MIT",
+    "attribution": "Streaming preset fr-Spk2_man.pt from DarbotLM/genaid-voices@2f749142420c."
+  },
+  "tags": [
+    "fr",
+    "streaming",
+    "genaid-voices",
+    "experimental"
+  ],
+  "params": {
+    "model_id": "microsoft/VibeVoice-Realtime-0.5B",
+    "model_size": "0.5B",
+    "file_stem": "fr-Spk2_man",
+    "preset_kind": "kv_cache",
+    "single_speaker": true,
+    "experimental": true,
+    "file_prefix": "fr",
+    "weights_only": true,
+    "model_revision": null
+  },
+  "file_prefix": "fr",
+  "access": {
+    "gated": false,
+    "provider": "local",
+    "repo": "DarbotLM/genaid-voices",
+    "requires_acceptance": false
+  }
+}

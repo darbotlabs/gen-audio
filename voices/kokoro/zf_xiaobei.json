@@ -1,0 +1,30 @@
+{
+  "schema_version": "1.0.0",
+  "id": "kokoro.zf_xiaobei",
+  "display_name": "Xiaobei",
+  "language": "zh",
+  "gender": "female",
+  "framework": "kokoro",
+  "assets": [
+    {
+      "role": "voicepack",
+      "path": "kokoro/voices/zf_xiaobei.pt",
+      "format": "pt",
+      "member": "zf_xiaobei"
+    }
+  ],
+  "source": {
+    "name": "hexgrad/Kokoro-82M",
+    "url": "https://huggingface.co/hexgrad/Kokoro-82M",
+    "license": "Apache-2.0",
+    "attribution": "Kokoro voice pack zf_xiaobei."
+  },
+  "tags": ["zh", "illustrative"],
+  "g2p": "misaki.zh",
+  "params": {
+    "voice_id": "zf_xiaobei",
+    "lang_code": "z",
+    "lang": "zh",
+    "speed": 1.0
+  }
+}

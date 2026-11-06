@@ -1,16 +1,50 @@
 {
-  "_note": "Example cast map for kokoro-onnx. Alice is Speaker 1, Frank is Speaker 2. This file is not audio and it is not a news script.",
+  "schema_version": "1.0.0",
+  "id": "example-mixed",
+  "note": "Speakers 1 and 2 are Alice af_heart and Frank am_michael on kokoro_onnx, so this cast can be rendered by that engine. Kokoro packs are not in DarbotLM/genaid-voices. characters point at scanned VibeVoice and livevoice ids. This file is not audio.",
   "engine": "kokoro_onnx",
   "default_lang": "en-us",
   "default_speed": 1.0,
+  "characters": {
+    "alice": {
+      "display_name": "Alice",
+      "voices": {
+        "vibevoice": "vibevoice.en-Alice_woman"
+      }
+    },
+    "frank": {
+      "display_name": "Frank",
+      "voices": {
+        "vibevoice": "vibevoice.en-Frank_man",
+        "livevoice": "livevoice.en-Frank_man"
+      }
+    },
+    "bowen": {
+      "display_name": "Bowen",
+      "voices": {
+        "vibevoice": "vibevoice.zh-Bowen_man"
+      }
+    },
+    "carter": {
+      "display_name": "Carter",
+      "voices": {
+        "vibevoice": "vibevoice.en-Carter_man",
+        "livevoice": "livevoice.en-Carter_man"
+      }
+    }
+  },
   "speakers": {
     "1": {
       "name": "Alice",
-      "voice": "af_heart"
+      "voice": "af_heart",
+      "character": "alice",
+      "framework": "kokoro_onnx"
     },
     "2": {
       "name": "Frank",
-      "voice": "am_michael"
+      "voice": "am_michael",
+      "character": "frank",
+      "framework": "kokoro_onnx"
     }
   }
 }

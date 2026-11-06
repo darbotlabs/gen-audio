@@ -1,0 +1,51 @@
+{
+  "schema_version": "1.0.0",
+  "id": "vibevoice.en-Frank_man",
+  "display_name": "Frank",
+  "language": "en",
+  "gender": "male",
+  "framework": "vibevoice",
+  "assets": [
+    {
+      "role": "reference_wav",
+      "path": "_hf_vibevoice_samples/voices/en-Frank_man.wav",
+      "format": "wav",
+      "sha256": "aa77c4794a005c4b05a52bbce5f30e77f0d28987b9a9e737401a5d30fd1ebcb5",
+      "size": "1.2 MB"
+    }
+  ],
+  "duplicates": [
+    {
+      "path": "en-Frank_man.wav",
+      "sha256": "aa77c4794a005c4b05a52bbce5f30e77f0d28987b9a9e737401a5d30fd1ebcb5",
+      "size": "1.2 MB"
+    }
+  ],
+  "source": {
+    "name": "DarbotLM/genaid-voices",
+    "url": "https://github.com/DarbotLM/genaid-voices",
+    "license": "MIT",
+    "attribution": "Reference prompt en-Frank_man.wav from DarbotLM/genaid-voices@2f749142420c. Root en-Frank_man.wav is the same LFS oid."
+  },
+  "tags": [
+    "en",
+    "long-form",
+    "genaid-voices"
+  ],
+  "params": {
+    "file_stem": "en-Frank_man",
+    "file_prefix": "en",
+    "background_music": false
+  },
+  "file_prefix": "en",
+  "access": {
+    "gated": false,
+    "provider": "local",
+    "repo": "DarbotLM/genaid-voices",
+    "requires_acceptance": false
+  },
+  "reference_audio": {
+    "sample_rate": 24000,
+    "channels": 1
+  }
+}

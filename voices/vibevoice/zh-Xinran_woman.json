@@ -1,0 +1,51 @@
+{
+  "schema_version": "1.0.0",
+  "id": "vibevoice.zh-Xinran_woman",
+  "display_name": "Xinran",
+  "language": "zh",
+  "gender": "female",
+  "framework": "vibevoice",
+  "assets": [
+    {
+      "role": "reference_wav",
+      "path": "_hf_vibevoice_samples/voices/zh-Xinran_woman.wav",
+      "format": "wav",
+      "sha256": "dbcb9e28bcc544675ef75a8ba12528bf09e713eb53a8c0c819dec3daf2d486d3",
+      "size": "1.3 MB"
+    }
+  ],
+  "duplicates": [
+    {
+      "path": "zh-Xinran_woman.wav",
+      "sha256": "dbcb9e28bcc544675ef75a8ba12528bf09e713eb53a8c0c819dec3daf2d486d3",
+      "size": "1.3 MB"
+    }
+  ],
+  "source": {
+    "name": "DarbotLM/genaid-voices",
+    "url": "https://github.com/DarbotLM/genaid-voices",
+    "license": "MIT",
+    "attribution": "Reference prompt zh-Xinran_woman.wav from DarbotLM/genaid-voices@2f749142420c. Root zh-Xinran_woman.wav is the same LFS oid."
+  },
+  "tags": [
+    "zh",
+    "long-form",
+    "genaid-voices"
+  ],
+  "params": {
+    "file_stem": "zh-Xinran_woman",
+    "file_prefix": "zh",
+    "background_music": false
+  },
+  "file_prefix": "zh",
+  "access": {
+    "gated": false,
+    "provider": "local",
+    "repo": "DarbotLM/genaid-voices",
+    "requires_acceptance": false
+  },
+  "reference_audio": {
+    "sample_rate": 24000,
+    "channels": 1
+  }
+}

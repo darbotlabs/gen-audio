@@ -1,0 +1,51 @@
+{
+  "schema_version": "1.0.0",
+  "id": "vibevoice.zh-Bowen_man",
+  "display_name": "Bowen",
+  "language": "zh",
+  "gender": "male",
+  "framework": "vibevoice",
+  "assets": [
+    {
+      "role": "reference_wav",
+      "path": "_hf_vibevoice_samples/voices/zh-Bowen_man.wav",
+      "format": "wav",
+      "sha256": "0cef6c018e73e9fb6a1269fd61ded08144ae6380cdec242eebb1cc8aca49fed1",
+      "size": "1.4 MB"
+    }
+  ],
+  "duplicates": [
+    {
+      "path": "zh-Bowen_man.wav",
+      "sha256": "0cef6c018e73e9fb6a1269fd61ded08144ae6380cdec242eebb1cc8aca49fed1",
+      "size": "1.4 MB"
+    }
+  ],
+  "source": {
+    "name": "DarbotLM/genaid-voices",
+    "url": "https://github.com/DarbotLM/genaid-voices",
+    "license": "MIT",
+    "attribution": "Reference prompt zh-Bowen_man.wav from DarbotLM/genaid-voices@2f749142420c. Root zh-Bowen_man.wav is the same LFS oid."
+  },
+  "tags": [
+    "zh",
+    "long-form",
+    "genaid-voices"
+  ],
+  "params": {
+    "file_stem": "zh-Bowen_man",
+    "file_prefix": "zh",
+    "background_music": false
+  },
+  "file_prefix": "zh",
+  "access": {
+    "gated": false,
+    "provider": "local",
+    "repo": "DarbotLM/genaid-voices",
+    "requires_acceptance": false
+  },
+  "reference_audio": {
+    "sample_rate": 24000,
+    "channels": 1
+  }
+}

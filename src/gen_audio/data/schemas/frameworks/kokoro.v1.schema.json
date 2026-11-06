@@ -1,0 +1,36 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://darbotlabs.dev/gen-audio/voices/frameworks/kokoro.v1.schema.json",
+  "title": "KokoroTorchParams",
+  "description": "PyTorch Kokoro voicepack parameters. voice_id is <lang><gender>_<name> (af_heart, am_adam, bf_*, jf_*, zf_*). blend is a weighted mix of pack ids whose weights sum to 1. Assets are .pt tensors. lang_code is the KPipeline code (a, b, e, f, h, i, j, p, z).",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["lang_code", "lang", "speed"],
+  "properties": {
+    "voice_id": { "type": "string", "pattern": "^[abefhijpz][fm]_[a-z0-9]{1,32}$" },
+    "lang_code": { "enum": ["a", "b", "e", "f", "h", "i", "j", "p", "z"] },
+    "lang": { "type": "string", "pattern": "^[a-z]{2,3}(-[a-z0-9]{2,8})?$" },
+    "speed": { "type": "number", "minimum": 0.5, "maximum": 2.0 },
+    "blend": {
+      "type": "array",
+      "minItems": 2,
+      "maxItems": 8,
+      "items": { "$ref": "#/$defs/part" }
+    }
+  },
+  "oneOf": [
+    { "required": ["voice_id"], "not": { "required": ["blend"] } },
+    { "required": ["blend"], "not": { "required": ["voice_id"] } }
+  ],
+  "$defs": {
+    "part": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["voice_id", "weight"],
+      "properties": {
+        "voice_id": { "type": "string", "pattern": "^[abefhijpz][fm]_[a-z0-9]{1,32}$" },
+        "weight": { "type": "number", "exclusiveMinimum": 0, "maximum": 1 }
+      }
+    }
+  }
+}

@@ -1,0 +1,41 @@
+{
+  "schema_version": "1.0.0",
+  "id": "personaplex.NATM1",
+  "display_name": "NATM1",
+  "language": "en",
+  "gender": "male",
+  "framework": "personaplex",
+  "assets": [
+    {
+      "role": "voice_prompt",
+      "path": "personaplex/NATM1.pt",
+      "format": "pt"
+    }
+  ],
+  "source": {
+    "name": "nvidia/personaplex-7b-v1",
+    "url": "https://huggingface.co/nvidia/personaplex-7b-v1",
+    "license": "NVIDIA Open Model License",
+    "attribution": "Stock natural male voice embedding NATM1. The text prompt sets a service role. It is not a content dump, and the weights are not bundled."
+  },
+  "tags": [
+    "en",
+    "full-duplex",
+    "illustrative"
+  ],
+  "params": {
+    "model_id": "nvidia/personaplex-7b-v1",
+    "gated": true,
+    "voice_code": "NATM1",
+    "voice_family": "natural",
+    "voice_prompt": "NATM1.pt",
+    "text_prompt": "You are a service agent for a small repair shop. Give your name and answer from the service policy you were given.",
+    "sample_rate": 24000
+  },
+  "access": {
+    "gated": true,
+    "provider": "huggingface",
+    "repo": "nvidia/personaplex-7b-v1",
+    "requires_acceptance": true
+  }
+}

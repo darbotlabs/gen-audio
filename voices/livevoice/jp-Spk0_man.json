@@ -1,0 +1,46 @@
+{
+  "schema_version": "1.0.0",
+  "id": "livevoice.jp-Spk0_man",
+  "display_name": "Spk0",
+  "language": "ja",
+  "gender": "male",
+  "framework": "livevoice",
+  "assets": [
+    {
+      "role": "voice_embedding",
+      "path": "_hf_vibevoice_samples/realtime_model/voices/streaming_model/jp-Spk0_man.pt",
+      "format": "pt",
+      "sha256": "4881286aa2fe14e65a800d64a7ae7cd0a7ccda53ff6de88a8d6590980c20e16d",
+      "size": "4.7 MB"
+    }
+  ],
+  "source": {
+    "name": "DarbotLM/genaid-voices",
+    "url": "https://github.com/DarbotLM/genaid-voices",
+    "license": "MIT",
+    "attribution": "Streaming preset jp-Spk0_man.pt from DarbotLM/genaid-voices@2f749142420c."
+  },
+  "tags": [
+    "jp",
+    "streaming",
+    "genaid-voices"
+  ],
+  "params": {
+    "model_id": "microsoft/VibeVoice-Realtime-0.5B",
+    "model_size": "0.5B",
+    "file_stem": "jp-Spk0_man",
+    "preset_kind": "kv_cache",
+    "single_speaker": true,
+    "experimental": true,
+    "file_prefix": "jp",
+    "weights_only": true,
+    "model_revision": null
+  },
+  "file_prefix": "jp",
+  "access": {
+    "gated": false,
+    "provider": "local",
+    "repo": "DarbotLM/genaid-voices",
+    "requires_acceptance": false
+  }
+}

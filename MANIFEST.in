@@ -2,5 +2,9 @@ include LICENSE
 include README.md
 include pyproject.toml
 include voices/cast_map.example.json
+include voices/catalog.example.json
+recursive-include voices/g2p *.json
+recursive-include schemas/voices *.json
+recursive-include src/gen_audio/data *.json
 include examples/podcast_script_sample.txt
 include docs/*.md

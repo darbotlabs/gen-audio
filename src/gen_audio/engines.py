@@ -1,8 +1,9 @@
 """Named engines for compare notes.
 
-Only ``kokoro_onnx`` has a synthesizer in this package. The other rows are
-here so a score file can label WAVs that were rendered somewhere else. This
-module does not download weights and does not rank engines.
+``kokoro_onnx`` is the compare-list engine this package runs without optional
+weights. ``kokoro_dayour`` and ``vibevoice`` have adapters that refuse until
+the local runtime and weights exist. The other rows label WAVs rendered
+somewhere else. This module does not download weights and does not rank engines.
 """
 
 from __future__ import annotations
@@ -36,8 +37,9 @@ ENGINES: dict[str, EngineSpec] = {
         kind="synth",
         status="external",
         summary=(
-            "Compare slot for the dayour Kokoro runtime. This repository does "
-            "not vendor that runtime, its weights, or a client for it."
+            "dayour/kokoro KPipeline on CPU. Misaki is assigned to pipeline.g2p. "
+            "Weights are not vendored; fetch hexgrad/Kokoro-82M only when "
+            "GEN_AUDIO_ALLOW_HF_DOWNLOAD=1, otherwise use a local .pt pack."
         ),
     ),
     "misaki": EngineSpec(
@@ -45,9 +47,9 @@ ENGINES: dict[str, EngineSpec] = {
         kind="g2p",
         status="library",
         summary=(
-            "hexgrad/misaki is the grapheme-to-phoneme library Kokoro uses. "
-            "It is not a waveform synthesizer. kokoro-onnx phonemizes inside "
-            "its own package; this repo does not call misaki directly."
+            "Misaki grapheme-to-phoneme for Kokoro. custom_entries merge into "
+            "lexicon.golds. Kokoro receives those phonemes. Misaki does not "
+            "emit a waveform."
         ),
     ),
     "vibevoice": EngineSpec(
@@ -55,8 +57,9 @@ ENGINES: dict[str, EngineSpec] = {
         kind="synth",
         status="external",
         summary=(
-            "Compare slot for VibeVoice long-form multi-speaker synthesis. "
-            "No adapter and no weights are included."
+            "VibeVoice 1.5B adapter. Calls the processor with voice_samples and "
+            "generate with cfg_scale, DDPM steps, and the tokenizer. 7B is "
+            "GPU-only. Weights are not bundled."
         ),
     ),
     "magpie": EngineSpec(

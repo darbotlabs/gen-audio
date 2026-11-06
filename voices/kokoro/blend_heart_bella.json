@@ -1,0 +1,39 @@
+{
+  "schema_version": "1.0.0",
+  "id": "kokoro.blend_heart_bella",
+  "display_name": "Heart / Bella",
+  "language": "en-us",
+  "gender": "female",
+  "framework": "kokoro",
+  "assets": [
+    {
+      "role": "voicepack",
+      "path": "kokoro/voices/af_heart.pt",
+      "format": "pt",
+      "member": "af_heart"
+    },
+    {
+      "role": "voicepack",
+      "path": "kokoro/voices/af_bella.pt",
+      "format": "pt",
+      "member": "af_bella"
+    }
+  ],
+  "source": {
+    "name": "hexgrad/Kokoro-82M",
+    "url": "https://huggingface.co/hexgrad/Kokoro-82M",
+    "license": "Apache-2.0",
+    "attribution": "Weighted mix of Kokoro packs af_heart and af_bella. The .pt tensors are not stored in this repo."
+  },
+  "tags": ["en-us", "blend", "illustrative"],
+  "g2p": "misaki.en-us",
+  "params": {
+    "lang_code": "a",
+    "lang": "en-us",
+    "speed": 1.0,
+    "blend": [
+      { "voice_id": "af_heart", "weight": 0.75 },
+      { "voice_id": "af_bella", "weight": 0.25 }
+    ]
+  }
+}

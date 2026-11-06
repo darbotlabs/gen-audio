@@ -1,0 +1,63 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://darbotlabs.dev/gen-audio/voices/registry.v1.schema.json",
+  "title": "VoiceFrameworkRegistry",
+  "description": "Shipped voice frameworks. A new framework adds a row here, a params schema, and an adapter. schema_version 1.0.0 is the only accepted document version.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "frameworks"],
+  "properties": {
+    "schema_version": { "const": "1.0.0" },
+    "frameworks": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/$defs/framework" }
+    }
+  },
+  "$defs": {
+    "framework": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "kind", "engine_id", "params_schema", "wired", "summary"],
+      "properties": {
+        "id": { "type": "string", "pattern": "^[a-z][a-z0-9_]{0,31}$" },
+        "kind": { "enum": ["synth", "g2p", "speech_to_speech"] },
+        "engine_id": {
+          "anyOf": [
+            { "type": "string", "pattern": "^[a-z][a-z0-9_]{0,31}$" },
+            { "type": "null" }
+          ]
+        },
+        "params_schema": { "type": "string", "pattern": "^frameworks/[a-z][a-z0-9_]*\\.v1\\.schema\\.json$" },
+        "wired": {
+          "type": "boolean",
+          "description": "True when this package can hand the voice plan to a synthesizer that already runs here. False means schema, validation, and a plan or stub only."
+        },
+        "summary": { "type": "string", "minLength": 12, "maxLength": 400 },
+        "output_sample_rate": { "type": "integer", "minimum": 8000, "maximum": 48000 },
+        "models": {
+          "type": "array",
+          "maxItems": 4,
+          "items": { "$ref": "#/$defs/model" }
+        }
+      }
+    },
+    "model": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "local_env", "upstream", "revision", "device_policy", "output_sample_rate"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1, "maxLength": 16 },
+        "local_env": { "type": "string", "pattern": "^[A-Z][A-Z0-9_]+$" },
+        "upstream": { "type": "string", "minLength": 1, "maxLength": 80 },
+        "revision": { "type": ["string", "null"] },
+        "max_position_embeddings": { "type": "integer", "minimum": 1 },
+        "device_policy": { "enum": ["cpu", "gpu"] },
+        "cfg_scale": { "type": "number", "minimum": 0.5, "maximum": 5 },
+        "diffusion_steps": { "type": "integer", "minimum": 1, "maximum": 100 },
+        "max_speakers": { "type": "integer", "minimum": 1, "maximum": 8 },
+        "output_sample_rate": { "type": "integer", "minimum": 8000, "maximum": 48000 }
+      }
+    }
+  }
+}

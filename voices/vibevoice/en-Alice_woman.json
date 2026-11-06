@@ -1,0 +1,52 @@
+{
+  "schema_version": "1.0.0",
+  "id": "vibevoice.en-Alice_woman",
+  "display_name": "Alice",
+  "language": "en",
+  "gender": "female",
+  "framework": "vibevoice",
+  "assets": [
+    {
+      "role": "reference_wav",
+      "path": "_hf_vibevoice_samples/voices/en-Alice_woman.wav",
+      "format": "wav",
+      "sha256": "c27ae47421436287a6bd2c3062de2dc2a2855b78c0bb626d472202c359704203",
+      "size": "297 KB"
+    }
+  ],
+  "duplicates": [
+    {
+      "path": "en-Alice_woman.wav",
+      "sha256": "c27ae47421436287a6bd2c3062de2dc2a2855b78c0bb626d472202c359704203",
+      "size": "297 KB"
+    }
+  ],
+  "source": {
+    "name": "DarbotLM/genaid-voices",
+    "url": "https://github.com/DarbotLM/genaid-voices",
+    "license": "MIT",
+    "attribution": "Reference prompt en-Alice_woman.wav from DarbotLM/genaid-voices@2f749142420c. Root en-Alice_woman.wav is the same LFS oid."
+  },
+  "tags": [
+    "en",
+    "long-form",
+    "genaid-voices"
+  ],
+  "params": {
+    "file_stem": "en-Alice_woman",
+    "file_prefix": "en",
+    "background_music": false
+  },
+  "file_prefix": "en",
+  "access": {
+    "gated": false,
+    "provider": "local",
+    "repo": "DarbotLM/genaid-voices",
+    "requires_acceptance": false
+  },
+  "reference_audio": {
+    "sample_rate": 16000,
+    "channels": 1,
+    "duration_s": 9.3
+  }
+}

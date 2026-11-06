@@ -1,0 +1,82 @@
+{
+  "schema_version": "1.0.0",
+  "frameworks": [
+    {
+      "id": "kokoro",
+      "kind": "synth",
+      "engine_id": "kokoro_dayour",
+      "params_schema": "frameworks/kokoro.v1.schema.json",
+      "wired": true,
+      "output_sample_rate": 24000,
+      "summary": "PyTorch Kokoro via KPipeline (hexgrad/Kokoro-82M) on CPU. Weighted blends are pre-mixed tensors, not torch.mean. Weights are not bundled; download only if GEN_AUDIO_ALLOW_HF_DOWNLOAD=1."
+    },
+    {
+      "id": "kokoro_onnx",
+      "kind": "synth",
+      "engine_id": "kokoro_onnx",
+      "params_schema": "frameworks/kokoro_onnx.v1.schema.json",
+      "wired": true,
+      "summary": "kokoro-onnx speaks Misaki phonemes via create(..., is_phonemes=true), in chunks of at most 510 phonemes. A blend voice is the ndarray from blend_from_pack. A single voice passes its pack id. Files come from GEN_AUDIO_KOKORO_MODEL and GEN_AUDIO_KOKORO_VOICES."
+    },
+    {
+      "id": "misaki",
+      "kind": "g2p",
+      "engine_id": "misaki",
+      "params_schema": "frameworks/misaki.v1.schema.json",
+      "wired": false,
+      "summary": "Misaki G2P for Kokoro. transformer is false on Python 3.14. custom_entries are merged into lexicon.golds. Phonemes are passed to Kokoro with is_phonemes. This row does not emit a waveform."
+    },
+    {
+      "id": "vibevoice",
+      "kind": "synth",
+      "engine_id": "vibevoice",
+      "params_schema": "frameworks/vibevoice.v1.schema.json",
+      "wired": true,
+      "output_sample_rate": 24000,
+      "summary": "VibeVoice long-form TTS. 1.5B runs on CPU when local weights exist and is called with voice_samples, DDPM steps, cfg_scale, and the tokenizer. 7B is GPU-only. A reference WAV is not pinned to one checkpoint.",
+      "models": [
+        {
+          "id": "1.5B",
+          "local_env": "GEN_AUDIO_VIBEVOICE_MODEL",
+          "upstream": "microsoft/VibeVoice-1.5B",
+          "revision": null,
+          "max_position_embeddings": 65536,
+          "device_policy": "cpu",
+          "cfg_scale": 1.3,
+          "diffusion_steps": 20,
+          "max_speakers": 4,
+          "output_sample_rate": 24000
+        },
+        {
+          "id": "7B",
+          "local_env": "GEN_AUDIO_VIBEVOICE_7B_MODEL",
+          "upstream": "vibevoice/VibeVoice-7B",
+          "revision": null,
+          "max_position_embeddings": 32768,
+          "device_policy": "gpu",
+          "cfg_scale": 1.3,
+          "diffusion_steps": 20,
+          "max_speakers": 4,
+          "output_sample_rate": 24000
+        }
+      ]
+    },
+    {
+      "id": "livevoice",
+      "kind": "synth",
+      "engine_id": null,
+      "params_schema": "frameworks/livevoice.v1.schema.json",
+      "wired": false,
+      "output_sample_rate": 24000,
+      "summary": "VibeVoice-Realtime presets. Not runnable until weights exist and model_revision is pinned. Load with torch.load weights_only=true. experimental is every file prefix except built-in en and in."
+    },
+    {
+      "id": "personaplex",
+      "kind": "speech_to_speech",
+      "engine_id": null,
+      "params_schema": "frameworks/personaplex.v1.schema.json",
+      "wired": false,
+      "summary": "Gated nvidia/personaplex-7b-v1 under the NVIDIA Open Model License. Speech-to-speech, not a text-to-speech cast slot. Refuses until HF access and weights exist. The offline tool needs an input wav."
+    }
+  ]
+}

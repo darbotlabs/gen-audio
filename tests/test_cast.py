@@ -50,7 +50,7 @@ def test_empty_turn_is_an_error():
 
 
 def test_unknown_speaker_lists_known_ids():
-    turns = parse_script("Speaker 3: Someone else.\n")
+    turns = parse_script("Speaker 4: Someone else.\n")
     cast = load_cast_map(CAST)
     with pytest.raises(KeyError, match="known speakers: 1, 2"):
         resolve_turn(turns[0], cast)

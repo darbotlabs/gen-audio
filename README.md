@@ -204,7 +204,7 @@ Speaker 2 (Frank):
 Following lines stay with this speaker until the next header.
 ```
 
-The parenthetical name is stored and is not the lookup key. `voices/cast_map.example.json` maps speaker `"1"` and `"2"` to kokoro-onnx voices. Speeds outside 0.5–2.0 are rejected because that is the range kokoro-onnx accepts.
+The parenthetical name is stored and is not the lookup key. `voices/cast_map.example.json` maps speaker `"1"` and `"2"` to kokoro-onnx voices `af_heart` and `am_michael`, and maps other characters onto VibeVoice, Kokoro torch packs, PersonaPlex, and the streaming presets. Kokoro speeds outside 0.5–2.0 are rejected. The voice schemas, the `GENAID_VOICES_DIR` library, and `gen-audio-voices` are described in [docs/VOICES.md](docs/VOICES.md).
 
 ## Publish chain
 
@@ -239,6 +239,7 @@ Windows tooling has five entry points. Each one runs under Windows PowerShell 5.
 ```text
 src/gen_audio/          installable package
   cast.py               Speaker N parsing and cast maps
+  voices/               voice descriptors, framework registry, catalog
   synth_kokoro_onnx.py  multi-turn kokoro-onnx render
   improve.py            24 kHz publish chain
   spectrogram.py        before/after PNG helpers
@@ -251,9 +252,10 @@ src/gen_audio/          installable package
   engines.py            compare-list registry
   serve.py              per-node URL and health-body helpers
 scripts/                CLI entry points for the modules above
-voices/cast_map.example.json
+voices/                 example voices, G2P configs, catalog, cast map
 examples/podcast_script_sample.txt
 docs/ARCHITECTURE.md
+docs/VOICES.md
 docs/SERVE_APIM.md
 ```
 

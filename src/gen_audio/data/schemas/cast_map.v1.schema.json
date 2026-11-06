@@ -1,0 +1,85 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://darbotlabs.dev/gen-audio/voices/cast_map.v1.schema.json",
+  "title": "CastMap",
+  "description": "Characters and Speaker N slots mapped onto voices. schema_version 1.0.0. Speaker 1 and 2 keep the legacy name/voice fields the kokoro-onnx synthesizer and the harness already read. A speaker may name its own framework. characters.voices maps one character onto voice ids across frameworks.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "engine", "speakers"],
+  "properties": {
+    "schema_version": { "const": "1.0.0" },
+    "id": { "type": "string", "pattern": "^[a-z][a-z0-9_-]{0,63}$" },
+    "note": { "type": "string", "minLength": 1, "maxLength": 800 },
+    "engine": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_]{0,31}$",
+      "description": "Default framework for speakers that omit framework. kokoro_onnx stays the default for the sample cast."
+    },
+    "default_lang": { "type": "string", "pattern": "^[a-z]{2,3}(-[a-z0-9]{2,8})?$" },
+    "default_speed": { "type": "number", "minimum": 0.5, "maximum": 2.0 },
+    "default_framework": { "type": "string", "pattern": "^[a-z][a-z0-9_]{0,31}$" },
+    "source": { "type": "string", "minLength": 1, "maxLength": 80 },
+    "characters": {
+      "type": "object",
+      "minProperties": 1,
+      "maxProperties": 32,
+      "additionalProperties": false,
+      "patternProperties": {
+        "^[a-z][a-z0-9_]{0,31}$": { "$ref": "#/$defs/character" }
+      }
+    },
+    "speakers": {
+      "type": "object",
+      "minProperties": 1,
+      "maxProperties": 8,
+      "additionalProperties": false,
+      "patternProperties": {
+        "^(0|[1-9][0-9]{0,2})$": { "$ref": "#/$defs/speaker" }
+      }
+    }
+  },
+  "$defs": {
+    "character": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["display_name", "voices"],
+      "properties": {
+        "display_name": { "type": "string", "minLength": 1, "maxLength": 80 },
+        "voices": {
+          "type": "object",
+          "minProperties": 1,
+          "maxProperties": 8,
+          "additionalProperties": false,
+          "patternProperties": {
+            "^[a-z][a-z0-9_]{0,31}$": {
+              "type": "string",
+              "pattern": "^[a-z][a-z0-9_]{0,31}\\.[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$"
+            }
+          }
+        }
+      }
+    },
+    "speaker": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "voice"],
+      "properties": {
+        "name": { "type": "string", "minLength": 1, "maxLength": 80 },
+        "voice": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 80,
+          "description": "Framework-local voice token the synthesizer already expects: a Kokoro pack id, a VibeVoice file stem, or a PersonaPlex voice code."
+        },
+        "lang": { "type": "string", "pattern": "^[a-z]{2,3}(-[a-z0-9]{2,8})?$" },
+        "speed": { "type": "number" },
+        "framework": { "type": "string", "pattern": "^[a-z][a-z0-9_]{0,31}$" },
+        "voice_id": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_]{0,31}\\.[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$"
+        },
+        "character": { "type": "string", "pattern": "^[a-z][a-z0-9_]{0,31}$" }
+      }
+    }
+  }
+}

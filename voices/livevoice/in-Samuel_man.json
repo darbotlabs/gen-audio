@@ -1,0 +1,46 @@
+{
+  "schema_version": "1.0.0",
+  "id": "livevoice.in-Samuel_man",
+  "display_name": "Samuel",
+  "language": "en-IN",
+  "gender": "male",
+  "framework": "livevoice",
+  "assets": [
+    {
+      "role": "voice_embedding",
+      "path": "_hf_vibevoice_samples/realtime_model/voices/streaming_model/in-Samuel_man.pt",
+      "format": "pt",
+      "sha256": "b6ec5e8cde4006aa3f26fde0422124f3296f83f5738b5b4506268855a305cb06",
+      "size": "3.8 MB"
+    }
+  ],
+  "source": {
+    "name": "DarbotLM/genaid-voices",
+    "url": "https://github.com/DarbotLM/genaid-voices",
+    "license": "MIT",
+    "attribution": "Streaming preset in-Samuel_man.pt from DarbotLM/genaid-voices@2f749142420c."
+  },
+  "tags": [
+    "in",
+    "streaming",
+    "genaid-voices"
+  ],
+  "params": {
+    "model_id": "microsoft/VibeVoice-Realtime-0.5B",
+    "model_size": "0.5B",
+    "file_stem": "in-Samuel_man",
+    "preset_kind": "kv_cache",
+    "single_speaker": true,
+    "experimental": false,
+    "file_prefix": "in",
+    "weights_only": true,
+    "model_revision": null
+  },
+  "file_prefix": "in",
+  "access": {
+    "gated": false,
+    "provider": "local",
+    "repo": "DarbotLM/genaid-voices",
+    "requires_acceptance": false
+  }
+}

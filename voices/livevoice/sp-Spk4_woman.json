@@ -1,0 +1,47 @@
+{
+  "schema_version": "1.0.0",
+  "id": "livevoice.sp-Spk4_woman",
+  "display_name": "Spk4",
+  "language": "es",
+  "gender": "female",
+  "framework": "livevoice",
+  "assets": [
+    {
+      "role": "voice_embedding",
+      "path": "_hf_vibevoice_samples/realtime_model/voices/streaming_model/experimental_voices/sp/sp-Spk4_woman.pt",
+      "format": "pt",
+      "sha256": "b4e31f86aaabab417f66bdb395bcf282c99546ed98c526cbc9ebd7e696281b93",
+      "size": "3.7 MB"
+    }
+  ],
+  "source": {
+    "name": "DarbotLM/genaid-voices",
+    "url": "https://github.com/DarbotLM/genaid-voices",
+    "license": "MIT",
+    "attribution": "Streaming preset sp-Spk4_woman.pt from DarbotLM/genaid-voices@2f749142420c."
+  },
+  "tags": [
+    "sp",
+    "streaming",
+    "genaid-voices",
+    "experimental"
+  ],
+  "params": {
+    "model_id": "microsoft/VibeVoice-Realtime-0.5B",
+    "model_size": "0.5B",
+    "file_stem": "sp-Spk4_woman",
+    "preset_kind": "kv_cache",
+    "single_speaker": true,
+    "experimental": true,
+    "file_prefix": "sp",
+    "weights_only": true,
+    "model_revision": null
+  },
+  "file_prefix": "sp",
+  "access": {
+    "gated": false,
+    "provider": "local",
+    "repo": "DarbotLM/genaid-voices",
+    "requires_acceptance": false
+  }
+}

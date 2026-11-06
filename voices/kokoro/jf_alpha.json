@@ -1,0 +1,30 @@
+{
+  "schema_version": "1.0.0",
+  "id": "kokoro.jf_alpha",
+  "display_name": "Alpha",
+  "language": "ja",
+  "gender": "female",
+  "framework": "kokoro",
+  "assets": [
+    {
+      "role": "voicepack",
+      "path": "kokoro/voices/jf_alpha.pt",
+      "format": "pt",
+      "member": "jf_alpha"
+    }
+  ],
+  "source": {
+    "name": "hexgrad/Kokoro-82M",
+    "url": "https://huggingface.co/hexgrad/Kokoro-82M",
+    "license": "Apache-2.0",
+    "attribution": "Kokoro voice pack jf_alpha."
+  },
+  "tags": ["ja", "illustrative"],
+  "g2p": "misaki.ja",
+  "params": {
+    "voice_id": "jf_alpha",
+    "lang_code": "j",
+    "lang": "ja",
+    "speed": 1.0
+  }
+}
